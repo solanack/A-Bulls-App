@@ -1,0 +1,29 @@
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), web-share=(self), identity-credentials-get=(self "https://accounts.google.com")
+  Content-Security-Policy: default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; script-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://player.twitch.tv; style-src 'self' 'unsafe-inline' https://accounts.google.com; frame-src https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://player.twitch.tv https://www.twitch.tv; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://www.youtube.com https://www.youtube-nocookie.com https://black-bull-run-sol.ckdsigns1.workers.dev https://*.twitch.tv wss://*.twitch.tv; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';
+
+/
+  Cache-Control: no-store, no-cache, must-revalidate
+
+/index.html
+  Cache-Control: no-store, no-cache, must-revalidate
+
+/assets/*
+  Cache-Control: public, max-age=604800
+
+/js/*
+  Cache-Control: no-cache, must-revalidate
+
+/css/*
+  Cache-Control: no-cache, must-revalidate
+
+/sw.js
+  Cache-Control: no-cache
+
+/.well-known/assetlinks.json
+  Content-Type: application/json; charset=utf-8
+  Cache-Control: public, max-age=300
