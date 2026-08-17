@@ -1,0 +1,28 @@
+name = "black-bull-run-sol-api"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://abullsapp.com,https://black-bull-run-sol.pages.dev,http://localhost:8788"
+ANSEM_MINT = "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump"
+GOOGLE_PLAY_PACKAGE_NAME = "com.abullsapp.app"
+COMMERCE_ENABLED = "false"
+# Optional: set only if Kimji publishes a dedicated staking authority/delegate.
+# KIMJI_STAKING_AUTHORITY = "<PUBLIC_SOLANA_ADDRESS>"
+# Run before deploy:
+# npx wrangler secret put HELIUS_API_KEY
+# npx wrangler secret put GOOGLE_CLIENT_ID
+# npx wrangler secret put AUTH_SESSION_SECRET
+# Create and migrate the D1 leaderboard, then add the binding returned by Wrangler:
+# npx wrangler d1 create black-bull-run-leaderboard
+# npx wrangler d1 migrations apply black-bull-run-leaderboard --remote
+# [[d1_databases]]
+# binding = "LEADERBOARD_DB"
+# database_name = "black-bull-run-leaderboard"
+# database_id = "<YOUR_D1_DATABASE_ID>"
+# Optional shared analytics cache:
+# [[kv_namespaces]]
+# binding = "ANALYTICS_CACHE"
+# id = "<YOUR_KV_NAMESPACE_ID>"
+# Optional Cloudflare Rate Limiting binding name: RATE_LIMITER.
+# The Worker safely falls back to an isolate-local limiter for development.
