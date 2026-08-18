@@ -1,12 +1,12 @@
 /**
- * A Bulls App API Worker v5.5.0
+ * A Bulls App API Worker v5.5.1
  * Secrets: HELIUS_API_KEY, GOOGLE_CLIENT_ID, AUTH_SESSION_SECRET
  * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COMMERCE_ENABLED,
  *       KIMJI_STAKING_AUTHORITY (optional)
  * Optional bindings: RATE_LIMITER (Cloudflare Rate Limiting),
  *                    ANALYTICS_CACHE (Cloudflare KV)
  */
-const VERSION = '5.5.0';
+const VERSION = '5.5.1';
 const COMPETITIVE_GAMES = new Set(['bull-invaders', 'blitz-bowl']);
 const DEFAULT_GOOGLE_PLAY_PACKAGE = 'com.abullsapp.app';
 const DEFAULT_ANSEM_MINT = '9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump';
@@ -1339,12 +1339,20 @@ function safeMediaHttpUrl(value) {
   try {
     const parsed = new URL(String(value || ''));
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || (parsed.port && parsed.port !== '443')) return null;
-    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    let host = parsed.hostname.toLowerCase();
+    if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
     if (!host || host === 'localhost' || host.endsWith('.local') || (!host.includes('.') && !host.includes(':'))) return null;
     if (host.includes(':')) {
-      if (host === '::1' || host === '::' || /^f[cd]/.test(host) || /^fe[89ab]/.test(host) || host.startsWith('::ffff:')) return null;
-    } else if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
-      const parts = host.split('.').map(Number);
+      const prefixTwo = host.slice(0, 2);
+      const prefixThree = host.slice(0, 3);
+      if (host === '::1' || host === '::' || prefixTwo === 'fc' || prefixTwo === 'fd' ||
+          ['fe8', 'fe9', 'fea', 'feb'].includes(prefixThree) || host.startsWith('::ffff:')) return null;
+    } else {
+      const rawParts = host.split('.');
+      const isIpv4 = rawParts.length === 4 && rawParts.every(part => part.length >= 1 && part.length <= 3 &&
+        [...part].every(character => character >= '0' && character <= '9'));
+      if (!isIpv4) return parsed.toString();
+      const parts = rawParts.map(Number);
       if (parts.some(part => part > 255) || parts[0] === 0 || parts[0] === 10 || parts[0] === 127 ||
           (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
           (parts[0] === 169 && parts[1] === 254) || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
