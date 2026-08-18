@@ -1,12 +1,12 @@
 /**
- * A Bulls App API Worker v5.2.1
+ * A Bulls App API Worker v5.3.0
  * Secrets: HELIUS_API_KEY, GOOGLE_CLIENT_ID, AUTH_SESSION_SECRET
  * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COMMERCE_ENABLED,
  *       KIMJI_STAKING_AUTHORITY (optional)
  * Optional bindings: RATE_LIMITER (Cloudflare Rate Limiting),
  *                    ANALYTICS_CACHE (Cloudflare KV)
  */
-const VERSION = '5.2.1';
+const VERSION = '5.3.0';
 const DEFAULT_GOOGLE_PLAY_PACKAGE = 'com.abullsapp.app';
 const DEFAULT_ANSEM_MINT = '9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump';
 const BULL_PEN_COLLECTION = 'C5gHBKXwA8jduXNk3HyAVLnLBN6PEM8fTqkNNh5uyyjJ';
@@ -68,7 +68,8 @@ export default {
       const authRoute = url.pathname.startsWith('/api/auth/');
       const billingRoute = url.pathname.startsWith('/api/billing/');
       const imageRoute = url.pathname === '/api/nft/image';
-      if (!await rateLimit(env, ip + ':' + url.pathname, billingRoute ? 30 : authRoute ? 20 : imageRoute ? 120 : 75, 60_000)) {
+      const lifeRoute = url.pathname === '/api/life/reflect';
+      if (!await rateLimit(env, ip + ':' + url.pathname, lifeRoute ? 8 : billingRoute ? 30 : authRoute ? 20 : imageRoute ? 120 : 75, 60_000)) {
         return json({ ok: false, error: { message: 'Too many requests. Try again shortly.' } }, 429, cors);
       }
       if (url.pathname === '/api/health' && request.method === 'GET') {
@@ -82,6 +83,7 @@ export default {
             market: true,
             walletAnalytics: Boolean(env.HELIUS_API_KEY),
             ansemOnchain: Boolean(env.HELIUS_API_KEY),
+            lifeReflection: Boolean(env.HELIUS_API_KEY && env.AI),
             leaderboard: Boolean(env.LEADERBOARD_DB && env.AUTH_SESSION_SECRET),
             leaderboardBound: Boolean(env.LEADERBOARD_DB),
             retention: Boolean(env.LEADERBOARD_DB && env.AUTH_SESSION_SECRET),
@@ -125,6 +127,7 @@ export default {
       if (url.pathname === '/api/ansem/onchain' && request.method === 'GET') return ansemOnchain(env, cors);
       if (url.pathname === '/api/wallet/overview' && request.method === 'POST') return walletOverview(request, env, cors);
       if (url.pathname === '/api/wallet/activity' && request.method === 'POST') return walletActivity(request, env, cors);
+      if (url.pathname === '/api/life/reflect' && request.method === 'POST') return lifeReflect(request, env, cors);
       return json({ ok: false, error: { message: 'Route not found' } }, 404, cors);
     } catch (error) {
       return json({ ok: false, error: { message: error?.message || 'Unexpected Worker error' } }, Number(error?.status || 500), cors);
@@ -143,6 +146,7 @@ function isPublicApiRoute(pathname, method) {
   if (pathname === '/api/leaderboard/top') return verb === null || verb === 'GET';
   if (pathname === '/api/ansem/market' || pathname === '/api/ansem/onchain') return verb === null || verb === 'GET';
   if (pathname === '/api/wallet/overview' || pathname === '/api/wallet/activity') return verb === null || verb === 'POST';
+  if (pathname === '/api/life/reflect') return verb === null || verb === 'POST';
   return false;
 }
 function originAllowed(request, env) {
@@ -618,6 +622,75 @@ async function walletActivity(request, env, cors) {
   };
   await cachePut(env, cacheKey, data, 15_000);
   return json({ ok: true, data, updatedAt: new Date().toISOString() }, 200, cors);
+}
+
+const LIFE_SYSTEM_PROMPT = `You generate Socratic reflection questions from public blockchain trading patterns.
+Rules: output only a JSON array of 6 to 8 concise questions. Every item must end with a question mark.
+Ask; never diagnose, assert motives, or claim why a person acted. Never infer anxiety, addiction, panic,
+financial stress, mental health, income, relationships, or personal circumstances. Do not give financial advice.
+Use conditional, observational language such as "What, if anything..." and "How did you decide...".
+Treat transfers as ambiguous: they may not be trades. Do not identify the wallet owner.`;
+
+function safeLifeQuestions(analytics) {
+  const trading = analytics.trading || {};
+  const questions = [
+    `What, if anything, do you notice about being most active around ${trading.busiestHour == null ? 'different times' : `${String(trading.busiestHour).padStart(2, '0')}:00 UTC` }?`,
+    `How did you decide which of the ${trading.uniqueMints || 0} visible assets were worth revisiting?`,
+    `When activity clustered on ${trading.busiestWeekday || 'particular days'}, what information were you using at the time?`,
+    `What criteria helped you distinguish a planned trade from a quick reaction?`,
+    `Looking across ${trading.activeDays || 0} active days, which decisions would you want to understand more clearly?`,
+    `What would you record before a future trade so you could evaluate the decision later without relying on its outcome?`
+  ];
+  return questions;
+}
+function sanitizeLifeQuestions(value, fallback) {
+  const banned = /\b(anxious|anxiety|addict|addiction|panic|depress|manic|trauma|financial stress|you are|you were|you felt|because you)\b/i;
+  const source = Array.isArray(value) ? value : [];
+  const safe = source.map(item => String(item || '').trim()).filter(item =>
+    item.endsWith('?') && item.length >= 18 && item.length <= 260 && !banned.test(item)
+  ).slice(0, 8);
+  return safe.length >= 6 ? safe : fallback;
+}
+async function lifeReflect(request, env, cors) {
+  const body = await request.json().catch(() => ({}));
+  const address = String(body.address || '').trim();
+  if (!validAddress(address)) return json({ ok: false, error: { message: 'Invalid Solana address' } }, 400, cors);
+  requireHelius(env);
+  const transactions = [];
+  let before = null, hasMore = true, pagesFetched = 0;
+  for (let page = 0; page < 50 && hasMore; page++) {
+    const payload = await heliusWallet(env, `/v1/wallet/${encodeURIComponent(address)}/history`, { limit: 100, before, tokenAccounts: 'balanceChanged' });
+    const list = Array.isArray(payload.data) ? payload.data : [];
+    transactions.push(...list); pagesFetched++;
+    hasMore = payload.pagination?.hasMore === true;
+    before = payload.pagination?.nextCursor || null;
+    if (!list.length || !before) break;
+  }
+  const analytics = activityAnalytics(transactions, env.ANSEM_MINT || DEFAULT_ANSEM_MINT);
+  const fallback = safeLifeQuestions(analytics);
+  let generated = fallback;
+  if (env.AI?.run) {
+    const compact = {
+      transactions: transactions.length, pagesFetched, historyComplete: !hasMore,
+      trading: analytics.trading, flow: analytics.flow,
+      dailyBuckets: analytics.dailyBuckets.slice(-90),
+      topFlows: analytics.topFlows.slice(0, 12).map(({ symbol, in: incoming, out, net }) => ({ symbol, incoming, out, net })),
+      recent: analytics.recent.slice(0, 24).map(({ blockTime, type, summary }) => ({ blockTime, type, summary }))
+    };
+    const result = await env.AI.run(env.LIFE_AI_MODEL || '@cf/meta/llama-3.1-8b-instruct', {
+      messages: [{ role: 'system', content: LIFE_SYSTEM_PROMPT }, { role: 'user', content: JSON.stringify(compact) }],
+      temperature: .45, max_tokens: 900
+    });
+    const raw = String(result?.response || result || '');
+    let parsed = [];
+    try { parsed = JSON.parse(raw.match(/\[[\s\S]*\]/)?.[0] || '[]'); } catch (_) {}
+    generated = sanitizeLifeQuestions(parsed, fallback);
+  }
+  return json({ ok: true, data: {
+    questions: generated, signaturesAnalyzed: transactions.length, pagesFetched,
+    historyComplete: !hasMore, publicDataOnly: true, persisted: false,
+    disclaimer: 'Reflection and entertainment only; not financial or psychological advice.'
+  } }, 200, cors);
 }
 
 async function market(env, cors) {
