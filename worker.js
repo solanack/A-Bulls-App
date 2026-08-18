@@ -1,13 +1,13 @@
 /**
- * A Bulls App API Worker v5.5.1
+ * A Bulls App API Worker v5.6.0
  * Secrets: HELIUS_API_KEY, GOOGLE_CLIENT_ID, AUTH_SESSION_SECRET
  * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COMMERCE_ENABLED,
  *       KIMJI_STAKING_AUTHORITY (optional)
  * Optional bindings: RATE_LIMITER (Cloudflare Rate Limiting),
  *                    ANALYTICS_CACHE (Cloudflare KV)
  */
-const VERSION = '5.5.1';
-const COMPETITIVE_GAMES = new Set(['bull-invaders', 'blitz-bowl']);
+const VERSION = '5.6.0';
+const COMPETITIVE_GAMES = new Set(['bull-invaders', 'blitz-bowl', 'solana-slaughter']);
 const DEFAULT_GOOGLE_PLAY_PACKAGE = 'com.abullsapp.app';
 const DEFAULT_ANSEM_MINT = '9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump';
 const BULL_PEN_COLLECTION = 'C5gHBKXwA8jduXNk3HyAVLnLBN6PEM8fTqkNNh5uyyjJ';
@@ -47,7 +47,9 @@ const BULL_STORE_ITEMS = Object.freeze({
   ship_skin_blackout: Object.freeze({ name:'Blackout Ship Finish',price:2400,type:'cosmetic',description:'Visual ship finish only; no stat change.' }),
   blitz_uniform_afterglow: Object.freeze({ name:'Afterglow Uniform',price:1400,type:'cosmetic',description:'Blitz Bowl uniform colors only.' }),
   blitz_td_particles: Object.freeze({ name:'Validator Confetti',price:1200,type:'cosmetic',description:'Touchdown particles only.' }),
-  profile_blitz_champ: Object.freeze({ name:'Blitz League Profile Plate',price:900,type:'status',description:'Profile presentation only.' })
+  profile_blitz_champ: Object.freeze({ name:'Blitz League Profile Plate',price:900,type:'status',description:'Profile presentation only.' }),
+  slaughter_weapon_neon: Object.freeze({ name:'Slot Zero Neon Finish',price:1600,type:'cosmetic',description:'Solana Slaughter weapon color finish only; no combat change.' }),
+  profile_shardrunner: Object.freeze({ name:'Shardrunner Profile Plate',price:900,type:'status',description:'Profile presentation only.' })
 });
 
 export default {
@@ -262,6 +264,11 @@ function physicallyPossibleRun(run) {
   if (run.elapsedMs < 1000 || run.elapsedMs > 6 * 60 * 60 * 1000) return false;
   return run.score <= seconds * 8500 + 250000 && run.kills <= seconds * 85 + 150 && run.bossesDefeated <= 19;
 }
+function gameSpecificRunPossible(game, run) {
+  if (game === 'blitz-bowl') return run.elapsedMs <= 900000 && run.score <= 250000 && run.kills <= 500 && run.bossesDefeated <= 30;
+  if (game === 'solana-slaughter') return run.elapsedMs <= 900000 && run.score <= 500000 && run.kills <= 300 && run.bossesDefeated <= 1;
+  return true;
+}
 async function leaderboardChallenge(request, env, cors) {
   if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Ranked play is not configured' } }, 503, cors);
   let account;
@@ -316,7 +323,7 @@ async function leaderboardSubmit(request, env, cors) {
   const canonical = ['abulls-v7.0.1', mode, run.game, run.score, run.elapsedMs, run.kills, run.bossesDefeated, run.nonce, challengeId].join('|');
   const expectedHash = await sha256Hex(canonical);
   if (!/^[a-f0-9]{64}$/.test(String(body.replayHash || '')) || expectedHash !== body.replayHash) return json({ ok: false, error: { message: 'Replay hash validation failed' } }, 400, cors);
-  if (!physicallyPossibleRun(run) || (game === 'blitz-bowl' && (run.elapsedMs > 900000 || run.score > 250000 || run.kills > 500 || run.bossesDefeated > 30))) return json({ ok: false, error: { message: 'Score failed physics sanity bounds' } }, 422, cors);
+  if (!physicallyPossibleRun(run) || !gameSpecificRunPossible(game, run)) return json({ ok: false, error: { message: 'Score failed physics sanity bounds' } }, 422, cors);
   let verified;
   try { verified = await verifyRunChallenge(request, body, env, game, mode); }
   catch (error) { return json({ ok: false, error: { message: error.message } }, Number(error.status || 401), cors); }
@@ -1801,10 +1808,11 @@ function utcWeekKey(d = new Date()) {
 function dailySeedConfig(dayKey) {
   let h = 0;
   for (let i = 0; i < dayKey.length; i++) h = (h * 31 + dayKey.charCodeAt(i)) >>> 0;
+  const gameKey = ['bull-invaders', 'blitz-bowl', 'solana-slaughter'][h % 3];
   return {
     dayKey,
-    gameKey: h % 2 === 0 ? 'bull-invaders' : 'blitz-bowl',
-    bossId: RETENTION_BOSSES[h % RETENTION_BOSSES.length],
+    gameKey,
+    bossId: gameKey === 'solana-slaughter' ? 'whale-demon' : RETENTION_BOSSES[h % RETENTION_BOSSES.length],
     modifier: RETENTION_MODS[(h >>> 8) % RETENTION_MODS.length]
   };
 }
@@ -1883,7 +1891,7 @@ async function validateInvadersRunBody(body, modeRequired) {
     return { error: 'Invalid run payload', status: 400 };
   }
   // Same physics bounds as Ranked
-  if (!physicallyPossibleRun(run) || (game === 'blitz-bowl' && (run.elapsedMs > 900000 || run.score > 250000 || run.kills > 500 || run.bossesDefeated > 30))) return { error: 'Score failed physics sanity bounds', status: 422 };
+  if (!physicallyPossibleRun(run) || !gameSpecificRunPossible(game, run)) return { error: 'Score failed physics sanity bounds', status: 422 };
   const challengeId = String(body.challengeId || '');
   const canonical = ['abulls-v7.0.1', mode, run.game, run.score, run.elapsedMs, run.kills, run.bossesDefeated, run.nonce, challengeId].join('|');
   const expectedHash = await sha256Hex(canonical);
