@@ -1,13 +1,13 @@
 /**
- * A Bulls App API Worker v5.6.0
+ * A Bulls App API Worker v5.7.0
  * Secrets: HELIUS_API_KEY, GOOGLE_CLIENT_ID, AUTH_SESSION_SECRET
- * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COMMERCE_ENABLED,
+ * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COMMERCE_ENABLED, COINGECKO_API_KEY (optional),
  *       KIMJI_STAKING_AUTHORITY (optional)
  * Optional bindings: RATE_LIMITER (Cloudflare Rate Limiting),
  *                    ANALYTICS_CACHE (Cloudflare KV)
  */
-const VERSION = '5.6.0';
-const COMPETITIVE_GAMES = new Set(['bull-invaders', 'blitz-bowl', 'solana-slaughter']);
+const VERSION = '5.7.0';
+const COMPETITIVE_GAMES = new Set(['bull-invaders']);
 const DEFAULT_GOOGLE_PLAY_PACKAGE = 'com.abullsapp.app';
 const DEFAULT_ANSEM_MINT = '9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump';
 const BULL_PEN_COLLECTION = 'C5gHBKXwA8jduXNk3HyAVLnLBN6PEM8fTqkNNh5uyyjJ';
@@ -44,12 +44,7 @@ const BULLION_PACKS = Object.freeze({
 });
 const BULL_STORE_ITEMS = Object.freeze({
   ship_skin_surge: Object.freeze({ name:'Surge Ship Finish',price:1800,type:'cosmetic',description:'Visual ship finish only; no stat change.' }),
-  ship_skin_blackout: Object.freeze({ name:'Blackout Ship Finish',price:2400,type:'cosmetic',description:'Visual ship finish only; no stat change.' }),
-  blitz_uniform_afterglow: Object.freeze({ name:'Afterglow Uniform',price:1400,type:'cosmetic',description:'Blitz Bowl uniform colors only.' }),
-  blitz_td_particles: Object.freeze({ name:'Validator Confetti',price:1200,type:'cosmetic',description:'Touchdown particles only.' }),
-  profile_blitz_champ: Object.freeze({ name:'Blitz League Profile Plate',price:900,type:'status',description:'Profile presentation only.' }),
-  slaughter_weapon_neon: Object.freeze({ name:'Slot Zero Neon Finish',price:1600,type:'cosmetic',description:'Solana Slaughter weapon color finish only; no combat change.' }),
-  profile_shardrunner: Object.freeze({ name:'Shardrunner Profile Plate',price:900,type:'status',description:'Profile presentation only.' })
+  ship_skin_blackout: Object.freeze({ name:'Blackout Ship Finish',price:2400,type:'cosmetic',description:'Visual ship finish only; no stat change.' })
 });
 
 export default {
@@ -82,6 +77,7 @@ export default {
             nftAnalytics: Boolean(env.HELIUS_API_KEY),
             bullpenEcosystemAnalytics: Boolean(env.HELIUS_API_KEY),
             market: true,
+            ansemLaunchpadAnalytics: true,
             walletAnalytics: Boolean(env.HELIUS_API_KEY),
             ansemOnchain: Boolean(env.HELIUS_API_KEY),
             lifeReflection: Boolean(env.HELIUS_API_KEY && env.AI),
@@ -126,6 +122,7 @@ export default {
 
       if (url.pathname === '/api/ansem/market' && request.method === 'GET') return market(env, cors);
       if (url.pathname === '/api/ansem/onchain' && request.method === 'GET') return ansemOnchain(env, cors);
+      if (url.pathname === '/api/ansem/launchpad' && request.method === 'GET') return ansemLaunchpad(env, cors);
       if (url.pathname === '/api/wallet/overview' && request.method === 'POST') return walletOverview(request, env, cors);
       if (url.pathname === '/api/wallet/activity' && request.method === 'POST') return walletActivity(request, env, cors);
       if (url.pathname === '/api/life/reflect' && request.method === 'POST') return lifeReflect(request, env, cors);
@@ -145,7 +142,7 @@ function isPublicApiRoute(pathname, method) {
   if (pathname === '/api/health') return verb === null || verb === 'GET';
   if (pathname === '/api/nft/profile' || pathname === '/api/nft/collection-traits' || pathname === '/api/nft/collection-stats' || pathname === '/api/nft/ecosystem-stats' || pathname === '/api/nft/image') return verb === null || verb === 'GET';
   if (pathname === '/api/leaderboard/top') return verb === null || verb === 'GET';
-  if (pathname === '/api/ansem/market' || pathname === '/api/ansem/onchain') return verb === null || verb === 'GET';
+  if (pathname === '/api/ansem/market' || pathname === '/api/ansem/onchain' || pathname === '/api/ansem/launchpad') return verb === null || verb === 'GET';
   if (pathname === '/api/wallet/overview' || pathname === '/api/wallet/activity') return verb === null || verb === 'POST';
   if (pathname === '/api/life/reflect') return verb === null || verb === 'POST';
   return false;
@@ -265,8 +262,7 @@ function physicallyPossibleRun(run) {
   return run.score <= seconds * 8500 + 250000 && run.kills <= seconds * 85 + 150 && run.bossesDefeated <= 19;
 }
 function gameSpecificRunPossible(game, run) {
-  if (game === 'blitz-bowl') return run.elapsedMs <= 900000 && run.score <= 250000 && run.kills <= 500 && run.bossesDefeated <= 30;
-  if (game === 'solana-slaughter') return run.elapsedMs <= 900000 && run.score <= 500000 && run.kills <= 300 && run.bossesDefeated <= 1;
+  void game;
   return true;
 }
 async function leaderboardChallenge(request, env, cors) {
@@ -728,6 +724,117 @@ async function market(env, cors) {
   };
   await cachePut(env, cacheKey, data, 15_000);
   return json({ ok: true, data, updatedAt: new Date().toISOString(), source: ['DexScreener'] }, 200, cors, 'public, max-age=10');
+}
+
+function finiteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+function median(values) {
+  const sorted = values.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return 0;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+function sampledSeries(values, target = 48) {
+  const clean = (Array.isArray(values) ? values : []).map(Number).filter(value => Number.isFinite(value) && value >= 0);
+  if (clean.length <= target) return clean;
+  return Array.from({ length: target }, (_, index) => clean[Math.min(clean.length - 1, Math.round(index * (clean.length - 1) / (target - 1)))]);
+}
+function launchpadChange(row, range) {
+  const key = range === '1h' ? 'price_change_percentage_1h_in_currency'
+    : range === '7d' ? 'price_change_percentage_7d_in_currency'
+      : 'price_change_percentage_24h_in_currency';
+  return finiteNumber(row?.[key], 0);
+}
+
+async function ansemLaunchpad(env, cors) {
+  const freshKey = 'ansem:launchpad:coingecko:v1';
+  const staleKey = 'ansem:launchpad:coingecko:stale:v1';
+  const fresh = await cacheGet(env, freshKey);
+  if (fresh) return json({ ok: true, data: fresh, cached: true, updatedAt: fresh.updatedAt, source: fresh.sources }, 200, cors, 'public, max-age=30');
+
+  try {
+    const endpoint = new URL('https://api.coingecko.com/api/v3/coins/markets');
+    endpoint.search = new URLSearchParams({
+      vs_currency: 'usd', category: 'ansem-io-ecosystem', order: 'market_cap_desc',
+      per_page: '100', page: '1', sparkline: 'true', price_change_percentage: '1h,24h,7d'
+    }).toString();
+    const headers = { Accept: 'application/json' };
+    if (env.COINGECKO_API_KEY) headers['x-cg-demo-api-key'] = env.COINGECKO_API_KEY;
+    const response = await fetch(endpoint, { headers, cf: { cacheTtl: 45, cacheEverything: true } });
+    if (!response.ok) throw new Error(`CoinGecko returned ${response.status}`);
+    const rows = await response.json();
+    if (!Array.isArray(rows) || !rows.length) throw new Error('No tracked Ansem.io ecosystem markets were returned');
+
+    const projects = rows.slice(0, 100).map((row, index) => {
+      const price = finiteNumber(row.current_price);
+      const marketCap = finiteNumber(row.market_cap);
+      const volume24h = finiteNumber(row.total_volume);
+      const high24h = finiteNumber(row.high_24h);
+      const low24h = finiteNumber(row.low_24h);
+      const volatility24h = price > 0 && high24h >= low24h ? (high24h - low24h) / price * 100 : 0;
+      const turnover = marketCap > 0 ? volume24h / marketCap : 0;
+      const ath = finiteNumber(row.ath);
+      const athDrawdown = ath > 0 && price > 0 ? (price / ath - 1) * 100 : 0;
+      return {
+        rank: index + 1,
+        id: String(row.id || `project-${index + 1}`).slice(0, 96),
+        name: String(row.name || row.symbol || 'Unknown').slice(0, 96),
+        symbol: String(row.symbol || '').toUpperCase().slice(0, 24),
+        image: /^https:\/\//.test(String(row.image || '')) ? String(row.image) : null,
+        price, marketCap, fdv: finiteNumber(row.fully_diluted_valuation), volume24h,
+        high24h, low24h, circulatingSupply: finiteNumber(row.circulating_supply), totalSupply: finiteNumber(row.total_supply),
+        change1h: launchpadChange(row, '1h'), change24h: launchpadChange(row, '24h'), change7d: launchpadChange(row, '7d'),
+        turnover, volatility24h, ath, athDrawdown, athDate: row.ath_date || null,
+        lastUpdated: row.last_updated || null,
+        sparkline7d: sampledSeries(row.sparkline_in_7d?.price),
+        sourceUrl: `https://www.coingecko.com/en/coins/${encodeURIComponent(String(row.id || ''))}`
+      };
+    });
+    const totalMarketCap = projects.reduce((sum, project) => sum + project.marketCap, 0);
+    const totalFdv = projects.reduce((sum, project) => sum + project.fdv, 0);
+    const totalVolume24h = projects.reduce((sum, project) => sum + project.volume24h, 0);
+    const weightedChange24h = totalMarketCap > 0
+      ? projects.reduce((sum, project) => sum + project.change24h * project.marketCap, 0) / totalMarketCap : 0;
+    const breadth = Object.fromEntries(['1h', '24h', '7d'].map(range => {
+      const values = projects.map(project => project[`change${range}`]);
+      return [range, {
+        gainers: values.filter(value => value > 0).length,
+        decliners: values.filter(value => value < 0).length,
+        unchanged: values.filter(value => value === 0).length,
+        medianChange: median(values)
+      }];
+    }));
+    const projectTimestamps = projects.map(project => Date.parse(project.lastUpdated || '')).filter(Number.isFinite);
+    const latestTimestamp = projectTimestamps.length ? Math.max(...projectTimestamps) : Date.now();
+    const data = {
+      updatedAt: new Date(latestTimestamp).toISOString(),
+      coverage: 'CoinGecko Ansem.io Ecosystem category',
+      sources: ['CoinGecko', 'Ansem.io documentation'],
+      summary: {
+        trackedProjects: projects.length, totalMarketCap, totalFdv, totalVolume24h,
+        weightedChange24h, medianChange24h: breadth['24h'].medianChange,
+        aggregateTurnover: totalMarketCap > 0 ? totalVolume24h / totalMarketCap : 0,
+        topProjectShare: totalMarketCap > 0 ? projects[0].marketCap / totalMarketCap * 100 : 0,
+        highTurnoverProjects: projects.filter(project => project.turnover >= 1).length,
+        highVolatilityProjects: projects.filter(project => project.volatility24h >= 35).length
+      },
+      breadth,
+      mechanics: {
+        indexName: 'Z500', minimumAirdropPercent: 3, goldBurnAnsem: 25000, diamondBurnAnsem: 100000,
+        verifiedAt: '2026-08-19', sourceUrl: 'https://ansem.io/docs',
+        note: 'Published protocol thresholds are informational and should be verified on Ansem.io before use.'
+      },
+      projects
+    };
+    await Promise.all([cachePut(env, freshKey, data, 60_000), cachePut(env, staleKey, data, 6 * 60 * 60_000)]);
+    return json({ ok: true, data, cached: false, updatedAt: data.updatedAt, source: data.sources }, 200, cors, 'public, max-age=30');
+  } catch (error) {
+    const stale = await cacheGet(env, staleKey);
+    if (stale) return json({ ok: true, data: { ...stale, degraded: true, warning: error.message }, cached: true, stale: true, updatedAt: stale.updatedAt, source: stale.sources }, 200, cors, 'public, max-age=15');
+    throw Object.assign(new Error('Ansem.io launchpad market coverage is temporarily unavailable'), { status: 503 });
+  }
 }
 
 async function scanFundedHolders(env, mint, warnings) {
@@ -1808,11 +1915,11 @@ function utcWeekKey(d = new Date()) {
 function dailySeedConfig(dayKey) {
   let h = 0;
   for (let i = 0; i < dayKey.length; i++) h = (h * 31 + dayKey.charCodeAt(i)) >>> 0;
-  const gameKey = ['bull-invaders', 'blitz-bowl', 'solana-slaughter'][h % 3];
+  const gameKey = 'bull-invaders';
   return {
     dayKey,
     gameKey,
-    bossId: gameKey === 'solana-slaughter' ? 'whale-demon' : RETENTION_BOSSES[h % RETENTION_BOSSES.length],
+    bossId: RETENTION_BOSSES[h % RETENTION_BOSSES.length],
     modifier: RETENTION_MODS[(h >>> 8) % RETENTION_MODS.length]
   };
 }
