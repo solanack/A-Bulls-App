@@ -1,17 +1,22 @@
 /**
- * A Bulls App API Worker v5.8.0
+ * A Bulls App API Worker v5.9.0
  * Secrets: HELIUS_API_KEY, GOOGLE_CLIENT_ID, AUTH_SESSION_SECRET
  * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COMMERCE_ENABLED, COINGECKO_API_KEY (optional),
  *       KIMJI_STAKING_AUTHORITY (optional)
  * Optional bindings: RATE_LIMITER (Cloudflare Rate Limiting),
  *                    ANALYTICS_CACHE (Cloudflare KV)
  *
- * Launchpad data path (v5.8.0): Path B — PumpPortal new-token stream + $ANSEM
+ * Launchpad data path (v5.9.0): Path B — PumpPortal new-token stream + $ANSEM
  * holder-overlap detection. ansem.io/docs does not publish a stable public API
  * (JS-rendered, Cloudflare-challenged; no API reference/auth/rate-limit docs).
  */
-const VERSION = '5.8.0';
-const COMPETITIVE_GAMES = new Set(['bull-invaders']);
+const VERSION = '5.9.0';
+const COMPETITIVE_GAMES = new Set(['bull-invaders', 'bull-invaders-boss-rush']);
+const COMPETITIVE_RULES = Object.freeze({
+  'bull-invaders': Object.freeze({ mode: 'ranked', challengeModes: Object.freeze(['ranked', 'daily']), maxBosses: 19 }),
+  'bull-invaders-boss-rush': Object.freeze({ mode: 'boss-rush', challengeModes: Object.freeze(['boss-rush']), maxBosses: 1000 })
+});
+const LAUNCH_EVENT_DURATION_MS = 12 * 60_000;
 const DEFAULT_GOOGLE_PLAY_PACKAGE = 'com.abullsapp.app';
 const DEFAULT_ANSEM_MINT = '9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump';
 const BULL_PEN_COLLECTION = 'C5gHBKXwA8jduXNk3HyAVLnLBN6PEM8fTqkNNh5uyyjJ';
@@ -82,6 +87,7 @@ export default {
             bullpenEcosystemAnalytics: Boolean(env.HELIUS_API_KEY),
             market: true,
             ansemLaunchpadAnalytics: true,
+            liveLaunchEvents: Boolean(env.LEADERBOARD_DB),
             walletAnalytics: Boolean(env.HELIUS_API_KEY),
             ansemOnchain: Boolean(env.HELIUS_API_KEY),
             lifeReflection: Boolean(env.HELIUS_API_KEY && env.AI),
@@ -123,6 +129,8 @@ export default {
       if (url.pathname === '/api/crews/leave' && request.method === 'POST') return crewsLeave(request, env, cors);
       if (url.pathname === '/api/crews/status' && request.method === 'GET') return crewsStatus(request, env, cors);
       if (url.pathname === '/api/community/goal' && request.method === 'GET') return communityGoal(env, cors);
+      if (url.pathname === '/api/events/active' && request.method === 'GET') return launchEventActive(env, cors);
+      if (url.pathname === '/api/events/complete' && request.method === 'POST') return launchEventComplete(request, env, cors);
 
       if (url.pathname === '/api/ansem/market' && request.method === 'GET') return market(env, cors);
       if (url.pathname === '/api/ansem/onchain' && request.method === 'GET') return ansemOnchain(env, cors);
@@ -151,6 +159,7 @@ function isPublicApiRoute(pathname, method) {
   if (pathname === '/api/health') return verb === null || verb === 'GET';
   if (pathname === '/api/nft/profile' || pathname === '/api/nft/collection-traits' || pathname === '/api/nft/collection-stats' || pathname === '/api/nft/ecosystem-stats' || pathname === '/api/nft/image') return verb === null || verb === 'GET';
   if (pathname === '/api/leaderboard/top') return verb === null || verb === 'GET';
+  if (pathname === '/api/events/active') return verb === null || verb === 'GET';
   if (pathname === '/api/ansem/market' || pathname === '/api/ansem/onchain' || pathname === '/api/ansem/launchpad') return verb === null || verb === 'GET';
   if (pathname === '/api/wallet/overview' || pathname === '/api/wallet/activity') return verb === null || verb === 'POST';
   if (pathname === '/api/life/reflect') return verb === null || verb === 'POST';
@@ -265,10 +274,15 @@ function boundedInt(value, max = 100_000_000) {
 function cleanAlias(value) {
   return String(value || 'Bull').replace(/[^a-zA-Z0-9_. -]/g, '').trim().slice(0, 24) || 'Bull';
 }
-function physicallyPossibleRun(run) {
+function physicallyPossibleRun(game, run) {
   const seconds = run.elapsedMs / 1000;
   if (run.elapsedMs < 1000 || run.elapsedMs > 6 * 60 * 60 * 1000) return false;
-  return run.score <= seconds * 8500 + 250000 && run.kills <= seconds * 85 + 150 && run.bossesDefeated <= 19;
+  const rule = COMPETITIVE_RULES[game];
+  if (!rule || run.bossesDefeated > rule.maxBosses) return false;
+  if (game === 'bull-invaders-boss-rush') {
+    return run.score === run.bossesDefeated && run.bossesDefeated <= Math.floor(seconds / 1.5) + 1 && run.kills === 0;
+  }
+  return run.score <= seconds * 8500 + 250000 && run.kills <= seconds * 85 + 150;
 }
 function gameSpecificRunPossible(game, run) {
   void game;
@@ -282,7 +296,8 @@ async function leaderboardChallenge(request, env, cors) {
   const body = await request.json().catch(() => ({}));
   const game = String(body.game || 'bull-invaders');
   const mode = String(body.mode || '');
-  if (!COMPETITIVE_GAMES.has(game) || !['ranked', 'daily'].includes(mode)) {
+  const rule = COMPETITIVE_RULES[game];
+  if (!COMPETITIVE_GAMES.has(game) || !rule || !rule.challengeModes.includes(mode)) {
     return json({ ok: false, error: { message: 'A supported game and run mode are required' } }, 400, cors);
   }
   const challengeId = crypto.randomUUID();
@@ -309,18 +324,19 @@ async function leaderboardSubmit(request, env, cors) {
   if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Leaderboard is not configured' } }, 503, cors);
   const body = await request.json().catch(() => ({}));
   const game = String(body.game || '');
-  if (!COMPETITIVE_GAMES.has(game)) return json({ ok: false, error: { message: 'Unsupported game' } }, 400, cors);
+  const rule = COMPETITIVE_RULES[game];
+  if (!COMPETITIVE_GAMES.has(game) || !rule) return json({ ok: false, error: { message: 'Unsupported game' } }, 400, cors);
   const mode = String(body.mode || '');
-  if (mode === 'arcade' || body.purchasedItemsActive === true) {
+  if (mode === 'arcade' || mode === 'launch-event' || body.purchasedItemsActive === true) {
     return json({ ok: false, error: { message: 'Arcade runs are not eligible for the server-screened leaderboard' } }, 403, cors);
   }
-  if (mode !== 'ranked') return json({ ok: false, error: { message: 'A Ranked mode tag is required' } }, 400, cors);
+  if (mode !== rule.mode) return json({ ok: false, error: { message: `A ${rule.mode} mode tag is required` } }, 400, cors);
   const run = {
     game,
     score: boundedInt(body.score),
     elapsedMs: boundedInt(body.elapsedMs, 6 * 60 * 60 * 1000),
     kills: boundedInt(body.kills, 1_000_000),
-    bossesDefeated: boundedInt(body.bossesDefeated, 19),
+    bossesDefeated: boundedInt(body.bossesDefeated, rule.maxBosses),
     nonce: String(body.nonce || '')
   };
   if (Object.values(run).some(value => value === null) || !/^[a-zA-Z0-9-]{8,80}$/.test(run.nonce)) return json({ ok: false, error: { message: 'Invalid run payload' } }, 400, cors);
@@ -328,7 +344,7 @@ async function leaderboardSubmit(request, env, cors) {
   const canonical = ['abulls-v7.0.1', mode, run.game, run.score, run.elapsedMs, run.kills, run.bossesDefeated, run.nonce, challengeId].join('|');
   const expectedHash = await sha256Hex(canonical);
   if (!/^[a-f0-9]{64}$/.test(String(body.replayHash || '')) || expectedHash !== body.replayHash) return json({ ok: false, error: { message: 'Replay hash validation failed' } }, 400, cors);
-  if (!physicallyPossibleRun(run) || !gameSpecificRunPossible(game, run)) return json({ ok: false, error: { message: 'Score failed physics sanity bounds' } }, 422, cors);
+  if (!physicallyPossibleRun(game, run) || !gameSpecificRunPossible(game, run)) return json({ ok: false, error: { message: 'Score failed physics sanity bounds' } }, 422, cors);
   let verified;
   try { verified = await verifyRunChallenge(request, body, env, game, mode); }
   catch (error) { return json({ ok: false, error: { message: error.message } }, Number(error.status || 401), cors); }
@@ -844,7 +860,24 @@ async function ensureAnsemLaunchTables(env) {
       confidence TEXT,
       source TEXT
     )`),
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_ansem_launches_detected ON ansem_launches(detected_at DESC)`)
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_ansem_launches_detected ON ansem_launches(detected_at DESC)`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS launch_events (
+      event_id TEXT PRIMARY KEY,
+      launch_mint TEXT NOT NULL UNIQUE,
+      starts_at TEXT NOT NULL,
+      ends_at TEXT NOT NULL,
+      reward_type TEXT NOT NULL,
+      reward_id TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_launch_events_window ON launch_events(ends_at DESC, starts_at DESC)`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS launch_event_claims (
+      event_id TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      reward_id TEXT NOT NULL,
+      claimed_at TEXT NOT NULL,
+      PRIMARY KEY (event_id, account_id)
+    )`)
   ]).catch(() => {});
   return db;
 }
@@ -877,6 +910,105 @@ async function upsertLaunch(env, row) {
       record.overlap_percent, record.holder_supply_percent, record.recipient_count,
       record.signals, record.confidence, record.source)
     .run().catch(() => {});
+  await openLaunchEvent(env, { ...record, signals: row.signals || [] }).catch(() => {});
+}
+
+function launchSignals(value) {
+  if (Array.isArray(value)) return value.map(String);
+  try { return JSON.parse(String(value || '[]')).map(String); } catch (_) { return []; }
+}
+function isConfirmedLaunchEvent(row) {
+  const signals = launchSignals(row?.signals);
+  return row?.confidence === 'high' && (signals.includes('holder-overlap') || signals.includes('holder-supply-airdrop'));
+}
+function launchEventBossIndex(mint) {
+  return [...String(mint || '')].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 19;
+}
+async function openLaunchEvent(env, row) {
+  if (!isConfirmedLaunchEvent(row)) return null;
+  const db = await ensureAnsemLaunchTables(env);
+  if (!db) return null;
+  const mint = String(row.mint || '');
+  if (!validAddress(mint)) return null;
+  const startsAt = new Date().toISOString();
+  const endsAt = new Date(Date.parse(startsAt) + LAUNCH_EVENT_DURATION_MS).toISOString();
+  const eventId = `launch-${mint}`;
+  const rewardId = `signal-finish-${mint.slice(0, 12).toLowerCase()}`;
+  const result = await db.prepare(`INSERT OR IGNORE INTO launch_events
+    (event_id, launch_mint, starts_at, ends_at, reward_type, reward_id, created_at)
+    VALUES (?, ?, ?, ?, 'cosmetic', ?, ?)`)
+    .bind(eventId, mint, startsAt, endsAt, rewardId, startsAt).run();
+  return { eventId, mint, startsAt, endsAt, rewardId, created: Number(result?.meta?.changes || 0) === 1 };
+}
+function launchEventView(row) {
+  if (!row) return { active: false };
+  const symbol = String(row.symbol || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 18).toUpperCase();
+  return {
+    active: true,
+    eventId: row.eventId,
+    launch: {
+      mint: row.mint,
+      name: String(row.name || 'Detected launch').slice(0, 96),
+      symbol,
+      detectedAt: row.detectedAt,
+      overlapPercent: row.overlapPercent == null ? null : Number(row.overlapPercent)
+    },
+    startsAt: row.startsAt,
+    endsAt: row.endsAt,
+    reward: { type: 'cosmetic', id: row.rewardId, label: `${symbol || 'LAUNCH'} Signal Finish` },
+    bossIndex: launchEventBossIndex(row.mint),
+    theme: { accent: '#14F195', secondary: '#9945FF' },
+    leaderboardEligible: false
+  };
+}
+async function activeLaunchEventRow(env, eventId = '') {
+  const db = await ensureAnsemLaunchTables(env);
+  if (!db) return null;
+  const now = new Date().toISOString();
+  const where = eventId ? 'e.event_id = ? AND e.starts_at <= ? AND e.ends_at > ?' : 'e.starts_at <= ? AND e.ends_at > ?';
+  const statement = db.prepare(`SELECT e.event_id AS eventId, e.starts_at AS startsAt, e.ends_at AS endsAt,
+      e.reward_id AS rewardId, l.mint, l.name, l.symbol, l.detected_at AS detectedAt,
+      l.overlap_percent AS overlapPercent
+    FROM launch_events e JOIN ansem_launches l ON l.mint = e.launch_mint
+    WHERE ${where} ORDER BY e.starts_at DESC LIMIT 1`);
+  return eventId ? statement.bind(eventId, now, now).first() : statement.bind(now, now).first();
+}
+async function launchEventActive(env, cors) {
+  if (!env.LEADERBOARD_DB) return json({ ok: true, data: { active: false } }, 200, cors, 'public, max-age=5');
+  const row = await activeLaunchEventRow(env).catch(() => null);
+  return json({ ok: true, data: launchEventView(row) }, 200, cors, 'public, max-age=5');
+}
+async function launchEventComplete(request, env, cors) {
+  if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) {
+    return json({ ok: false, error: { message: 'Live event rewards are not configured' } }, 503, cors);
+  }
+  let account;
+  try { account = await retentionAccount(request, env); }
+  catch (error) { return json({ ok: false, error: { message: error.message } }, Number(error.status || 401), cors); }
+  const body = await request.json().catch(() => ({}));
+  const eventId = String(body.eventId || '');
+  const elapsedMs = boundedInt(body.elapsedMs, 20 * 60_000);
+  const bossesDefeated = boundedInt(body.bossesDefeated, 10);
+  if (!/^launch-[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(eventId) || body.won !== true || elapsedMs == null || elapsedMs < 1000 || bossesDefeated == null || bossesDefeated < 1) {
+    return json({ ok: false, error: { message: 'A completed active bonus round is required' } }, 400, cors);
+  }
+  const event = await activeLaunchEventRow(env, eventId);
+  if (!event) return json({ ok: false, error: { message: 'This live launch event has ended' } }, 410, cors);
+  const db = await ensureRetention(env);
+  const claimedAt = new Date().toISOString();
+  const results = await db.batch([
+    db.prepare(`INSERT OR IGNORE INTO launch_event_claims (event_id, account_id, reward_id, claimed_at) VALUES (?, ?, ?, ?)`)
+      .bind(eventId, account.id, event.rewardId, claimedAt),
+    db.prepare(`INSERT OR IGNORE INTO cosmetic_unlocks (account_key, cosmetic_id, source, granted_at) VALUES (?, ?, ?, ?)`)
+      .bind(account.id, event.rewardId, `launch-event:${eventId}`, claimedAt)
+  ]);
+  return json({ ok: true, data: {
+    granted: true,
+    newlyGranted: Number(results?.[0]?.meta?.changes || 0) === 1,
+    reward: launchEventView(event).reward,
+    eventId,
+    leaderboardEligible: false
+  } }, 200, cors);
 }
 async function listStoredLaunches(env) {
   const db = await ensureAnsemLaunchTables(env);
@@ -1080,11 +1212,12 @@ async function ingestAnsemLaunches(env, options = {}) {
   try {
     await listStoredLaunches(env);
     const seen = new Set();
+    const pendingDetections = [];
     const onToken = token => {
       const mint = token?.mint || token?.token || token?.address;
       if (!mint || seen.has(mint)) return;
       seen.add(mint);
-      detectToken(env, token).catch(() => {});
+      pendingDetections.push(detectToken(env, token).catch(() => null));
     };
     try {
       await listenPumpPortal(onToken, options.burstMs || 8_000);
@@ -1094,6 +1227,10 @@ async function ingestAnsemLaunches(env, options = {}) {
       pumpPortalState.reconnects += 1;
     }
     await pollPumpRest(onToken);
+    // The event window must be committed before this scheduled ingestion is
+    // considered complete. Detached detection promises could otherwise be
+    // cancelled with the Worker isolate and silently lose a real live event.
+    await Promise.allSettled(pendingDetections);
     return { ingested: seen.size, reconnects: pumpPortalState.reconnects };
   } finally {
     pumpPortalState.ingesting = false;
@@ -2489,7 +2626,7 @@ async function validateInvadersRunBody(body, modeRequired) {
     return { error: 'Invalid run payload', status: 400 };
   }
   // Same physics bounds as Ranked
-  if (!physicallyPossibleRun(run) || !gameSpecificRunPossible(game, run)) return { error: 'Score failed physics sanity bounds', status: 422 };
+  if (!physicallyPossibleRun(game, run) || !gameSpecificRunPossible(game, run)) return { error: 'Score failed physics sanity bounds', status: 422 };
   const challengeId = String(body.challengeId || '');
   const canonical = ['abulls-v7.0.1', mode, run.game, run.score, run.elapsedMs, run.kills, run.bossesDefeated, run.nonce, challengeId].join('|');
   const expectedHash = await sha256Hex(canonical);
