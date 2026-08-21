@@ -7,7 +7,7 @@
  * bones they bind to.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import {
   emptyMesh, loft, tube, ribbon, revolve, ellipsoid, boxRound, superEllipse,
   ellipseProfile, appendMesh, computeNormals, displace, warp, transformMesh, vcount,
