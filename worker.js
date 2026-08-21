@@ -34,7 +34,6 @@ const memoryRates = new Map();
 const responseCache = new Map();
 const leaderboardReady = new WeakMap();
 const bullionReady = new WeakMap();
-const retentionReady = new WeakMap();
 let googlePlayAccessToken = { value: '', expiresAt: 0 };
 
 // This is the single authoritative Bullion catalog. The Pages client never
@@ -73,8 +72,7 @@ export default {
       const authRoute = url.pathname.startsWith('/api/auth/');
       const billingRoute = url.pathname.startsWith('/api/billing/');
       const imageRoute = url.pathname === '/api/nft/image';
-      const lifeRoute = url.pathname === '/api/life/reflect';
-      if (!await rateLimit(env, ip + ':' + url.pathname, lifeRoute ? 8 : billingRoute ? 30 : authRoute ? 20 : imageRoute ? 120 : 75, 60_000)) {
+      if (!await rateLimit(env, ip + ':' + url.pathname, billingRoute ? 30 : authRoute ? 20 : imageRoute ? 120 : 75, 60_000)) {
         return json({ ok: false, error: { message: 'Too many requests. Try again shortly.' } }, 429, cors);
       }
       if (url.pathname === '/api/health' && request.method === 'GET') {
@@ -90,7 +88,6 @@ export default {
             liveLaunchEvents: Boolean(env.LEADERBOARD_DB),
             walletAnalytics: Boolean(env.HELIUS_API_KEY),
             ansemOnchain: Boolean(env.HELIUS_API_KEY),
-            lifeReflection: Boolean(env.HELIUS_API_KEY && env.AI),
             leaderboard: Boolean(env.LEADERBOARD_DB && env.AUTH_SESSION_SECRET),
             leaderboardBound: Boolean(env.LEADERBOARD_DB),
             retention: Boolean(env.LEADERBOARD_DB && env.AUTH_SESSION_SECRET),
@@ -119,25 +116,14 @@ export default {
       if (url.pathname === '/api/leaderboard/top' && request.method === 'GET') return leaderboardTop(url, env, cors);
       if (url.pathname === '/api/leaderboard/challenge' && request.method === 'POST') return leaderboardChallenge(request, env, cors);
       if (url.pathname === '/api/leaderboard/submit' && request.method === 'POST') return leaderboardSubmit(request, env, cors);
-      if (url.pathname === '/api/daily/today' && request.method === 'GET') return dailyToday(request, env, cors);
-      if (url.pathname === '/api/weekly/today' && request.method === 'GET') return weeklyToday(env, cors);
-      if (url.pathname === '/api/daily/submit' && request.method === 'POST') return dailySubmit(request, env, cors);
-      if (url.pathname === '/api/daily/top' && request.method === 'GET') return dailyTop(url, env, cors);
-      if (url.pathname === '/api/medals' && request.method === 'GET') return medalsGet(request, env, cors);
-      if (url.pathname === '/api/crews/create' && request.method === 'POST') return crewsCreate(request, env, cors);
-      if (url.pathname === '/api/crews/join' && request.method === 'POST') return crewsJoin(request, env, cors);
-      if (url.pathname === '/api/crews/leave' && request.method === 'POST') return crewsLeave(request, env, cors);
-      if (url.pathname === '/api/crews/status' && request.method === 'GET') return crewsStatus(request, env, cors);
-      if (url.pathname === '/api/community/goal' && request.method === 'GET') return communityGoal(env, cors);
       if (url.pathname === '/api/events/active' && request.method === 'GET') return launchEventActive(env, cors);
       if (url.pathname === '/api/events/complete' && request.method === 'POST') return launchEventComplete(request, env, cors);
 
       if (url.pathname === '/api/ansem/market' && request.method === 'GET') return market(env, cors);
-      if (url.pathname === '/api/ansem/onchain' && request.method === 'GET') return ansemOnchain(env, cors);
+      if (url.pathname === '/api/ansem/onchain' && request.method === 'GET') return ansemOnchain(env, cors, ctx);
       if (url.pathname === '/api/ansem/launchpad' && request.method === 'GET') return ansemLaunchpad(env, cors, ctx);
       if (url.pathname === '/api/wallet/overview' && request.method === 'POST') return walletOverview(request, env, cors);
       if (url.pathname === '/api/wallet/activity' && request.method === 'POST') return walletActivity(request, env, cors);
-      if (url.pathname === '/api/life/reflect' && request.method === 'POST') return lifeReflect(request, env, cors);
       return json({ ok: false, error: { message: 'Route not found' } }, 404, cors);
     } catch (error) {
       return json({ ok: false, error: { message: error?.message || 'Unexpected Worker error' } }, Number(error?.status || 500), cors);
@@ -146,6 +132,9 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(ingestAnsemLaunches(env, { reason: 'cron', burstMs: 12_000 }).catch(error => {
       console.log('ansem launch ingest skipped', error?.message || error);
+    }));
+    ctx.waitUntil(refreshAnsemHolderCount(env).catch(error => {
+      console.log('ansem holder refresh skipped', error?.message || error);
     }));
   }
 };
@@ -162,7 +151,6 @@ function isPublicApiRoute(pathname, method) {
   if (pathname === '/api/events/active') return verb === null || verb === 'GET';
   if (pathname === '/api/ansem/market' || pathname === '/api/ansem/onchain' || pathname === '/api/ansem/launchpad') return verb === null || verb === 'GET';
   if (pathname === '/api/wallet/overview' || pathname === '/api/wallet/activity') return verb === null || verb === 'POST';
-  if (pathname === '/api/life/reflect') return verb === null || verb === 'POST';
   return false;
 }
 function originAllowed(request, env) {
@@ -651,75 +639,6 @@ async function walletActivity(request, env, cors) {
   return json({ ok: true, data, updatedAt: new Date().toISOString() }, 200, cors);
 }
 
-const LIFE_SYSTEM_PROMPT = `You generate Socratic reflection questions from public blockchain trading patterns.
-Rules: output only a JSON array of 6 to 8 concise questions. Every item must end with a question mark.
-Ask; never diagnose, assert motives, or claim why a person acted. Never infer anxiety, addiction, panic,
-financial stress, mental health, income, relationships, or personal circumstances. Do not give financial advice.
-Use conditional, observational language such as "What, if anything..." and "How did you decide...".
-Treat transfers as ambiguous: they may not be trades. Do not identify the wallet owner.`;
-
-function safeLifeQuestions(analytics) {
-  const trading = analytics.trading || {};
-  const questions = [
-    `What, if anything, do you notice about being most active around ${trading.busiestHour == null ? 'different times' : `${String(trading.busiestHour).padStart(2, '0')}:00 UTC` }?`,
-    `How did you decide which of the ${trading.uniqueMints || 0} visible assets were worth revisiting?`,
-    `When activity clustered on ${trading.busiestWeekday || 'particular days'}, what information were you using at the time?`,
-    `What criteria helped you distinguish a planned trade from a quick reaction?`,
-    `Looking across ${trading.activeDays || 0} active days, which decisions would you want to understand more clearly?`,
-    `What would you record before a future trade so you could evaluate the decision later without relying on its outcome?`
-  ];
-  return questions;
-}
-function sanitizeLifeQuestions(value, fallback) {
-  const banned = /\b(anxious|anxiety|addict|addiction|panic|depress|manic|trauma|financial stress|you are|you were|you felt|because you)\b/i;
-  const source = Array.isArray(value) ? value : [];
-  const safe = source.map(item => String(item || '').trim()).filter(item =>
-    item.endsWith('?') && item.length >= 18 && item.length <= 260 && !banned.test(item)
-  ).slice(0, 8);
-  return safe.length >= 6 ? safe : fallback;
-}
-async function lifeReflect(request, env, cors) {
-  const body = await request.json().catch(() => ({}));
-  const address = String(body.address || '').trim();
-  if (!validAddress(address)) return json({ ok: false, error: { message: 'Invalid Solana address' } }, 400, cors);
-  requireHelius(env);
-  const transactions = [];
-  let before = null, hasMore = true, pagesFetched = 0;
-  for (let page = 0; page < 50 && hasMore; page++) {
-    const payload = await heliusWallet(env, `/v1/wallet/${encodeURIComponent(address)}/history`, { limit: 100, before, tokenAccounts: 'balanceChanged' });
-    const list = Array.isArray(payload.data) ? payload.data : [];
-    transactions.push(...list); pagesFetched++;
-    hasMore = payload.pagination?.hasMore === true;
-    before = payload.pagination?.nextCursor || null;
-    if (!list.length || !before) break;
-  }
-  const analytics = activityAnalytics(transactions, env.ANSEM_MINT || DEFAULT_ANSEM_MINT);
-  const fallback = safeLifeQuestions(analytics);
-  let generated = fallback;
-  if (env.AI?.run) {
-    const compact = {
-      transactions: transactions.length, pagesFetched, historyComplete: !hasMore,
-      trading: analytics.trading, flow: analytics.flow,
-      dailyBuckets: analytics.dailyBuckets.slice(-90),
-      topFlows: analytics.topFlows.slice(0, 12).map(({ symbol, in: incoming, out, net }) => ({ symbol, incoming, out, net })),
-      recent: analytics.recent.slice(0, 24).map(({ blockTime, type, summary }) => ({ blockTime, type, summary }))
-    };
-    const result = await env.AI.run(env.LIFE_AI_MODEL || '@cf/meta/llama-3.1-8b-instruct', {
-      messages: [{ role: 'system', content: LIFE_SYSTEM_PROMPT }, { role: 'user', content: JSON.stringify(compact) }],
-      temperature: .45, max_tokens: 900
-    });
-    const raw = String(result?.response || result || '');
-    let parsed = [];
-    try { parsed = JSON.parse(raw.match(/\[[\s\S]*\]/)?.[0] || '[]'); } catch (_) {}
-    generated = sanitizeLifeQuestions(parsed, fallback);
-  }
-  return json({ ok: true, data: {
-    questions: generated, signaturesAnalyzed: transactions.length, pagesFetched,
-    historyComplete: !hasMore, publicDataOnly: true, persisted: false,
-    disclaimer: 'Reflection and entertainment only; not financial or psychological advice.'
-  } }, 200, cors);
-}
-
 async function market(env, cors) {
   const mint = env.ANSEM_MINT || DEFAULT_ANSEM_MINT;
   const cacheKey = 'market:' + mint;
@@ -994,7 +913,7 @@ async function launchEventComplete(request, env, cors) {
   }
   const event = await activeLaunchEventRow(env, eventId);
   if (!event) return json({ ok: false, error: { message: 'This live launch event has ended' } }, 410, cors);
-  const db = await ensureRetention(env);
+  const db = await ensureLeaderboard(env);
   const claimedAt = new Date().toISOString();
   const results = await db.batch([
     db.prepare(`INSERT OR IGNORE INTO launch_event_claims (event_id, account_id, reward_id, claimed_at) VALUES (?, ?, ?, ?)`)
@@ -1494,6 +1413,22 @@ async function scanFundedHolders(env, mint, warnings) {
   };
 }
 
+const HOLDER_CACHE_TTL_MS = 30 * 60_000;
+const HOLDER_STALE_TTL_MS = 7 * 24 * 60 * 60_000;
+async function refreshAnsemHolderCount(env) {
+  requireHelius(env);
+  const mint = env.ANSEM_MINT || DEFAULT_ANSEM_MINT;
+  const warnings = [];
+  const result = await scanFundedHolders(env, mint, warnings);
+  if (!Number.isFinite(Number(result?.holderCount)) || Number(result.holderCount) < 1) throw new Error('Holder refresh returned no funded owners');
+  const value = { ...result, method: 'Helius DAS getTokenAccounts', refreshedAt: new Date().toISOString(), warnings };
+  await Promise.all([
+    cachePut(env, `ansem:holders:${mint}`, value, HOLDER_CACHE_TTL_MS),
+    cachePut(env, `ansem:holders:${mint}:last-success`, value, HOLDER_STALE_TTL_MS)
+  ]);
+  return value;
+}
+
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 function encodeBase58(bytes) {
   if (!bytes?.length) return '';
@@ -1517,60 +1452,29 @@ function littleEndianU64(bytes, offset = 0) {
   for (let index = 7; index >= 0; index--) value = value * 256n + BigInt(bytes[offset + index] || 0);
   return value;
 }
-async function scanProgramHolders(env, programId, mint) {
-  const accounts = await rpc(env, 'getProgramAccounts', [programId, {
-    commitment: 'confirmed',
-    encoding: 'base64',
-    filters: [{ memcmp: { offset: 0, bytes: mint } }],
-    dataSlice: { offset: 32, length: 40 }
-  }]);
-  const owners = new Set();
-  let fundedTokenAccounts = 0;
-  for (const item of Array.isArray(accounts) ? accounts : []) {
-    const encoded = Array.isArray(item?.account?.data) ? item.account.data[0] : item?.account?.data;
-    if (typeof encoded !== 'string') continue;
-    const bytes = Uint8Array.from(atob(encoded), character => character.charCodeAt(0));
-    if (bytes.length < 40 || littleEndianU64(bytes, 32) <= 0n) continue;
-    const owner = encodeBase58(bytes.slice(0, 32));
-    fundedTokenAccounts++;
-    if (validAddress(owner)) owners.add(owner);
-  }
-  return { holderCount: owners.size, fundedTokenAccounts, pagesScanned: 1, complete: true, method: 'Solana getProgramAccounts' };
-}
 
-async function ansemOnchain(env, cors) {
+async function ansemOnchain(env, cors, ctx) {
   const mint = env.ANSEM_MINT || DEFAULT_ANSEM_MINT;
   const cacheKey = 'ansem:onchain:' + mint;
   const staleKey = cacheKey + ':stale';
   const cached = await cacheGet(env, cacheKey);
-  if (cached) return json({ ok: true, data: cached, cached: true, updatedAt: new Date().toISOString(), source: ['Helius DAS', 'Solana RPC'] }, 200, cors, 'public, max-age=10');
+  if (cached) {
+    ctx?.waitUntil?.(refreshAnsemHolderCount(env).catch(() => null));
+    return json({ ok: true, data: cached, cached: true, updatedAt: new Date().toISOString(), source: ['cached holder snapshot', 'Solana RPC'] }, 200, cors, 'public, max-age=10');
+  }
   requireHelius(env);
 
   const warnings = [];
   try {
-  const [asset, dasHolders, supply, largest] = await Promise.all([
+  const holderKey = `ansem:holders:${mint}`;
+  const [asset, holders, supply, largest] = await Promise.all([
     settled(rpc(env, 'getAsset', { id: mint, displayOptions: { showFungible: true } }), null, warnings, 'token metadata'),
-    settled(scanFundedHolders(env, mint, warnings), { holderCount: null, fundedTokenAccounts: null, pagesScanned: 0, complete: false }, warnings, 'holder scan'),
+    cacheGet(env, holderKey).then(value => value || cacheGet(env, `${holderKey}:last-success`)),
     settled(rpc(env, 'getTokenSupply', [mint, { commitment: 'confirmed' }]), null, warnings, 'token supply'),
     settled(rpc(env, 'getTokenLargestAccounts', [mint, { commitment: 'confirmed' }]), { value: [] }, warnings, 'largest accounts')
   ]);
 
-  let holders = dasHolders;
-  if (!Number.isFinite(Number(holders?.holderCount)) || Number(holders.holderCount) <= 1 || holders?.complete !== true) {
-    const detectedProgram = validAddress(asset?.token_info?.token_program) ? asset.token_info.token_program : TOKEN_2022_PROGRAM;
-    const programCandidates = [...new Set([detectedProgram, TOKEN_2022_PROGRAM, TOKEN_PROGRAM])];
-    for (const programId of programCandidates) {
-      try {
-        const verified = await scanProgramHolders(env, programId, mint);
-        if (verified.fundedTokenAccounts > 0 || programId === programCandidates.at(-1)) {
-          if (Number(verified.holderCount) >= Number(holders?.holderCount || 0)) holders = verified;
-          break;
-        }
-      } catch (error) {
-        warnings.push(`raw holder verification (${programId.slice(0, 6)}…): ${error.message}`);
-      }
-    }
-  }
+  ctx?.waitUntil?.(refreshAnsemHolderCount(env).catch(() => null));
 
   const decimals = Number(asset?.token_info?.decimals ?? supply?.value?.decimals ?? 0);
   const rawSupply = Number(asset?.token_info?.supply ?? supply?.value?.amount ?? 0);
@@ -1588,7 +1492,8 @@ async function ansemOnchain(env, cors) {
     fundedTokenAccounts: Number.isFinite(Number(holders?.fundedTokenAccounts)) ? Number(holders.fundedTokenAccounts) : null,
     holderPagesScanned: Number(holders?.pagesScanned || 0),
     holderScanComplete: holders?.complete === true,
-    holderMethod: holders?.method || 'Helius DAS getTokenAccounts',
+    holderMethod: holders?.method || 'cached background refresh',
+    holderRefreshedAt: holders?.refreshedAt || null,
     top10Percent: share(10),
     top20Percent: share(20),
     largestAccountPercent: share(1),
@@ -2429,6 +2334,8 @@ async function theBullsBuybackStats(env) {
   const data = {
     solTwap: finiteOrNull(stats?.solBuyback),
     ansemBought: finiteOrNull(stats?.ansemBought),
+    currentUsdValue: finiteOrNull(stats?.ansemCurrentUsdValue ?? stats?.ansemValueUsd) ?? ((finiteOrNull(stats?.ansemBought) || 0) * (finiteOrNull(stats?.avgBuybackUsd) || 0)),
+    totalBuybacksToDate: finiteOrNull(stats?.totalBuybacks ?? stats?.buybackCount) ?? rows.length,
     averageBuybackUsd: finiteOrNull(stats?.avgBuybackUsd),
     treasury: validAddress(stats?.treasury) ? String(stats.treasury) : '',
     recent: rows,
@@ -2520,378 +2427,4 @@ async function nftProfile(url, env, cors) {
   };
   await cachePut(env, cacheKey, data, 45_000);
   return json({ ok: true, data }, 200, cors, 'public, max-age=15');
-}
-
-/* ===== v5.2.1 signed-session retention APIs ===== */
-const RETENTION_BOSSES = ['rugpaw','diamond-fang','candlewick','gasfee-golem','whale-song','ponzimouse','rekt-raven','slippage-slug','copium-cat','fud-hound','paperhand-phantom','moonboy-owl','dump-truck-turtle','airdrop-vulture','honeypot-wasp','gas-war-goat','snipe-serpent','bagholder-bear','exit-liquidity-eel'];
-const RETENTION_MODS = ['swift','dense','glass','meteor','steady'];
-const STREAK_MILESTONES = { 3: 'streak_badge_3', 7: 'streak_badge_7', 14: 'streak_badge_14', 30: 'streak_badge_30' };
-const SEASON_LENGTH_DAYS = 30;
-const COMMUNITY_THRESHOLD = 10000;
-
-function utcDayKey(d = new Date()) {
-  return d.toISOString().slice(0, 10);
-}
-function utcWeekKey(d = new Date()) {
-  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  const day = t.getUTCDay() || 7;
-  t.setUTCDate(t.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
-  const week = Math.ceil((((t - yearStart) / 86400000) + 1) / 7);
-  return `${t.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
-}
-function dailySeedConfig(dayKey) {
-  let h = 0;
-  for (let i = 0; i < dayKey.length; i++) h = (h * 31 + dayKey.charCodeAt(i)) >>> 0;
-  const gameKey = 'bull-invaders';
-  return {
-    dayKey,
-    gameKey,
-    bossId: RETENTION_BOSSES[h % RETENTION_BOSSES.length],
-    modifier: RETENTION_MODS[(h >>> 8) % RETENTION_MODS.length]
-  };
-}
-async function ensureRetention(env) {
-  const db = await ensureLeaderboard(env);
-  let ready = retentionReady.get(db);
-  if (!ready) {
-    // Migrations remain authoritative; this one-time isolate guard keeps local
-    // development usable without running DDL on every request.
-    ready = db.batch([
-    db.prepare(`CREATE TABLE IF NOT EXISTS daily_scores (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, day_key TEXT NOT NULL, account_key TEXT NOT NULL DEFAULT '',
-      alias TEXT NOT NULL, score INTEGER NOT NULL, elapsed_ms INTEGER NOT NULL, kills INTEGER NOT NULL DEFAULT 0,
-      bosses_defeated INTEGER NOT NULL DEFAULT 0, boss_id TEXT NOT NULL, modifier TEXT NOT NULL,
-      replay_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL,
-      UNIQUE(day_key, account_key))`),
-    db.prepare(`CREATE TABLE IF NOT EXISTS player_streaks (
-      account_key TEXT PRIMARY KEY, streak_count INTEGER NOT NULL DEFAULT 0,
-      streak_last_completed_date TEXT, updated_at TEXT NOT NULL)`),
-    db.prepare(`CREATE TABLE IF NOT EXISTS boss_medals (
-      account_key TEXT NOT NULL, boss_id TEXT NOT NULL, no_damage INTEGER NOT NULL DEFAULT 0,
-      under_time INTEGER NOT NULL DEFAULT 0, no_continue INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
-      PRIMARY KEY (account_key, boss_id))`),
-    db.prepare(`CREATE TABLE IF NOT EXISTS crews (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, join_code TEXT NOT NULL UNIQUE, created_by TEXT NOT NULL, created_at TEXT NOT NULL)`),
-    db.prepare(`CREATE TABLE IF NOT EXISTS crew_members (
-      crew_id TEXT NOT NULL, account_key TEXT NOT NULL, joined_at TEXT NOT NULL, PRIMARY KEY (crew_id, account_key))`),
-    db.prepare(`CREATE TABLE IF NOT EXISTS community_goals (
-      week_key TEXT PRIMARY KEY, metric TEXT NOT NULL DEFAULT 'bosses_defeated', progress INTEGER NOT NULL DEFAULT 0,
-      threshold INTEGER NOT NULL DEFAULT 10000, unlocked INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL)`),
-    db.prepare(`CREATE TABLE IF NOT EXISTS cosmetic_unlocks (
-      account_key TEXT NOT NULL, cosmetic_id TEXT NOT NULL, source TEXT NOT NULL, granted_at TEXT NOT NULL,
-      PRIMARY KEY (account_key, cosmetic_id))`),
-    db.prepare(`CREATE TABLE IF NOT EXISTS leaderboard_seasons_archive (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, season_id INTEGER NOT NULL, game TEXT NOT NULL, alias TEXT NOT NULL,
-      score INTEGER NOT NULL, elapsed_ms INTEGER NOT NULL, kills INTEGER NOT NULL, bosses_defeated INTEGER NOT NULL,
-      replay_hash TEXT NOT NULL, created_at TEXT NOT NULL, archived_at TEXT NOT NULL)`)
-    ]).catch(error => { retentionReady.delete(db); throw error; });
-    retentionReady.set(db, ready);
-  }
-  await ready;
-  return db;
-}
-
-async function dailyToday(request, env, cors) {
-  if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Daily Runs are not configured' } }, 503, cors);
-  const account = await retentionAccount(request, env);
-  const day = utcDayKey();
-  const cfg = dailySeedConfig(day);
-  let attempted = false;
-  try {
-    const db = await ensureRetention(env);
-    const row = await db.prepare('SELECT id FROM daily_scores WHERE day_key = ? AND account_key = ? LIMIT 1').bind(day, account.id).first();
-    attempted = Boolean(row);
-  } catch (_) {}
-  const reset = new Date(Date.now());
-  reset.setUTCDate(reset.getUTCDate() + 1); reset.setUTCHours(0, 0, 0, 0);
-  return json({ ok: true, data: { ...cfg, attempted, resetAt: reset.toISOString() } }, 200, cors);
-}
-
-async function validateInvadersRunBody(body, modeRequired) {
-  const game = String(body.game || '');
-  if (!COMPETITIVE_GAMES.has(game)) return { error: 'Unsupported game', status: 400 };
-  const mode = String(body.mode || '');
-  if (body.purchasedItemsActive === true) return { error: 'Purchased loadouts cannot submit here', status: 403 };
-  if (modeRequired && mode !== modeRequired) return { error: `Mode ${modeRequired} required`, status: 400 };
-  const run = {
-    game,
-    score: boundedInt(body.score),
-    elapsedMs: boundedInt(body.elapsedMs, 6 * 60 * 60 * 1000),
-    kills: boundedInt(body.kills, 1_000_000),
-    bossesDefeated: boundedInt(body.bossesDefeated, 19),
-    nonce: String(body.nonce || '')
-  };
-  if (Object.values(run).some(v => v === null) || !/^[a-zA-Z0-9-]{8,80}$/.test(run.nonce)) {
-    return { error: 'Invalid run payload', status: 400 };
-  }
-  // Same physics bounds as Ranked
-  if (!physicallyPossibleRun(game, run) || !gameSpecificRunPossible(game, run)) return { error: 'Score failed physics sanity bounds', status: 422 };
-  const challengeId = String(body.challengeId || '');
-  const canonical = ['abulls-v7.0.1', mode, run.game, run.score, run.elapsedMs, run.kills, run.bossesDefeated, run.nonce, challengeId].join('|');
-  const expectedHash = await sha256Hex(canonical);
-  if (!/^[a-f0-9]{64}$/.test(String(body.replayHash || '')) || expectedHash !== body.replayHash) {
-    return { error: 'Replay hash validation failed', status: 400 };
-  }
-  return { run, expectedHash, mode, challengeId };
-}
-
-async function dailySubmit(request, env, cors) {
-  if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Daily Runs are not configured' } }, 503, cors);
-  const body = await request.json().catch(() => ({}));
-  const checked = await validateInvadersRunBody(body, 'daily');
-  if (checked.error) return json({ ok: false, error: { message: checked.error } }, checked.status, cors);
-  const day = utcDayKey();
-  const cfg = dailySeedConfig(day);
-  if (checked.run.game !== cfg.gameKey || body.bossId !== cfg.bossId || body.modifier !== cfg.modifier) {
-    return json({ ok: false, error: { message: 'Daily configuration does not match today\'s challenge' } }, 409, cors);
-  }
-  let verified;
-  try { verified = await verifyRunChallenge(request, body, env, checked.run.game, 'daily'); }
-  catch (error) { return json({ ok: false, error: { message: error.message } }, Number(error.status || 401), cors); }
-  const accountKey = verified.account.id;
-  const alias = cleanAlias(body.alias);
-  const db = await ensureRetention(env);
-  const createdAt = new Date().toISOString();
-  const inserted = await db.batch([
-    db.prepare(`INSERT OR IGNORE INTO run_submissions
-      (challenge_id, account_id, replay_hash, game, mode, created_at) VALUES (?, ?, ?, ?, 'daily', ?)`)
-      .bind(checked.challengeId, accountKey, checked.expectedHash, checked.run.game, createdAt),
-    db.prepare(`INSERT OR IGNORE INTO daily_scores
-      (day_key, account_key, alias, score, elapsed_ms, kills, bosses_defeated, boss_id, modifier, replay_hash, created_at)
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-      WHERE NOT EXISTS (SELECT 1 FROM daily_scores WHERE day_key = ? AND account_key = ?)
-        AND EXISTS (SELECT 1 FROM run_submissions
-          WHERE challenge_id = ? AND account_id = ? AND replay_hash = ? AND created_at = ?)`)
-      .bind(day, accountKey, alias, checked.run.score, checked.run.elapsedMs, checked.run.kills, checked.run.bossesDefeated,
-        cfg.bossId, cfg.modifier, checked.expectedHash, createdAt, day, accountKey,
-        checked.challengeId, accountKey, checked.expectedHash, createdAt)
-  ]);
-  const accepted = Number(inserted?.[0]?.meta?.changes || 0) === 1 && Number(inserted?.[1]?.meta?.changes || 0) === 1;
-  if (!accepted) {
-    const prior = await db.prepare('SELECT streak_count FROM player_streaks WHERE account_key = ?').bind(accountKey).first();
-    return json({ ok: true, data: { accepted: false, dayKey: day, streak_count: Number(prior?.streak_count || 0), bossId: cfg.bossId, modifier: cfg.modifier } }, 200, cors);
-  }
-
-  // Streak update (UTC day)
-  const streakRow = await db.prepare('SELECT streak_count, streak_last_completed_date FROM player_streaks WHERE account_key = ?')
-    .bind(accountKey).first();
-  let streak = 1;
-  if (streakRow?.streak_last_completed_date === day) {
-    streak = Number(streakRow.streak_count || 1);
-  } else {
-    const yest = utcDayKey(new Date(Date.now() - 86400000));
-    if (streakRow?.streak_last_completed_date === yest) streak = Number(streakRow.streak_count || 0) + 1;
-    else streak = 1;
-    await db.prepare(`INSERT INTO player_streaks (account_key, streak_count, streak_last_completed_date, updated_at)
-      VALUES (?, ?, ?, ?) ON CONFLICT(account_key) DO UPDATE SET
-      streak_count = excluded.streak_count, streak_last_completed_date = excluded.streak_last_completed_date, updated_at = excluded.updated_at`)
-      .bind(accountKey, streak, day, createdAt).run();
-    const cosmetic = STREAK_MILESTONES[streak];
-    if (cosmetic) {
-      await db.prepare(`INSERT OR IGNORE INTO cosmetic_unlocks (account_key, cosmetic_id, source, granted_at) VALUES (?, ?, 'streak', ?)`)
-        .bind(accountKey, cosmetic, createdAt).run();
-    }
-  }
-
-  // Community counter: bosses defeated this run
-  const week = utcWeekKey();
-  await db.prepare(`INSERT INTO community_goals (week_key, metric, progress, threshold, unlocked, updated_at)
-    VALUES (?, 'bosses_defeated', ?, ?, 0, ?)
-    ON CONFLICT(week_key) DO UPDATE SET progress = progress + excluded.progress, updated_at = excluded.updated_at,
-      unlocked = CASE WHEN progress + excluded.progress >= threshold THEN 1 ELSE unlocked END`)
-    .bind(week, checked.run.bossesDefeated, COMMUNITY_THRESHOLD, createdAt).run();
-
-  const damageTaken = boundedInt(body.damageTaken, 1_000_000);
-  const continuesUsed = boundedInt(body.continuesUsed, 100);
-  const underTime = checked.run.elapsedMs <= 180000 ? 1 : 0;
-  const medal = { no_damage: damageTaken === 0 ? 1 : 0, under_time: underTime, no_continue: continuesUsed === 0 ? 1 : 0 };
-  await db.prepare(`INSERT INTO boss_medals (account_key, boss_id, no_damage, under_time, no_continue, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(account_key, boss_id) DO UPDATE SET
-      no_damage = MAX(no_damage, excluded.no_damage), under_time = MAX(under_time, excluded.under_time),
-      no_continue = MAX(no_continue, excluded.no_continue), updated_at = excluded.updated_at`)
-    .bind(accountKey, cfg.bossId, medal.no_damage, medal.under_time, medal.no_continue, createdAt).run();
-
-  return json({
-    ok: true,
-    data: {
-      accepted,
-      dayKey: day,
-      score: checked.run.score,
-      streak_count: streak,
-      bossId: cfg.bossId,
-      modifier: cfg.modifier,
-      medals: medal
-    }
-  }, 200, cors);
-}
-
-async function dailyTop(url, env, cors) {
-  if (!env.LEADERBOARD_DB) return json({ ok: false, error: { message: 'DB not configured' } }, 503, cors);
-  const day = String(url.searchParams.get('day') || utcDayKey());
-  const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') || 10)));
-  const db = await ensureRetention(env);
-  const rows = await db.prepare(`SELECT alias, score, elapsed_ms, kills, bosses_defeated, created_at as createdAt
-    FROM daily_scores WHERE day_key = ? ORDER BY score DESC, created_at ASC LIMIT ?`).bind(day, limit).all();
-  return json({ ok: true, data: { dayKey: day, scores: rows?.results || [] } }, 200, cors);
-}
-
-async function medalsGet(request, env, cors) {
-  if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Medals are not configured' } }, 503, cors);
-  const accountKey = (await retentionAccount(request, env)).id;
-  const db = await ensureRetention(env);
-  const rows = await db.prepare('SELECT boss_id, no_damage, under_time, no_continue FROM boss_medals WHERE account_key = ?')
-    .bind(accountKey).all();
-  const medals = {};
-  for (const r of (rows?.results || [])) {
-    medals[r.boss_id] = { no_damage: !!r.no_damage, under_time: !!r.under_time, no_continue: !!r.no_continue };
-  }
-  return json({ ok: true, data: { medals } }, 200, cors);
-}
-
-async function medalsSubmit(request, env, cors) {
-  if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Medals are not configured' } }, 503, cors);
-  const body = await request.json().catch(() => ({}));
-  // Require same physics-validated run; medals derived only from server-checked fields
-  const checked = await validateInvadersRunBody(body, body.mode === 'daily' ? 'daily' : 'ranked');
-  if (checked.error) return json({ ok: false, error: { message: checked.error } }, checked.status, cors);
-  const verified = await verifyRunChallenge(request, body, env, checked.run.game, checked.mode);
-  const accountKey = verified.account.id;
-  const bossId = String(body.bossId || '').slice(0, 32);
-  if (!bossId) return json({ ok: false, error: { message: 'bossId required' } }, 400, cors);
-  // Server-side medal rules from validated stats only (no client boolean trust)
-  const noDamage = body.damageTaken === 0 && Number(body.damageTaken) === 0 ? 1 : 0;
-  const underTime = checked.run.elapsedMs > 0 && checked.run.elapsedMs <= Number(body.timeThresholdMs || 180000) ? 1 : 0;
-  const noContinue = body.continuesUsed === 0 || body.continuesUsed === '0' ? 1 : 0;
-  // Only accept damage/continues if present as bounded ints (optional fields)
-  const dmg = boundedInt(body.damageTaken, 1_000_000);
-  const continues = boundedInt(body.continuesUsed, 100);
-  const noDamageFinal = dmg === 0 ? 1 : 0;
-  const noContinueFinal = continues === 0 ? 1 : 0;
-  const db = await ensureRetention(env);
-  const now = new Date().toISOString();
-  await db.prepare(`INSERT INTO boss_medals (account_key, boss_id, no_damage, under_time, no_continue, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(account_key, boss_id) DO UPDATE SET
-      no_damage = MAX(no_damage, excluded.no_damage),
-      under_time = MAX(under_time, excluded.under_time),
-      no_continue = MAX(no_continue, excluded.no_continue),
-      updated_at = excluded.updated_at`)
-    .bind(accountKey, bossId, noDamageFinal, underTime ? 1 : 0, noContinueFinal, now).run();
-  return json({ ok: true, data: { bossId, no_damage: noDamageFinal, under_time: underTime ? 1 : 0, no_continue: noContinueFinal } }, 200, cors);
-}
-
-function randomJoinCode() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let s = '';
-  for (let i = 0; i < 6; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return s;
-}
-
-async function crewsCreate(request, env, cors) {
-  if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Crews are not configured' } }, 503, cors);
-  const body = await request.json().catch(() => ({}));
-  const name = String(body.name || 'Crew').replace(/[^\w\s\-]/g, '').trim().slice(0, 24) || 'Crew';
-  const accountKey = (await retentionAccount(request, env)).id;
-  const db = await ensureRetention(env);
-  const id = crypto.randomUUID();
-  const code = randomJoinCode();
-  const now = new Date().toISOString();
-  await db.prepare('INSERT INTO crews (id, name, join_code, created_by, created_at) VALUES (?, ?, ?, ?, ?)')
-    .bind(id, name, code, accountKey, now).run();
-  await db.prepare('INSERT INTO crew_members (crew_id, account_key, joined_at) VALUES (?, ?, ?)')
-    .bind(id, accountKey, now).run();
-  return json({ ok: true, data: { id, name, joinCode: code, members: 1 } }, 200, cors);
-}
-
-async function crewsJoin(request, env, cors) {
-  if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Crews are not configured' } }, 503, cors);
-  const body = await request.json().catch(() => ({}));
-  const code = String(body.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
-  const accountKey = (await retentionAccount(request, env)).id;
-  if (!code) return json({ ok: false, error: { message: 'Join code required' } }, 400, cors);
-  const db = await ensureRetention(env);
-  const crew = await db.prepare('SELECT id, name FROM crews WHERE join_code = ?').bind(code).first();
-  if (!crew) return json({ ok: false, error: { message: 'Crew not found' } }, 404, cors);
-  const countRow = await db.prepare('SELECT COUNT(*) AS c FROM crew_members WHERE crew_id = ?').bind(crew.id).first();
-  if (Number(countRow?.c || 0) >= 8) return json({ ok: false, error: { message: 'Crew is full (max 8)' } }, 400, cors);
-  await db.prepare('INSERT OR IGNORE INTO crew_members (crew_id, account_key, joined_at) VALUES (?, ?, ?)')
-    .bind(crew.id, accountKey, new Date().toISOString()).run();
-  const members = await db.prepare('SELECT COUNT(*) AS c FROM crew_members WHERE crew_id = ?').bind(crew.id).first();
-  return json({ ok: true, data: { id: crew.id, name: crew.name, members: Number(members?.c || 0) } }, 200, cors);
-}
-
-async function crewsLeave(request, env, cors) {
-  if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Crews are not configured' } }, 503, cors);
-  const body = await request.json().catch(() => ({}));
-  const accountKey = (await retentionAccount(request, env)).id;
-  const crewId = String(body.crewId || '');
-  if (!crewId) return json({ ok: false, error: { message: 'crewId required' } }, 400, cors);
-  const db = await ensureRetention(env);
-  await db.prepare('DELETE FROM crew_members WHERE crew_id = ? AND account_key = ?').bind(crewId, accountKey).run();
-  return json({ ok: true, data: { left: true } }, 200, cors);
-}
-
-async function crewsStatus(request, env, cors) {
-  if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Crews are not configured' } }, 503, cors);
-  const accountKey = (await retentionAccount(request, env)).id;
-  const db = await ensureRetention(env);
-  const crew = await db.prepare(`SELECT c.id, c.name, c.join_code AS joinCode
-    FROM crews c JOIN crew_members cm ON cm.crew_id = c.id
-    WHERE cm.account_key = ? ORDER BY cm.joined_at DESC LIMIT 1`).bind(accountKey).first();
-  if (!crew) return json({ ok: true, data: { crew: null, members: [], weeklyTotal: 0 } }, 200, cors);
-  const since = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
-  const result = await db.prepare(`SELECT cm.account_key AS accountKey,
-      COALESCE(MAX(ds.alias), 'Bull') AS alias, COUNT(ds.id) AS contribution
-    FROM crew_members cm
-    LEFT JOIN daily_scores ds ON ds.account_key = cm.account_key AND ds.day_key >= ?
-    WHERE cm.crew_id = ? GROUP BY cm.account_key ORDER BY contribution DESC, cm.joined_at ASC`)
-    .bind(since, crew.id).all();
-  const members = (result.results || []).map(row => ({
-    alias: String(row.alias || 'Bull').slice(0, 24),
-    contribution: Number(row.contribution || 0),
-    you: row.accountKey === accountKey
-  }));
-  return json({ ok: true, data: { crew, members, weeklyTotal: members.reduce((sum, member) => sum + member.contribution, 0), since } }, 200, cors);
-}
-
-async function communityGoal(env, cors) {
-  if (!env.LEADERBOARD_DB) return json({ ok: false, error: { message: 'DB not configured' } }, 503, cors);
-  const week = utcWeekKey();
-  const db = await ensureRetention(env);
-  let row = await db.prepare('SELECT week_key as weekKey, progress, threshold, unlocked FROM community_goals WHERE week_key = ?')
-    .bind(week).first();
-  if (!row) {
-    const now = new Date().toISOString();
-    await db.prepare(`INSERT OR IGNORE INTO community_goals (week_key, metric, progress, threshold, unlocked, updated_at)
-      VALUES (?, 'bosses_defeated', 0, ?, 0, ?)`).bind(week, COMMUNITY_THRESHOLD, now).run();
-    row = { weekKey: week, progress: 0, threshold: COMMUNITY_THRESHOLD, unlocked: 0 };
-  }
-  return json({
-    ok: true,
-    data: {
-      weekKey: row.weekKey || week,
-      progress: Number(row.progress || 0),
-      threshold: Number(row.threshold || COMMUNITY_THRESHOLD),
-      unlocked: Boolean(row.unlocked)
-    }
-  }, 200, cors);
-}
-
-async function communityIncrement(request, env, cors) {
-  void request; void env;
-  return json({ ok: false, error: { message: 'Direct community increments are disabled; accepted Daily Runs update the goal once.' } }, 410, cors);
-}
-
-
-async function weeklyToday(env, cors) {
-  const day = utcDayKey();
-  // Week key stable modifier: use week number seed
-  const week = utcWeekKey();
-  let h = 0;
-  for (let i = 0; i < week.length; i++) h = (h * 31 + week.charCodeAt(i)) >>> 0;
-  const modifier = RETENTION_MODS[h % RETENTION_MODS.length];
-  const elite = (h >>> 4) % 2 === 1;
-  return json({ ok: true, data: { weekKey: week, modifier, eliteEnemies: elite, note: 'Weekly rotation — cosmetic/difficulty flag only; Ranked rules unchanged' } }, 200, cors);
 }

@@ -2,11 +2,18 @@ name = "black-bull-run-sol-api"
 main = "worker.js"
 compatibility_date = "2026-08-01"
 
+[ai]
+binding = "AI"
+
+[triggers]
+crons = ["*/2 * * * *"]
+
 [vars]
 ALLOWED_ORIGINS = "https://abullsapp.com,https://black-bull-run-sol.pages.dev,http://localhost:8788"
 ANSEM_MINT = "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump"
 GOOGLE_PLAY_PACKAGE_NAME = "com.abullsapp.app"
 COMMERCE_ENABLED = "false"
+# Path B launchpad: PumpPortal WS + $ANSEM holder overlap. No ansem.io API key.
 # Optional: set only if Kimji publishes a dedicated staking authority/delegate.
 # KIMJI_STAKING_AUTHORITY = "<PUBLIC_SOLANA_ADDRESS>"
 # Run before deploy:
