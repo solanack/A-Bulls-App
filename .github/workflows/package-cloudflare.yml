@@ -1,15 +1,15 @@
 name: Build Cloudflare upload packages
 
 on:
-  push:
-    branches:
-      - codex/add-claude-of-duty-mobile
+  pull_request:
+    types: [synchronize]
 
 permissions:
   contents: read
 
 jobs:
   package:
+    if: github.head_ref == 'codex/add-claude-of-duty-mobile'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
