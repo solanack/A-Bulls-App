@@ -9,7 +9,7 @@
  * matter here.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { EventBus } from '../core/registry.js';
 import { Rng } from '../core/rng.js';
 import { PhysicsSystem } from './index.js';
