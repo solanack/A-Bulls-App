@@ -14,7 +14,7 @@
  * player pays nothing — not even the ping-pong blit.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 
 // RawShaderMaterial: three prepends nothing, so every attribute and the
 // precision qualifier are declared by hand.
