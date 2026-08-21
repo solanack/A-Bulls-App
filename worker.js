@@ -1,23 +1,19 @@
 /**
- * A Bulls App API Worker v5.9.0
+ * A Bulls App API Worker v8.0.0
  * Secrets: HELIUS_API_KEY, GOOGLE_CLIENT_ID, AUTH_SESSION_SECRET
- * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COMMERCE_ENABLED, COINGECKO_API_KEY (optional),
+ * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COINGECKO_API_KEY (optional),
  *       KIMJI_STAKING_AUTHORITY (optional)
  * Optional bindings: RATE_LIMITER (Cloudflare Rate Limiting),
  *                    ANALYTICS_CACHE (Cloudflare KV)
  *
- * Launchpad data path (v5.9.0): Path B — PumpPortal new-token stream + $ANSEM
- * holder-overlap detection. ansem.io/docs does not publish a stable public API
- * (JS-rendered, Cloudflare-challenged; no API reference/auth/rate-limit docs).
+ * Public analytics are cache-first and refreshed in the background. Google
+ * Sign-In remains the identity system; this Worker has no payment surface.
  */
-const VERSION = '5.9.0';
-const COMPETITIVE_GAMES = new Set(['bull-invaders', 'bull-invaders-boss-rush']);
+const VERSION = '8.0.0';
+const COMPETITIVE_GAMES = new Set(['bull-invaders']);
 const COMPETITIVE_RULES = Object.freeze({
-  'bull-invaders': Object.freeze({ mode: 'ranked', challengeModes: Object.freeze(['ranked', 'daily']), maxBosses: 19 }),
-  'bull-invaders-boss-rush': Object.freeze({ mode: 'boss-rush', challengeModes: Object.freeze(['boss-rush']), maxBosses: 1000 })
+  'bull-invaders': Object.freeze({ mode: 'ranked', challengeModes: Object.freeze(['ranked']), maxBosses: 19 })
 });
-const LAUNCH_EVENT_DURATION_MS = 12 * 60_000;
-const DEFAULT_GOOGLE_PLAY_PACKAGE = 'com.abullsapp.app';
 const DEFAULT_ANSEM_MINT = '9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump';
 const BULL_PEN_COLLECTION = 'C5gHBKXwA8jduXNk3HyAVLnLBN6PEM8fTqkNNh5uyyjJ';
 const BULL_PEN_SYMBOL = 'the_bullpen';
@@ -33,109 +29,58 @@ const encoder = new TextEncoder();
 const memoryRates = new Map();
 const responseCache = new Map();
 const leaderboardReady = new WeakMap();
-const bullionReady = new WeakMap();
-let googlePlayAccessToken = { value: '', expiresAt: 0 };
-
-// This is the single authoritative Bullion catalog. The Pages client never
-// hardcodes pack values or item prices; it renders this Worker-supplied object.
-// Bullion is closed-loop game currency: no transfer, cash-out, wallet,
-// signature, crypto purchase, or blockchain transaction exists in this model.
-// Non-Play purchases use Stripe-hosted card checkout; the App never receives
-// card numbers and credits only a Stripe-signed successful webhook.
-const BULLION_PACKS = Object.freeze({
-  bullion_500: Object.freeze({ amount: 500, label: '500 Bullion', usdCents: 99 }),
-  bullion_2800: Object.freeze({ amount: 2800, label: '2,800 Bullion', usdCents: 499 }),
-  bullion_6500: Object.freeze({ amount: 6500, label: '6,500 Bullion', usdCents: 999 }),
-  bullion_15000: Object.freeze({ amount: 15000, label: '15,000 Bullion', usdCents: 1999 }),
-  bullion_40000: Object.freeze({ amount: 40000, label: '40,000 Bullion', usdCents: 4999 }),
-  bullion_90000: Object.freeze({ amount: 90000, label: '90,000 Bullion', usdCents: 9999 })
+const DATA_POLICY = Object.freeze({
+  freshMs: 20 * 60_000,
+  staleMs: 7 * 24 * 60 * 60_000,
+  walletFreshMs: 2 * 60_000,
+  upstreamTimeoutMs: 8_000,
+  retries: 2
 });
-const BULL_STORE_ITEMS = Object.freeze({
-  ship_skin_surge: Object.freeze({ name:'Surge Ship Finish',price:1800,type:'cosmetic',description:'Visual ship finish only; no stat change.' }),
-  ship_skin_blackout: Object.freeze({ name:'Blackout Ship Finish',price:2400,type:'cosmetic',description:'Visual ship finish only; no stat change.' })
+const ROUTES = Object.freeze({
+  'GET /api/health': Object.freeze({ group: 'system', access: 'public', rate: 75, handle: ({ env, cors }) => health(env, cors) }),
+  'GET /api/auth/google/config': Object.freeze({ group: 'auth', access: 'origin', rate: 20, handle: ({ env, cors }) => googleConfig(env, cors) }),
+  'POST /api/auth/google': Object.freeze({ group: 'auth', access: 'origin', rate: 20, handle: ({ request, env, cors }) => verifyGoogle(request, env, cors) }),
+  'GET /api/auth/google/session': Object.freeze({ group: 'auth', access: 'origin', rate: 20, handle: ({ request, env, cors }) => googleSession(request, env, cors) }),
+  'POST /api/auth/player-session': Object.freeze({ group: 'auth', access: 'origin', rate: 20, handle: ({ env, cors }) => playerSession(env, cors) }),
+  'GET /api/nft/collection-stats': Object.freeze({ group: 'bullpen', access: 'public', rate: 40, handle: ({ env, cors, ctx }) => nftCollectionStats(env, cors, ctx) }),
+  'GET /api/nft/ecosystem-stats': Object.freeze({ group: 'bullpen', access: 'public', rate: 40, handle: ({ env, cors, ctx }) => nftEcosystemStats(env, cors, ctx) }),
+  'GET /api/leaderboard/top': Object.freeze({ group: 'leaderboard', access: 'public', rate: 75, handle: ({ url, env, cors }) => leaderboardTop(url, env, cors) }),
+  'POST /api/leaderboard/challenge': Object.freeze({ group: 'leaderboard', access: 'origin', rate: 30, handle: ({ request, env, cors }) => leaderboardChallenge(request, env, cors) }),
+  'POST /api/leaderboard/submit': Object.freeze({ group: 'leaderboard', access: 'origin', rate: 30, handle: ({ request, env, cors }) => leaderboardSubmit(request, env, cors) }),
+  'GET /api/ansem/analytics': Object.freeze({ group: 'analytics', access: 'public', rate: 24, handle: ({ env, cors, ctx }) => ansemAnalytics(env, cors, ctx) }),
+  'POST /api/wallet/overview': Object.freeze({ group: 'wallet', access: 'public', rate: 24, handle: ({ request, env, cors }) => walletOverview(request, env, cors) }),
+  'POST /api/wallet/activity': Object.freeze({ group: 'wallet', access: 'public', rate: 24, handle: ({ request, env, cors }) => walletActivity(request, env, cors) })
 });
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const route = ROUTES[`${request.method} ${url.pathname}`];
     const publicRoute = isPublicApiRoute(url.pathname, request.method);
     const cors = corsHeaders(request, env, publicRoute);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-    // Wallet, NFT, market and leaderboard endpoints only expose public data or
+    // Wallet, Bullpen, analytics and leaderboard endpoints only expose public data or
     // anonymous, server-validated scores. They intentionally support the hosted
     // Pages site, an installed PWA/TWA, and read-only preview shells. Google
     // identity remains origin-restricted because it carries a user session.
-    if (!publicRoute && !originAllowed(request, env)) return json({ ok: false, error: { message: 'Origin not allowed' } }, 403, cors);
+    if (!route) return json({ ok: false, error: { message: 'Route not found' } }, 404, cors);
+    if (route.access !== 'public' && !originAllowed(request, env)) return json({ ok: false, error: { message: 'Origin not allowed' } }, 403, cors);
 
     try {
       const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-      const authRoute = url.pathname.startsWith('/api/auth/');
-      const billingRoute = url.pathname.startsWith('/api/billing/');
-      const imageRoute = url.pathname === '/api/nft/image';
-      if (!await rateLimit(env, ip + ':' + url.pathname, billingRoute ? 30 : authRoute ? 20 : imageRoute ? 120 : 75, 60_000)) {
+      if (!await rateLimit(env, `${route.group}:${ip}:${url.pathname}`, route.rate, 60_000)) {
         return json({ ok: false, error: { message: 'Too many requests. Try again shortly.' } }, 429, cors);
       }
-      if (url.pathname === '/api/health' && request.method === 'GET') {
-        return json({
-          ok: true,
-          version: VERSION,
-          services: {
-            googleAuth: Boolean(env.GOOGLE_CLIENT_ID && env.AUTH_SESSION_SECRET),
-            nftAnalytics: Boolean(env.HELIUS_API_KEY),
-            bullpenEcosystemAnalytics: Boolean(env.HELIUS_API_KEY),
-            market: true,
-            ansemLaunchpadAnalytics: true,
-            liveLaunchEvents: Boolean(env.LEADERBOARD_DB),
-            walletAnalytics: Boolean(env.HELIUS_API_KEY),
-            ansemOnchain: Boolean(env.HELIUS_API_KEY),
-            leaderboard: Boolean(env.LEADERBOARD_DB && env.AUTH_SESSION_SECRET),
-            leaderboardBound: Boolean(env.LEADERBOARD_DB),
-            retention: Boolean(env.LEADERBOARD_DB && env.AUTH_SESSION_SECRET),
-            bullionLedger: false,
-            googlePlayBilling: false,
-            stripeCardCheckout: false
-          }
-        }, 200, cors);
-      }
-      if (url.pathname === '/api/auth/google/config' && request.method === 'GET') return googleConfig(env, cors);
-      if (url.pathname === '/api/auth/google' && request.method === 'POST') return verifyGoogle(request, env, cors);
-      if (url.pathname === '/api/auth/google/session' && request.method === 'GET') return googleSession(request, env, cors);
-      if (url.pathname === '/api/auth/player-session' && request.method === 'POST') return playerSession(env, cors);
-      if (billingRoute && !commerceEnabled(env)) return json({ ok: false, error: { message: 'Commerce is not available in this release' } }, 404, cors);
-      if (url.pathname === '/api/billing/config' && request.method === 'GET') return billingConfig(request, env, cors);
-      if (url.pathname === '/api/billing/balance' && request.method === 'GET') return billingBalance(request, env, cors);
-      if (url.pathname === '/api/billing/verify-purchase' && request.method === 'POST') return billingVerifyPurchase(request, env, cors);
-      if (url.pathname === '/api/billing/spend' && request.method === 'POST') return billingSpend(request, env, cors);
-      if (url.pathname === '/api/billing/stripe/checkout' && request.method === 'POST') return billingStripeCheckout(request, env, cors);
-      if (url.pathname === '/api/billing/stripe/webhook' && request.method === 'POST') return billingStripeWebhook(request, env, cors);
-      if (url.pathname === '/api/nft/profile' && request.method === 'GET') return nftProfile(url, env, cors);
-      if (url.pathname === '/api/nft/collection-traits' && request.method === 'GET') return nftCollectionTraits(env, cors);
-      if (url.pathname === '/api/nft/collection-stats' && request.method === 'GET') return nftCollectionStats(env, cors);
-      if (url.pathname === '/api/nft/ecosystem-stats' && request.method === 'GET') return nftEcosystemStats(env, cors);
-      if (url.pathname === '/api/nft/image' && request.method === 'GET') return nftImage(url, env, cors);
-      if (url.pathname === '/api/leaderboard/top' && request.method === 'GET') return leaderboardTop(url, env, cors);
-      if (url.pathname === '/api/leaderboard/challenge' && request.method === 'POST') return leaderboardChallenge(request, env, cors);
-      if (url.pathname === '/api/leaderboard/submit' && request.method === 'POST') return leaderboardSubmit(request, env, cors);
-      if (url.pathname === '/api/events/active' && request.method === 'GET') return launchEventActive(env, cors);
-      if (url.pathname === '/api/events/complete' && request.method === 'POST') return launchEventComplete(request, env, cors);
-
-      if (url.pathname === '/api/ansem/market' && request.method === 'GET') return market(env, cors);
-      if (url.pathname === '/api/ansem/onchain' && request.method === 'GET') return ansemOnchain(env, cors, ctx);
-      if (url.pathname === '/api/ansem/launchpad' && request.method === 'GET') return ansemLaunchpad(env, cors, ctx);
-      if (url.pathname === '/api/wallet/overview' && request.method === 'POST') return walletOverview(request, env, cors);
-      if (url.pathname === '/api/wallet/activity' && request.method === 'POST') return walletActivity(request, env, cors);
-      return json({ ok: false, error: { message: 'Route not found' } }, 404, cors);
+      return await route.handle({ request, url, env, cors, ctx });
     } catch (error) {
       return json({ ok: false, error: { message: error?.message || 'Unexpected Worker error' } }, Number(error?.status || 500), cors);
     }
   },
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(ingestAnsemLaunches(env, { reason: 'cron', burstMs: 12_000 }).catch(error => {
-      console.log('ansem launch ingest skipped', error?.message || error);
-    }));
-    ctx.waitUntil(refreshAnsemHolderCount(env).catch(error => {
-      console.log('ansem holder refresh skipped', error?.message || error);
-    }));
+    ctx.waitUntil((async () => {
+      await refreshAnsemHolderCount(env);
+      await refreshAnsemAnalytics(env);
+    })().catch(error => console.log('ansem analytics refresh skipped', error?.message || error)));
   }
 };
 
@@ -144,14 +89,8 @@ function allowedOrigins(env) {
     .split(',').map(value => value.trim()).filter(Boolean);
 }
 function isPublicApiRoute(pathname, method) {
-  const verb = method === 'OPTIONS' ? null : method;
-  if (pathname === '/api/health') return verb === null || verb === 'GET';
-  if (pathname === '/api/nft/profile' || pathname === '/api/nft/collection-traits' || pathname === '/api/nft/collection-stats' || pathname === '/api/nft/ecosystem-stats' || pathname === '/api/nft/image') return verb === null || verb === 'GET';
-  if (pathname === '/api/leaderboard/top') return verb === null || verb === 'GET';
-  if (pathname === '/api/events/active') return verb === null || verb === 'GET';
-  if (pathname === '/api/ansem/market' || pathname === '/api/ansem/onchain' || pathname === '/api/ansem/launchpad') return verb === null || verb === 'GET';
-  if (pathname === '/api/wallet/overview' || pathname === '/api/wallet/activity') return verb === null || verb === 'POST';
-  return false;
+  if (method !== 'OPTIONS') return ROUTES[`${method} ${pathname}`]?.access === 'public';
+  return Object.entries(ROUTES).some(([key, route]) => key.endsWith(` ${pathname}`) && route.access === 'public');
 }
 function originAllowed(request, env) {
   const origin = request.headers.get('Origin');
@@ -173,6 +112,22 @@ function json(value, status = 200, extra = {}, cacheControl = 'no-store') {
     status,
     headers: { ...extra, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': cacheControl, 'X-Content-Type-Options': 'nosniff' }
   });
+}
+function health(env, cors) {
+  return json({
+    ok: true,
+    data: {
+      version: VERSION,
+      services: {
+        googleSignIn: Boolean(env.GOOGLE_CLIENT_ID && env.AUTH_SESSION_SECRET),
+        bullpenEcosystemAnalytics: Boolean(env.HELIUS_API_KEY),
+        ansemAnalytics: true,
+        walletAnalytics: Boolean(env.HELIUS_API_KEY),
+        leaderboard: Boolean(env.LEADERBOARD_DB && env.AUTH_SESSION_SECRET),
+        monetization: false
+      }
+    }
+  }, 200, cors, 'public, max-age=30');
 }
 async function rateLimit(env, key, max, windowMs) {
   if (env.RATE_LIMITER?.limit) {
@@ -213,6 +168,39 @@ async function cachePut(env, key, value, ttlMs) {
       await env.ANALYTICS_CACHE.put(key, JSON.stringify(value), { expirationTtl: Math.max(60, Math.ceil(ttlMs / 1000)) });
     } catch (_) {}
   }
+}
+
+function wait(milliseconds) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+async function fetchWithPolicy(url, options = {}, policy = {}) {
+  const timeoutMs = Math.max(1_000, Number(policy.timeoutMs || DATA_POLICY.upstreamTimeoutMs));
+  const retries = Math.max(0, Number(policy.retries ?? DATA_POLICY.retries));
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort('upstream-timeout'), timeoutMs);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      if (response.ok || (response.status < 500 && response.status !== 429) || attempt === retries) return response;
+      lastError = new Error(`Upstream HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error?.name === 'AbortError' ? new Error(`Upstream timed out after ${timeoutMs}ms`) : error;
+      if (attempt === retries) throw lastError;
+    } finally {
+      clearTimeout(timer);
+    }
+    await wait(125 * (2 ** attempt));
+  }
+  throw lastError || new Error('Upstream request failed');
+}
+
+async function storeSnapshot(env, key, value, freshMs = DATA_POLICY.freshMs) {
+  await Promise.all([
+    cachePut(env, `${key}:fresh`, value, freshMs),
+    cachePut(env, `${key}:last-success`, value, DATA_POLICY.staleMs)
+  ]);
+  return value;
 }
 
 async function sha256Hex(value) {
@@ -267,9 +255,6 @@ function physicallyPossibleRun(game, run) {
   if (run.elapsedMs < 1000 || run.elapsedMs > 6 * 60 * 60 * 1000) return false;
   const rule = COMPETITIVE_RULES[game];
   if (!rule || run.bossesDefeated > rule.maxBosses) return false;
-  if (game === 'bull-invaders-boss-rush') {
-    return run.score === run.bossesDefeated && run.bossesDefeated <= Math.floor(seconds / 1.5) + 1 && run.kills === 0;
-  }
   return run.score <= seconds * 8500 + 250000 && run.kills <= seconds * 85 + 150;
 }
 function gameSpecificRunPossible(game, run) {
@@ -279,7 +264,7 @@ function gameSpecificRunPossible(game, run) {
 async function leaderboardChallenge(request, env, cors) {
   if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Ranked play is not configured' } }, 503, cors);
   let account;
-  try { account = await retentionAccount(request, env); }
+  try { account = await authenticatedAccount(request, env); }
   catch (error) { return json({ ok: false, error: { message: error.message } }, Number(error.status || 401), cors); }
   const body = await request.json().catch(() => ({}));
   const game = String(body.game || 'bull-invaders');
@@ -298,7 +283,7 @@ async function leaderboardChallenge(request, env, cors) {
   return json({ ok: true, data: { challengeId, challengeToken, game, mode, expiresAt } }, 200, cors);
 }
 async function verifyRunChallenge(request, body, env, game, mode) {
-  const account = await retentionAccount(request, env);
+  const account = await authenticatedAccount(request, env);
   const challenge = await readSignedPayload(String(body.challengeToken || ''), env);
   if (challenge.purpose !== 'run-challenge' || !challenge.challengeId || challenge.exp < Date.now()) {
     throw Object.assign(new Error('Run challenge is missing or expired'), { status: 401 });
@@ -315,7 +300,7 @@ async function leaderboardSubmit(request, env, cors) {
   const rule = COMPETITIVE_RULES[game];
   if (!COMPETITIVE_GAMES.has(game) || !rule) return json({ ok: false, error: { message: 'Unsupported game' } }, 400, cors);
   const mode = String(body.mode || '');
-  if (mode === 'arcade' || mode === 'launch-event' || body.purchasedItemsActive === true) {
+  if (mode === 'arcade') {
     return json({ ok: false, error: { message: 'Arcade runs are not eligible for the server-screened leaderboard' } }, 403, cors);
   }
   if (mode !== rule.mode) return json({ ok: false, error: { message: `A ${rule.mode} mode tag is required` } }, 400, cors);
@@ -329,7 +314,7 @@ async function leaderboardSubmit(request, env, cors) {
   };
   if (Object.values(run).some(value => value === null) || !/^[a-zA-Z0-9-]{8,80}$/.test(run.nonce)) return json({ ok: false, error: { message: 'Invalid run payload' } }, 400, cors);
   const challengeId = String(body.challengeId || '');
-  const canonical = ['abulls-v7.0.1', mode, run.game, run.score, run.elapsedMs, run.kills, run.bossesDefeated, run.nonce, challengeId].join('|');
+  const canonical = ['abulls-v8.0.0', mode, run.game, run.score, run.elapsedMs, run.kills, run.bossesDefeated, run.nonce, challengeId].join('|');
   const expectedHash = await sha256Hex(canonical);
   if (!/^[a-f0-9]{64}$/.test(String(body.replayHash || '')) || expectedHash !== body.replayHash) return json({ ok: false, error: { message: 'Replay hash validation failed' } }, 400, cors);
   if (!physicallyPossibleRun(game, run) || !gameSpecificRunPossible(game, run)) return json({ ok: false, error: { message: 'Score failed physics sanity bounds' } }, 422, cors);
@@ -367,7 +352,7 @@ async function leaderboardTop(url, env, cors) {
 
 async function rpc(env, method, params) {
   const key = requireHelius(env);
-  const response = await fetch(`https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(key)}`, {
+  const response = await fetchWithPolicy(`https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(key)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
@@ -383,7 +368,7 @@ async function heliusWallet(env, path, params = {}) {
   Object.entries(params).forEach(([name, value]) => {
     if (value !== undefined && value !== null) url.searchParams.set(name, String(value));
   });
-  const response = await fetch(url, { headers: { Accept: 'application/json', 'X-Api-Key': key } });
+  const response = await fetchWithPolicy(url, { headers: { Accept: 'application/json', 'X-Api-Key': key } });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error?.message || payload.message || `Helius Wallet API HTTP ${response.status}`);
   return payload;
@@ -398,10 +383,11 @@ async function walletOverview(request, env, cors) {
   const address = String(body.address || '');
   if (!validAddress(address)) return json({ ok: false, error: { message: 'Invalid Solana address' } }, 400, cors);
   requireHelius(env);
-  const cacheKey = 'overview:' + address;
-  const cached = await cacheGet(env, cacheKey);
-  if (cached) return json({ ok: true, data: cached, cached: true, updatedAt: new Date().toISOString() }, 200, cors);
+  const cacheKey = 'wallet:overview:' + address;
+  const cached = await cacheGet(env, cacheKey + ':fresh');
+  if (cached) return json({ ok: true, data: cached, cached: true, updatedAt: cached.updatedAt }, 200, cors);
 
+  try {
   const warnings = [];
   const [balance, classic, token2022, wallet] = await Promise.all([
     settled(rpc(env, 'getBalance', [address, { commitment: 'confirmed' }]), { value: 0 }, warnings, 'SOL balance'),
@@ -459,10 +445,16 @@ async function walletOverview(request, env, cors) {
       reclaimableSol: emptyRentLamports / 1e9
     },
     sources: ['Helius RPC', 'Helius Wallet API'],
-    warnings
+    warnings,
+    updatedAt: new Date().toISOString()
   };
-  await cachePut(env, cacheKey, data, 10_000);
-  return json({ ok: true, data, updatedAt: new Date().toISOString() }, 200, cors);
+  await storeSnapshot(env, cacheKey, data, DATA_POLICY.walletFreshMs);
+  return json({ ok: true, data, updatedAt: data.updatedAt }, 200, cors);
+  } catch (error) {
+    const stale = await cacheGet(env, cacheKey + ':last-success');
+    if (stale) return json({ ok: true, data: stale, cached: true, stale: true, updatedAt: stale.updatedAt, warning: error.message }, 200, cors);
+    throw error;
+  }
 }
 
 function rangeSeconds(range) {
@@ -504,7 +496,7 @@ function activityAnalytics(transactions, ansemMint) {
   const activeDays = new Set();
   const weekdays = Array(7).fill(0);
   const hours = Array(24).fill(0);
-  const daily = new Map();
+  const dayCounts = new Map();
   const heat = Array(56).fill(0);
   const ansem = { received: 0, sent: 0, net: 0, volume: 0, receiveTxs: 0, sendTxs: 0 };
 
@@ -544,7 +536,7 @@ function activityAnalytics(transactions, ansemMint) {
       activeDays.add(day);
       weekdays[date.getUTCDay()]++;
       hours[date.getUTCHours()]++;
-      daily.set(day, (daily.get(day) || 0) + 1);
+      dayCounts.set(day, (dayCounts.get(day) || 0) + 1);
       heat[date.getUTCDay() * 8 + Math.min(7, Math.floor(date.getUTCHours() / 3))]++;
     }
     return {
@@ -581,7 +573,7 @@ function activityAnalytics(transactions, ansemMint) {
       busiestHour: transactions.length ? busiestHour : null
     },
     topFlows,
-    dailyBuckets: [...daily].sort(([a], [b]) => a.localeCompare(b)).map(([day, count]) => ({ day, count })),
+    dayBuckets: [...dayCounts].sort(([a], [b]) => a.localeCompare(b)).map(([day, count]) => ({ day, count })),
     heatCells: heat.map((v, index) => ({ v, label: 'activity-' + index })),
     recent
   };
@@ -594,10 +586,11 @@ async function walletActivity(request, env, cors) {
   const limit = Math.min(100, Math.max(1, Number(body.limit) || 100));
   if (!validAddress(address)) return json({ ok: false, error: { message: 'Invalid Solana address' } }, 400, cors);
   requireHelius(env);
-  const cacheKey = `activity:${address}:${range}`;
-  const cached = await cacheGet(env, cacheKey);
-  if (cached) return json({ ok: true, data: cached, cached: true, updatedAt: new Date().toISOString() }, 200, cors);
+  const cacheKey = `wallet:activity:${address}:${range}`;
+  const cached = await cacheGet(env, cacheKey + ':fresh');
+  if (cached) return json({ ok: true, data: cached, cached: true, updatedAt: cached.updatedAt }, 200, cors);
 
+  try {
   const cutoff = range === 'all' ? 0 : Math.floor(Date.now() / 1000) - rangeSeconds(range);
   const maxPages = range === '24h' ? 2 : range === '7d' ? 3 : 4;
   let before = null;
@@ -633,556 +626,54 @@ async function walletActivity(request, env, cors) {
     oldestLoadedAt: filtered.length ? Math.min(...filtered.map(tx => Number(tx.timestamp || Infinity)).filter(Number.isFinite)) : null,
     newestLoadedAt: filtered.length ? Math.max(...filtered.map(tx => Number(tx.timestamp || 0))) : null,
     ...analytics,
-    sources: ['Helius Wallet History API']
+    sources: ['Helius Wallet History API'],
+    updatedAt: new Date().toISOString()
   };
-  await cachePut(env, cacheKey, data, 15_000);
-  return json({ ok: true, data, updatedAt: new Date().toISOString() }, 200, cors);
-}
-
-async function market(env, cors) {
-  const mint = env.ANSEM_MINT || DEFAULT_ANSEM_MINT;
-  const cacheKey = 'market:' + mint;
-  const cached = await cacheGet(env, cacheKey);
-  if (cached) return json({ ok: true, data: cached, cached: true, updatedAt: new Date().toISOString(), source: ['DexScreener'] }, 200, cors, 'public, max-age=10');
-  const response = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + encodeURIComponent(mint), { headers: { Accept: 'application/json' }, cf: { cacheTtl: 15, cacheEverything: true } });
-  if (!response.ok) throw new Error('DexScreener is unavailable');
-  const payload = await response.json();
-  const pairs = Array.isArray(payload.pairs) ? payload.pairs : [];
-  const pair = pairs.sort((a, b) => Number(b.liquidity?.usd || 0) - Number(a.liquidity?.usd || 0))[0];
-  if (!pair) throw new Error('No Solana market pair found');
-  const data = {
-    priceUsd: Number(pair.priceUsd),
-    priceChange: pair.priceChange || {},
-    liquidityUsd: Number(pair.liquidity?.usd || 0),
-    volume: pair.volume || {},
-    txns: pair.txns || {},
-    marketCap: pair.marketCap == null ? null : Number(pair.marketCap),
-    fdv: pair.fdv == null ? null : Number(pair.fdv),
-    dexId: pair.dexId,
-    pairAddress: pair.pairAddress,
-    pairUrl: pair.url,
-    pairCreatedAt: pair.pairCreatedAt || null,
-    baseToken: pair.baseToken,
-    quoteToken: pair.quoteToken,
-    quoteSymbol: pair.quoteToken?.symbol || null
-  };
-  await cachePut(env, cacheKey, data, 15_000);
-  return json({ ok: true, data, updatedAt: new Date().toISOString(), source: ['DexScreener'] }, 200, cors, 'public, max-age=10');
+  await storeSnapshot(env, cacheKey, data, DATA_POLICY.walletFreshMs);
+  return json({ ok: true, data, updatedAt: data.updatedAt }, 200, cors);
+  } catch (error) {
+    const stale = await cacheGet(env, cacheKey + ':last-success');
+    if (stale) return json({ ok: true, data: stale, cached: true, stale: true, updatedAt: stale.updatedAt, warning: error.message }, 200, cors);
+    throw error;
+  }
 }
 
 function finiteNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }
-function median(values) {
-  const sorted = values.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
-  if (!sorted.length) return 0;
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-}
-function sampledSeries(values, target = 48) {
-  const clean = (Array.isArray(values) ? values : []).map(Number).filter(value => Number.isFinite(value) && value >= 0);
-  if (clean.length <= target) return clean;
-  return Array.from({ length: target }, (_, index) => clean[Math.min(clean.length - 1, Math.round(index * (clean.length - 1) / (target - 1)))]);
-}
-function launchpadChange(row, range) {
-  const key = range === '1h' ? 'price_change_percentage_1h_in_currency'
-    : range === '7d' ? 'price_change_percentage_7d_in_currency'
-      : 'price_change_percentage_24h_in_currency';
-  return finiteNumber(row?.[key], 0);
-}
 
-/* -------------------------------------------------------------------------- */
-/* Path B Ansem.io launchpad — PumpPortal + $ANSEM holder overlap             */
-/*                                                                            */
-/* Path A rejected: ansem.io/docs does not document a public API (JS-rendered */
-/* landing copy, Cloudflare challenge, no endpoint/auth/rate-limit reference).*/
-/* pump.fun has no official public API. Authoritative source is therefore:    */
-/*   1. PumpPortal wss://pumpportal.fun/api/data  subscribeNewToken           */
-/*   2. Holder-overlap vs $ANSEM DAS holder set (Helius getTokenAccounts)     */
-/*   3. DexScreener pair stats for price / 24h volume / performance           */
-/*   4. Parsed recent transactions for top wallets by realized volume         */
-/*                                                                            */
-/* Detection threshold (calibrated against Catecoin / $CATE, mint             */
-/* Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump, a z500-listed airdropped     */
-/* launch): flag when ≥18% of unique launch-distribution recipients are       */
-/* known $ANSEM holders (min 8 recipients) OR ≥2.5% of supply lands with      */
-/* known holders. Docs publish a 3% holder airdrop; 18%/2.5% is the           */
-/* operational signal after allowing for non-holder fee/program accounts.     */
-/* -------------------------------------------------------------------------- */
-
-const PUMPPORTAL_WS = 'wss://pumpportal.fun/api/data';
-const PUMP_REST_LATEST = 'https://frontend-api-v3.pump.fun/coins?offset=0&limit=40&sort=created_timestamp&order=DESC';
-const DEXSCREENER_TOKENS = 'https://api.dexscreener.com/latest/dex/tokens/';
-const OVERLAP_THRESHOLD = 0.18;
-const OVERLAP_MIN_RECIPIENTS = 8;
-const SUPPLY_AIRDROP_THRESHOLD = 0.025;
-const LAUNCHPAD_FRESH_MS = 90_000;
-const LAUNCHPAD_STALE_MS = 6 * 60 * 60_000;
-const HOLDER_SET_TTL_MS = 10 * 60_000;
-const PUMP_PROGRAMS = new Set([
-  '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',
-  '4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf',
-  'Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1',
-  '5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j',
-  '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
-  TOKEN_PROGRAM,
-  TOKEN_2022_PROGRAM,
-  '11111111111111111111111111111111',
-  'ComputeBudget111111111111111111111111111111',
-  'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
-]);
-const Z500_SEED_LAUNCHES = Object.freeze([
-  { mint: 'Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump', name: 'Catecoin', symbol: 'CATE', source: 'z500-seed', confidence: 'high', airdropped: true },
-  { mint: 'zj1jpp7QMveWHLs61vL9KMZf254KvW7j4AAmBF8ry2k', name: 'Bullshit Coin', symbol: 'BULLSHIT', source: 'z500-seed', confidence: 'high', airdropped: true },
-  { mint: 'RmtMAYVTTFv2iK9muMrXEoAnSSsZPPgRPbqZCKwNDYk', name: "BULLS'S EYE", symbol: 'EYE', source: 'z500-seed', confidence: 'high', airdropped: true },
-  { mint: '8wxkvAfEns76yBzu4MnbV7VnXWjg3iDPA9uwAQ6cpump', name: 'SolAngeles', symbol: 'SOLANGELES', source: 'z500-seed', confidence: 'high', airdropped: true },
-  { mint: '7V6Sk63y8Rr1MvcN5mYNp61wgFhy4EeQg5gUASk9pump', name: 'Hyper Bull', symbol: 'HBULL', source: 'z500-seed', confidence: 'high', airdropped: true },
-  { mint: 'HxQhDGYqyjorgogMJx7YbBHADEDxuHhLnMMmr6VYpyn', name: 'MANLET', symbol: 'MANLET', source: 'z500-seed', confidence: 'medium', airdropped: false },
-  { mint: 'CFPkPq1eYPR8GLzEo59wUbbMioX4bshaTQiSGzTSpump', name: 'The Black Table', symbol: 'MENSA', source: 'z500-seed', confidence: 'medium', airdropped: false },
-  { mint: 'Gmb2t5kLfSfVTKSqy8fzkxfHPkNBF4YcuaZYnMK4SdvS', name: 'tBULL', symbol: 'TBULL', source: 'z500-seed', confidence: 'medium', airdropped: false },
-  { mint: '3d1qHSAkQhoN7kN1C6tvpAArCkXWxwYdBng6taXCDM6u', name: 'RETURN TO MEMES', symbol: 'RTM', source: 'z500-seed', confidence: 'medium', airdropped: false }
-]);
-const memoryLaunches = new Map();
-const pumpPortalState = {
-  connected: false,
-  lastEventAt: null,
-  lastError: null,
-  reconnects: 0,
-  ingesting: false
-};
-async function fetchJson(url, options = {}, timeoutMs = 12_000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    if (!response.ok) throw new Error(`HTTP ${response.status} for ${String(url).split('?')[0]}`);
-    return await response.json();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-async function ensureAnsemLaunchTables(env) {
-  const db = env.LEADERBOARD_DB;
-  if (!db?.prepare) return null;
-  await db.batch([
-    db.prepare(`CREATE TABLE IF NOT EXISTS ansem_launches (
-      mint TEXT PRIMARY KEY,
-      name TEXT,
-      symbol TEXT,
-      creator TEXT,
-      detected_at TEXT NOT NULL,
-      overlap_percent REAL,
-      holder_supply_percent REAL,
-      recipient_count INTEGER,
-      signals TEXT,
-      confidence TEXT,
-      source TEXT
-    )`),
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_ansem_launches_detected ON ansem_launches(detected_at DESC)`),
-    db.prepare(`CREATE TABLE IF NOT EXISTS launch_events (
-      event_id TEXT PRIMARY KEY,
-      launch_mint TEXT NOT NULL UNIQUE,
-      starts_at TEXT NOT NULL,
-      ends_at TEXT NOT NULL,
-      reward_type TEXT NOT NULL,
-      reward_id TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    )`),
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_launch_events_window ON launch_events(ends_at DESC, starts_at DESC)`),
-    db.prepare(`CREATE TABLE IF NOT EXISTS launch_event_claims (
-      event_id TEXT NOT NULL,
-      account_id TEXT NOT NULL,
-      reward_id TEXT NOT NULL,
-      claimed_at TEXT NOT NULL,
-      PRIMARY KEY (event_id, account_id)
-    )`)
-  ]).catch(() => {});
-  return db;
-}
-async function upsertLaunch(env, row) {
-  const record = {
-    mint: row.mint,
-    name: String(row.name || '').slice(0, 96),
-    symbol: String(row.symbol || '').slice(0, 24),
-    creator: row.creator || null,
-    detected_at: row.detected_at || new Date().toISOString(),
-    overlap_percent: row.overlap_percent == null ? null : Number(row.overlap_percent),
-    holder_supply_percent: row.holder_supply_percent == null ? null : Number(row.holder_supply_percent),
-    recipient_count: row.recipient_count == null ? null : Number(row.recipient_count),
-    signals: JSON.stringify(row.signals || []),
-    confidence: row.confidence || 'medium',
-    source: row.source || 'overlap'
-  };
-  memoryLaunches.set(record.mint, record);
-  const db = await ensureAnsemLaunchTables(env);
-  if (!db) return;
-  await db.prepare(`INSERT INTO ansem_launches
-    (mint, name, symbol, creator, detected_at, overlap_percent, holder_supply_percent, recipient_count, signals, confidence, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(mint) DO UPDATE SET
-      name=excluded.name, symbol=excluded.symbol, creator=excluded.creator,
-      overlap_percent=excluded.overlap_percent, holder_supply_percent=excluded.holder_supply_percent,
-      recipient_count=excluded.recipient_count, signals=excluded.signals,
-      confidence=excluded.confidence, source=excluded.source`)
-    .bind(record.mint, record.name, record.symbol, record.creator, record.detected_at,
-      record.overlap_percent, record.holder_supply_percent, record.recipient_count,
-      record.signals, record.confidence, record.source)
-    .run().catch(() => {});
-  await openLaunchEvent(env, { ...record, signals: row.signals || [] }).catch(() => {});
-}
-
-function launchSignals(value) {
-  if (Array.isArray(value)) return value.map(String);
-  try { return JSON.parse(String(value || '[]')).map(String); } catch (_) { return []; }
-}
-function isConfirmedLaunchEvent(row) {
-  const signals = launchSignals(row?.signals);
-  return row?.confidence === 'high' && (signals.includes('holder-overlap') || signals.includes('holder-supply-airdrop'));
-}
-function launchEventBossIndex(mint) {
-  return [...String(mint || '')].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 19;
-}
-async function openLaunchEvent(env, row) {
-  if (!isConfirmedLaunchEvent(row)) return null;
-  const db = await ensureAnsemLaunchTables(env);
-  if (!db) return null;
-  const mint = String(row.mint || '');
-  if (!validAddress(mint)) return null;
-  const startsAt = new Date().toISOString();
-  const endsAt = new Date(Date.parse(startsAt) + LAUNCH_EVENT_DURATION_MS).toISOString();
-  const eventId = `launch-${mint}`;
-  const rewardId = `signal-finish-${mint.slice(0, 12).toLowerCase()}`;
-  const result = await db.prepare(`INSERT OR IGNORE INTO launch_events
-    (event_id, launch_mint, starts_at, ends_at, reward_type, reward_id, created_at)
-    VALUES (?, ?, ?, ?, 'cosmetic', ?, ?)`)
-    .bind(eventId, mint, startsAt, endsAt, rewardId, startsAt).run();
-  return { eventId, mint, startsAt, endsAt, rewardId, created: Number(result?.meta?.changes || 0) === 1 };
-}
-function launchEventView(row) {
-  if (!row) return { active: false };
-  const symbol = String(row.symbol || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 18).toUpperCase();
+async function fetchAnsemMarket(env) {
+  const mint = env.ANSEM_MINT || DEFAULT_ANSEM_MINT;
+  const response = await fetchWithPolicy(
+    'https://api.dexscreener.com/latest/dex/tokens/' + encodeURIComponent(mint),
+    { headers: { Accept: 'application/json' }, cf: { cacheTtl: 60, cacheEverything: true } }
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`DexScreener HTTP ${response.status}`);
+  const pairs = (Array.isArray(payload.pairs) ? payload.pairs : [])
+    .filter(pair => !pair?.chainId || pair.chainId === 'solana')
+    .sort((left, right) => finiteNumber(right?.liquidity?.usd) - finiteNumber(left?.liquidity?.usd));
+  const pair = pairs[0];
+  if (!pair) throw new Error('No Solana $ANSEM pair is available');
+  const h24Tx = pair.txns?.h24 || {};
   return {
-    active: true,
-    eventId: row.eventId,
-    launch: {
-      mint: row.mint,
-      name: String(row.name || 'Detected launch').slice(0, 96),
-      symbol,
-      detectedAt: row.detectedAt,
-      overlapPercent: row.overlapPercent == null ? null : Number(row.overlapPercent)
-    },
-    startsAt: row.startsAt,
-    endsAt: row.endsAt,
-    reward: { type: 'cosmetic', id: row.rewardId, label: `${symbol || 'LAUNCH'} Signal Finish` },
-    bossIndex: launchEventBossIndex(row.mint),
-    theme: { accent: '#14F195', secondary: '#9945FF' },
-    leaderboardEligible: false
+    priceUsd: finiteNumber(pair.priceUsd),
+    priceChange24h: finiteNumber(pair.priceChange?.h24),
+    liquidityUsd: finiteNumber(pair.liquidity?.usd),
+    volume24h: finiteNumber(pair.volume?.h24),
+    volume6h: finiteNumber(pair.volume?.h6),
+    volume1h: finiteNumber(pair.volume?.h1),
+    txCount24h: finiteNumber(h24Tx.buys) + finiteNumber(h24Tx.sells),
+    txCount6h: finiteNumber(pair.txns?.h6?.buys) + finiteNumber(pair.txns?.h6?.sells),
+    txCount1h: finiteNumber(pair.txns?.h1?.buys) + finiteNumber(pair.txns?.h1?.sells),
+    marketCap: pair.marketCap == null ? null : finiteNumber(pair.marketCap),
+    fdv: pair.fdv == null ? null : finiteNumber(pair.fdv),
+    dexId: pair.dexId || null,
+    pairAddress: pair.pairAddress || null,
+    pairUrl: pair.url || null,
+    pairCreatedAt: pair.pairCreatedAt || null
   };
-}
-async function activeLaunchEventRow(env, eventId = '') {
-  const db = await ensureAnsemLaunchTables(env);
-  if (!db) return null;
-  const now = new Date().toISOString();
-  const where = eventId ? 'e.event_id = ? AND e.starts_at <= ? AND e.ends_at > ?' : 'e.starts_at <= ? AND e.ends_at > ?';
-  const statement = db.prepare(`SELECT e.event_id AS eventId, e.starts_at AS startsAt, e.ends_at AS endsAt,
-      e.reward_id AS rewardId, l.mint, l.name, l.symbol, l.detected_at AS detectedAt,
-      l.overlap_percent AS overlapPercent
-    FROM launch_events e JOIN ansem_launches l ON l.mint = e.launch_mint
-    WHERE ${where} ORDER BY e.starts_at DESC LIMIT 1`);
-  return eventId ? statement.bind(eventId, now, now).first() : statement.bind(now, now).first();
-}
-async function launchEventActive(env, cors) {
-  if (!env.LEADERBOARD_DB) return json({ ok: true, data: { active: false } }, 200, cors, 'public, max-age=5');
-  const row = await activeLaunchEventRow(env).catch(() => null);
-  return json({ ok: true, data: launchEventView(row) }, 200, cors, 'public, max-age=5');
-}
-async function launchEventComplete(request, env, cors) {
-  if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) {
-    return json({ ok: false, error: { message: 'Live event rewards are not configured' } }, 503, cors);
-  }
-  let account;
-  try { account = await retentionAccount(request, env); }
-  catch (error) { return json({ ok: false, error: { message: error.message } }, Number(error.status || 401), cors); }
-  const body = await request.json().catch(() => ({}));
-  const eventId = String(body.eventId || '');
-  const elapsedMs = boundedInt(body.elapsedMs, 20 * 60_000);
-  const bossesDefeated = boundedInt(body.bossesDefeated, 10);
-  if (!/^launch-[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(eventId) || body.won !== true || elapsedMs == null || elapsedMs < 1000 || bossesDefeated == null || bossesDefeated < 1) {
-    return json({ ok: false, error: { message: 'A completed active bonus round is required' } }, 400, cors);
-  }
-  const event = await activeLaunchEventRow(env, eventId);
-  if (!event) return json({ ok: false, error: { message: 'This live launch event has ended' } }, 410, cors);
-  const db = await ensureLeaderboard(env);
-  const claimedAt = new Date().toISOString();
-  const results = await db.batch([
-    db.prepare(`INSERT OR IGNORE INTO launch_event_claims (event_id, account_id, reward_id, claimed_at) VALUES (?, ?, ?, ?)`)
-      .bind(eventId, account.id, event.rewardId, claimedAt),
-    db.prepare(`INSERT OR IGNORE INTO cosmetic_unlocks (account_key, cosmetic_id, source, granted_at) VALUES (?, ?, ?, ?)`)
-      .bind(account.id, event.rewardId, `launch-event:${eventId}`, claimedAt)
-  ]);
-  return json({ ok: true, data: {
-    granted: true,
-    newlyGranted: Number(results?.[0]?.meta?.changes || 0) === 1,
-    reward: launchEventView(event).reward,
-    eventId,
-    leaderboardEligible: false
-  } }, 200, cors);
-}
-async function listStoredLaunches(env) {
-  const db = await ensureAnsemLaunchTables(env);
-  if (db) {
-    const query = await db.prepare('SELECT * FROM ansem_launches ORDER BY detected_at DESC LIMIT 80').all().catch(() => null);
-    for (const row of query?.results || []) memoryLaunches.set(row.mint, row);
-  }
-  const now = new Date().toISOString();
-  for (const seed of Z500_SEED_LAUNCHES) {
-    if (!memoryLaunches.has(seed.mint)) {
-      await upsertLaunch(env, {
-        ...seed,
-        detected_at: now,
-        signals: seed.airdropped ? ['z500-listed', 'airdrop-marked'] : ['z500-listed'],
-        overlap_percent: seed.airdropped ? 100 : null
-      });
-    }
-  }
-  return [...memoryLaunches.values()];
-}
-
-async function loadAnsemHolderSet(env) {
-  const cacheKey = 'ansem:holder-set:' + (env.ANSEM_MINT || DEFAULT_ANSEM_MINT);
-  const cached = await cacheGet(env, cacheKey);
-  if (cached?.owners?.length) return cached;
-  if (!env.HELIUS_API_KEY) return { owners: [], complete: false, method: 'unavailable' };
-  const warnings = [];
-  const scanned = await scanFundedHolders(env, env.ANSEM_MINT || DEFAULT_ANSEM_MINT, warnings).catch(() => null);
-  const owners = [...(scanned && scanned.holderCount ? [] : [])];
-  // Re-scan into a Set we can serialize. scanFundedHolders only returns a count;
-  // run a dedicated page walk that keeps owners.
-  const ownersSet = new Set();
-  try {
-    const limit = 1000, maxPages = 20;
-    for (let page = 1; page <= maxPages; page++) {
-      const result = await rpc(env, 'getTokenAccounts', {
-        mint: env.ANSEM_MINT || DEFAULT_ANSEM_MINT,
-        page, limit, options: { showZeroBalance: false }
-      });
-      const accounts = Array.isArray(result?.token_accounts) ? result.token_accounts : [];
-      for (const account of accounts) {
-        if (validAddress(account?.owner)) ownersSet.add(account.owner);
-      }
-      if (accounts.length < limit) break;
-    }
-  } catch (_) {}
-  const payload = {
-    owners: [...ownersSet],
-    complete: ownersSet.size > 0,
-    method: 'Helius DAS getTokenAccounts',
-    count: ownersSet.size
-  };
-  await cachePut(env, cacheKey, payload, HOLDER_SET_TTL_MS);
-  return payload;
-}
-
-async function earliestDistribution(env, mint) {
-  const sigs = await rpc(env, 'getSignaturesForAddress', [mint, { limit: 20 }]).catch(() => []);
-  const list = Array.isArray(sigs) ? sigs : [];
-  if (!list.length) return { recipients: [], supplyToHolders: 0, totalDistributed: 0 };
-  const oldest = list[list.length - 1];
-  const tx = await rpc(env, 'getTransaction', [oldest.signature, {
-    encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed'
-  }]).catch(() => null);
-  const balances = tx?.meta?.postTokenBalances || [];
-  const recipients = [];
-  let totalDistributed = 0;
-  for (const row of balances) {
-    if (row?.mint !== mint) continue;
-    const owner = row.owner || row.accountIndex;
-    const amount = Number(row.uiTokenAmount?.uiAmount || 0);
-    if (!validAddress(owner) || PUMP_PROGRAMS.has(owner) || amount <= 0) continue;
-    recipients.push({ owner, amount });
-    totalDistributed += amount;
-  }
-  return { recipients, totalDistributed, signature: oldest.signature };
-}
-
-function evaluateOverlap(recipients, holderSet) {
-  const holders = new Set(holderSet.owners || []);
-  if (!recipients.length || !holders.size) {
-    return { overlapPercent: 0, holderSupplyPercent: 0, matched: 0, recipientCount: recipients.length };
-  }
-  let matched = 0, matchedAmount = 0, total = 0;
-  for (const row of recipients) {
-    total += row.amount;
-    if (holders.has(row.owner)) { matched++; matchedAmount += row.amount; }
-  }
-  return {
-    overlapPercent: matched / recipients.length * 100,
-    holderSupplyPercent: total > 0 ? matchedAmount / total * 100 : 0,
-    matched,
-    recipientCount: recipients.length
-  };
-}
-
-async function detectToken(env, token) {
-  const mint = token.mint || token.token || token.address;
-  if (!validAddress(mint) || mint === (env.ANSEM_MINT || DEFAULT_ANSEM_MINT)) return null;
-  if (memoryLaunches.has(mint)) return memoryLaunches.get(mint);
-  const holders = await loadAnsemHolderSet(env);
-  let overlap = { overlapPercent: 0, holderSupplyPercent: 0, matched: 0, recipientCount: 0 };
-  const signals = ['pumpportal-create'];
-  if (holders.owners.length && env.HELIUS_API_KEY) {
-    const dist = await earliestDistribution(env, mint).catch(() => ({ recipients: [] }));
-    overlap = evaluateOverlap(dist.recipients || [], holders);
-    if (overlap.overlapPercent >= OVERLAP_THRESHOLD * 100 && overlap.recipientCount >= OVERLAP_MIN_RECIPIENTS) {
-      signals.push('holder-overlap');
-    }
-    if (overlap.holderSupplyPercent >= SUPPLY_AIRDROP_THRESHOLD * 100) signals.push('holder-supply-airdrop');
-  }
-  const flagged = signals.includes('holder-overlap') || signals.includes('holder-supply-airdrop');
-  if (!flagged) return null;
-  const row = {
-    mint,
-    name: token.name || token.symbol || 'Unknown',
-    symbol: token.symbol || '',
-    creator: token.traderPublicKey || token.creator || null,
-    detected_at: new Date().toISOString(),
-    overlap_percent: overlap.overlapPercent,
-    holder_supply_percent: overlap.holderSupplyPercent,
-    recipient_count: overlap.recipientCount,
-    signals,
-    confidence: 'high',
-    source: 'overlap'
-  };
-  await upsertLaunch(env, row);
-  return row;
-}
-
-function pumpPortalWebSocket(url) {
-  try {
-    if (typeof WebSocket === 'function') return new WebSocket(url);
-  } catch (_) {}
-  return null;
-}
-
-async function listenPumpPortal(onToken, burstMs = 10_000) {
-  const socket = pumpPortalWebSocket(PUMPPORTAL_WS);
-  if (!socket) {
-    pumpPortalState.connected = false;
-    pumpPortalState.lastError = 'WebSocket constructor is unavailable in this isolate';
-    return { mode: 'unavailable' };
-  }
-  return await new Promise(resolve => {
-    let settled = false;
-    const finish = (mode) => {
-      if (settled) return;
-      settled = true;
-      try { socket.close(); } catch (_) {}
-      resolve({ mode });
-    };
-    const timer = setTimeout(() => {
-      pumpPortalState.connected = false;
-      finish('timeout');
-    }, burstMs);
-    socket.addEventListener('open', () => {
-      pumpPortalState.connected = true;
-      pumpPortalState.lastError = null;
-      try { socket.send(JSON.stringify({ method: 'subscribeNewToken' })); }
-      catch (error) { pumpPortalState.lastError = error.message; }
-    });
-    socket.addEventListener('message', event => {
-      try {
-        const payload = JSON.parse(typeof event.data === 'string' ? event.data : String(event.data || ''));
-        const mint = payload.mint || payload.token || payload.address;
-        if (!mint) return;
-        pumpPortalState.lastEventAt = new Date().toISOString();
-        onToken(payload);
-      } catch (_) {}
-    });
-    socket.addEventListener('error', () => {
-      pumpPortalState.lastError = 'PumpPortal socket error';
-      pumpPortalState.connected = false;
-      pumpPortalState.reconnects += 1;
-    });
-    socket.addEventListener('close', () => {
-      pumpPortalState.connected = false;
-      pumpPortalState.reconnects += 1;
-      clearTimeout(timer);
-      finish('closed');
-    });
-  });
-}
-
-async function pollPumpRest(onToken) {
-  try {
-    const rows = await fetchJson(PUMP_REST_LATEST, { headers: { Accept: 'application/json' } }, 10_000);
-    const list = Array.isArray(rows) ? rows : [];
-    for (const row of list) onToken(row);
-    return list.length;
-  } catch (error) {
-    pumpPortalState.lastError = error.message;
-    return 0;
-  }
-}
-
-async function ingestAnsemLaunches(env, options = {}) {
-  if (pumpPortalState.ingesting) return { skipped: true };
-  pumpPortalState.ingesting = true;
-  try {
-    await listStoredLaunches(env);
-    const seen = new Set();
-    const pendingDetections = [];
-    const onToken = token => {
-      const mint = token?.mint || token?.token || token?.address;
-      if (!mint || seen.has(mint)) return;
-      seen.add(mint);
-      pendingDetections.push(detectToken(env, token).catch(() => null));
-    };
-    try {
-      await listenPumpPortal(onToken, options.burstMs || 8_000);
-    } catch (error) {
-      pumpPortalState.lastError = error.message;
-      pumpPortalState.connected = false;
-      pumpPortalState.reconnects += 1;
-    }
-    await pollPumpRest(onToken);
-    // The event window must be committed before this scheduled ingestion is
-    // considered complete. Detached detection promises could otherwise be
-    // cancelled with the Worker isolate and silently lose a real live event.
-    await Promise.allSettled(pendingDetections);
-    return { ingested: seen.size, reconnects: pumpPortalState.reconnects };
-  } finally {
-    pumpPortalState.ingesting = false;
-  }
-}
-
-async function dexPairsForMints(mints) {
-  const unique = [...new Set(mints.filter(validAddress))].slice(0, 30);
-  const pairsByMint = new Map();
-  const take = (payload) => {
-    const pairs = Array.isArray(payload?.pairs) ? payload.pairs : (Array.isArray(payload) ? payload : []);
-    for (const pair of pairs) {
-      if (pair?.chainId && pair.chainId !== 'solana') continue;
-      const mint = pair?.baseToken?.address;
-      if (!mint) continue;
-      const current = pairsByMint.get(mint);
-      const liquidity = Number(pair.liquidity?.usd || 0);
-      if (!current || liquidity > Number(current.liquidity?.usd || 0)) pairsByMint.set(mint, pair);
-    }
-  };
-  try {
-    const payload = await fetchJson(DEXSCREENER_TOKENS + unique.join(','), { headers: { Accept: 'application/json' } }, 12_000);
-    take(payload);
-  } catch (_) {}
-  for (const mint of unique) {
-    if (pairsByMint.has(mint)) continue;
-    try {
-      const payload = await fetchJson(DEXSCREENER_TOKENS + mint, { headers: { Accept: 'application/json' } }, 8_000);
-      take(payload);
-    } catch (_) {}
-    await new Promise(resolve => setTimeout(resolve, 150));
-  }
-  return pairsByMint;
 }
 
 function shortWallet(address) {
@@ -1192,188 +683,184 @@ function shortWallet(address) {
 
 async function topTradersByVolume(env, mints, priceByMint) {
   const volume = new Map();
+  const netByWallet = new Map();
   const firstSeen = new Map();
   const lastSeen = new Map();
   const txCount = new Map();
-  const sample = mints.slice(0, 4);
-  for (const mint of sample) {
-    try {
-      const sigs = await rpc(env, 'getSignaturesForAddress', [mint, { limit: 25 }]);
-      const list = Array.isArray(sigs) ? sigs.slice(0, 18) : [];
-      for (const item of list) {
-        const tx = await rpc(env, 'getTransaction', [item.signature, {
-          encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed'
-        }]).catch(() => null);
-        const pre = new Map((tx?.meta?.preTokenBalances || []).filter(row => row.mint === mint).map(row => [row.owner, Number(row.uiTokenAmount?.uiAmount || 0)]));
-        const post = tx?.meta?.postTokenBalances || [];
-        const ts = Number(tx?.blockTime || item.blockTime || 0) * 1000;
-        const price = Number(priceByMint.get(mint) || 0);
-        for (const row of post) {
-          if (row.mint !== mint || !validAddress(row.owner) || PUMP_PROGRAMS.has(row.owner)) continue;
-          const after = Number(row.uiTokenAmount?.uiAmount || 0);
-          const before = Number(pre.get(row.owner) || 0);
-          const delta = Math.abs(after - before);
-          if (delta <= 0) continue;
-          const usd = price > 0 ? delta * price : delta;
-          volume.set(row.owner, (volume.get(row.owner) || 0) + usd);
-          txCount.set(row.owner, (txCount.get(row.owner) || 0) + 1);
-          if (!firstSeen.has(row.owner) || ts < firstSeen.get(row.owner)) firstSeen.set(row.owner, ts);
-          if (!lastSeen.has(row.owner) || ts > lastSeen.get(row.owner)) lastSeen.set(row.owner, ts);
-        }
+  const ignored = new Set([TOKEN_PROGRAM, TOKEN_2022_PROGRAM]);
+  for (const mint of [...new Set(mints.filter(validAddress))].slice(0, 2)) {
+    const signatures = await rpc(env, 'getSignaturesForAddress', [mint, { limit: 18 }]);
+    for (const item of (Array.isArray(signatures) ? signatures.slice(0, 12) : [])) {
+      const transaction = await rpc(env, 'getTransaction', [item.signature, {
+        encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed'
+      }]).catch(() => null);
+      const beforeByOwner = new Map(
+        (transaction?.meta?.preTokenBalances || [])
+          .filter(row => row.mint === mint && validAddress(row.owner))
+          .map(row => [row.owner, finiteNumber(row.uiTokenAmount?.uiAmountString ?? row.uiTokenAmount?.uiAmount)])
+      );
+      const timestamp = finiteNumber(transaction?.blockTime || item.blockTime) * 1000;
+      for (const row of transaction?.meta?.postTokenBalances || []) {
+        if (row.mint !== mint || !validAddress(row.owner) || ignored.has(row.owner)) continue;
+        const after = finiteNumber(row.uiTokenAmount?.uiAmountString ?? row.uiTokenAmount?.uiAmount);
+        const delta = after - finiteNumber(beforeByOwner.get(row.owner));
+        if (!delta) continue;
+        const usd = Math.abs(delta) * finiteNumber(priceByMint.get(mint), 1);
+        volume.set(row.owner, finiteNumber(volume.get(row.owner)) + usd);
+        netByWallet.set(row.owner, finiteNumber(netByWallet.get(row.owner)) + delta);
+        txCount.set(row.owner, finiteNumber(txCount.get(row.owner)) + 1);
+        if (!firstSeen.has(row.owner) || timestamp < firstSeen.get(row.owner)) firstSeen.set(row.owner, timestamp);
+        if (!lastSeen.has(row.owner) || timestamp > lastSeen.get(row.owner)) lastSeen.set(row.owner, timestamp);
       }
-    } catch (_) {}
+    }
   }
   return [...volume.entries()]
-    .sort((a, b) => b[1] - a[1])
+    .sort((left, right) => right[1] - left[1])
     .slice(0, 5)
-    .map(([wallet, volumeUsd]) => ({
-      wallet,
-      display: shortWallet(wallet),
-      volumeUsd,
-      txCount: txCount.get(wallet) || 0,
-      holdMs: Math.max(0, (lastSeen.get(wallet) || 0) - (firstSeen.get(wallet) || 0)),
-      firstSeen: firstSeen.get(wallet) || null,
-      lastSeen: lastSeen.get(wallet) || null
-    }));
-}
-
-async function ansemLaunchpad(env, cors, ctx) {
-  const freshKey = 'ansem:launchpad:pathb:v3';
-  const staleKey = 'ansem:launchpad:pathb:stale:v3';
-  const fresh = await cacheGet(env, freshKey);
-  if (fresh) {
-    if (ctx?.waitUntil) ctx.waitUntil(ingestAnsemLaunches(env).catch(() => {}));
-    return json({ ok: true, data: fresh, cached: true, updatedAt: fresh.updatedAt, source: fresh.sources }, 200, cors, 'public, max-age=30');
-  }
-
-  try {
-    if (ctx?.waitUntil) ctx.waitUntil(ingestAnsemLaunches(env).catch(() => {}));
-
-    const stored = await listStoredLaunches(env);
-    const mints = stored.map(row => row.mint).filter(Boolean);
-    const pairs = await dexPairsForMints(mints);
-    const now = Date.now();
-    const dayStart = Date.parse(utcDayKey() + 'T00:00:00.000Z');
-    const projects = stored.map(row => {
-      const pair = pairs.get(row.mint);
-      const price = Number(pair?.priceUsd || 0);
-      const volume24h = Number(pair?.volume?.h24 || 0);
-      const change24h = Number(pair?.priceChange?.h24 || 0);
-      const marketCap = Number(pair?.marketCap || pair?.fdv || 0);
-      const createdAt = pair?.pairCreatedAt || Date.parse(row.detected_at || '') || 0;
+    .map(([wallet, volumeUsd]) => {
+      const netAnsem = finiteNumber(netByWallet.get(wallet));
       return {
-        mint: row.mint,
-        name: pair?.baseToken?.name || row.name || 'Unknown',
-        symbol: (pair?.baseToken?.symbol || row.symbol || '').toUpperCase(),
-        image: pair?.info?.imageUrl || null,
-        price, volume24h, change24h, marketCap,
-        liquidityUsd: Number(pair?.liquidity?.usd || 0),
-        pairUrl: pair?.url || `https://dexscreener.com/solana/${encodeURIComponent(row.mint)}`,
-        detectedAt: row.detected_at,
-        createdAt: createdAt || null,
-        confidence: row.confidence,
-        source: row.source,
-        signals: (() => { try { return JSON.parse(row.signals || '[]'); } catch (_) { return []; } })(),
-        overlapPercent: row.overlap_percent,
-        isToday: Number.isFinite(createdAt) ? createdAt >= dayStart : Date.parse(row.detected_at || '') >= dayStart
+        wallet,
+        display: shortWallet(wallet),
+        volumeUsd,
+        txCount: finiteNumber(txCount.get(wallet)),
+        holdMs: Math.max(0, finiteNumber(lastSeen.get(wallet)) - finiteNumber(firstSeen.get(wallet))),
+        netAnsem,
+        direction: netAnsem > 0 ? 'accumulating' : netAnsem < 0 ? 'distributing' : 'neutral',
+        firstSeen: firstSeen.get(wallet) || null,
+        lastSeen: lastSeen.get(wallet) || null
       };
-    }).filter(project => Number.isFinite(project.volume24h) || Number.isFinite(project.price));
-
-    const dayProjects = projects.filter(project => project.isToday || project.volume24h > 0);
-    const ranked = [...dayProjects].sort((a, b) => (b.change24h - a.change24h) || (b.volume24h - a.volume24h));
-    const runners = ranked.slice(0, 5);
-    const dailyVolumeUsd = dayProjects.reduce((sum, project) => sum + Number(project.volume24h || 0), 0);
-    const priceByMint = new Map(projects.map(project => [project.mint, project.price]));
-    let traders = [];
-    let traderNote = 'Ranked by realized token volume across detected launches. Profit is not attributed; hold time is time between first and last sampled transfer.';
-    if (env.HELIUS_API_KEY) {
-      traders = await topTradersByVolume(env, runners.map(row => row.mint), priceByMint).catch(() => []);
-    }
-    if (!traders.length) {
-      traderNote = 'Wallet-level traders need the Helius parse path. Showing most active detected pairs by 24h transactions until that feed is available.';
-      traders = runners.slice(0, 5).map(project => {
-        const pair = pairs.get(project.mint);
-        const tx = pair?.txns?.h24 || {};
-        return {
-          wallet: project.mint,
-          display: '$' + project.symbol,
-          volumeUsd: project.volume24h,
-          txCount: Number(tx.buys || 0) + Number(tx.sells || 0),
-          holdMs: null,
-          pairProxy: true
-        };
-      }).filter(row => row.txCount > 0 || row.volumeUsd > 0)
-        .sort((a, b) => b.volumeUsd - a.volumeUsd)
-        .slice(0, 5);
-    }
-
-    const data = {
-      dataPath: 'B',
-      dataPathReason: 'ansem.io/docs does not publish a stable public API. Path B uses PumpPortal new-token events, $ANSEM holder-overlap detection, and DexScreener pair stats.',
-      detection: {
-        overlapThresholdPercent: OVERLAP_THRESHOLD * 100,
-        minRecipients: OVERLAP_MIN_RECIPIENTS,
-        supplyAirdropThresholdPercent: SUPPLY_AIRDROP_THRESHOLD * 100,
-        calibratedAgainst: {
-          mint: 'Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump',
-          symbol: 'CATE',
-          name: 'Catecoin',
-          listedOn: 'ansem.io/z500',
-          airdropMarked: true,
-          note: 'Confirmed z500 airdropped launch used to set the 18% recipient-overlap / 2.5% supply thresholds.'
-        }
-      },
-      updatedAt: new Date(now).toISOString(),
-      coverage: 'Detected ansem.io / z500 launches (Path B)',
-      sources: ['PumpPortal', 'Helius DAS', 'DexScreener', 'ansem.io/z500 calibration'],
-      dailyVolumeUsd,
-      runners,
-      traders,
-      traderMetric: traders.some(row => row.pairProxy) ? 'pair-volume' : 'realized-volume',
-      traderNote,
-      pumpPortal: {
-        connected: pumpPortalState.connected,
-        lastEventAt: pumpPortalState.lastEventAt,
-        lastError: pumpPortalState.lastError,
-        reconnects: pumpPortalState.reconnects
-      },
-      trackedLaunches: stored.length,
-      mechanics: {
-        indexName: 'Z500',
-        minimumAirdropPercent: 3,
-        goldBurnAnsem: 25000,
-        diamondBurnAnsem: 100000,
-        verifiedAt: '2026-08-19',
-        sourceUrl: 'https://ansem.io/docs'
-      }
-    };
-    const usable = projects.filter(project => Number(project.volume24h) > 0).length;
-    if (usable >= 3) {
-      await Promise.all([cachePut(env, freshKey, data, LAUNCHPAD_FRESH_MS), cachePut(env, staleKey, data, LAUNCHPAD_STALE_MS)]);
-    } else {
-      data.degraded = true;
-      data.warning = 'DexScreener pair coverage was incomplete on this pass.';
-    }
-    return json({ ok: true, data, cached: false, updatedAt: data.updatedAt, source: data.sources }, 200, cors, 'public, max-age=30');
-  } catch (error) {
-    const stale = await cacheGet(env, staleKey);
-    if (stale) {
-      return json({
-        ok: true,
-        data: { ...stale, degraded: true, warning: error.message || 'Live launchpad feed is temporarily unavailable' },
-        cached: true, stale: true, updatedAt: stale.updatedAt, source: stale.sources
-      }, 200, cors, 'public, max-age=15');
-    }
-    throw Object.assign(new Error('Ansem.io launchpad data is temporarily unavailable'), { status: 503 });
-  }
+    });
 }
 
+function rateMomentum(currentWindow, currentHours, baselineWindow, baselineHours) {
+  const currentRate = finiteNumber(currentWindow) / Math.max(1, currentHours);
+  const baselineRate = finiteNumber(baselineWindow) / Math.max(1, baselineHours);
+  const percentChange = baselineRate > 0 ? (currentRate - baselineRate) / baselineRate * 100 : null;
+  return {
+    currentPerHour: currentRate,
+    baselinePerHour: baselineRate,
+    percentChange,
+    direction: percentChange == null ? 'unavailable' : percentChange >= 0 ? 'accelerating' : 'decelerating',
+    method: `${currentHours}h rate versus ${baselineHours}h rate`
+  };
+}
+
+async function refreshAnsemAnalytics(env) {
+  requireHelius(env);
+  const mint = env.ANSEM_MINT || DEFAULT_ANSEM_MINT;
+  const holderKey = `ansem:holders:${mint}`;
+  const warnings = [];
+  const [market, holders, asset] = await Promise.all([
+    fetchAnsemMarket(env),
+    cacheGet(env, holderKey).then(value => value || cacheGet(env, `${holderKey}:last-success`)),
+    settled(rpc(env, 'getAsset', { id: mint, displayOptions: { showFungible: true } }), null, warnings, 'token metadata')
+  ]);
+  const notableWallets = await topTradersByVolume(env, [mint], new Map([[mint, market.priceUsd]])).catch(error => {
+    warnings.push('notable wallets: ' + error.message);
+    return [];
+  });
+  const updatedAt = new Date().toISOString();
+  const data = {
+    mint,
+    updatedAt,
+    partial: !holders?.holderCount || !notableWallets.length || warnings.length > 0,
+    market,
+    holders: {
+      count: Number.isFinite(Number(holders?.holderCount)) ? Number(holders.holderCount) : null,
+      fundedTokenAccounts: Number.isFinite(Number(holders?.fundedTokenAccounts)) ? Number(holders.fundedTokenAccounts) : null,
+      top10Percent: Number.isFinite(Number(holders?.top10Percent)) ? Number(holders.top10Percent) : null,
+      largestAccountPercent: Number.isFinite(Number(holders?.largestHolderPercent)) ? Number(holders.largestHolderPercent) : null,
+      scanComplete: holders?.complete === true,
+      refreshedAt: holders?.refreshedAt || null
+    },
+    notableWallets,
+    momentum: {
+      volume: rateMomentum(market.volume1h, 1, market.volume24h, 24),
+      transactions: rateMomentum(market.txCount1h, 1, market.txCount24h, 24)
+    },
+    sources: {
+      holders: {
+        name: 'Helius DAS getTokenAccounts',
+        authority: 'Solana token-account state indexed by Helius',
+        url: 'https://docs.helius.dev/solana-apis/digital-asset-standard-das-api/get-token-accounts'
+      },
+      liquidity: {
+        name: 'DexScreener deepest Solana pair',
+        authority: 'DexScreener pair liquidity',
+        url: market.pairUrl || 'https://dexscreener.com/solana/' + mint
+      },
+      volume: {
+        name: 'DexScreener pair windows',
+        authority: 'DexScreener 1h/24h volume and transaction counts',
+        url: market.pairUrl || 'https://dexscreener.com/solana/' + mint
+      },
+      notableWallets: {
+        name: 'Solana confirmed transaction balance changes',
+        authority: 'Helius Solana RPC parsed transactions',
+        sample: '12 most recent mint-address signatures'
+      }
+    },
+    warnings
+  };
+  return storeSnapshot(env, 'ansem:analytics:v8', data);
+}
+
+async function ansemAnalytics(env, cors, ctx) {
+  const fresh = await cacheGet(env, 'ansem:analytics:v8:fresh');
+  if (fresh) {
+    const age = Date.now() - Date.parse(fresh.updatedAt || 0);
+    if (age > DATA_POLICY.freshMs / 2) ctx?.waitUntil?.(refreshAnsemAnalytics(env).catch(() => null));
+    return json({
+      ok: true, data: fresh, updatedAt: fresh.updatedAt,
+      meta: { cached: true, stale: false, partial: fresh.partial === true, policy: 'cache-first-swr' }
+    }, 200, cors, 'public, max-age=60, stale-while-revalidate=600');
+  }
+  const lastKnown = await cacheGet(env, 'ansem:analytics:v8:last-success');
+  if (lastKnown) {
+    ctx?.waitUntil?.(refreshAnsemAnalytics(env).catch(() => null));
+    return json({
+      ok: true, data: lastKnown, updatedAt: lastKnown.updatedAt,
+      meta: { cached: true, stale: true, partial: lastKnown.partial === true, policy: 'cache-first-swr' }
+    }, 200, cors, 'public, max-age=30, stale-while-revalidate=600');
+  }
+  try {
+    const built = await refreshAnsemAnalytics(env);
+    return json({
+      ok: true, data: built, updatedAt: built.updatedAt,
+      meta: { cached: false, stale: false, partial: built.partial === true, policy: 'cold-cache-fill' }
+    }, 200, cors, 'public, max-age=30');
+  } catch (error) {
+    return json({
+      ok: false,
+      error: { message: 'Analytics cache is warming; retry shortly.' },
+      meta: { cached: false, stale: true, partial: true, policy: 'no-silent-placeholder', cause: error.message }
+    }, 503, cors, 'no-store');
+  }
+}
 async function scanFundedHolders(env, mint, warnings) {
   const limit = 1000;
   const maxPages = 40;
   const owners = new Set();
+  const ownerBalances = new Map();
+  let totalRawAmount = 0n;
   let fundedTokenAccounts = 0;
   let pagesScanned = 0;
+
+  const snapshot = complete => {
+    const balances = [...ownerBalances.values()].sort((left, right) => left === right ? 0 : left > right ? -1 : 1);
+    const topRaw = count => balances.slice(0, count).reduce((sum, value) => sum + value, 0n);
+    const percent = raw => totalRawAmount > 0n ? Number(raw * 100000n / totalRawAmount) / 1000 : null;
+    return {
+      holderCount: owners.size,
+      fundedTokenAccounts,
+      pagesScanned,
+      complete,
+      totalRawAmount: totalRawAmount.toString(),
+      top10Percent: percent(topRaw(10)),
+      largestHolderPercent: percent(topRaw(1))
+    };
+  };
 
   for (let page = 1; page <= maxPages; page++) {
     const result = await rpc(env, 'getTokenAccounts', {
@@ -1386,35 +873,29 @@ async function scanFundedHolders(env, mint, warnings) {
     pagesScanned = page;
 
     for (const account of accounts) {
-      let funded = false;
-      try { funded = BigInt(String(account?.amount ?? '0')) > 0n; }
-      catch (_) { funded = Number(account?.amount || 0) > 0; }
-      if (!funded) continue;
+      let rawAmount = 0n;
+      try { rawAmount = BigInt(String(account?.amount ?? '0')); }
+      catch (_) { rawAmount = BigInt(Math.max(0, Math.floor(Number(account?.amount || 0)))); }
+      if (rawAmount <= 0n) continue;
       fundedTokenAccounts++;
-      if (validAddress(account?.owner)) owners.add(account.owner);
+      totalRawAmount += rawAmount;
+      if (validAddress(account?.owner)) {
+        owners.add(account.owner);
+        ownerBalances.set(account.owner, (ownerBalances.get(account.owner) || 0n) + rawAmount);
+      }
     }
 
     if (accounts.length < limit) {
-      return {
-        holderCount: owners.size,
-        fundedTokenAccounts,
-        pagesScanned,
-        complete: true
-      };
+      return snapshot(true);
     }
   }
 
   warnings.push(`holder scan reached its ${maxPages * limit} account safety ceiling`);
-  return {
-    holderCount: owners.size,
-    fundedTokenAccounts,
-    pagesScanned,
-    complete: false
-  };
+  return snapshot(false);
 }
 
-const HOLDER_CACHE_TTL_MS = 30 * 60_000;
-const HOLDER_STALE_TTL_MS = 7 * 24 * 60 * 60_000;
+const HOLDER_CACHE_TTL_MS = DATA_POLICY.freshMs;
+const HOLDER_STALE_TTL_MS = DATA_POLICY.staleMs;
 async function refreshAnsemHolderCount(env) {
   requireHelius(env);
   const mint = env.ANSEM_MINT || DEFAULT_ANSEM_MINT;
@@ -1427,98 +908,6 @@ async function refreshAnsemHolderCount(env) {
     cachePut(env, `ansem:holders:${mint}:last-success`, value, HOLDER_STALE_TTL_MS)
   ]);
   return value;
-}
-
-const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-function encodeBase58(bytes) {
-  if (!bytes?.length) return '';
-  const digits = [0];
-  for (const byte of bytes) {
-    let carry = byte;
-    for (let index = 0; index < digits.length; index++) {
-      const value = digits[index] * 256 + carry;
-      digits[index] = value % 58;
-      carry = Math.floor(value / 58);
-    }
-    while (carry) { digits.push(carry % 58); carry = Math.floor(carry / 58); }
-  }
-  let result = '';
-  for (let index = 0; index < bytes.length - 1 && bytes[index] === 0; index++) result += '1';
-  for (let index = digits.length - 1; index >= 0; index--) result += BASE58_ALPHABET[digits[index]];
-  return result;
-}
-function littleEndianU64(bytes, offset = 0) {
-  let value = 0n;
-  for (let index = 7; index >= 0; index--) value = value * 256n + BigInt(bytes[offset + index] || 0);
-  return value;
-}
-
-async function ansemOnchain(env, cors, ctx) {
-  const mint = env.ANSEM_MINT || DEFAULT_ANSEM_MINT;
-  const cacheKey = 'ansem:onchain:' + mint;
-  const staleKey = cacheKey + ':stale';
-  const cached = await cacheGet(env, cacheKey);
-  if (cached) {
-    ctx?.waitUntil?.(refreshAnsemHolderCount(env).catch(() => null));
-    return json({ ok: true, data: cached, cached: true, updatedAt: new Date().toISOString(), source: ['cached holder snapshot', 'Solana RPC'] }, 200, cors, 'public, max-age=10');
-  }
-  requireHelius(env);
-
-  const warnings = [];
-  try {
-  const holderKey = `ansem:holders:${mint}`;
-  const [asset, holders, supply, largest] = await Promise.all([
-    settled(rpc(env, 'getAsset', { id: mint, displayOptions: { showFungible: true } }), null, warnings, 'token metadata'),
-    cacheGet(env, holderKey).then(value => value || cacheGet(env, `${holderKey}:last-success`)),
-    settled(rpc(env, 'getTokenSupply', [mint, { commitment: 'confirmed' }]), null, warnings, 'token supply'),
-    settled(rpc(env, 'getTokenLargestAccounts', [mint, { commitment: 'confirmed' }]), { value: [] }, warnings, 'largest accounts')
-  ]);
-
-  ctx?.waitUntil?.(refreshAnsemHolderCount(env).catch(() => null));
-
-  const decimals = Number(asset?.token_info?.decimals ?? supply?.value?.decimals ?? 0);
-  const rawSupply = Number(asset?.token_info?.supply ?? supply?.value?.amount ?? 0);
-  const displaySupply = supply?.value?.uiAmountString != null ? Number(supply.value.uiAmountString) : rawSupply / (10 ** decimals);
-  const largestValues = Array.isArray(largest?.value) ? largest.value.map(item => Number(item.uiAmountString ?? item.uiAmount ?? 0)) : [];
-  const share = count => displaySupply > 0 ? Number((largestValues.slice(0, count).reduce((sum, value) => sum + value, 0) / displaySupply * 100).toFixed(3)) : null;
-  const data = {
-    mint,
-    name: asset?.content?.metadata?.name || asset?.token_info?.symbol || 'ANSEM',
-    symbol: asset?.content?.metadata?.symbol || 'ANSEM',
-    decimals,
-    supply: displaySupply,
-    holderCount: Number.isFinite(Number(holders?.holderCount)) ? Number(holders.holderCount) : null,
-    holderAccounts: Number.isFinite(Number(holders?.holderCount)) ? Number(holders.holderCount) : null,
-    fundedTokenAccounts: Number.isFinite(Number(holders?.fundedTokenAccounts)) ? Number(holders.fundedTokenAccounts) : null,
-    holderPagesScanned: Number(holders?.pagesScanned || 0),
-    holderScanComplete: holders?.complete === true,
-    holderMethod: holders?.method || 'cached background refresh',
-    holderRefreshedAt: holders?.refreshedAt || null,
-    top10Percent: share(10),
-    top20Percent: share(20),
-    largestAccountPercent: share(1),
-    largestAccountsAnalyzed: largestValues.length,
-    mintAuthority: asset?.token_info?.mint_authority ?? null,
-    freezeAuthority: asset?.token_info?.freeze_authority ?? null,
-    tokenProgram: asset?.token_info?.token_program || null,
-    warnings
-  };
-  await Promise.all([cachePut(env, cacheKey, data, 60_000), cachePut(env, staleKey, data, 6 * 60 * 60_000)]);
-  return json({ ok: true, data, updatedAt: new Date().toISOString(), source: ['Helius DAS', 'Solana RPC'] }, 200, cors, 'public, max-age=10');
-  } catch (error) {
-    const stale = await cacheGet(env, staleKey);
-    if (stale) {
-      return json({
-        ok: true,
-        data: { ...stale, degraded: true, warning: error.message || 'Holder scan is temporarily unavailable' },
-        cached: true,
-        stale: true,
-        updatedAt: new Date().toISOString(),
-        source: ['Helius DAS', 'Solana RPC']
-      }, 200, cors, 'public, max-age=15');
-    }
-    throw error;
-  }
 }
 
 /* Small cryptographic helpers shared by Google ID-token sessions. */
@@ -1567,7 +956,7 @@ function secureEqual(left, right) {
 }
 async function googleKeys() {
   if (googleKeysCache.expiresAt > Date.now() && googleKeysCache.keys.length) return googleKeysCache.keys;
-  const response = await fetch('https://www.googleapis.com/oauth2/v3/certs', { headers: { Accept: 'application/json' } });
+  const response = await fetchWithPolicy('https://www.googleapis.com/oauth2/v3/certs', { headers: { Accept: 'application/json' } });
   if (!response.ok) throw new Error('Google signing keys are temporarily unavailable');
   const payload = await response.json();
   googleKeysCache = { keys: Array.isArray(payload.keys) ? payload.keys : [], expiresAt: Date.now() + 45 * 60_000 };
@@ -1623,7 +1012,10 @@ async function playerSession(env, cors) {
   const sessionToken = await issueToken({ purpose: 'player-session', accountId, iat: issuedAt, exp: expiresAt }, env.AUTH_SESSION_SECRET);
   return json({ ok: true, data: { sessionToken, expiresAt } }, 200, cors);
 }
-async function retentionAccount(request, env) {
+function bearerToken(request) {
+  return String(request.headers.get('Authorization') || '').match(/^Bearer\s+(.+)$/i)?.[1] || '';
+}
+async function authenticatedAccount(request, env) {
   const token = bearerToken(request);
   if (!token) throw Object.assign(new Error('A signed player session is required'), { status: 401 });
   const payload = await readSignedPayload(token, env);
@@ -1636,556 +1028,13 @@ async function retentionAccount(request, env) {
   throw Object.assign(new Error('Unsupported player session'), { status: 401 });
 }
 
-/* Closed-loop Bullion ledger and Google Play Billing verification. */
-function commerceEnabled(env) {
-  return String(env.COMMERCE_ENABLED || '').toLowerCase() === 'true';
-}
-function bearerToken(request) {
-  return String(request.headers.get('Authorization') || '').match(/^Bearer\s+(.+)$/i)?.[1] || '';
-}
-async function billingAccount(request, env) {
-  const token = bearerToken(request);
-  if (!token) throw Object.assign(new Error('Google sign-in is required for Bullion'), { status: 401 });
-  const user = await readGoogleSession(token, env).catch(error => {
-    throw Object.assign(new Error(error.message), { status: 401 });
-  });
-  return { id: await sha256Hex('google:' + user.sub), user };
-}
-function bullionDb(env) {
-  if (!env.LEADERBOARD_DB) throw Object.assign(new Error('Bullion ledger is not configured'), { status: 503 });
-  return env.LEADERBOARD_DB;
-}
-async function ensureBullion(env) {
-  const db = bullionDb(env);
-  let ready = bullionReady.get(db);
-  if (!ready) {
-    ready = db.batch([
-    db.prepare(`CREATE TABLE IF NOT EXISTS bullion_balance (
-      account_id TEXT PRIMARY KEY,
-      balance INTEGER NOT NULL DEFAULT 0 CHECK (balance >= 0),
-      updated_at TEXT NOT NULL,
-      last_operation_id TEXT
-    )`),
-    db.prepare(`CREATE TABLE IF NOT EXISTS bullion_transactions (
-      id TEXT PRIMARY KEY,
-      account_id TEXT NOT NULL,
-      kind TEXT NOT NULL CHECK (kind IN ('purchase_credit', 'item_debit', 'entitlement_use')),
-      amount INTEGER NOT NULL,
-      item_id TEXT,
-      product_id TEXT,
-      source_ref TEXT UNIQUE,
-      created_at TEXT NOT NULL
-    )`),
-    db.prepare('CREATE INDEX IF NOT EXISTS idx_bullion_transactions_account_created ON bullion_transactions(account_id, created_at DESC)'),
-    db.prepare(`CREATE TABLE IF NOT EXISTS bullion_entitlements (
-      account_id TEXT NOT NULL,
-      item_id TEXT NOT NULL,
-      quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
-      unlocked_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      last_operation_id TEXT,
-      PRIMARY KEY (account_id, item_id)
-    )`),
-    db.prepare('CREATE INDEX IF NOT EXISTS idx_bullion_entitlements_account ON bullion_entitlements(account_id)')
-    ]).catch(error => { bullionReady.delete(db); throw error; });
-    bullionReady.set(db, ready);
-  }
-  await ready;
-  return db;
-}
-function bullionCatalog(env) {
-  const enabled = commerceEnabled(env);
-  const googlePlayEnabled = enabled && Boolean(env.LEADERBOARD_DB && env.GOOGLE_PLAY_SERVICE_ACCOUNT);
-  const stripeCardEnabled = enabled && Boolean(env.LEADERBOARD_DB && env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET);
-  return {
-    currency: { id: 'bullion', name: 'Bullion', transferable: false, redeemable: false, crypto: false },
-    billingChannels: { googlePlay: googlePlayEnabled, stripeCard: stripeCardEnabled },
-    packageName: String(env.GOOGLE_PLAY_PACKAGE_NAME || DEFAULT_GOOGLE_PLAY_PACKAGE),
-    purchaseEnabled: googlePlayEnabled || stripeCardEnabled,
-    packs: Object.entries(BULLION_PACKS).map(([id, value]) => ({
-      id, amount: value.amount, label: value.label,
-      fiat: { currency: 'USD', amount: value.usdCents, formatted: '$' + (value.usdCents / 100).toFixed(2) }
-    })),
-    items: Object.entries(BULL_STORE_ITEMS).map(([id, value]) => ({ id, ...value }))
-  };
-}
-async function bullionSnapshot(db, accountId) {
-  const balanceRow = await db.prepare('SELECT balance, updated_at AS updatedAt FROM bullion_balance WHERE account_id = ?').bind(accountId).first();
-  const entitlementsQuery = await db.prepare(`SELECT item_id AS itemId, quantity, unlocked_at AS unlockedAt, updated_at AS updatedAt
-    FROM bullion_entitlements WHERE account_id = ? AND quantity > 0 ORDER BY item_id`).bind(accountId).all();
-  const entitlements = {};
-  for (const row of entitlementsQuery?.results || []) entitlements[row.itemId] = {
-    quantity: Number(row.quantity || 0), unlockedAt: row.unlockedAt, updatedAt: row.updatedAt
-  };
-  return { balance: Number(balanceRow?.balance || 0), updatedAt: balanceRow?.updatedAt || null, entitlements };
-}
-function billingError(error, cors) {
-  return json({ ok: false, error: { message: error?.message || 'Billing request failed' } }, Number(error?.status || 500), cors);
-}
-async function billingConfig(_request, env, cors) {
-  return json({ ok: true, data: bullionCatalog(env) }, 200, cors, 'private, max-age=60');
-}
-async function billingBalance(request, env, cors) {
-  try {
-    const account = await billingAccount(request, env);
-    const db = await ensureBullion(env);
-    return json({ ok: true, data: await bullionSnapshot(db, account.id) }, 200, cors);
-  } catch (error) { return billingError(error, cors); }
-}
-
-async function creditBullionPurchase(db, accountId, productId, amount, sourceRef) {
-  const operationId = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const results = await db.batch([
-    db.prepare(`INSERT OR IGNORE INTO bullion_transactions
-      (id, account_id, kind, amount, product_id, source_ref, created_at)
-      VALUES (?, ?, 'purchase_credit', ?, ?, ?, ?)`).bind(operationId, accountId, amount, productId, sourceRef, now),
-    db.prepare(`INSERT OR IGNORE INTO bullion_balance (account_id, balance, updated_at, last_operation_id)
-      VALUES (?, 0, ?, NULL)`).bind(accountId, now),
-    db.prepare(`UPDATE bullion_balance SET balance = balance + ?, updated_at = ?, last_operation_id = ?
-      WHERE account_id = ? AND EXISTS (SELECT 1 FROM bullion_transactions WHERE id = ? AND account_id = ?)`)
-      .bind(amount, now, operationId, accountId, operationId, accountId)
-  ]);
-  if (Number(results?.[0]?.meta?.changes || 0) !== 1) return { credited: false, snapshot: await bullionSnapshot(db, accountId) };
-  return { credited: true, snapshot: await bullionSnapshot(db, accountId) };
-}
-function serviceAccount(env) {
-  let parsed;
-  try { parsed = JSON.parse(String(env.GOOGLE_PLAY_SERVICE_ACCOUNT || '')); }
-  catch (_) { throw Object.assign(new Error('Google Play service account is invalid'), { status: 503 }); }
-  if (!parsed?.client_email || !parsed?.private_key) throw Object.assign(new Error('Google Play service account is incomplete'), { status: 503 });
-  return parsed;
-}
-function pkcs8Bytes(pem) {
-  const value = String(pem || '').replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s+/g, '');
-  if (!value) throw new Error('Google Play private key is missing');
-  return Uint8Array.from(atob(value), char => char.charCodeAt(0));
-}
-async function googlePlayToken(env) {
-  if (googlePlayAccessToken.value && googlePlayAccessToken.expiresAt > Date.now() + 60_000) return googlePlayAccessToken.value;
-  const account = serviceAccount(env);
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64url(encoder.encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' })));
-  const claims = base64url(encoder.encode(JSON.stringify({
-    iss: account.client_email,
-    scope: 'https://www.googleapis.com/auth/androidpublisher',
-    aud: account.token_uri || 'https://oauth2.googleapis.com/token',
-    iat: now,
-    exp: now + 3600
-  })));
-  const signingInput = header + '.' + claims;
-  const key = await crypto.subtle.importKey('pkcs8', pkcs8Bytes(account.private_key), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
-  const signature = base64url(new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, encoder.encode(signingInput))));
-  const tokenUrl = account.token_uri || 'https://oauth2.googleapis.com/token';
-  const response = await fetch(tokenUrl, {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: signingInput + '.' + signature })
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload.access_token) throw Object.assign(new Error(payload.error_description || 'Google Play authorization failed'), { status: 503 });
-  googlePlayAccessToken = { value: payload.access_token, expiresAt: Date.now() + Math.max(60, Number(payload.expires_in || 3600)) * 1000 };
-  return googlePlayAccessToken.value;
-}
-function playPurchaseUrl(env, productId, purchaseToken) {
-  const packageName = encodeURIComponent(String(env.GOOGLE_PLAY_PACKAGE_NAME || DEFAULT_GOOGLE_PLAY_PACKAGE));
-  return `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${encodeURIComponent(productId)}/tokens/${encodeURIComponent(purchaseToken)}`;
-}
-async function verifyPlayPurchase(env, productId, purchaseToken) {
-  const accessToken = await googlePlayToken(env);
-  const response = await fetch(playPurchaseUrl(env, productId, purchaseToken), { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(payload?.error?.message || 'Google Play purchase verification failed'), { status: response.status === 404 ? 400 : 502 });
-  if (Number(payload.purchaseState) !== 0) throw Object.assign(new Error('Google Play purchase is not completed'), { status: 409 });
-  return { quantity: Math.min(10, Math.max(1, Number(payload.quantity || 1))), orderId: String(payload.orderId || ''), purchaseTimeMillis: Number(payload.purchaseTimeMillis || 0) };
-}
-async function consumePlayPurchase(env, productId, purchaseToken) {
-  const accessToken = await googlePlayToken(env);
-  const response = await fetch(playPurchaseUrl(env, productId, purchaseToken) + ':consume', { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: '{}' });
-  return response.ok;
-}
-async function billingVerifyPurchase(request, env, cors) {
-  try {
-    const account = await billingAccount(request, env);
-    const body = await request.json().catch(() => ({}));
-    const productId = String(body.productId || '');
-    const purchaseToken = String(body.purchaseToken || '');
-    const pack = BULLION_PACKS[productId];
-    if (!pack || purchaseToken.length < 20 || purchaseToken.length > 4096) throw Object.assign(new Error('Invalid Google Play purchase payload'), { status: 400 });
-    const verified = await verifyPlayPurchase(env, productId, purchaseToken);
-    const amount = pack.amount * verified.quantity;
-    const sourceRef = await sha256Hex('play:' + purchaseToken);
-    const db = await ensureBullion(env);
-    const credit = await creditBullionPurchase(db, account.id, productId, amount, sourceRef);
-    if (!credit.credited) throw Object.assign(new Error('This Google Play purchase was already credited'), { status: 409 });
-    const finalized = await consumePlayPurchase(env, productId, purchaseToken).catch(() => false);
-    return json({ ok: true, data: { ...credit.snapshot, credited: amount, productId, finalized } }, 200, cors);
-  } catch (error) { return billingError(error, cors); }
-}
-
-function stripeReturnOrigin(env) {
-  const value = String(env.STRIPE_RETURN_ORIGIN || 'https://abullsapp.com').replace(/\/$/, '');
-  let url;
-  try { url = new URL(value); }
-  catch (_) { throw Object.assign(new Error('Stripe return origin is invalid'), { status: 503 }); }
-  if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash) {
-    throw Object.assign(new Error('Stripe return origin must be an HTTPS origin'), { status: 503 });
-  }
-  return url.origin;
-}
-function stripeSecret(env) {
-  const value = String(env.STRIPE_SECRET_KEY || '');
-  if (!/^sk_(test|live)_/.test(value)) throw Object.assign(new Error('Stripe card checkout is not configured'), { status: 503 });
-  return value;
-}
-async function billingStripeCheckout(request, env, cors) {
-  try {
-    const account = await billingAccount(request, env);
-    const body = await request.json().catch(() => ({}));
-    const productId = String(body.productId || '');
-    const channel = body.channel === 'solana' ? 'solana' : body.channel === 'web' ? 'web' : '';
-    const pack = BULLION_PACKS[productId];
-    if (!pack || !channel) throw Object.assign(new Error('Invalid Stripe checkout request'), { status: 400 });
-    const origin = stripeReturnOrigin(env);
-    const params = new URLSearchParams();
-    params.set('mode', 'payment');
-    params.set('payment_method_types[0]', 'card');
-    params.set('success_url', `${origin}/?channel=${channel}&stripe_checkout=success`);
-    params.set('cancel_url', `${origin}/?channel=${channel}&stripe_checkout=cancel`);
-    params.set('client_reference_id', account.id);
-    if (account.user?.email) params.set('customer_email', account.user.email);
-    params.set('line_items[0][quantity]', '1');
-    params.set('line_items[0][price_data][currency]', 'usd');
-    params.set('line_items[0][price_data][unit_amount]', String(pack.usdCents));
-    params.set('line_items[0][price_data][product_data][name]', pack.label);
-    params.set('line_items[0][price_data][product_data][description]', 'Closed-loop A Bulls App game currency; no cash or crypto value.');
-    params.set('metadata[account_id]', account.id);
-    params.set('metadata[product_id]', productId);
-    params.set('metadata[bullion_amount]', String(pack.amount));
-    params.set('metadata[checkout_channel]', channel);
-    const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + stripeSecret(env), 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw Object.assign(new Error(payload?.error?.message || 'Stripe checkout could not be created'), { status: response.status >= 500 ? 502 : 400 });
-    const checkoutUrl = String(payload.url || '');
-    if (!/^https:\/\/checkout\.stripe\.com\//.test(checkoutUrl) || !String(payload.id || '').startsWith('cs_')) {
-      throw Object.assign(new Error('Stripe returned an invalid checkout session'), { status: 502 });
-    }
-    return json({ ok: true, data: { url: checkoutUrl, sessionId: payload.id, productId } }, 200, cors);
-  } catch (error) { return billingError(error, cors); }
-}
-async function hmacSha256Hex(secret, value) {
-  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(value)));
-  return [...signature].map(byte => byte.toString(16).padStart(2, '0')).join('');
-}
-async function verifyStripeWebhook(rawBody, signatureHeader, env) {
-  const secret = String(env.STRIPE_WEBHOOK_SECRET || '');
-  if (!secret.startsWith('whsec_')) throw Object.assign(new Error('Stripe webhook is not configured'), { status: 503 });
-  const parts = String(signatureHeader || '').split(',').map(part => part.trim().split('='));
-  const timestamp = Number(parts.find(([key]) => key === 't')?.[1] || 0);
-  const signatures = parts.filter(([key]) => key === 'v1').map(([, value]) => value);
-  if (!timestamp || Math.abs(Date.now() / 1000 - timestamp) > 300 || !signatures.length) {
-    throw Object.assign(new Error('Invalid or expired Stripe webhook signature'), { status: 400 });
-  }
-  const expected = await hmacSha256Hex(secret, `${timestamp}.${rawBody}`);
-  if (!signatures.some(signature => secureEqual(signature, expected))) {
-    throw Object.assign(new Error('Invalid Stripe webhook signature'), { status: 400 });
-  }
-}
-async function billingStripeWebhook(request, env, cors) {
-  try {
-    const rawBody = await request.text();
-    await verifyStripeWebhook(rawBody, request.headers.get('Stripe-Signature'), env);
-    const event = JSON.parse(rawBody);
-    if (!['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(String(event?.type || ''))) {
-      return json({ ok: true, received: true, ignored: true }, 200, cors);
-    }
-    const session = event?.data?.object || {};
-    if (session.payment_status !== 'paid') return json({ ok: true, received: true, pending: true }, 200, cors);
-    const productId = String(session.metadata?.product_id || '');
-    const accountId = String(session.metadata?.account_id || '');
-    const pack = BULLION_PACKS[productId];
-    const cardOnly = Array.isArray(session.payment_method_types) && session.payment_method_types.length === 1 && session.payment_method_types[0] === 'card';
-    if (!pack || !/^[a-f0-9]{64}$/.test(accountId) || String(session.client_reference_id || '') !== accountId ||
-        Number(session.metadata?.bullion_amount) !== pack.amount || Number(session.amount_total) !== pack.usdCents ||
-        String(session.currency || '').toLowerCase() !== 'usd' || session.mode !== 'payment' || !cardOnly || !String(session.id || '').startsWith('cs_')) {
-      throw Object.assign(new Error('Stripe checkout metadata did not match the Bullion catalog'), { status: 400 });
-    }
-    const db = await ensureBullion(env);
-    const sourceRef = await sha256Hex('stripe:' + session.id);
-    const credit = await creditBullionPurchase(db, accountId, productId, pack.amount, sourceRef);
-    return json({ ok: true, received: true, credited: credit.credited }, 200, cors);
-  } catch (error) { return billingError(error, cors); }
-}
-
-async function billingSpend(request, env, cors) {
-  try {
-    const account = await billingAccount(request, env);
-    const body = await request.json().catch(() => ({}));
-    const itemId = String(body.itemId || '');
-    const item = BULL_STORE_ITEMS[itemId];
-    if (!item) throw Object.assign(new Error('Unknown Bull Store item'), { status: 400 });
-    const immediateUse = body.immediateUse === true;
-    if (immediateUse && item.type !== 'consumable') throw Object.assign(new Error('Only consumables can be used immediately'), { status: 400 });
-    const db = await ensureBullion(env);
-    const owned = await db.prepare('SELECT quantity FROM bullion_entitlements WHERE account_id = ? AND item_id = ?').bind(account.id, itemId).first();
-    const ownedQuantity = Number(owned?.quantity || 0);
-    const operationId = crypto.randomUUID();
-    const now = new Date().toISOString();
-
-    if (immediateUse && ownedQuantity > 0) {
-      const results = await db.batch([
-        db.prepare(`UPDATE bullion_entitlements SET quantity = quantity - 1, updated_at = ?, last_operation_id = ?
-          WHERE account_id = ? AND item_id = ? AND quantity > 0`).bind(now, operationId, account.id, itemId),
-        db.prepare(`INSERT INTO bullion_transactions (id, account_id, kind, amount, item_id, source_ref, created_at)
-          SELECT ?, ?, 'entitlement_use', 0, ?, ?, ? WHERE EXISTS
-          (SELECT 1 FROM bullion_entitlements WHERE account_id = ? AND item_id = ? AND last_operation_id = ?)`)
-          .bind(operationId, account.id, itemId, operationId, now, account.id, itemId, operationId)
-      ]);
-      if (Number(results?.[0]?.meta?.changes || 0) !== 1) throw Object.assign(new Error('Consumable is no longer available'), { status: 409 });
-      return json({ ok: true, data: { ...(await bullionSnapshot(db, account.id)), itemId, consumed: true, paid: 0 } }, 200, cors);
-    }
-
-    if (!immediateUse && item.type !== 'consumable' && ownedQuantity > 0) throw Object.assign(new Error('This item is already unlocked'), { status: 409 });
-    const permanentGuard = item.type === 'consumable' ? '1 = 1' : 'NOT EXISTS (SELECT 1 FROM bullion_entitlements WHERE account_id = ? AND item_id = ? AND quantity > 0)';
-    const updateBindings = item.type === 'consumable'
-      ? [item.price, now, operationId, account.id, item.price]
-      : [item.price, now, operationId, account.id, item.price, account.id, itemId];
-    const statements = [
-      db.prepare(`INSERT OR IGNORE INTO bullion_balance (account_id, balance, updated_at, last_operation_id) VALUES (?, 0, ?, NULL)`).bind(account.id, now),
-      db.prepare(`UPDATE bullion_balance SET balance = balance - ?, updated_at = ?, last_operation_id = ?
-        WHERE account_id = ? AND balance >= ? AND ${permanentGuard}`).bind(...updateBindings),
-      db.prepare(`INSERT INTO bullion_transactions (id, account_id, kind, amount, item_id, source_ref, created_at)
-        SELECT ?, ?, 'item_debit', ?, ?, ?, ? WHERE EXISTS
-        (SELECT 1 FROM bullion_balance WHERE account_id = ? AND last_operation_id = ?)`)
-        .bind(operationId, account.id, -item.price, itemId, operationId, now, account.id, operationId)
-    ];
-    if (!immediateUse) statements.push(db.prepare(`INSERT INTO bullion_entitlements
-      (account_id, item_id, quantity, unlocked_at, updated_at, last_operation_id)
-      SELECT ?, ?, 1, ?, ?, ? WHERE EXISTS
-      (SELECT 1 FROM bullion_balance WHERE account_id = ? AND last_operation_id = ?)
-      ON CONFLICT(account_id, item_id) DO UPDATE SET
-        quantity = CASE WHEN ? = 'consumable' THEN bullion_entitlements.quantity + 1 ELSE 1 END,
-        updated_at = excluded.updated_at,
-        last_operation_id = excluded.last_operation_id`)
-      .bind(account.id, itemId, now, now, operationId, account.id, operationId, item.type));
-    const results = await db.batch(statements);
-    if (Number(results?.[1]?.meta?.changes || 0) !== 1) throw Object.assign(new Error('Insufficient Bullion or item already unlocked'), { status: 409 });
-    return json({ ok: true, data: { ...(await bullionSnapshot(db, account.id)), itemId, consumed: immediateUse, paid: item.price } }, 200, cors);
-  } catch (error) { return billingError(error, cors); }
-}
-
-/* Collection-only, read-only NFT analytics. No wallet adapter or signing route exists. */
 function collectionMatch(asset) {
   return Array.isArray(asset?.grouping) && asset.grouping.some(group => group?.group_key === 'collection' && group?.group_value === BULL_PEN_COLLECTION);
 }
-function safeMediaHttpUrl(value) {
-  try {
-    const parsed = new URL(String(value || ''));
-    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || (parsed.port && parsed.port !== '443')) return null;
-    let host = parsed.hostname.toLowerCase();
-    if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
-    if (!host || host === 'localhost' || host.endsWith('.local') || (!host.includes('.') && !host.includes(':'))) return null;
-    if (host.includes(':')) {
-      const prefixTwo = host.slice(0, 2);
-      const prefixThree = host.slice(0, 3);
-      if (host === '::1' || host === '::' || prefixTwo === 'fc' || prefixTwo === 'fd' ||
-          ['fe8', 'fe9', 'fea', 'feb'].includes(prefixThree) || host.startsWith('::ffff:')) return null;
-    } else {
-      const rawParts = host.split('.');
-      const isIpv4 = rawParts.length === 4 && rawParts.every(part => part.length >= 1 && part.length <= 3 &&
-        [...part].every(character => character >= '0' && character <= '9'));
-      if (!isIpv4) return parsed.toString();
-      const parts = rawParts.map(Number);
-      if (parts.some(part => part > 255) || parts[0] === 0 || parts[0] === 10 || parts[0] === 127 ||
-          (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
-          (parts[0] === 169 && parts[1] === 254) || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-          (parts[0] === 192 && parts[1] === 168) || parts[0] >= 224) return null;
-    }
-    return parsed.toString();
-  } catch (_) { return null; }
-}
-function mediaUrl(value) {
-  const url = String(value || '');
-  if (url.startsWith('ipfs://')) return safeMediaHttpUrl('https://nftstorage.link/ipfs/' + url.slice(7));
-  if (url.startsWith('ar://')) return safeMediaHttpUrl('https://arweave.net/' + url.slice(5));
-  return safeMediaHttpUrl(url);
-}
-async function safeMediaFetch(value, init = {}, redirects = 0) {
-  const target = safeMediaHttpUrl(value);
-  if (!target) throw new Error('Unsafe media URL');
-  const response = await fetch(target, { ...init, redirect: 'manual' });
-  if ([301, 302, 303, 307, 308].includes(response.status)) {
-    if (redirects >= 3) throw new Error('Too many media redirects');
-    const next = response.headers.get('Location');
-    if (!next) throw new Error('Media redirect is missing a destination');
-    return safeMediaFetch(new URL(next, target).toString(), init, redirects + 1);
-  }
-  return response;
-}
-async function limitedBody(response, maxBytes) {
-  const declared = Number(response.headers.get('Content-Length') || 0);
-  if (declared > maxBytes) throw new Error('Remote media is too large');
-  if (!response.body?.getReader) {
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength > maxBytes) throw new Error('Remote media is too large');
-    return bytes;
-  }
-  const reader = response.body.getReader();
-  const chunks = [];
-  let total = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) { await reader.cancel(); throw new Error('Remote media is too large'); }
-    chunks.push(value);
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-  return bytes;
-}
-function assetImageCandidates(asset) {
-  const files = Array.isArray(asset?.content?.files) ? asset.content.files : [];
-  const values = [
-    asset?.content?.links?.image,
-    asset?.content?.metadata?.image,
-    ...files.flatMap(file => [file?.cdn_uri, file?.uri])
-  ];
-  return [...new Set(values.map(mediaUrl).filter(Boolean))].slice(0, 12);
-}
-function mapNftAsset(asset) {
-  const imageCandidates = assetImageCandidates(asset);
-  return {
-    id: asset.id,
-    name: String(asset?.content?.metadata?.name || 'The Bull Pen NFT').slice(0, 140),
-    image: imageCandidates[0] || null,
-    imageCandidates,
-    compressed: asset?.compression?.compressed === true,
-    interface: asset.interface || null,
-    attributes: Array.isArray(asset?.content?.metadata?.attributes) ? asset.content.metadata.attributes.slice(0, 40) : []
-  };
-}
-async function nftCollectionTraits(env, cors) {
-  requireHelius(env);
-  const cacheKey = 'nft:collection-traits:' + BULL_PEN_COLLECTION;
-  const cached = await cacheGet(env, cacheKey);
-  if (cached) return json(cached, 200, cors, 'public, max-age=3600');
-  const assets = [];
-  const pageSize = 1000;
-  for (let page = 1; page <= 50; page++) {
-    const result = await rpc(env, 'getAssetsByGroup', {
-      groupKey: 'collection',
-      groupValue: BULL_PEN_COLLECTION,
-      page,
-      limit: pageSize,
-      displayOptions: { showCollectionMetadata: true }
-    });
-    const items = Array.isArray(result?.items) ? result.items : [];
-    for (const asset of items) {
-      const attributes = (Array.isArray(asset?.content?.metadata?.attributes) ? asset.content.metadata.attributes : [])
-        .filter(attribute => attribute && attribute.trait_type != null && attribute.value != null)
-        .slice(0, 40)
-        .map(attribute => ({ trait_type: String(attribute.trait_type).slice(0, 80), value: String(attribute.value).slice(0, 120) }));
-      assets.push({ mint: String(asset.id || ''), name: String(asset?.content?.metadata?.name || 'The Bull Pen NFT').slice(0, 140), attributes });
-    }
-    if (items.length < pageSize || (Number.isFinite(Number(result?.total)) && assets.length >= Number(result.total))) break;
-  }
-  const payload = { ok: true, data: { collection: BULL_PEN_COLLECTION, updatedAt: new Date().toISOString(), assets } };
-  // Collection traits only change when new mints appear, never on trade.
-  await cachePut(env, cacheKey, payload, 6 * 60 * 60_000);
-  return json(payload, 200, cors, 'public, max-age=3600');
-}
-async function nftImage(url, env, cors) {
-  const assetId = String(url.searchParams.get('asset') || '').trim();
-  if (!validAddress(assetId)) return json({ ok: false, error: { message: 'Invalid NFT asset address' } }, 400, cors);
-  requireHelius(env);
-  const asset = await rpc(env, 'getAsset', { id: assetId, displayOptions: { showCollectionMetadata: true } });
-  if (!collectionMatch(asset)) return json({ ok: false, error: { message: 'Asset is not in The Bull Pen collection' } }, 404, cors);
-  let candidates = assetImageCandidates(asset);
-  const jsonUri = mediaUrl(asset?.content?.json_uri);
-  if (jsonUri) {
-    try {
-      const metadataResponse = await safeMediaFetch(jsonUri, { headers: { Accept: 'application/json' }, cf: { cacheTtl: 3600, cacheEverything: true } });
-      if (metadataResponse.ok) {
-        const metadataBytes = await limitedBody(metadataResponse, 1024 * 1024);
-        const metadata = JSON.parse(new TextDecoder().decode(metadataBytes));
-        candidates = [...new Set([...candidates, mediaUrl(metadata?.image), mediaUrl(metadata?.image_url), mediaUrl(metadata?.animation_url)].filter(Boolean))];
-      }
-    } catch (_) {}
-  }
-  for (const candidate of candidates) {
-    try {
-      const response = await safeMediaFetch(candidate, { headers: { Accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif,image/*' }, cf: { cacheTtl: 86400, cacheEverything: true } });
-      const type = String(response.headers.get('Content-Type') || '').split(';')[0].trim();
-      if (!response.ok || !/^image\/(?:avif|webp|png|jpeg|gif)$/i.test(type)) continue;
-      const bytes = await limitedBody(response, 15 * 1024 * 1024);
-      return new Response(bytes, {
-        status: 200,
-        headers: { ...cors, 'Content-Type': type, 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' }
-      });
-    } catch (_) {}
-  }
-  return json({ ok: false, error: { message: 'NFT image is unavailable from its metadata providers' } }, 404, cors);
-}
-function txMintCandidates(transaction) {
-  const values = [];
-  const nftItems = transaction?.events?.nft?.nfts;
-  if (Array.isArray(nftItems)) nftItems.forEach(item => values.push(item?.mint || item?.id));
-  if (transaction?.events?.nft?.mint) values.push(transaction.events.nft.mint);
-  if (Array.isArray(transaction?.tokenTransfers)) transaction.tokenTransfers.forEach(item => values.push(item?.mint));
-  if (Array.isArray(transaction?.accountData)) transaction.accountData.forEach(account => {
-    (account?.tokenBalanceChanges || []).forEach(change => values.push(change?.mint));
-  });
-  [transaction?.tokenMint, transaction?.mint, transaction?.tokenAddress, transaction?.nft?.mint, transaction?.nft?.address]
-    .forEach(value => values.push(value));
-  return values.filter(validAddress);
-}
-function nftSolAmount(event) {
-  const value = Number(event?.amount || event?.price || 0);
-  if (!Number.isFinite(value) || value <= 0) return 0;
-  return value > 1_000_000 ? value / 1e9 : value;
-}
-function mapNftActivity(transaction, wallet) {
-  const event = transaction?.events?.nft || {};
-  const buyer = String(event.buyer || ''), seller = String(event.seller || '');
-  let type = String(transaction.type || 'NFT_ACTIVITY').replaceAll('_', ' ');
-  if (buyer === wallet) type = 'BUY'; else if (seller === wallet) type = 'SELL'; else if (/TRANSFER/i.test(type)) type = 'TRANSFER';
-  return {
-    type,
-    signature: transaction.signature,
-    timestamp: transaction.timestamp ? new Date(Number(transaction.timestamp) * 1000).toISOString() : null,
-    description: String(transaction.description || '').slice(0, 240),
-    amountSol: nftSolAmount(event), buyer, seller, source: transaction.source || null
-  };
-}
-async function allOwnedCollectionAssets(env, wallet, warnings) {
-  const assets = [];
-  const pageSize = 1000;
-  for (let page = 1; page <= 10; page++) {
-    const result = await settled(rpc(env, 'searchAssets', {
-      ownerAddress: wallet,
-      grouping: ['collection', BULL_PEN_COLLECTION],
-      tokenType: 'nonFungible',
-      page,
-      limit: pageSize,
-      displayOptions: { showCollectionMetadata: true }
-    }), { items: [] }, warnings, `collection holdings page ${page}`);
-    const items = Array.isArray(result?.items) ? result.items : [];
-    assets.push(...items.filter(collectionMatch));
-    if (items.length < pageSize || (Number.isFinite(Number(result?.total)) && assets.length >= Number(result.total))) break;
-  }
-  return [...new Map(assets.map(asset => [asset.id, asset])).values()];
-}
-
 async function magicEden(path, params = {}) {
   const url = new URL('https://api-mainnet.magiceden.dev' + path);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, String(value)));
-  const response = await fetch(url, { headers: { Accept: 'application/json' }, cf: { cacheTtl: 120, cacheEverything: true } });
+  const response = await fetchWithPolicy(url, { headers: { Accept: 'application/json' }, cf: { cacheTtl: 120, cacheEverything: true } });
   const payload = await response.json().catch(() => null);
   if (!response.ok || payload == null) throw new Error(`Magic Eden HTTP ${response.status}`);
   return payload;
@@ -2203,10 +1052,8 @@ function salesWindow(sales, seconds) {
     lowPriceSol: prices.length ? Math.min(...prices) : null
   };
 }
-async function nftCollectionStats(env, cors) {
+async function buildNftCollectionStats(env) {
   const cacheKey = 'nft-collection-stats:' + BULL_PEN_SYMBOL;
-  const cached = await cacheGet(env, cacheKey);
-  if (cached) return json({ ok: true, data: cached, cached: true }, 200, cors, 'public, max-age=60');
   const warnings = [];
   const [marketStats, salesResult] = await Promise.all([
     settled(magicEden(`/v2/collections/${BULL_PEN_SYMBOL}/stats`, { listingAggMode: true }), {}, warnings, 'Magic Eden market stats'),
@@ -2242,8 +1089,22 @@ async function nftCollectionStats(env, cors) {
     warnings,
     updatedAt: new Date().toISOString()
   };
-  await cachePut(env, cacheKey, data, 5 * 60_000);
-  return json({ ok: true, data }, 200, cors, 'public, max-age=60');
+  const hasMarket = data.floorPriceSol != null || data.listedCount != null || data.averagePrice24hSol != null;
+  if (!hasMarket && !data.salesAnalyzed && warnings.length) throw new Error(warnings.join('; '));
+  return storeSnapshot(env, cacheKey, data, 5 * 60_000);
+}
+async function nftCollectionStats(env, cors, ctx) {
+  const cacheKey = 'nft-collection-stats:' + BULL_PEN_SYMBOL;
+  const fresh = await cacheGet(env, cacheKey + ':fresh') || await cacheGet(env, cacheKey); // one-release key migration
+  if (fresh) return json({ ok: true, data: fresh, cached: true, stale: false, updatedAt: fresh.updatedAt }, 200, cors, 'public, max-age=60');
+  const lastKnown = await cacheGet(env, cacheKey + ':last-success');
+  if (lastKnown) {
+    ctx?.waitUntil?.(buildNftCollectionStats(env).catch(() => null));
+    const stale = { ...lastKnown, stale: true };
+    return json({ ok: true, data: stale, cached: true, stale: true, updatedAt: stale.updatedAt }, 200, cors, 'public, max-age=30, stale-while-revalidate=300');
+  }
+  const data = await buildNftCollectionStats(env);
+  return json({ ok: true, data, cached: false, stale: false, updatedAt: data.updatedAt }, 200, cors, 'public, max-age=60');
 }
 
 function finiteOrNull(value) {
@@ -2251,20 +1112,13 @@ function finiteOrNull(value) {
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
 async function fetchPublicJson(url, timeoutMs = 9000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
+    const response = await fetchWithPolicy(url, {
       headers: { Accept: 'application/json', 'User-Agent': 'A-Bulls-App-Analytics/' + VERSION },
-      signal: controller.signal,
       cf: { cacheEverything: true, cacheTtl: 60 }
-    });
+    }, { timeoutMs });
     const payload = await response.json().catch(() => null);
     if (!response.ok || payload == null) throw new Error(`Upstream HTTP ${response.status}`);
     return payload;
-  } finally {
-    clearTimeout(timer);
-  }
 }
 async function allBullPenCollectionAssets(env) {
   const assets = [];
@@ -2318,27 +1172,12 @@ async function kimjiBullPenStats(env) {
 async function theBullsBuybackStats(env) {
   const cached = await cacheGet(env, 'nft:the-bulls-buybacks');
   if (cached) return { ...cached, cached: true };
-  const [stats, buybacks] = await Promise.all([
-    fetchPublicJson(THE_BULLS_API + '/api/stats'),
-    fetchPublicJson(THE_BULLS_API + '/api/buybacks?limit=12')
-  ]);
-  const rows = (Array.isArray(buybacks) ? buybacks : []).slice(0, 12).map(row => {
-    const signature = String(row?.signature || '').trim();
-    return {
-      signature: /^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature) ? signature : '',
-      sol: finiteOrNull(row?.sol),
-      ansem: finiteOrNull(row?.ansem),
-      blockTime: finiteOrNull(row?.blockTime)
-    };
-  }).filter(row => row.signature && (row.sol != null || row.ansem != null));
+  const stats = await fetchPublicJson(THE_BULLS_API + '/api/stats');
   const data = {
     solTwap: finiteOrNull(stats?.solBuyback),
     ansemBought: finiteOrNull(stats?.ansemBought),
     currentUsdValue: finiteOrNull(stats?.ansemCurrentUsdValue ?? stats?.ansemValueUsd) ?? ((finiteOrNull(stats?.ansemBought) || 0) * (finiteOrNull(stats?.avgBuybackUsd) || 0)),
-    totalBuybacksToDate: finiteOrNull(stats?.totalBuybacks ?? stats?.buybackCount) ?? rows.length,
-    averageBuybackUsd: finiteOrNull(stats?.avgBuybackUsd),
-    treasury: validAddress(stats?.treasury) ? String(stats.treasury) : '',
-    recent: rows,
+    totalBuybacksToDate: finiteOrNull(stats?.totalBuybacks ?? stats?.buybackCount),
     source: 'thebulls.live public buyback feed',
     sourceUrl: THE_BULLS_LIVE,
     updatedAt: new Date().toISOString()
@@ -2346,9 +1185,7 @@ async function theBullsBuybackStats(env) {
   await cachePut(env, 'nft:the-bulls-buybacks', data, 60_000);
   return data;
 }
-async function nftEcosystemStats(env, cors) {
-  const cached = await cacheGet(env, 'nft:ecosystem-stats');
-  if (cached) return json({ ok: true, data: cached, cached: true }, 200, cors, 'public, max-age=30');
+async function buildNftEcosystemStats(env) {
   const [kimjiResult, buybackResult] = await Promise.allSettled([
     kimjiBullPenStats(env),
     theBullsBuybackStats(env)
@@ -2358,73 +1195,23 @@ async function nftEcosystemStats(env, cors) {
   const buybacks = buybackResult.status === 'fulfilled' ? buybackResult.value : null;
   if (!kimji) warnings.push('Kimji staking data is temporarily unavailable.');
   if (!buybacks) warnings.push('thebulls.live buyback data is temporarily unavailable.');
+  if (!kimji && !buybacks) throw new Error(warnings.join(' '));
   const data = { collection: BULL_PEN_COLLECTION, kimji, buybacks, warnings, updatedAt: new Date().toISOString(), readOnly: true };
-  // Cache successful combined responses for one minute. Partial responses use a
-  // shorter TTL so a recovered upstream appears promptly without hammering it.
-  await cachePut(env, 'nft:ecosystem-stats', data, kimji && buybacks ? 60_000 : 15_000);
-  return json({ ok: true, data }, 200, cors, 'public, max-age=30');
+  if (kimji && buybacks) return storeSnapshot(env, 'nft:ecosystem-stats', data, 60_000);
+  // Keep a partial response briefly without replacing a complete last-success.
+  await cachePut(env, 'nft:ecosystem-stats:fresh', data, 15_000);
+  return data;
 }
-async function nftProfile(url, env, cors) {
-  const wallet = String(url.searchParams.get('wallet') || '').trim();
-  if (!validAddress(wallet)) return json({ ok: false, error: { message: 'Invalid Solana wallet address' } }, 400, cors);
-  requireHelius(env);
-  const cacheKey = 'nft-profile:' + wallet, cached = await cacheGet(env, cacheKey);
-  if (cached) return json({ ok: true, data: cached, cached: true }, 200, cors, 'public, max-age=15');
-  const warnings = [];
-  const [ownedAssets, transactions, magicEdenActivity] = await Promise.all([
-    allOwnedCollectionAssets(env, wallet, warnings),
-    (async () => {
-      const loaded = [];
-      let before;
-      for (let page = 0; page < 3; page++) {
-        const batch = await heliusWallet(env, `/v0/addresses/${encodeURIComponent(wallet)}/transactions`, { limit: 100, commitment: 'confirmed', before });
-        const items = Array.isArray(batch) ? batch : Array.isArray(batch?.data) ? batch.data : [];
-        loaded.push(...items);
-        if (items.length < 100 || !items.at(-1)?.signature) break;
-        before = items.at(-1).signature;
-      }
-      return loaded;
-    })().catch(error => { warnings.push('Helius NFT activity: ' + error.message); return []; }),
-    settled(magicEden(`/v2/wallets/${encodeURIComponent(wallet)}/activities`, { offset: 0, limit: 200 }), [], warnings, 'Magic Eden wallet activity')
-  ]);
-  const assets = ownedAssets.map(mapNftAsset);
-  const txs = Array.isArray(transactions) ? transactions : Array.isArray(transactions?.data) ? transactions.data : [];
-  const meRows = Array.isArray(magicEdenActivity) ? magicEdenActivity : [];
-  const candidateIds = [...new Set([...txs.flatMap(txMintCandidates), ...meRows.map(item => item?.tokenMint || item?.mint).filter(validAddress)])].slice(0, 1000);
-  let collectionIds = new Set(assets.map(asset => asset.id));
-  if (candidateIds.length) {
-    const batch = await settled(rpc(env, 'getAssetBatch', { ids: candidateIds }), [], warnings, 'activity asset verification');
-    (Array.isArray(batch) ? batch : []).filter(collectionMatch).forEach(asset => collectionIds.add(asset.id));
+async function nftEcosystemStats(env, cors, ctx) {
+  const cacheKey = 'nft:ecosystem-stats';
+  const fresh = await cacheGet(env, cacheKey + ':fresh') || await cacheGet(env, cacheKey); // one-release key migration
+  if (fresh) return json({ ok: true, data: fresh, cached: true, stale: false, updatedAt: fresh.updatedAt }, 200, cors, 'public, max-age=30');
+  const lastKnown = await cacheGet(env, cacheKey + ':last-success');
+  if (lastKnown) {
+    ctx?.waitUntil?.(buildNftEcosystemStats(env).catch(() => null));
+    const stale = { ...lastKnown, stale: true };
+    return json({ ok: true, data: stale, cached: true, stale: true, updatedAt: stale.updatedAt }, 200, cors, 'public, max-age=20, stale-while-revalidate=120');
   }
-  const heliusActivity = txs.filter(tx => txMintCandidates(tx).some(id => collectionIds.has(id))).map(tx => mapNftActivity(tx, wallet));
-  const marketActivity = meRows.filter(item => collectionIds.has(item?.tokenMint || item?.mint)).map(item => {
-    const buyer = String(item?.buyer || item?.buyerReferral || ''), seller = String(item?.seller || '');
-    let type = String(item?.type || 'NFT ACTIVITY').replaceAll('_', ' ').toUpperCase();
-    if (buyer === wallet) type = 'BUY'; else if (seller === wallet) type = 'SELL';
-    return {
-      type, signature: item?.signature || item?.txSignature || '',
-      timestamp: item?.blockTime ? new Date(Number(item.blockTime) * 1000).toISOString() : null,
-      description: String(item?.type || 'Magic Eden Bull Pen activity').slice(0, 240),
-      amountSol: nftSolAmount(item), buyer, seller, source: 'MAGIC_EDEN'
-    };
-  });
-  const activity = [...new Map([...heliusActivity, ...marketActivity]
-    .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
-    .map(item => [`${item.signature}:${item.type}:${item.timestamp}`, item])).values()].slice(0, 100);
-  const buys = activity.filter(item => item.type === 'BUY').length, sells = activity.filter(item => item.type === 'SELL').length;
-  const data = {
-    wallet, collection: BULL_PEN_COLLECTION, assets, activity,
-    stats: {
-      holdings: assets.length,
-      compressed: assets.filter(asset => asset.compressed).length,
-      activityCount: activity.length,
-      buys, sells,
-      transfers: activity.filter(item => item.type === 'TRANSFER').length,
-      volumeSol: activity.reduce((sum, item) => sum + item.amountSol, 0),
-      lastActive: activity[0]?.timestamp || null
-    },
-    warnings, updatedAt: new Date().toISOString(), readOnly: true
-  };
-  await cachePut(env, cacheKey, data, 45_000);
-  return json({ ok: true, data }, 200, cors, 'public, max-age=15');
+  const data = await buildNftEcosystemStats(env);
+  return json({ ok: true, data, cached: false, stale: false, updatedAt: data.updatedAt }, 200, cors, 'public, max-age=30');
 }
