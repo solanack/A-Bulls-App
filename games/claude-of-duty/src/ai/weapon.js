@@ -7,7 +7,7 @@
  * +Y up, +X the shooter's left. Bore line sits 0.095 m above the origin.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import {
   emptyMesh, loft, tube, ribbon, revolve, boxRound, superEllipse, ellipseProfile,
   appendMesh, computeNormals, displace, transformMesh, warp,
