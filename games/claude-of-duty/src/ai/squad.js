@@ -8,7 +8,7 @@
  * grenades, and allows only one flanker at a time.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 
 let _nextSquad = 1;
 
