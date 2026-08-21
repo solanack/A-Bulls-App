@@ -241,6 +241,7 @@ export class PhysicsSystem {
 
   async init(ctx) {
     this.ctx = ctx;
+    this.maxRagdolls = ctx.config.maxRagdolls ?? this.maxRagdolls;
     this.rng = ctx.rng.fork();
     this.ballistics.rng = this.rng;
     this.debug = new PhysicsDebugView(ctx.scene);
@@ -249,6 +250,10 @@ export class PhysicsSystem {
     this._onDeath = (e) => this._handleDeath(e);
     ctx.events.on('explosion', this._onExplosion);
     ctx.events.on('actor:death', this._onDeath);
+    ctx.events.on('mobile-quality:changed', () => {
+      this.maxRagdolls = ctx.config.maxRagdolls ?? this.maxRagdolls;
+      while (this.ragdolls.length > this.maxRagdolls) this.ragdolls.shift()?.dispose();
+    });
 
     // The level may not exist yet — `world` builds during its own init and can
     // stream more in later. We rescan until something shows up; any explicit
@@ -811,7 +816,8 @@ export class PhysicsSystem {
     while (this.ragdolls.length >= this.maxRagdolls) {
       this.ragdolls.shift()?.dispose();
     }
-    const rd = new Ragdoll(this.staticWorld, { gravity: this.gravity, ...opts });
+    const iterations = Math.min(opts.iterations ?? 6, this.ctx?.config.ragdollIterations ?? 8);
+    const rd = new Ragdoll(this.staticWorld, { gravity: this.gravity, ...opts, iterations });
     if (opts.velocity) rd.setVelocity(opts.velocity.x, opts.velocity.y, opts.velocity.z);
     if (opts.impulse && opts.point) {
       rd.applyImpulse(

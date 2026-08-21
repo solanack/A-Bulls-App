@@ -9,6 +9,21 @@ export const FIXED_DT = 1 / PHYSICS_HZ;
 /** Never simulate more than this many physics steps in one frame (spiral-of-death guard). */
 export const MAX_SUBSTEPS = 8;
 
+export const MOBILE_TIERS = {
+  low: {
+    renderScale: 0.56, physicsHz: 50, maxSubsteps: 3,
+    bloomEnabled: false, maxRagdolls: 3, ragdollIterations: 4,
+  },
+  balanced: {
+    renderScale: 0.68, physicsHz: 60, maxSubsteps: 4,
+    bloomEnabled: true, maxRagdolls: 5, ragdollIterations: 5,
+  },
+  high: {
+    renderScale: 0.82, physicsHz: 90, maxSubsteps: 5,
+    bloomEnabled: true, maxRagdolls: 8, ragdollIterations: 6,
+  },
+};
+
 /** Real-world units are metres, seconds, kilograms. */
 export const UNITS = {
   gravity: -9.81 * 2.1, // Games use exaggerated gravity; CoD-like feel.
@@ -97,10 +112,28 @@ export const DEFAULTS = {
 export function createConfig(overrides = {}) {
   const cfg = { ...DEFAULTS, ...overrides };
   cfg.q = { ...QUALITY_PRESETS[cfg.quality] };
+  cfg.physicsHz = PHYSICS_HZ;
+  cfg.maxSubsteps = MAX_SUBSTEPS;
+  cfg.mobileTier = cfg.mobile ? 'probing' : null;
+  cfg.bloomEnabled = cfg.q.bloom;
+  cfg.maxRagdolls = 8;
+  cfg.ragdollIterations = 8;
   cfg.setQuality = (name) => {
     if (!QUALITY_PRESETS[name]) throw new Error(`unknown quality preset "${name}"`);
     cfg.quality = name;
     Object.assign(cfg.q, QUALITY_PRESETS[name]);
+  };
+  cfg.applyMobileTier = (name) => {
+    const tier = MOBILE_TIERS[name];
+    if (!tier) throw new Error(`unknown mobile tier "${name}"`);
+    cfg.mobileTier = name;
+    cfg.physicsHz = tier.physicsHz;
+    cfg.maxSubsteps = tier.maxSubsteps;
+    cfg.bloomEnabled = tier.bloomEnabled;
+    cfg.maxRagdolls = tier.maxRagdolls;
+    cfg.ragdollIterations = tier.ragdollIterations;
+    cfg.q.renderScale = tier.renderScale;
+    return tier;
   };
   return cfg;
 }

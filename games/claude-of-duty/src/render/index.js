@@ -754,7 +754,7 @@ export class RenderSystem {
       add(this.dof.gather);
       add(this.dof.combine);
     }
-    if (this.bloom) {
+    if (this.bloom && this.ctx.config.bloomEnabled !== false) {
       add(this.bloom.down);
       add(this.bloom.up);
     }
@@ -1509,7 +1509,7 @@ export class RenderSystem {
 
     // ---- 16. bloom --------------------------------------------------------
     let bloomTex = null;
-    if (this.bloom) {
+    if (this.bloom && this.ctx.config.bloomEnabled !== false) {
       bloomTex = this.bloom.render(
         renderer,
         color,

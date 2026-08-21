@@ -1,8 +1,9 @@
 import * as THREE from '../../vendor/three.module.js';
 import { Registry, EventBus } from './registry.js';
-import { FIXED_DT, MAX_SUBSTEPS } from './config.js';
+import { FIXED_DT } from './config.js';
 import { Input } from './input.js';
 import { Rng } from './rng.js';
+import { MobilePerformanceGovernor } from './performance.js';
 
 /**
  * The Engine owns the frame loop and the shared context handed to every
@@ -65,6 +66,7 @@ export class Engine {
     this._last = 0;
     this._running = false;
     this._onResize = () => this.resize();
+    this.performanceGovernor = new MobilePerformanceGovernor(this);
   }
 
   add(SystemClass, opts) {
@@ -131,13 +133,16 @@ export class Engine {
     this._accum += t.dt;
     let steps = 0;
     const fixedSystems = this.registry.with('fixedUpdate');
-    while (this._accum >= FIXED_DT && steps < MAX_SUBSTEPS) {
-      for (const sys of fixedSystems) sys.fixedUpdate(FIXED_DT, this.ctx);
-      this._accum -= FIXED_DT;
+    const fixedDt = 1 / (this.config.physicsHz || 120);
+    const maxSubsteps = this.config.maxSubsteps || 4;
+    t.fixed = fixedDt;
+    while (this._accum >= fixedDt && steps < maxSubsteps) {
+      for (const sys of fixedSystems) sys.fixedUpdate(fixedDt, this.ctx);
+      this._accum -= fixedDt;
       steps++;
     }
-    if (steps === MAX_SUBSTEPS) this._accum = 0; // shed backlog rather than spiral
-    t.alpha = this._accum / FIXED_DT;
+    if (steps === maxSubsteps) this._accum = 0; // shed backlog rather than spiral
+    t.alpha = this._accum / fixedDt;
 
     for (const sys of this.registry.with('update')) sys.update(t.dt, this.ctx);
     for (const sys of this.registry.with('lateUpdate')) sys.lateUpdate(t.dt, this.ctx);
@@ -146,6 +151,7 @@ export class Engine {
     if (typeof renderSystem?.render === 'function') renderSystem.render(this.ctx);
 
     this.input.endFrame();
+    this.performanceGovernor.frame(rawDt * 1000);
   }
 
   dispose() {
@@ -154,5 +160,6 @@ export class Engine {
     this.input.detach();
     for (const sys of [...this.registry.ordered].reverse()) sys.dispose?.();
     this.events.clear();
+    this.performanceGovernor.dispose();
   }
 }
