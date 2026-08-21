@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { SkyPass, hdrTarget } from './fullscreen.js';
 import { ATMOSPHERE_GLSL } from './atmosphere.js';
 import { NOISE_GLSL } from './noise.js';
