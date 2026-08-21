@@ -1,5 +1,5 @@
 /**
- * A Bulls App API Worker v8.0.0
+ * A Bulls App API Worker v8.0.1
  * Secrets: HELIUS_API_KEY, GOOGLE_CLIENT_ID, AUTH_SESSION_SECRET
  * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COINGECKO_API_KEY (optional),
  *       KIMJI_STAKING_AUTHORITY (optional)
@@ -9,7 +9,7 @@
  * Public analytics are cache-first and refreshed in the background. Google
  * Sign-In remains the identity system; this Worker has no payment surface.
  */
-const VERSION = '8.0.0';
+const VERSION = '8.0.1';
 const COMPETITIVE_GAMES = new Set(['bull-invaders']);
 const COMPETITIVE_RULES = Object.freeze({
   'bull-invaders': Object.freeze({ mode: 'ranked', challengeModes: Object.freeze(['ranked']), maxBosses: 19 })
@@ -36,6 +36,7 @@ const DATA_POLICY = Object.freeze({
   upstreamTimeoutMs: 8_000,
   retries: 2
 });
+const ANSEM_ANALYTICS_KEY = 'ansem:analytics:v801';
 const ROUTES = Object.freeze({
   'GET /api/health': Object.freeze({ group: 'system', access: 'public', rate: 75, handle: ({ env, cors }) => health(env, cors) }),
   'GET /api/auth/google/config': Object.freeze({ group: 'auth', access: 'origin', rate: 20, handle: ({ env, cors }) => googleConfig(env, cors) }),
@@ -78,9 +79,11 @@ export default {
   },
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
-      await refreshAnsemHolderCount(env);
-      await refreshAnsemAnalytics(env);
-    })().catch(error => console.log('ansem analytics refresh skipped', error?.message || error)));
+      try { await refreshAnsemHolderCount(env); }
+      catch (error) { console.log('ansem holder refresh skipped', error?.message || error); }
+      try { await refreshAnsemAnalytics(env); }
+      catch (error) { console.log('ansem analytics refresh skipped', error?.message || error); }
+    })());
   }
 };
 
@@ -122,6 +125,8 @@ function health(env, cors) {
         googleSignIn: Boolean(env.GOOGLE_CLIENT_ID && env.AUTH_SESSION_SECRET),
         bullpenEcosystemAnalytics: Boolean(env.HELIUS_API_KEY),
         ansemAnalytics: true,
+        ansemWalletEnrichment: Boolean(env.HELIUS_API_KEY),
+        sharedAnalyticsCache: Boolean(env.ANALYTICS_CACHE),
         walletAnalytics: Boolean(env.HELIUS_API_KEY),
         leaderboard: Boolean(env.LEADERBOARD_DB && env.AUTH_SESSION_SECRET),
         monetization: false
@@ -314,7 +319,7 @@ async function leaderboardSubmit(request, env, cors) {
   };
   if (Object.values(run).some(value => value === null) || !/^[a-zA-Z0-9-]{8,80}$/.test(run.nonce)) return json({ ok: false, error: { message: 'Invalid run payload' } }, 400, cors);
   const challengeId = String(body.challengeId || '');
-  const canonical = ['abulls-v8.0.0', mode, run.game, run.score, run.elapsedMs, run.kills, run.bossesDefeated, run.nonce, challengeId].join('|');
+  const canonical = ['abulls-v8.0.1', mode, run.game, run.score, run.elapsedMs, run.kills, run.bossesDefeated, run.nonce, challengeId].join('|');
   const expectedHash = await sha256Hex(canonical);
   if (!/^[a-f0-9]{64}$/.test(String(body.replayHash || '')) || expectedHash !== body.replayHash) return json({ ok: false, error: { message: 'Replay hash validation failed' } }, 400, cors);
   if (!physicallyPossibleRun(game, run) || !gameSpecificRunPossible(game, run)) return json({ ok: false, error: { message: 'Score failed physics sanity bounds' } }, 422, cors);
@@ -360,6 +365,24 @@ async function rpc(env, method, params) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.error) throw new Error(payload.error?.message || `Helius RPC ${method} failed`);
   return payload.result;
+}
+async function rpcBatch(env, calls) {
+  if (!calls.length) return [];
+  const key = requireHelius(env);
+  const response = await fetchWithPolicy(`https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(calls.map((call, index) => ({
+      jsonrpc: '2.0', id: index + 1, method: call.method, params: call.params
+    })))
+  });
+  const payload = await response.json().catch(() => []);
+  if (!response.ok || !Array.isArray(payload)) throw new Error(`Helius RPC batch failed (${response.status})`);
+  const byId = new Map(payload.map(item => [Number(item.id), item]));
+  return calls.map((_, index) => {
+    const item = byId.get(index + 1);
+    return item?.error ? null : item?.result ?? null;
+  });
 }
 async function heliusWallet(env, path, params = {}) {
   const key = requireHelius(env);
@@ -681,37 +704,63 @@ function shortWallet(address) {
   return value.length > 10 ? value.slice(0, 4) + '…' + value.slice(-4) : value;
 }
 
-async function topTradersByVolume(env, mints, priceByMint) {
+async function topTradersByVolume(env, watchedAddresses, mint, priceUsd) {
   const volume = new Map();
   const netByWallet = new Map();
   const firstSeen = new Map();
   const lastSeen = new Map();
   const txCount = new Map();
-  const ignored = new Set([TOKEN_PROGRAM, TOKEN_2022_PROGRAM]);
-  for (const mint of [...new Set(mints.filter(validAddress))].slice(0, 2)) {
-    const signatures = await rpc(env, 'getSignaturesForAddress', [mint, { limit: 18 }]);
-    for (const item of (Array.isArray(signatures) ? signatures.slice(0, 12) : [])) {
-      const transaction = await rpc(env, 'getTransaction', [item.signature, {
-        encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed'
-      }]).catch(() => null);
-      const beforeByOwner = new Map(
-        (transaction?.meta?.preTokenBalances || [])
-          .filter(row => row.mint === mint && validAddress(row.owner))
-          .map(row => [row.owner, finiteNumber(row.uiTokenAmount?.uiAmountString ?? row.uiTokenAmount?.uiAmount)])
-      );
-      const timestamp = finiteNumber(transaction?.blockTime || item.blockTime) * 1000;
-      for (const row of transaction?.meta?.postTokenBalances || []) {
-        if (row.mint !== mint || !validAddress(row.owner) || ignored.has(row.owner)) continue;
-        const after = finiteNumber(row.uiTokenAmount?.uiAmountString ?? row.uiTokenAmount?.uiAmount);
-        const delta = after - finiteNumber(beforeByOwner.get(row.owner));
-        if (!delta) continue;
-        const usd = Math.abs(delta) * finiteNumber(priceByMint.get(mint), 1);
-        volume.set(row.owner, finiteNumber(volume.get(row.owner)) + usd);
-        netByWallet.set(row.owner, finiteNumber(netByWallet.get(row.owner)) + delta);
-        txCount.set(row.owner, finiteNumber(txCount.get(row.owner)) + 1);
-        if (!firstSeen.has(row.owner) || timestamp < firstSeen.get(row.owner)) firstSeen.set(row.owner, timestamp);
-        if (!lastSeen.has(row.owner) || timestamp > lastSeen.get(row.owner)) lastSeen.set(row.owner, timestamp);
-      }
+  const addresses = [...new Set((watchedAddresses || []).filter(validAddress))].slice(0, 2);
+  const ignored = new Set([TOKEN_PROGRAM, TOKEN_2022_PROGRAM, ...addresses]);
+  const cutoff = Math.floor(Date.now() / 1000) - 86400;
+  const signatureLists = await Promise.all(addresses.map(address =>
+    rpc(env, 'getSignaturesForAddress', [address, { limit: 32 }]).catch(() => [])
+  ));
+  const signatureItems = [...new Map(signatureLists
+    .flat()
+    .filter(item => item?.signature && (!item.blockTime || Number(item.blockTime) >= cutoff))
+    .map(item => [item.signature, item])).values()]
+    .sort((left, right) => finiteNumber(right.blockTime) - finiteNumber(left.blockTime))
+    .slice(0, 24);
+  const calls = signatureItems.map(item => ({
+    method: 'getTransaction',
+    params: [item.signature, {
+      encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed'
+    }]
+  }));
+  const transactions = [];
+  for (let offset = 0; offset < calls.length; offset += 12) {
+    transactions.push(...await rpcBatch(env, calls.slice(offset, offset + 12)));
+  }
+  for (let index = 0; index < transactions.length; index++) {
+    const transaction = transactions[index];
+    if (!transaction?.meta || transaction.meta.err) continue;
+    const beforeByOwner = new Map(
+      (transaction.meta.preTokenBalances || [])
+        .filter(row => row.mint === mint && validAddress(row.owner))
+        .map(row => [row.owner, finiteNumber(row.uiTokenAmount?.uiAmountString ?? row.uiTokenAmount?.uiAmount)])
+    );
+    const afterByOwner = new Map(
+      (transaction.meta.postTokenBalances || [])
+        .filter(row => row.mint === mint && validAddress(row.owner))
+        .map(row => [row.owner, finiteNumber(row.uiTokenAmount?.uiAmountString ?? row.uiTokenAmount?.uiAmount)])
+    );
+    const signerOwners = new Set((transaction.transaction?.message?.accountKeys || [])
+      .filter(key => key?.signer === true)
+      .map(key => String(key?.pubkey || key || ''))
+      .filter(validAddress));
+    const timestamp = finiteNumber(transaction.blockTime || signatureItems[index]?.blockTime) * 1000;
+    const owners = new Set([...beforeByOwner.keys(), ...afterByOwner.keys()]);
+    for (const owner of owners) {
+      if (ignored.has(owner) || (signerOwners.size && !signerOwners.has(owner))) continue;
+      const delta = finiteNumber(afterByOwner.get(owner)) - finiteNumber(beforeByOwner.get(owner));
+      if (!delta) continue;
+      const usd = Math.abs(delta) * finiteNumber(priceUsd);
+      volume.set(owner, finiteNumber(volume.get(owner)) + usd);
+      netByWallet.set(owner, finiteNumber(netByWallet.get(owner)) + delta);
+      txCount.set(owner, finiteNumber(txCount.get(owner)) + 1);
+      if (!firstSeen.has(owner) || timestamp < firstSeen.get(owner)) firstSeen.set(owner, timestamp);
+      if (!lastSeen.has(owner) || timestamp > lastSeen.get(owner)) lastSeen.set(owner, timestamp);
     }
   }
   return [...volume.entries()]
@@ -747,19 +796,27 @@ function rateMomentum(currentWindow, currentHours, baselineWindow, baselineHours
 }
 
 async function refreshAnsemAnalytics(env) {
-  requireHelius(env);
   const mint = env.ANSEM_MINT || DEFAULT_ANSEM_MINT;
   const holderKey = `ansem:holders:${mint}`;
   const warnings = [];
-  const [market, holders, asset] = await Promise.all([
+  const [market, holders] = await Promise.all([
     fetchAnsemMarket(env),
-    cacheGet(env, holderKey).then(value => value || cacheGet(env, `${holderKey}:last-success`)),
-    settled(rpc(env, 'getAsset', { id: mint, displayOptions: { showFungible: true } }), null, warnings, 'token metadata')
+    cacheGet(env, holderKey).then(value => value || cacheGet(env, `${holderKey}:last-success`))
   ]);
-  const notableWallets = await topTradersByVolume(env, [mint], new Map([[mint, market.priceUsd]])).catch(error => {
-    warnings.push('notable wallets: ' + error.message);
-    return [];
-  });
+  let notableWallets = [];
+  if (env.HELIUS_API_KEY) {
+    notableWallets = await topTradersByVolume(
+      env,
+      [market.pairAddress, mint],
+      mint,
+      market.priceUsd
+    ).catch(error => {
+      warnings.push('notable wallets: ' + error.message);
+      return [];
+    });
+  } else {
+    warnings.push('Helius enrichment is not configured; market analytics remain available.');
+  }
   const updatedAt = new Date().toISOString();
   const data = {
     mint,
@@ -798,16 +855,17 @@ async function refreshAnsemAnalytics(env) {
       notableWallets: {
         name: 'Solana confirmed transaction balance changes',
         authority: 'Helius Solana RPC parsed transactions',
-        sample: '12 most recent mint-address signatures'
+        sample: 'Up to 24 recent signatures from the deepest liquidity pair, with mint-address fallback',
+        window: '24h'
       }
     },
     warnings
   };
-  return storeSnapshot(env, 'ansem:analytics:v8', data);
+  return storeSnapshot(env, ANSEM_ANALYTICS_KEY, data);
 }
 
 async function ansemAnalytics(env, cors, ctx) {
-  const fresh = await cacheGet(env, 'ansem:analytics:v8:fresh');
+  const fresh = await cacheGet(env, ANSEM_ANALYTICS_KEY + ':fresh');
   if (fresh) {
     const age = Date.now() - Date.parse(fresh.updatedAt || 0);
     if (age > DATA_POLICY.freshMs / 2) ctx?.waitUntil?.(refreshAnsemAnalytics(env).catch(() => null));
@@ -816,7 +874,7 @@ async function ansemAnalytics(env, cors, ctx) {
       meta: { cached: true, stale: false, partial: fresh.partial === true, policy: 'cache-first-swr' }
     }, 200, cors, 'public, max-age=60, stale-while-revalidate=600');
   }
-  const lastKnown = await cacheGet(env, 'ansem:analytics:v8:last-success');
+  const lastKnown = await cacheGet(env, ANSEM_ANALYTICS_KEY + ':last-success');
   if (lastKnown) {
     ctx?.waitUntil?.(refreshAnsemAnalytics(env).catch(() => null));
     return json({
