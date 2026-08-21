@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { TextureForge } from './generator.js';
 import { LIBRARY, resolveName } from './library.js';
 import { extendMaterial, DEFAULT_PARAMS } from './shader.js';
