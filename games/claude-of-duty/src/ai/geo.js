@@ -16,7 +16,7 @@
  * Nothing here runs per frame; it is all boot-time work.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 
 /* ------------------------------------------------------------------ */
 /* Deterministic gradient noise                                        */
