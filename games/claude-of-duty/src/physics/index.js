@@ -66,7 +66,7 @@
  *   phys.LAYER, phys.MASK, phys.SURFACE, phys.SURFACE_NAMES, phys.SURFACE_PROPS
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { UNITS } from '../core/config.js';
 import { StaticWorld } from './bvh.js';
 import { CharacterController } from './character.js';
