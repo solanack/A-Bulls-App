@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { Assembler } from './builder.js';
 import { BUILDINGS, STREET, SET_PIECES, GATE } from './layout.js';
 import { buildGround } from './ground.js';
