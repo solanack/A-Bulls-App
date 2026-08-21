@@ -53,7 +53,7 @@ const WARM_POSES = [
  *   that builds and compiles its materials WITHOUT spawning gameplay objects —
  *   which is owned by those subsystems, not by core.
  */
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 
 /**
  * Subsystems whose `prewarmMaterials()` must NOT be driven from here.
