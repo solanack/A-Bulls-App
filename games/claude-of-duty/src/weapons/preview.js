@@ -12,7 +12,7 @@
  *        sprint | reload | inspect
  * Dev tool: nothing in the game imports it.
  */
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { MaterialSystem } from '../materials/index.js';
 import { Rng } from '../core/rng.js';
 import { WeaponMaterials } from './materials.js';
