@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { BOX, BOX_SOFT, IDENT, LL } from './kit.js';
 import { fbm3, patchGeometry, paintMasks } from './util.js';
 import { Rng } from '../core/rng.js';
