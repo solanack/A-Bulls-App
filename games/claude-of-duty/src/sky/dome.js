@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import {
   ATMOSPHERE_GLSL,
   TRANSMITTANCE_LOOKUP_GLSL,
