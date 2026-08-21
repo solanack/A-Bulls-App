@@ -78,7 +78,7 @@
  *   a listener that only knows the documented four fields still gets everything.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { Movement } from './movement.js';
 import { CameraRig } from './camera.js';
 import { Health } from './health.js';
