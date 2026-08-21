@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { el, clamp, clamp01, lerp } from './util.js';
 
 const BAKE = 512; // one-time top-down render resolution
