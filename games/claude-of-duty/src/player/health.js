@@ -12,7 +12,7 @@
  * make being shot at feel dangerous without taking control away.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { HEALTH } from './tuning.js';
 import { clamp01, approach, lerp, DEG } from './springs.js';
 
