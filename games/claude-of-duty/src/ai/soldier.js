@@ -4,7 +4,7 @@
  * instance of that variant; only the skeleton is per-instance.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { RIG, GRIP_R, GRIP_L, BORE_DIR } from './rig.js';
 import { CharacterBuilder, Noise, appendMesh, computeNormals, emptyMesh } from './geo.js';
 import * as P from './parts.js';
