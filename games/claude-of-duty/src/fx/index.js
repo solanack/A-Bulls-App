@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { UNITS } from '../core/config.js';
 import { buildParticleAtlas, buildDecalAtlas, P, D } from './atlas.js';
 import { ParticleLayer, resetSpawn, disposeQuadSource } from './particles.js';
