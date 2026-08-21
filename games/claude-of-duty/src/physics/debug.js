@@ -16,7 +16,7 @@
  *   red     contact normals
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 
 const MAX_VERTS = 120000;
 
