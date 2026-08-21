@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { PARTICLE_VERT, ParticleLayer, resetSpawn, SP } from './particles.js';
 import { P } from './atlas.js';
 
