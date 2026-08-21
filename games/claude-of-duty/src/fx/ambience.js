@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { P } from './atlas.js';
 import { resetSpawn } from './particles.js';
 import { V, cone } from './util.js';
