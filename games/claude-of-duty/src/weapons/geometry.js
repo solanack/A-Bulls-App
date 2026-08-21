@@ -1,6 +1,6 @@
-import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import * as THREE from '../../vendor/three.module.js';
+import { RoundedBoxGeometry } from '../../vendor/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries, mergeVertices } from '../../vendor/addons/utils/BufferGeometryUtils.js';
 
 /**
  * Procedural hard-surface geometry kit for the weapons.
