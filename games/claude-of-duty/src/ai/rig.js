@@ -17,7 +17,7 @@
  * have to survive a 90 degree shoulder rotation.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 
 const H = 1.8; // reference height the proportions are authored at (8 heads)
 
