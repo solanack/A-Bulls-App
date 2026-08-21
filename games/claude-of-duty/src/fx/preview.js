@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { Rng } from '../core/rng.js';
 import { EventBus } from '../core/registry.js';
 import { createConfig } from '../core/config.js';
