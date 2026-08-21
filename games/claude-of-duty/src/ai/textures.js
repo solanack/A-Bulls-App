@@ -21,7 +21,7 @@
  * and the macro pattern is not averaged into flat tan by the mip chain.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 
 /* ------------------------------------------------------------------ */
 /* Tileable value noise                                                */
