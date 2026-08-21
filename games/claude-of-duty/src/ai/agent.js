@@ -20,7 +20,7 @@
  * skeleton to the ragdoll solver with the bullet's impulse.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { RIG } from './rig.js';
 import { Animator } from './animator.js';
 
