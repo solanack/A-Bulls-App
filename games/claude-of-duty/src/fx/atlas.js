@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { Noise, clamp01, smoothstep, encodeSrgb } from './noise.js';
 
 /**
