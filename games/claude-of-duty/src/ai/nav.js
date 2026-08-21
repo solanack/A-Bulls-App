@@ -19,7 +19,7 @@
  * rest of the squad has already claimed.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 
 const SQRT2 = Math.SQRT2;
 
