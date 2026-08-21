@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { el, svg, setText, setStyle, setClass, Pool, ease, clamp, clamp01, metres } from './util.js';
 
 const _v = new THREE.Vector3();
