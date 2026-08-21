@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { COMMON } from './glsl.js';
 import { Pass, hdrTarget } from './pass.js';
 
