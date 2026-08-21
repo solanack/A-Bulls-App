@@ -21,7 +21,7 @@
  * looking up does not turn vertical bob into forward/backward lurch.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { CAMERA, MOVE } from './tuning.js';
 import {
   Spring, RecoilAxis, clamp, clamp01, lerp, approach, hashNoise, DEG,
