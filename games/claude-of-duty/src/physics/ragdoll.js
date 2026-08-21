@@ -19,7 +19,7 @@
  * the bone transforms from that moment on.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { MASK, SURFACE_PROPS } from './surfaces.js';
 import { closestPtSegSeg, makeClosest } from './math.js';
 
