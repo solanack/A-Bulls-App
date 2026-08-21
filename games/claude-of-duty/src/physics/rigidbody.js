@@ -14,7 +14,7 @@
  * it is exactly what shipped debris systems do.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { makeHitRecord, closestPtPointTriangle } from './math.js';
 import { MASK, SURFACE_PROPS } from './surfaces.js';
 
