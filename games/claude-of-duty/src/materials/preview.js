@@ -8,7 +8,7 @@
  *
  *   /src/materials/preview.html?view=board|wall|street|closeup|grazing
  */
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { MaterialSystem } from './index.js';
 
 const params = new URLSearchParams(location.search);
