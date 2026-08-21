@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { CONCRETE, BRICK, PLASTER, TILE } from './glsl/surfaces-arch.js';
 import { ASPHALT, SAND, DIRT, GRAVEL } from './glsl/surfaces-ground.js';
 import { METAL_RUST, METAL_PAINTED, METAL_BRUSHED, CORRUGATED } from './glsl/surfaces-metal.js';
