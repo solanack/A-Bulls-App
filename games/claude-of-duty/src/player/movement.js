@@ -14,7 +14,7 @@
  * damage or by control being disabled.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { STANCE, MOVE, GRAVITY, JUMP_SPEED, FOOTSTEP } from './tuning.js';
 import { LedgeProbe, MantleMotion, LEDGE_NONE, LEDGE_VAULT } from './mantle.js';
 import { clamp, clamp01, approach, lerp } from './springs.js';
