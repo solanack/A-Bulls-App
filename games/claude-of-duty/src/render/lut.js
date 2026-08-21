@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 
 /**
  * Procedurally generated 33^3 colour grading LUT (Data3DTexture, RGBA8).
