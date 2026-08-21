@@ -1,0 +1,42 @@
+name: Build Cloudflare upload packages
+
+on:
+  push:
+    branches:
+      - codex/add-claude-of-duty-mobile
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create full master archive
+        run: |
+          zip -qr A-Bulls-App-master.zip . -x '.git/*' '.github/*' 'A-Bulls-App-master.zip'
+      - name: Create Cloudflare Pages archive
+        run: |
+          mkdir -p /tmp/abulls-pages
+          rsync -a ./ /tmp/abulls-pages/ \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'worker.js' \
+            --exclude 'wrangler.toml' \
+            --exclude 'migrations/' \
+            --exclude 'worker/' \
+            --exclude 'tests/' \
+            --exclude '*.md' \
+            --exclude 'A-Bulls-App-master.zip'
+          cd /tmp/abulls-pages
+          zip -qr "$GITHUB_WORKSPACE/A-Bulls-App-Cloudflare-Pages.zip" .
+      - name: Upload private packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: a-bulls-app-cloudflare-packages
+          path: |
+            A-Bulls-App-master.zip
+            A-Bulls-App-Cloudflare-Pages.zip
+          if-no-files-found: error
+          retention-days: 7
