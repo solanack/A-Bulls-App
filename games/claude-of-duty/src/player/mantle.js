@@ -19,7 +19,7 @@
  * climb catches the very lip you are climbing.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { MOVE } from './tuning.js';
 import { clamp01, smootherstep, smoothstep, DEG } from './springs.js';
 
