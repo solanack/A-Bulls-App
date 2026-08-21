@@ -23,7 +23,7 @@
  * Everything is preallocated: `update()` does not allocate.
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import * as C from './clips.js';
 import { BORE_DIR } from './rig.js';
 
