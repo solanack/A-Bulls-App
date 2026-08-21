@@ -8,7 +8,7 @@
  * Query params: variant, view (front|back|three|face|gear|legs|line), clip, phase, aim
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { Rng } from '../core/rng.js';
 import { SoldierMaterials } from './textures.js';
 import { buildSoldier, VARIANTS } from './soldier.js';
