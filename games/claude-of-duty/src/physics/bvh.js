@@ -20,7 +20,7 @@
  *                            count = 0 : interior, children at leftFirst, +1
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import {
   rayAabb,
   rayTriangle,
