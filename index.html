@@ -12,6 +12,13 @@
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png"/>
   <link rel="stylesheet" href="css/styles.css?v=7.0.1"/>
   <link rel="stylesheet" href="css/track.css?v=7.0.1"/>
+  <style>
+    .claude-arcade-link{display:flex;align-items:center;gap:10px;text-decoration:none}
+    .claude-arcade-link .nav-live-chip{margin-left:auto}
+    .feature-card--claude{background:linear-gradient(145deg,#111c27,#05080c);color:#fff;text-decoration:none}
+    .feature-card--claude .claude-mark{display:grid;place-items:center;min-height:92px;font:900 34px/.85 Arial;color:#fff;text-shadow:0 0 24px #e94d3e}
+    .feature-card--claude .claude-mark span{color:#ef604b}
+  </style>
 </head>
 <body>
 <div class="opening-sequence" id="openingSequence" aria-label="A Bulls App opening sequence">
@@ -62,6 +69,7 @@
               <label class="play-record-toggle" for="recordRunToggle"><span><b>Record next run</b><small>Off by default · one memory-only session</small></span><input type="checkbox" id="recordRunToggle"/></label>
               <button type="button" id="startInvaders" class="primary play-now-btn">START THE STAMPEDE</button>
             </div>
+            <a class="nav-item nav-child claude-arcade-link" href="games/claude-of-duty/index.html"><span class="nav-glyph" aria-hidden="true">⌖</span><span class="nav-label">Claude of Duty</span><span class="nav-live-chip">MOBILE</span></a>
             <button type="button" class="nav-item nav-child nav-make-yours" data-view="settings"><span class="nav-glyph" aria-hidden="true">✦</span><span class="nav-label">Make It Yours</span></button>
             <button type="button" class="nav-item nav-child" data-view="communityGoal"><span class="nav-label">Community Goal</span></button>
             <button type="button" class="nav-item nav-child" data-view="invaderStats"><span class="nav-label">Mission Statistics</span></button>
