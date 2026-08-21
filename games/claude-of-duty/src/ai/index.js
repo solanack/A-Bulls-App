@@ -37,7 +37,7 @@
  *   damage:dealt (enemy hitting the player), actor:death
  */
 
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { SoldierMaterials } from './textures.js';
 import { buildSoldier, resolveMaterials, MATERIAL_SLOTS, VARIANTS } from './soldier.js';
 import { RIG } from './rig.js';
