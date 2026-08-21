@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { installStyles, removeStyles } from './style.js';
 import { el, clamp, clamp01, damp, setStyle } from './util.js';
 import { Crosshair } from './crosshair.js';
