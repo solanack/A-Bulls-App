@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { NOISE_GLSL } from './glsl/noise.js';
 import { RUST_HELPERS } from './glsl/surfaces-metal.js';
 
