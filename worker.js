@@ -1,5 +1,5 @@
 /**
- * A Bulls App API Worker v8.0.1
+ * A Bulls App API Worker v8.0.2
  * Secrets: HELIUS_API_KEY, GOOGLE_CLIENT_ID, AUTH_SESSION_SECRET
  * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COINGECKO_API_KEY (optional),
  *       KIMJI_STAKING_AUTHORITY (optional)
@@ -9,7 +9,19 @@
  * Public analytics are cache-first and refreshed in the background. Google
  * Sign-In remains the identity system; this Worker has no payment surface.
  */
-const VERSION = '8.0.1';
+const VERSION = '8.0.2';
+const MAX_JSON_BYTES = 16 * 1024;
+const MAX_SIGNED_TOKEN_CHARS = 8192;
+const API_SECURITY_HEADERS = Object.freeze({
+  'Content-Security-Policy': "default-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+  'Cross-Origin-Resource-Policy': 'cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+  'Referrer-Policy': 'no-referrer',
+  'Strict-Transport-Security': 'max-age=31536000',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'X-Robots-Tag': 'noindex, nofollow, nosnippet'
+});
 const COMPETITIVE_GAMES = new Set(['bull-invaders']);
 const COMPETITIVE_RULES = Object.freeze({
   'bull-invaders': Object.freeze({ mode: 'ranked', challengeModes: Object.freeze(['ranked']), maxBosses: 19 })
@@ -58,8 +70,16 @@ export default {
     const url = new URL(request.url);
     const route = ROUTES[`${request.method} ${url.pathname}`];
     const publicRoute = isPublicApiRoute(url.pathname, request.method);
-    const cors = corsHeaders(request, env, publicRoute);
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+    const requestId = request.headers.get('CF-Ray') || crypto.randomUUID();
+    const cors = { ...corsHeaders(request, env, publicRoute), 'X-Request-ID': requestId };
+    if (request.method === 'OPTIONS') {
+      const knownPath = Object.keys(ROUTES).some(key => key.endsWith(` ${url.pathname}`));
+      if (!knownPath) return json({ ok: false, error: { message: 'Route not found' } }, 404, cors);
+      if (!publicRoute && !originAllowed(request, env)) {
+        return json({ ok: false, error: { message: 'Origin not allowed' } }, 403, cors);
+      }
+      return new Response(null, { status: 204, headers: { ...API_SECURITY_HEADERS, ...cors } });
+    }
     // Wallet, Bullpen, analytics and leaderboard endpoints only expose public data or
     // anonymous, server-validated scores. They intentionally support the hosted
     // Pages site, an installed PWA/TWA, and read-only preview shells. Google
@@ -70,19 +90,26 @@ export default {
     try {
       const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
       if (!await rateLimit(env, `${route.group}:${ip}:${url.pathname}`, route.rate, 60_000)) {
-        return json({ ok: false, error: { message: 'Too many requests. Try again shortly.' } }, 429, cors);
+        return json(
+          { ok: false, error: { message: 'Too many requests. Try again shortly.' } },
+          429,
+          { ...cors, 'Retry-After': '60' }
+        );
       }
       return await route.handle({ request, url, env, cors, ctx });
     } catch (error) {
-      return json({ ok: false, error: { message: error?.message || 'Unexpected Worker error' } }, Number(error?.status || 500), cors);
+      const candidateStatus = Number(error?.status || 500);
+      const status = Number.isInteger(candidateStatus) && candidateStatus >= 400 && candidateStatus <= 599 ? candidateStatus : 500;
+      if (status >= 500) logFailure(`request ${requestId}`, error);
+      return json({ ok: false, error: { message: publicErrorMessage(error, status), requestId } }, status, cors);
     }
   },
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
       try { await refreshAnsemHolderCount(env); }
-      catch (error) { console.log('ansem holder refresh skipped', error?.message || error); }
+      catch (error) { logFailure('scheduled holder refresh', error); }
       try { await refreshAnsemAnalytics(env); }
-      catch (error) { console.log('ansem analytics refresh skipped', error?.message || error); }
+      catch (error) { logFailure('scheduled analytics refresh', error); }
     })());
   }
 };
@@ -113,8 +140,47 @@ function corsHeaders(request, env, publicRoute = false) {
 function json(value, status = 200, extra = {}, cacheControl = 'no-store') {
   return new Response(JSON.stringify(value), {
     status,
-    headers: { ...extra, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': cacheControl, 'X-Content-Type-Options': 'nosniff' }
+    headers: { ...API_SECURITY_HEADERS, ...extra, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': cacheControl }
   });
+}
+function httpError(message, status = 400, expose = status < 500) {
+  return Object.assign(new Error(message), { status, expose });
+}
+function publicErrorMessage(error, status) {
+  if (error?.expose === true && typeof error.message === 'string') return error.message.slice(0, 180);
+  if (status === 401) return 'Authentication is required or has expired.';
+  if (status === 403) return 'This request is not allowed.';
+  if (status === 404) return 'Route not found.';
+  if (status === 413) return 'Request body is too large.';
+  if (status === 415) return 'Content-Type application/json is required.';
+  if (status >= 500) return 'The service could not complete this request.';
+  return 'The request was invalid.';
+}
+function logFailure(label, error) {
+  const name = String(error?.name || 'Error').replace(/[^a-zA-Z0-9_. -]/g, '').slice(0, 40) || 'Error';
+  const message = String(error?.message || error || 'unknown failure')
+    .replace(/https?:\/\/\S+/gi, '[upstream-url]')
+    .replace(/\b(api[-_]?key|authorization|bearer|credential|secret|token)=?\s*[^\s,;]+/gi, '$1=[redacted]')
+    .slice(0, 240);
+  console.warn(`[${label}] ${name}: ${message}`);
+}
+async function readJsonBody(request, maxBytes = MAX_JSON_BYTES) {
+  const mediaType = String(request.headers.get('Content-Type') || '').split(';', 1)[0].trim().toLowerCase();
+  if (mediaType !== 'application/json' && !mediaType.endsWith('+json')) {
+    throw httpError('Content-Type application/json is required.', 415);
+  }
+  const declared = Number(request.headers.get('Content-Length'));
+  if (Number.isFinite(declared) && declared > maxBytes) throw httpError('Request body is too large.', 413);
+  const text = await request.text();
+  if (encoder.encode(text).byteLength > maxBytes) throw httpError('Request body is too large.', 413);
+  if (!text.trim()) throw httpError('A JSON request body is required.', 400);
+  let value;
+  try { value = JSON.parse(text); }
+  catch (_) { throw httpError('The JSON request body is malformed.', 400); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw httpError('The JSON request body must be an object.', 400);
+  }
+  return value;
 }
 function health(env, cors) {
   return json({
@@ -137,8 +203,11 @@ function health(env, cors) {
 async function rateLimit(env, key, max, windowMs) {
   if (env.RATE_LIMITER?.limit) {
     const result = await env.RATE_LIMITER.limit({ key });
-    return result?.success !== false;
+    if (result?.success === false) return false;
   }
+  // Keep the route-specific ceiling as a second layer. The shared Cloudflare
+  // binding supplies cross-isolate protection; this bounded map preserves the
+  // tighter per-route budgets during development and inside each isolate.
   const now = Date.now();
   const prior = memoryRates.get(key);
   if (!prior || now - prior.startedAt > windowMs) {
@@ -270,8 +339,8 @@ async function leaderboardChallenge(request, env, cors) {
   if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Ranked play is not configured' } }, 503, cors);
   let account;
   try { account = await authenticatedAccount(request, env); }
-  catch (error) { return json({ ok: false, error: { message: error.message } }, Number(error.status || 401), cors); }
-  const body = await request.json().catch(() => ({}));
+  catch (_) { return json({ ok: false, error: { message: 'A valid signed player session is required' } }, 401, cors); }
+  const body = await readJsonBody(request);
   const game = String(body.game || 'bull-invaders');
   const mode = String(body.mode || '');
   const rule = COMPETITIVE_RULES[game];
@@ -300,7 +369,7 @@ async function verifyRunChallenge(request, body, env, game, mode) {
 }
 async function leaderboardSubmit(request, env, cors) {
   if (!env.LEADERBOARD_DB || !env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Leaderboard is not configured' } }, 503, cors);
-  const body = await request.json().catch(() => ({}));
+  const body = await readJsonBody(request);
   const game = String(body.game || '');
   const rule = COMPETITIVE_RULES[game];
   if (!COMPETITIVE_GAMES.has(game) || !rule) return json({ ok: false, error: { message: 'Unsupported game' } }, 400, cors);
@@ -325,7 +394,10 @@ async function leaderboardSubmit(request, env, cors) {
   if (!physicallyPossibleRun(game, run) || !gameSpecificRunPossible(game, run)) return json({ ok: false, error: { message: 'Score failed physics sanity bounds' } }, 422, cors);
   let verified;
   try { verified = await verifyRunChallenge(request, body, env, game, mode); }
-  catch (error) { return json({ ok: false, error: { message: error.message } }, Number(error.status || 401), cors); }
+  catch (error) {
+    const status = Number(error?.status) === 403 ? 403 : 401;
+    return json({ ok: false, error: { message: status === 403 ? 'Run challenge does not match this account or run' : 'Run challenge is invalid or expired' } }, status, cors);
+  }
   const db = await ensureLeaderboard(env);
   const createdAt = new Date().toISOString(), alias = cleanAlias(body.alias);
   const results = await db.batch([
@@ -347,7 +419,8 @@ async function leaderboardTop(url, env, cors) {
   if (!env.LEADERBOARD_DB) return json({ ok: false, error: { message: 'Leaderboard is not configured' } }, 503, cors);
   const game = String(url.searchParams.get('game') || 'bull-invaders');
   if (!COMPETITIVE_GAMES.has(game)) return json({ ok: false, error: { message: 'Unsupported game' } }, 400, cors);
-  const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') || 10)));
+  const requestedLimit = Number(url.searchParams.get('limit') || 10);
+  const limit = Number.isInteger(requestedLimit) ? Math.min(50, Math.max(1, requestedLimit)) : 10;
   const db = await ensureLeaderboard(env);
   const query = await db.prepare(`SELECT alias, score, elapsed_ms AS elapsedMs, kills,
     bosses_defeated AS bossesDefeated, created_at AS createdAt
@@ -398,11 +471,15 @@ async function heliusWallet(env, path, params = {}) {
 }
 async function settled(promise, fallback, warnings, label) {
   try { return await promise; }
-  catch (error) { warnings.push(label + ': ' + error.message); return fallback; }
+  catch (error) {
+    logFailure(`upstream ${label}`, error);
+    warnings.push(label + ': temporarily unavailable');
+    return fallback;
+  }
 }
 
 async function walletOverview(request, env, cors) {
-  const body = await request.json().catch(() => ({}));
+  const body = await readJsonBody(request, 4096);
   const address = String(body.address || '');
   if (!validAddress(address)) return json({ ok: false, error: { message: 'Invalid Solana address' } }, 400, cors);
   requireHelius(env);
@@ -475,7 +552,7 @@ async function walletOverview(request, env, cors) {
   return json({ ok: true, data, updatedAt: data.updatedAt }, 200, cors);
   } catch (error) {
     const stale = await cacheGet(env, cacheKey + ':last-success');
-    if (stale) return json({ ok: true, data: stale, cached: true, stale: true, updatedAt: stale.updatedAt, warning: error.message }, 200, cors);
+    if (stale) return json({ ok: true, data: stale, cached: true, stale: true, updatedAt: stale.updatedAt, warning: 'Upstream refresh failed; showing last-known data.' }, 200, cors);
     throw error;
   }
 }
@@ -603,7 +680,7 @@ function activityAnalytics(transactions, ansemMint) {
 }
 
 async function walletActivity(request, env, cors) {
-  const body = await request.json().catch(() => ({}));
+  const body = await readJsonBody(request, 4096);
   const address = String(body.address || '');
   const range = ['24h', '7d', '30d', '90d', 'all'].includes(body.range) ? body.range : '24h';
   const limit = Math.min(100, Math.max(1, Number(body.limit) || 100));
@@ -656,7 +733,7 @@ async function walletActivity(request, env, cors) {
   return json({ ok: true, data, updatedAt: data.updatedAt }, 200, cors);
   } catch (error) {
     const stale = await cacheGet(env, cacheKey + ':last-success');
-    if (stale) return json({ ok: true, data: stale, cached: true, stale: true, updatedAt: stale.updatedAt, warning: error.message }, 200, cors);
+    if (stale) return json({ ok: true, data: stale, cached: true, stale: true, updatedAt: stale.updatedAt, warning: 'Upstream refresh failed; showing last-known data.' }, 200, cors);
     throw error;
   }
 }
@@ -811,7 +888,8 @@ async function refreshAnsemAnalytics(env) {
       mint,
       market.priceUsd
     ).catch(error => {
-      warnings.push('notable wallets: ' + error.message);
+      logFailure('upstream notable wallets', error);
+      warnings.push('notable wallets: temporarily unavailable');
       return [];
     });
   } else {
@@ -889,10 +967,11 @@ async function ansemAnalytics(env, cors, ctx) {
       meta: { cached: false, stale: false, partial: built.partial === true, policy: 'cold-cache-fill' }
     }, 200, cors, 'public, max-age=30');
   } catch (error) {
+    logFailure('upstream ansem analytics', error);
     return json({
       ok: false,
       error: { message: 'Analytics cache is warming; retry shortly.' },
-      meta: { cached: false, stale: true, partial: true, policy: 'no-silent-placeholder', cause: error.message }
+      meta: { cached: false, stale: true, partial: true, policy: 'no-silent-placeholder' }
     }, 503, cors, 'no-store');
   }
 }
@@ -975,6 +1054,7 @@ function base64url(bytes) {
   return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
 }
 function decodeBase64url(value) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('Invalid base64url data');
   const padded = value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - value.length % 4) % 4);
   return Uint8Array.from(atob(padded), char => char.charCodeAt(0));
 }
@@ -989,12 +1069,20 @@ async function issueToken(payload, secret) {
 }
 async function readSignedPayload(token, env) {
   if (!env.AUTH_SESSION_SECRET) throw Object.assign(new Error('Signed sessions are not configured'), { status: 503 });
-  const [body, signature, extra] = String(token || '').split('.');
+  const encoded = String(token || '');
+  if (!encoded || encoded.length > MAX_SIGNED_TOKEN_CHARS) throw Object.assign(new Error('Invalid session'), { status: 401 });
+  const [body, signature, extra] = encoded.split('.');
   if (!body || !signature || extra) throw Object.assign(new Error('Invalid session'), { status: 401 });
   const expected = await sign(body, env.AUTH_SESSION_SECRET);
   if (!secureEqual(signature, expected)) throw Object.assign(new Error('Invalid session'), { status: 401 });
-  const payload = jsonFromBase64url(body);
-  if (!payload.exp || payload.exp < Date.now()) throw Object.assign(new Error('Session expired'), { status: 401 });
+  let payload;
+  try { payload = jsonFromBase64url(body); }
+  catch (_) { throw Object.assign(new Error('Invalid session'), { status: 401 }); }
+  const now = Date.now();
+  if (!payload || typeof payload !== 'object' || !Number.isFinite(payload.exp) || !Number.isFinite(payload.iat)) {
+    throw Object.assign(new Error('Invalid session'), { status: 401 });
+  }
+  if (payload.exp < now || payload.iat > now + 120_000) throw Object.assign(new Error('Session expired'), { status: 401 });
   return payload;
 }
 /* Google Identity Services: verify the ID token signature and claims on the Worker. */
@@ -1012,31 +1100,46 @@ function secureEqual(left, right) {
   for (let index = 0; index < left.length; index++) difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
   return difference === 0;
 }
-async function googleKeys() {
-  if (googleKeysCache.expiresAt > Date.now() && googleKeysCache.keys.length) return googleKeysCache.keys;
+async function googleKeys(forceRefresh = false) {
+  if (!forceRefresh && googleKeysCache.expiresAt > Date.now() && googleKeysCache.keys.length) return googleKeysCache.keys;
   const response = await fetchWithPolicy('https://www.googleapis.com/oauth2/v3/certs', { headers: { Accept: 'application/json' } });
   if (!response.ok) throw new Error('Google signing keys are temporarily unavailable');
   const payload = await response.json();
-  googleKeysCache = { keys: Array.isArray(payload.keys) ? payload.keys : [], expiresAt: Date.now() + 45 * 60_000 };
+  const maxAgeMatch = String(response.headers.get('Cache-Control') || '').match(/(?:^|,)\s*max-age=(\d+)/i);
+  const maxAgeSeconds = Math.min(6 * 3600, Math.max(300, Number(maxAgeMatch?.[1]) || 2700));
+  googleKeysCache = { keys: Array.isArray(payload.keys) ? payload.keys : [], expiresAt: Date.now() + maxAgeSeconds * 1000 };
   return googleKeysCache.keys;
 }
 async function validateGoogleIdToken(token, env) {
-  if (!env.GOOGLE_CLIENT_ID || !env.AUTH_SESSION_SECRET) throw new Error('Google sign in is not configured');
-  const parts = String(token || '').split('.');
+  if (!env.GOOGLE_CLIENT_ID || !env.AUTH_SESSION_SECRET) throw httpError('Google sign in is not configured', 503, false);
+  const credential = String(token || '');
+  if (!credential || credential.length > MAX_SIGNED_TOKEN_CHARS) throw httpError('Invalid Google credential', 401, false);
+  const parts = credential.split('.');
   if (parts.length !== 3) throw new Error('Invalid Google credential');
   const [headerPart, payloadPart, signaturePart] = parts;
-  const header = jsonFromBase64url(headerPart), claims = jsonFromBase64url(payloadPart);
+  let header, claims;
+  try {
+    header = jsonFromBase64url(headerPart);
+    claims = jsonFromBase64url(payloadPart);
+  } catch (_) {
+    throw httpError('Invalid Google credential', 401, false);
+  }
+  if (!header || typeof header !== 'object' || !claims || typeof claims !== 'object') {
+    throw httpError('Invalid Google credential', 401, false);
+  }
   if (header.alg !== 'RS256' || !header.kid) throw new Error('Unsupported Google credential');
-  const jwk = (await googleKeys()).find(key => key.kid === header.kid && key.kty === 'RSA');
-  if (!jwk) { googleKeysCache.expiresAt = 0; throw new Error('Google signing key was not found; retry once'); }
+  let jwk = (await googleKeys()).find(key => key.kid === header.kid && key.kty === 'RSA');
+  if (!jwk) jwk = (await googleKeys(true)).find(key => key.kid === header.kid && key.kty === 'RSA');
+  if (!jwk) throw new Error('Google signing key was not found');
   const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
   const verified = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, decodeBase64url(signaturePart), encoder.encode(headerPart + '.' + payloadPart));
   if (!verified) throw new Error('Google credential signature is invalid');
   const now = Math.floor(Date.now() / 1000), audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
   if (!['accounts.google.com', 'https://accounts.google.com'].includes(claims.iss)) throw new Error('Google credential issuer is invalid');
   if (!audience.includes(env.GOOGLE_CLIENT_ID)) throw new Error('Google credential is for a different app');
-  if (!claims.exp || claims.exp < now - 30 || claims.iat > now + 120 || (claims.nbf && claims.nbf > now + 30)) throw new Error('Google credential has expired or is not active');
-  if (!claims.sub || claims.email_verified !== true) throw new Error('A verified Google account is required');
+  if ((audience.length > 1 || claims.azp) && claims.azp !== env.GOOGLE_CLIENT_ID) throw new Error('Google authorized party is invalid');
+  if (!Number.isFinite(claims.exp) || !Number.isFinite(claims.iat) || claims.exp < now - 30 || claims.iat > now + 120 || (claims.nbf && claims.nbf > now + 30)) throw new Error('Google credential has expired or is not active');
+  if (!/^[^\s]{1,255}$/.test(String(claims.sub || '')) || claims.email_verified !== true) throw new Error('A verified Google account is required');
   const name = String(claims.name || '').slice(0, 120);
   const email = String(claims.email || '').slice(0, 254);
   const handle = String(email.split('@')[0] || name || 'bull').toLowerCase().replace(/[^a-z0-9_.-]/g, '').replace(/^[_.-]+|[_.-]+$/g, '').slice(0, 24) || 'bull';
@@ -1051,16 +1154,21 @@ async function readGoogleSession(token, env) {
   return { sub: payload.sub, name: payload.name || '', email: payload.email || '', handle: payload.handle || 'bull', picture: payload.picture || null, verifiedAt: payload.verifiedAt || null };
 }
 async function verifyGoogle(request, env, cors) {
-  const body = await request.json().catch(() => ({}));
-  const user = await validateGoogleIdToken(body.credential, env);
-  const sessionToken = await issueGoogleSession(user, env);
-  return json({ ok: true, data: { user, sessionToken, expiresIn: 7 * 86400 } }, 200, cors);
+  const body = await readJsonBody(request);
+  try {
+    const user = await validateGoogleIdToken(body.credential, env);
+    const sessionToken = await issueGoogleSession(user, env);
+    return json({ ok: true, data: { user, sessionToken, expiresIn: 7 * 86400 } }, 200, cors);
+  } catch (error) {
+    if (Number(error?.status) === 503) throw error;
+    return json({ ok: false, error: { message: 'Google sign-in could not be verified.' } }, 401, cors);
+  }
 }
 async function googleSession(request, env, cors) {
   const match = String(request.headers.get('Authorization') || '').match(/^Bearer\s+(.+)$/i);
   if (!match) return json({ ok: false, error: { message: 'Session token required' } }, 401, cors);
   try { return json({ ok: true, data: await readGoogleSession(match[1], env) }, 200, cors); }
-  catch (error) { return json({ ok: false, error: { message: error.message } }, 401, cors); }
+  catch (_) { return json({ ok: false, error: { message: 'Session is invalid or expired' } }, 401, cors); }
 }
 async function playerSession(env, cors) {
   if (!env.AUTH_SESSION_SECRET) return json({ ok: false, error: { message: 'Player sessions are not configured' } }, 503, cors);
@@ -1128,7 +1236,11 @@ async function buildNftCollectionStats(env) {
       }
       const unique = [...new Map(sales.map(item => [`${item.signature}:${item.tokenMint || ''}`, item])).values()];
       return { sales: unique, complete30d };
-    })().catch(error => { warnings.push('Magic Eden sale history: ' + error.message); return { sales: [], complete30d: false }; })
+    })().catch(error => {
+      logFailure('upstream Magic Eden sale history', error);
+      warnings.push('Magic Eden sale history: temporarily unavailable');
+      return { sales: [], complete30d: false };
+    })
   ]);
   const data = {
     collection: BULL_PEN_COLLECTION,
