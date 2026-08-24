@@ -26,12 +26,23 @@ document.addEventListener('DOMContentLoaded', () => {
   bullIntelligenceScript.defer = true;
   bullIntelligenceScript.onload = () => {
     window.BBRBullIntelligence?.init?.();
-    const labScript = document.createElement('script');
-    labScript.src = 'js/intelligence-lab.js?v=8.6.0';
-    labScript.defer = true;
-    labScript.onload = () => window.BBRIntelligenceLab?.init?.();
-    labScript.onerror = () => console.warn('[intelligence-lab] client failed to load');
-    document.head.append(labScript);
+
+    // The pure core contains normalized-event reconstruction, historical rule replay,
+    // Radar scoring and Solana Weather classification. It is intentionally loaded before
+    // Intelligence Lab so the UI can activate these features only when defensible data exists.
+    const intelligenceCoreScript = document.createElement('script');
+    intelligenceCoreScript.src = 'js/intelligence-core.js?v=8.6.0';
+    intelligenceCoreScript.defer = true;
+    intelligenceCoreScript.onload = () => {
+      const labScript = document.createElement('script');
+      labScript.src = 'js/intelligence-lab.js?v=8.6.0';
+      labScript.defer = true;
+      labScript.onload = () => window.BBRIntelligenceLab?.init?.();
+      labScript.onerror = () => console.warn('[intelligence-lab] client failed to load');
+      document.head.append(labScript);
+    };
+    intelligenceCoreScript.onerror = () => console.warn('[intelligence-core] client failed to load');
+    document.head.append(intelligenceCoreScript);
   };
   bullIntelligenceScript.onerror = () => console.warn('[bull-intelligence] client failed to load');
   document.head.append(bullIntelligenceScript);
