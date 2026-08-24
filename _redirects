@@ -1,0 +1,16 @@
+/js/retention/* /:splat 200
+/js/* /:splat 200
+/css/* /:splat 200
+/vendor/* /:splat 200
+/assets/v7/backgrounds/* /:splat 200
+/assets/v7/bosses/* /:splat 200
+/assets/v7/enemies/* /:splat 200
+/assets/v7/player-ship.webp /player-ship.webp 200
+/assets/ships/* /:splat 200
+/assets/bosses-original/* /:splat 200
+/assets/atlases/* /:splat 200
+/assets/powerups/ecosystem/* /:splat 200
+/assets/powerups/* /:splat 200
+/assets/opening/* /:splat 200
+/assets/icons/* /:splat 200
+/assets/* /:splat 200
