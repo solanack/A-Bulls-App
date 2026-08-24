@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
-const source = await fs.readFile(new URL('../worker.js', import.meta.url), 'utf8');
+const source = await fs.readFile(new URL('./worker.js', import.meta.url), 'utf8');
 const worker = (await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)).default;
 const env = {
   ALLOWED_ORIGINS: 'https://abullsapp.com',
@@ -36,10 +36,11 @@ const billingResponse = await worker.fetch(request('/api/billing/config'), env, 
 assert.equal(billingResponse.status, 404, 'legacy payment secrets must not enable commerce');
 
 const healthResponse = await worker.fetch(request('/api/health'), env, {});
-const health = await healthResponse.json();
-assert.equal(health.version, '5.2.1');
-assert.equal(health.services.bullionLedger, false);
-assert.equal(health.services.googlePlayBilling, false);
-assert.equal(health.services.stripeCardCheckout, false);
+assert.equal(healthResponse.status, 200);
+const healthBody = await healthResponse.json();
+assert.equal(healthBody.ok, true);
+assert.equal(healthBody.data.version, '8.0.2');
+assert.equal(healthBody.data.services.monetization, false);
+assert.equal(healthBody.data.services.leaderboard, true);
 
 console.log('worker stabilization checks passed');
