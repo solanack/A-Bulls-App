@@ -161,7 +161,7 @@
       pricedLegs: buys.length - missingExitPrice,
       missingExitPrice,
       entryValueUsd,
-      pricedEntryValueUsd,
+      pricedEntryValueUsd: pricedEntryValue,
       simulatedExitValueUsd,
       simulatedPnlUsd: simulatedExitValueUsd - pricedEntryValue,
       returnPercent: pricedEntryValue > 0 ? (simulatedExitValueUsd / pricedEntryValue - 1) * 100 : null,
