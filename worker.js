@@ -1,5 +1,5 @@
 /**
- * A Bulls App API Worker v8.0.2
+ * A Bulls App API Worker v8.0.4
  * Secrets: HELIUS_API_KEY, GOOGLE_CLIENT_ID, AUTH_SESSION_SECRET
  * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COINGECKO_API_KEY (optional),
  *       KIMJI_STAKING_AUTHORITY (optional)
@@ -9,13 +9,14 @@
  * Public analytics are cache-first and refreshed in the background. Google
  * Sign-In remains the identity system; this Worker has no payment surface.
  */
-const VERSION = '8.0.2';
+const VERSION = '8.0.4';
 const MAX_JSON_BYTES = 16 * 1024;
 const MAX_SIGNED_TOKEN_CHARS = 8192;
 const API_SECURITY_HEADERS = Object.freeze({
   'Content-Security-Policy': "default-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   'Cross-Origin-Resource-Policy': 'cross-origin',
-  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()',
   'Referrer-Policy': 'no-referrer',
   'Strict-Transport-Security': 'max-age=31536000',
   'X-Content-Type-Options': 'nosniff',
@@ -40,11 +41,30 @@ const USDT_MINT = 'Es9vMFrzaCERmJfrF4H2FYDqfCMx1j8dYKVKJQmuayNX';
 const encoder = new TextEncoder();
 const memoryRates = new Map();
 const responseCache = new Map();
+const sharedRefreshes = new Map();
 const leaderboardReady = new WeakMap();
+const MAX_SHARED_REFRESHES = 24;
+const MAX_UPSTREAM_IN_FLIGHT = 24;
+const MAX_UPSTREAM_QUEUE = 96;
+let upstreamInFlight = 0;
+const upstreamWaiters = [];
+const runtimeMetrics = {
+  startedAt: Date.now(),
+  requests: 0,
+  errors5xx: 0,
+  rateLimited: 0,
+  cacheHits: 0,
+  cacheMisses: 0,
+  refreshJoins: 0,
+  refreshStarted: 0,
+  upstreamRequests: 0,
+  upstreamRetries: 0,
+  upstreamTimeouts: 0
+};
 const DATA_POLICY = Object.freeze({
   freshMs: 20 * 60_000,
   staleMs: 7 * 24 * 60 * 60_000,
-  walletFreshMs: 2 * 60_000,
+  walletFreshMs: 3 * 60_000,
   upstreamTimeoutMs: 8_000,
   retries: 2
 });
@@ -67,6 +87,8 @@ const ROUTES = Object.freeze({
 
 export default {
   async fetch(request, env, ctx) {
+    const startedAt = performance.now();
+    runtimeMetrics.requests += 1;
     const url = new URL(request.url);
     const route = ROUTES[`${request.method} ${url.pathname}`];
     const publicRoute = isPublicApiRoute(url.pathname, request.method);
@@ -89,19 +111,30 @@ export default {
 
     try {
       const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-      if (!await rateLimit(env, `${route.group}:${ip}:${url.pathname}`, route.rate, 60_000)) {
-        return json(
+      const rate = await rateLimit(env, `${route.group}:${ip}:${url.pathname}`, route.rate, 60_000);
+      const rateHeaders = {
+        'RateLimit-Limit': String(route.rate),
+        'RateLimit-Remaining': String(rate.remaining),
+        'RateLimit-Reset': String(rate.resetSeconds)
+      };
+      if (!rate.allowed) {
+        runtimeMetrics.rateLimited += 1;
+        return withRuntimeHeaders(json(
           { ok: false, error: { message: 'Too many requests. Try again shortly.' } },
           429,
-          { ...cors, 'Retry-After': '60' }
-        );
+          { ...cors, ...rateHeaders, 'Retry-After': String(rate.resetSeconds) }
+        ), startedAt);
       }
-      return await route.handle({ request, url, env, cors, ctx });
+      const response = await route.handle({ request, url, env, cors: { ...cors, ...rateHeaders }, ctx });
+      return withRuntimeHeaders(response, startedAt);
     } catch (error) {
       const candidateStatus = Number(error?.status || 500);
       const status = Number.isInteger(candidateStatus) && candidateStatus >= 400 && candidateStatus <= 599 ? candidateStatus : 500;
-      if (status >= 500) logFailure(`request ${requestId}`, error);
-      return json({ ok: false, error: { message: publicErrorMessage(error, status), requestId } }, status, cors);
+      if (status >= 500) {
+        runtimeMetrics.errors5xx += 1;
+        logFailure(`request ${requestId}`, error);
+      }
+      return withRuntimeHeaders(json({ ok: false, error: { message: publicErrorMessage(error, status), requestId } }, status, cors), startedAt);
     }
   },
   async scheduled(event, env, ctx) {
@@ -110,6 +143,8 @@ export default {
       catch (error) { logFailure('scheduled holder refresh', error); }
       try { await refreshAnsemAnalytics(env); }
       catch (error) { logFailure('scheduled analytics refresh', error); }
+      try { if (env.LEADERBOARD_DB) await cleanupRunSubmissions(env); }
+      catch (error) { logFailure('scheduled leaderboard cleanup', error); }
     })());
   }
 };
@@ -142,6 +177,12 @@ function json(value, status = 200, extra = {}, cacheControl = 'no-store') {
     status,
     headers: { ...API_SECURITY_HEADERS, ...extra, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': cacheControl }
   });
+}
+function withRuntimeHeaders(response, startedAt) {
+  const headers = new Headers(response.headers);
+  headers.set('X-Worker-Version', VERSION);
+  headers.set('Server-Timing', `worker;dur=${Math.max(0, performance.now() - startedAt).toFixed(1)}`);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 function httpError(message, status = 400, expose = status < 500) {
   return Object.assign(new Error(message), { status, expose });
@@ -187,56 +228,94 @@ function health(env, cors) {
     ok: true,
     data: {
       version: VERSION,
+      uptimeSeconds: Math.max(0, Math.floor((Date.now() - runtimeMetrics.startedAt) / 1000)),
       services: {
         googleSignIn: Boolean(env.GOOGLE_CLIENT_ID && env.AUTH_SESSION_SECRET),
         bullpenEcosystemAnalytics: Boolean(env.HELIUS_API_KEY),
         ansemAnalytics: true,
         ansemWalletEnrichment: Boolean(env.HELIUS_API_KEY),
         sharedAnalyticsCache: Boolean(env.ANALYTICS_CACHE),
+        rateLimiter: Boolean(env.RATE_LIMITER),
         walletAnalytics: Boolean(env.HELIUS_API_KEY),
         leaderboard: Boolean(env.LEADERBOARD_DB && env.AUTH_SESSION_SECRET),
         monetization: false
+      },
+      runtime: {
+        activeRefreshes: sharedRefreshes.size,
+        upstreamInFlight,
+        upstreamQueued: upstreamWaiters.length,
+        requests: runtimeMetrics.requests,
+        errors5xx: runtimeMetrics.errors5xx,
+        rateLimited: runtimeMetrics.rateLimited,
+        cacheHits: runtimeMetrics.cacheHits,
+        cacheMisses: runtimeMetrics.cacheMisses
       }
     }
-  }, 200, cors, 'public, max-age=30');
+  }, 200, cors, 'public, max-age=15');
 }
 async function rateLimit(env, key, max, windowMs) {
   if (env.RATE_LIMITER?.limit) {
     const result = await env.RATE_LIMITER.limit({ key });
-    if (result?.success === false) return false;
+    if (result?.success === false) return { allowed: false, remaining: 0, resetSeconds: Math.ceil(windowMs / 1000) };
   }
-  // Keep the route-specific ceiling as a second layer. The shared Cloudflare
-  // binding supplies cross-isolate protection; this bounded map preserves the
-  // tighter per-route budgets during development and inside each isolate.
   const now = Date.now();
   const prior = memoryRates.get(key);
   if (!prior || now - prior.startedAt > windowMs) {
     memoryRates.set(key, { startedAt: now, count: 1 });
     if (memoryRates.size > 5000) memoryRates.delete(memoryRates.keys().next().value);
-    return true;
+    return { allowed: true, remaining: Math.max(0, max - 1), resetSeconds: Math.ceil(windowMs / 1000) };
   }
   prior.count++;
-  return prior.count <= max;
+  const resetSeconds = Math.max(1, Math.ceil((windowMs - (now - prior.startedAt)) / 1000));
+  return { allowed: prior.count <= max, remaining: Math.max(0, max - prior.count), resetSeconds };
 }
 function validAddress(value) { return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(value || '')); }
 function requireHelius(env) {
   if (!env.HELIUS_API_KEY) throw new Error('HELIUS_API_KEY is not configured');
   return env.HELIUS_API_KEY;
 }
+
+async function coalesceRefresh(key, factory) {
+  const existing = sharedRefreshes.get(key);
+  if (existing) {
+    runtimeMetrics.refreshJoins += 1;
+    return existing;
+  }
+  if (sharedRefreshes.size >= MAX_SHARED_REFRESHES) {
+    throw httpError('The analytics service is temporarily busy. Try again shortly.', 503, true);
+  }
+  runtimeMetrics.refreshStarted += 1;
+  const pending = Promise.resolve().then(factory).finally(() => {
+    if (sharedRefreshes.get(key) === pending) sharedRefreshes.delete(key);
+  });
+  sharedRefreshes.set(key, pending);
+  return pending;
+}
 async function cacheGet(env, key) {
   if (env.ANALYTICS_CACHE?.get) {
     try {
       const shared = await env.ANALYTICS_CACHE.get(key, 'json');
-      if (shared != null) return shared;
+      if (shared != null) { runtimeMetrics.cacheHits += 1; return shared; }
     } catch (_) {}
   }
   const entry = responseCache.get(key);
-  if (!entry || entry.expiresAt < Date.now()) { responseCache.delete(key); return null; }
+  if (!entry || entry.expiresAt < Date.now()) {
+    responseCache.delete(key);
+    runtimeMetrics.cacheMisses += 1;
+    return null;
+  }
+  runtimeMetrics.cacheHits += 1;
   return structuredClone(entry.value);
 }
 async function cachePut(env, key, value, ttlMs) {
-  responseCache.set(key, { expiresAt: Date.now() + ttlMs, value: structuredClone(value) });
-  if (responseCache.size > 150) responseCache.delete(responseCache.keys().next().value);
+  const now = Date.now();
+  responseCache.set(key, { expiresAt: now + ttlMs, value: structuredClone(value) });
+  if (responseCache.size > 150) {
+    for (const [cacheKey, entry] of responseCache) {
+      if (entry.expiresAt < now || responseCache.size > 150) responseCache.delete(cacheKey);
+      if (responseCache.size <= 150) break;
+    }
+  }
   if (env.ANALYTICS_CACHE?.put) {
     try {
       await env.ANALYTICS_CACHE.put(key, JSON.stringify(value), { expirationTtl: Math.max(60, Math.ceil(ttlMs / 1000)) });
@@ -247,28 +326,62 @@ async function cachePut(env, key, value, ttlMs) {
 function wait(milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
+async function acquireUpstreamSlot() {
+  if (upstreamInFlight < MAX_UPSTREAM_IN_FLIGHT) {
+    upstreamInFlight += 1;
+    return;
+  }
+  if (upstreamWaiters.length >= MAX_UPSTREAM_QUEUE) {
+    throw httpError('Upstream capacity is temporarily full. Try again shortly.', 503, true);
+  }
+  await new Promise((resolve, reject) => {
+    const waiter = { resolve: null, reject };
+    const timer = setTimeout(() => {
+      const index = upstreamWaiters.indexOf(waiter);
+      if (index >= 0) upstreamWaiters.splice(index, 1);
+      reject(httpError('Upstream capacity wait timed out.', 503, true));
+    }, 2500);
+    waiter.resolve = () => { clearTimeout(timer); resolve(); };
+    upstreamWaiters.push(waiter);
+  });
+  upstreamInFlight += 1;
+}
+function releaseUpstreamSlot() {
+  upstreamInFlight = Math.max(0, upstreamInFlight - 1);
+  const next = upstreamWaiters.shift();
+  next?.resolve?.();
+}
 async function fetchWithPolicy(url, options = {}, policy = {}) {
   const timeoutMs = Math.max(1_000, Number(policy.timeoutMs || DATA_POLICY.upstreamTimeoutMs));
-  const retries = Math.max(0, Number(policy.retries ?? DATA_POLICY.retries));
+  const retries = Math.max(0, Math.min(3, Number(policy.retries ?? DATA_POLICY.retries)));
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    await acquireUpstreamSlot();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort('upstream-timeout'), timeoutMs);
+    let retryDelay = 0;
     try {
+      runtimeMetrics.upstreamRequests += 1;
       const response = await fetch(url, { ...options, signal: controller.signal });
       if (response.ok || (response.status < 500 && response.status !== 429) || attempt === retries) return response;
       lastError = new Error(`Upstream HTTP ${response.status}`);
+      runtimeMetrics.upstreamRetries += 1;
+      const retryAfter = Math.min(2000, Math.max(0, Number(response.headers.get('Retry-After') || 0) * 1000));
+      retryDelay = retryAfter || Math.min(1600, 125 * (2 ** attempt) + Math.floor(Math.random() * 90));
     } catch (error) {
+      if (error?.name === 'AbortError') runtimeMetrics.upstreamTimeouts += 1;
       lastError = error?.name === 'AbortError' ? new Error(`Upstream timed out after ${timeoutMs}ms`) : error;
       if (attempt === retries) throw lastError;
+      runtimeMetrics.upstreamRetries += 1;
+      retryDelay = Math.min(1600, 125 * (2 ** attempt) + Math.floor(Math.random() * 90));
     } finally {
       clearTimeout(timer);
+      releaseUpstreamSlot();
     }
-    await wait(125 * (2 ** attempt));
+    if (retryDelay > 0) await wait(retryDelay);
   }
   throw lastError || new Error('Upstream request failed');
 }
-
 async function storeSnapshot(env, key, value, freshMs = DATA_POLICY.freshMs) {
   await Promise.all([
     cachePut(env, `${key}:fresh`, value, freshMs),
@@ -310,12 +423,18 @@ async function ensureLeaderboard(env) {
       mode TEXT NOT NULL,
       created_at TEXT NOT NULL
     )`),
-    db.prepare('CREATE INDEX IF NOT EXISTS idx_run_submissions_account_created ON run_submissions(account_id, created_at DESC)')
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_run_submissions_account_created ON run_submissions(account_id, created_at DESC)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_run_submissions_created ON run_submissions(created_at ASC)')
     ]).catch(error => { leaderboardReady.delete(db); throw error; });
     leaderboardReady.set(db, ready);
   }
   await ready;
   return db;
+}
+async function cleanupRunSubmissions(env) {
+  const db = await ensureLeaderboard(env);
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
+  await db.prepare('DELETE FROM run_submissions WHERE created_at < ?').bind(cutoff).run();
 }
 function boundedInt(value, max = 100_000_000) {
   const number = Number(value);
@@ -488,68 +607,73 @@ async function walletOverview(request, env, cors) {
   if (cached) return json({ ok: true, data: cached, cached: true, updatedAt: cached.updatedAt }, 200, cors);
 
   try {
-  const warnings = [];
-  const [balance, classic, token2022, wallet] = await Promise.all([
-    settled(rpc(env, 'getBalance', [address, { commitment: 'confirmed' }]), { value: 0 }, warnings, 'SOL balance'),
-    settled(rpc(env, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM }, { encoding: 'jsonParsed', commitment: 'confirmed' }]), { value: [] }, warnings, 'classic SPL accounts'),
-    settled(rpc(env, 'getTokenAccountsByOwner', [address, { programId: TOKEN_2022_PROGRAM }, { encoding: 'jsonParsed', commitment: 'confirmed' }]), { value: [] }, warnings, 'Token-2022 accounts'),
-    settled(heliusWallet(env, `/v1/wallet/${encodeURIComponent(address)}/balances`, { page: 1, limit: 100, showZeroBalance: false, showNative: true, showNfts: true }), { balances: [], nfts: [], totalUsdValue: null, pagination: {} }, warnings, 'priced balances')
-  ]);
+    const data = await coalesceRefresh('refresh:' + cacheKey, async () => {
+      const raced = await cacheGet(env, cacheKey + ':fresh');
+      if (raced) return raced;
+        const warnings = [];
+        const [balance, classic, token2022, wallet] = await Promise.all([
+          settled(rpc(env, 'getBalance', [address, { commitment: 'confirmed' }]), { value: 0 }, warnings, 'SOL balance'),
+          settled(rpc(env, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM }, { encoding: 'jsonParsed', commitment: 'confirmed' }]), { value: [] }, warnings, 'classic SPL accounts'),
+          settled(rpc(env, 'getTokenAccountsByOwner', [address, { programId: TOKEN_2022_PROGRAM }, { encoding: 'jsonParsed', commitment: 'confirmed' }]), { value: [] }, warnings, 'Token-2022 accounts'),
+          settled(heliusWallet(env, `/v1/wallet/${encodeURIComponent(address)}/balances`, { page: 1, limit: 100, showZeroBalance: false, showNative: true, showNfts: true }), { balances: [], nfts: [], totalUsdValue: null, pagination: {} }, warnings, 'priced balances')
+        ]);
 
-  const classicAccounts = Array.isArray(classic?.value) ? classic.value : [];
-  const token2022Accounts = Array.isArray(token2022?.value) ? token2022.value : [];
-  const allAccounts = [...classicAccounts.map(item => ({ ...item, tokenProgram: 'spl-token' })), ...token2022Accounts.map(item => ({ ...item, tokenProgram: 'token-2022' }))];
-  const emptyAccounts = allAccounts.filter(item => {
-    const info = item?.account?.data?.parsed?.info;
-    return info && String(info.tokenAmount?.amount || '') === '0' && info.isNative !== true;
-  });
-  const emptyRentLamports = emptyAccounts.reduce((sum, item) => sum + Number(item?.account?.lamports || 0), 0);
-  const balances = Array.isArray(wallet?.balances) ? wallet.balances : [];
-  const holdings = balances.filter(item => Number(item.balance || 0) !== 0).map(item => ({
-    mint: item.mint,
-    symbol: item.symbol || null,
-    name: item.name || null,
-    balance: Number(item.balance || 0),
-    decimals: Number(item.decimals || 0),
-    pricePerToken: item.pricePerToken == null ? null : Number(item.pricePerToken),
-    usdValue: item.usdValue == null ? null : Number(item.usdValue),
-    logoUrl: item.logoUri || null,
-    tokenProgram: item.tokenProgram || null
-  }));
-  const priced = holdings.filter(item => Number.isFinite(item.usdValue));
-  const pageValue = Number.isFinite(Number(wallet.totalUsdValue)) ? Number(wallet.totalUsdValue) : priced.reduce((sum, item) => sum + Number(item.usdValue || 0), 0);
-  const ansemMint = env.ANSEM_MINT || DEFAULT_ANSEM_MINT;
-  const ansemHolding = holdings.find(item => item.mint === ansemMint) || { mint: ansemMint, symbol: 'ANSEM', balance: 0, usdValue: 0 };
-  const lamports = Number(balance?.value || 0);
-  const data = {
-    address,
-    lamports,
-    solBalance: lamports / 1e9,
-    accountType: 'wallet',
-    tokenAccountCount: allAccounts.length,
-    token2022AccountCount: token2022Accounts.length,
-    uniqueTokenCount: new Set(allAccounts.map(item => item?.account?.data?.parsed?.info?.mint).filter(Boolean)).size,
-    totalUsdValue: pageValue,
-    pricedHoldingCount: priced.length,
-    unpricedHoldingCount: holdings.length - priced.length,
-    topHoldingPercent: pageValue > 0 && priced.length ? Number((Math.max(...priced.map(item => Number(item.usdValue || 0))) / pageValue * 100).toFixed(2)) : null,
-    holdings,
-    nftCount: Array.isArray(wallet?.nfts) ? wallet.nfts.length : 0,
-    pagination: wallet?.pagination || null,
-    ansemHolding,
-    rent: {
-      emptyAccountCount: emptyAccounts.length,
-      classicEmptyCount: emptyAccounts.filter(item => item.tokenProgram === 'spl-token').length,
-      token2022EmptyCount: emptyAccounts.filter(item => item.tokenProgram === 'token-2022').length,
-      reclaimableLamports: emptyRentLamports,
-      reclaimableSol: emptyRentLamports / 1e9
-    },
-    sources: ['Helius RPC', 'Helius Wallet API'],
-    warnings,
-    updatedAt: new Date().toISOString()
-  };
-  await storeSnapshot(env, cacheKey, data, DATA_POLICY.walletFreshMs);
-  return json({ ok: true, data, updatedAt: data.updatedAt }, 200, cors);
+        const classicAccounts = Array.isArray(classic?.value) ? classic.value : [];
+        const token2022Accounts = Array.isArray(token2022?.value) ? token2022.value : [];
+        const allAccounts = [...classicAccounts.map(item => ({ ...item, tokenProgram: 'spl-token' })), ...token2022Accounts.map(item => ({ ...item, tokenProgram: 'token-2022' }))];
+        const emptyAccounts = allAccounts.filter(item => {
+          const info = item?.account?.data?.parsed?.info;
+          return info && String(info.tokenAmount?.amount || '') === '0' && info.isNative !== true;
+        });
+        const emptyRentLamports = emptyAccounts.reduce((sum, item) => sum + Number(item?.account?.lamports || 0), 0);
+        const balances = Array.isArray(wallet?.balances) ? wallet.balances : [];
+        const holdings = balances.filter(item => Number(item.balance || 0) !== 0).map(item => ({
+          mint: item.mint,
+          symbol: item.symbol || null,
+          name: item.name || null,
+          balance: Number(item.balance || 0),
+          decimals: Number(item.decimals || 0),
+          pricePerToken: item.pricePerToken == null ? null : Number(item.pricePerToken),
+          usdValue: item.usdValue == null ? null : Number(item.usdValue),
+          logoUrl: item.logoUri || null,
+          tokenProgram: item.tokenProgram || null
+        }));
+        const priced = holdings.filter(item => Number.isFinite(item.usdValue));
+        const pageValue = Number.isFinite(Number(wallet.totalUsdValue)) ? Number(wallet.totalUsdValue) : priced.reduce((sum, item) => sum + Number(item.usdValue || 0), 0);
+        const ansemMint = env.ANSEM_MINT || DEFAULT_ANSEM_MINT;
+        const ansemHolding = holdings.find(item => item.mint === ansemMint) || { mint: ansemMint, symbol: 'ANSEM', balance: 0, usdValue: 0 };
+        const lamports = Number(balance?.value || 0);
+        const data = {
+          address,
+          lamports,
+          solBalance: lamports / 1e9,
+          accountType: 'wallet',
+          tokenAccountCount: allAccounts.length,
+          token2022AccountCount: token2022Accounts.length,
+          uniqueTokenCount: new Set(allAccounts.map(item => item?.account?.data?.parsed?.info?.mint).filter(Boolean)).size,
+          totalUsdValue: pageValue,
+          pricedHoldingCount: priced.length,
+          unpricedHoldingCount: holdings.length - priced.length,
+          topHoldingPercent: pageValue > 0 && priced.length ? Number((Math.max(...priced.map(item => Number(item.usdValue || 0))) / pageValue * 100).toFixed(2)) : null,
+          holdings,
+          nftCount: Array.isArray(wallet?.nfts) ? wallet.nfts.length : 0,
+          pagination: wallet?.pagination || null,
+          ansemHolding,
+          rent: {
+            emptyAccountCount: emptyAccounts.length,
+            classicEmptyCount: emptyAccounts.filter(item => item.tokenProgram === 'spl-token').length,
+            token2022EmptyCount: emptyAccounts.filter(item => item.tokenProgram === 'token-2022').length,
+            reclaimableLamports: emptyRentLamports,
+            reclaimableSol: emptyRentLamports / 1e9
+          },
+          sources: ['Helius RPC', 'Helius Wallet API'],
+          warnings,
+          updatedAt: new Date().toISOString()
+        };
+        await storeSnapshot(env, cacheKey, data, DATA_POLICY.walletFreshMs);
+        return data;
+    });
+    return json({ ok: true, data, updatedAt: data.updatedAt }, 200, cors);
   } catch (error) {
     const stale = await cacheGet(env, cacheKey + ':last-success');
     if (stale) return json({ ok: true, data: stale, cached: true, stale: true, updatedAt: stale.updatedAt, warning: 'Upstream refresh failed; showing last-known data.' }, 200, cors);
@@ -691,46 +815,51 @@ async function walletActivity(request, env, cors) {
   if (cached) return json({ ok: true, data: cached, cached: true, updatedAt: cached.updatedAt }, 200, cors);
 
   try {
-  const cutoff = range === 'all' ? 0 : Math.floor(Date.now() / 1000) - rangeSeconds(range);
-  const maxPages = range === '24h' ? 2 : range === '7d' ? 3 : 4;
-  let before = null;
-  let hasMore = false;
-  let reachedCutoff = false;
-  let pagesFetched = 0;
-  const transactions = [];
+    const data = await coalesceRefresh('refresh:' + cacheKey, async () => {
+      const raced = await cacheGet(env, cacheKey + ':fresh');
+      if (raced) return raced;
+        const cutoff = range === 'all' ? 0 : Math.floor(Date.now() / 1000) - rangeSeconds(range);
+        const maxPages = range === '24h' ? 2 : range === '7d' ? 3 : range === '30d' ? 4 : range === '90d' ? 5 : 6;
+        let before = null;
+        let hasMore = false;
+        let reachedCutoff = false;
+        let pagesFetched = 0;
+        const transactions = [];
 
-  for (let page = 0; page < maxPages; page++) {
-    const payload = await heliusWallet(env, `/v1/wallet/${encodeURIComponent(address)}/history`, {
-      limit,
-      before,
-      tokenAccounts: 'balanceChanged'
+        for (let page = 0; page < maxPages; page++) {
+          const payload = await heliusWallet(env, `/v1/wallet/${encodeURIComponent(address)}/history`, {
+            limit,
+            before,
+            tokenAccounts: 'balanceChanged'
+          });
+          pagesFetched++;
+          const list = Array.isArray(payload.data) ? payload.data : [];
+          transactions.push(...list);
+          hasMore = payload.pagination?.hasMore === true;
+          before = payload.pagination?.nextCursor || null;
+          const oldest = list.reduce((min, item) => item.timestamp ? Math.min(min, Number(item.timestamp)) : min, Infinity);
+          if (cutoff && oldest <= cutoff) { reachedCutoff = true; break; }
+          if (!hasMore || !before || !list.length) break;
+        }
+
+        const filtered = transactions.filter(tx => !cutoff || !tx.timestamp || Number(tx.timestamp) >= cutoff);
+        const analytics = activityAnalytics(filtered, env.ANSEM_MINT || DEFAULT_ANSEM_MINT);
+        const data = {
+          address,
+          range,
+          signaturesAnalyzed: filtered.length,
+          historyComplete: range === 'all' ? !hasMore : reachedCutoff || !hasMore,
+          pagesFetched,
+          oldestLoadedAt: filtered.length ? Math.min(...filtered.map(tx => Number(tx.timestamp || Infinity)).filter(Number.isFinite)) : null,
+          newestLoadedAt: filtered.length ? Math.max(...filtered.map(tx => Number(tx.timestamp || 0))) : null,
+          ...analytics,
+          sources: ['Helius Wallet History API'],
+          updatedAt: new Date().toISOString()
+        };
+        await storeSnapshot(env, cacheKey, data, DATA_POLICY.walletFreshMs);
+        return data;
     });
-    pagesFetched++;
-    const list = Array.isArray(payload.data) ? payload.data : [];
-    transactions.push(...list);
-    hasMore = payload.pagination?.hasMore === true;
-    before = payload.pagination?.nextCursor || null;
-    const oldest = list.reduce((min, item) => item.timestamp ? Math.min(min, Number(item.timestamp)) : min, Infinity);
-    if (cutoff && oldest <= cutoff) { reachedCutoff = true; break; }
-    if (!hasMore || !before || !list.length) break;
-  }
-
-  const filtered = transactions.filter(tx => !cutoff || !tx.timestamp || Number(tx.timestamp) >= cutoff);
-  const analytics = activityAnalytics(filtered, env.ANSEM_MINT || DEFAULT_ANSEM_MINT);
-  const data = {
-    address,
-    range,
-    signaturesAnalyzed: filtered.length,
-    historyComplete: range === 'all' ? !hasMore : reachedCutoff || !hasMore,
-    pagesFetched,
-    oldestLoadedAt: filtered.length ? Math.min(...filtered.map(tx => Number(tx.timestamp || Infinity)).filter(Number.isFinite)) : null,
-    newestLoadedAt: filtered.length ? Math.max(...filtered.map(tx => Number(tx.timestamp || 0))) : null,
-    ...analytics,
-    sources: ['Helius Wallet History API'],
-    updatedAt: new Date().toISOString()
-  };
-  await storeSnapshot(env, cacheKey, data, DATA_POLICY.walletFreshMs);
-  return json({ ok: true, data, updatedAt: data.updatedAt }, 200, cors);
+    return json({ ok: true, data, updatedAt: data.updatedAt }, 200, cors);
   } catch (error) {
     const stale = await cacheGet(env, cacheKey + ':last-success');
     if (stale) return json({ ok: true, data: stale, cached: true, stale: true, updatedAt: stale.updatedAt, warning: 'Upstream refresh failed; showing last-known data.' }, 200, cors);
