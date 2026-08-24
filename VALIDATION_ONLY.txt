@@ -1,1 +1,2 @@
 This file exists only to provide a release-branch CI validation commit.
+Validation run requested after Bull Vision wiring completed.
