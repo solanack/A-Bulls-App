@@ -33,12 +33,20 @@ document.addEventListener('DOMContentLoaded', () => {
       labScript.defer = true;
       labScript.onload = () => {
         window.BBRIntelligenceLab?.init?.();
+
         const historyScript = document.createElement('script');
         historyScript.src = 'js/intelligence-time-machine.js?v=8.6.0';
         historyScript.defer = true;
         historyScript.onload = () => window.BBRIntelligenceHistory?.init?.();
         historyScript.onerror = () => console.warn('[intelligence-history] client failed to load');
         document.head.append(historyScript);
+
+        const environmentScript = document.createElement('script');
+        environmentScript.src = 'js/intelligence-radar-weather.js?v=8.6.0';
+        environmentScript.defer = true;
+        environmentScript.onload = () => window.BBRRadarWeather?.init?.();
+        environmentScript.onerror = () => console.warn('[bull-radar-weather] client failed to load');
+        document.head.append(environmentScript);
       };
       labScript.onerror = () => console.warn('[intelligence-lab] client failed to load');
       document.head.append(labScript);
