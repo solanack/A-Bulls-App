@@ -21,8 +21,9 @@ jobs:
           node --check sw.js
       - name: Validate release wiring
         run: |
-          grep -q "version: '8.6.0'" js/core.js
+          grep -q "version: '8.6.1'" js/core.js
+          grep -q "workerRequired: '8.1.1'" js/core.js
           grep -q "bullVisionBase" js/config.js
-          grep -q "bull-vision.js?v=8.6.0" js/main.js
+          grep -q "bull-vision.js?v=8.6.1" js/main.js
           grep -q "./js/bull-vision.js" sw.js
           grep -q "abulls_bull_vision_life" js/life.js

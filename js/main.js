@@ -8,35 +8,35 @@ document.addEventListener('DOMContentLoaded', () => {
   window.BBRSThemeCustomizer?.init?.();
 
   const bullVisionScript = document.createElement('script');
-  bullVisionScript.src = 'js/bull-vision.js?v=8.6.0';
+  bullVisionScript.src = 'js/bull-vision.js?v=8.6.1';
   bullVisionScript.defer = true;
   bullVisionScript.onload = () => window.BBRBullVision?.init?.();
   bullVisionScript.onerror = () => console.warn('[bull-vision] client failed to load');
   document.head.append(bullVisionScript);
 
   const bullIntelligenceScript = document.createElement('script');
-  bullIntelligenceScript.src = 'js/bull-intelligence.js?v=8.6.0';
+  bullIntelligenceScript.src = 'js/bull-intelligence.js?v=8.6.1';
   bullIntelligenceScript.defer = true;
   bullIntelligenceScript.onload = () => {
     window.BBRBullIntelligence?.init?.();
     const intelligenceCoreScript = document.createElement('script');
-    intelligenceCoreScript.src = 'js/intelligence-core.js?v=8.6.0';
+    intelligenceCoreScript.src = 'js/intelligence-core.js?v=8.6.1';
     intelligenceCoreScript.defer = true;
     intelligenceCoreScript.onload = () => {
       const labScript = document.createElement('script');
-      labScript.src = 'js/intelligence-lab.js?v=8.6.0';
+      labScript.src = 'js/intelligence-lab.js?v=8.6.1';
       labScript.defer = true;
       labScript.onload = () => {
         window.BBRIntelligenceLab?.init?.();
 
         const modules = [
-          ['js/intelligence-time-machine.js?v=8.6.0', 'BBRIntelligenceHistory', 'intelligence-history'],
-          ['js/intelligence-radar-weather.js?v=8.6.0', 'BBRRadarWeather', 'bull-radar-weather'],
-          ['js/intelligence-where-were-you.js?v=8.6.0', 'BBRWhereWereYou', 'where-were-you'],
-          ['js/intelligence-constellation.js?v=8.6.0', 'BBRWalletConstellation', 'wallet-constellation'],
-          ['js/intelligence-nft-memory.js?v=8.6.0', 'BBRNFTMemory', 'nft-memory'],
-          ['js/intelligence-ghost-portfolio.js?v=8.6.0', 'BBRGhostPortfolio', 'ghost-portfolio'],
-          ['js/intelligence-game-weather.js?v=8.6.0', 'BBRCampaignChainWeather', 'campaign-chain-weather']
+          ['js/intelligence-time-machine.js?v=8.6.1', 'BBRIntelligenceHistory', 'intelligence-history'],
+          ['js/intelligence-radar-weather.js?v=8.6.1', 'BBRRadarWeather', 'bull-radar-weather'],
+          ['js/intelligence-where-were-you.js?v=8.6.1', 'BBRWhereWereYou', 'where-were-you'],
+          ['js/intelligence-constellation.js?v=8.6.1', 'BBRWalletConstellation', 'wallet-constellation'],
+          ['js/intelligence-nft-memory.js?v=8.6.1', 'BBRNFTMemory', 'nft-memory'],
+          ['js/intelligence-ghost-portfolio.js?v=8.6.1', 'BBRGhostPortfolio', 'ghost-portfolio'],
+          ['js/intelligence-game-weather.js?v=8.6.1', 'BBRCampaignChainWeather', 'campaign-chain-weather']
         ];
         modules.forEach(([src, globalName, label]) => {
           const script = document.createElement('script');
@@ -74,9 +74,9 @@ document.addEventListener('DOMContentLoaded', () => {
   updateServiceBanner({});
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
-    navigator.serviceWorker.register('sw.js?v=8.6.0', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('sw.js?v=8.6.1', { updateViaCache: 'none' })
       .then(registration => registration.update())
       .catch(error => console.warn('[pwa]', error));
   }
-  console.log('%cA Bulls App 8.6.0 — Bull Vision + Bull Intelligence', 'color:#c4afcf;font-weight:bold');
+  console.log('%cA Bulls App 8.6.1 — Bull Vision + Bull Intelligence', 'color:#c4afcf;font-weight:bold');
 });

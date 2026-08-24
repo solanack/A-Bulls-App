@@ -1,0 +1,64 @@
+name: v8.6.1 Package
+
+on:
+  push:
+    branches:
+      - release/v8.6.1-intelligence
+    paths:
+      - '.github/workflows/v861-package.yml'
+      - 'index.html'
+      - 'privacy.html'
+      - 'terms.html'
+      - 'manifest.webmanifest'
+      - 'favicon.svg'
+      - 'css/**'
+      - 'js/**'
+      - 'assets/**'
+      - 'vendor/**'
+      - 'games/**'
+      - 'sw.js'
+      - 'RELEASE-v8.6.1.md'
+  pull_request:
+    branches:
+      - release/v8.6.0-bull-vision
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Release sanity checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "version: '8.6.1'" js/core.js
+          grep -q "workerRequired: '8.1.1'" js/core.js
+          grep -q "const BUILD = '8.6.1'" sw.js
+          grep -q "sw.js?v=8.6.1" js/main.js
+          for f in js/*.js sw.js; do node --check "$f"; done
+      - name: Build Cloudflare Pages archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist/pages
+          cp index.html privacy.html terms.html manifest.webmanifest favicon.svg sw.js dist/pages/
+          cp -R css js assets vendor games dist/pages/
+          (cd dist/pages && zip -qr ../A-BULLS-APP-PAGES-v8.6.1-INTELLIGENCE.zip .)
+          (cd dist && sha256sum A-BULLS-APP-PAGES-v8.6.1-INTELLIGENCE.zip > A-BULLS-APP-PAGES-v8.6.1-INTELLIGENCE.sha256)
+      - name: Upload deployable Pages artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: A-BULLS-APP-PAGES-v8.6.1-INTELLIGENCE
+          path: |
+            dist/A-BULLS-APP-PAGES-v8.6.1-INTELLIGENCE.zip
+            dist/A-BULLS-APP-PAGES-v8.6.1-INTELLIGENCE.sha256
+          if-no-files-found: error
+          retention-days: 30
