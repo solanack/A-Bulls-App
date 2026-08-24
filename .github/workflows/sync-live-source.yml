@@ -1,5 +1,6 @@
 name: Sync deployed A Bulls App source
 
+# Validation trigger: rebuild the GitHub source snapshot from the public deployment.
 on:
   push:
     branches: [main]
