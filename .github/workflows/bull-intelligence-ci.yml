@@ -13,12 +13,14 @@ on:
       - 'js/main.js'
       - 'workers/bull-intelligence-extension.mjs'
       - 'workers/intelligence-indexer.mjs'
+      - 'workers/intelligence-aggregates.mjs'
       - 'sw.js'
       - 'tests/bull-intelligence.test.mjs'
       - 'tests/intelligence-core.test.mjs'
       - 'tests/intelligence-lab.test.mjs'
       - 'tests/bull-intelligence-worker.test.mjs'
       - 'tests/intelligence-indexer.test.mjs'
+      - 'tests/intelligence-aggregates.test.mjs'
       - 'docs/BULL-INTELLIGENCE-ENGINE.md'
       - 'docs/BULL-INTELLIGENCE-D1-SCHEMA.sql'
       - '.github/workflows/bull-intelligence-ci.yml'
@@ -43,6 +45,7 @@ jobs:
           node --check js/main.js
           node --check workers/bull-intelligence-extension.mjs
           node --check workers/intelligence-indexer.mjs
+          node --check workers/intelligence-aggregates.mjs
           node --check sw.js
       - name: Bull Intelligence unit tests
         run: |
@@ -51,10 +54,11 @@ jobs:
           node tests/intelligence-lab.test.mjs
           node tests/bull-intelligence-worker.test.mjs
           node tests/intelligence-indexer.test.mjs
+          node tests/intelligence-aggregates.test.mjs
       - name: Read-only product guardrails
         shell: bash
         run: |
-          if grep -Eqi '(seed phrase|private key import|copy trading|sniper bot|submit transaction|signTransaction|sendTransaction)' js/bull-intelligence.js js/intelligence-core.js js/intelligence-lab.js workers/bull-intelligence-extension.mjs workers/intelligence-indexer.mjs; then
+          if grep -Eqi '(seed phrase|private key import|copy trading|sniper bot|submit transaction|signTransaction|sendTransaction)' js/bull-intelligence.js js/intelligence-core.js js/intelligence-lab.js workers/bull-intelligence-extension.mjs workers/intelligence-indexer.mjs workers/intelligence-aggregates.mjs; then
             echo 'Forbidden execution/custody behavior detected in Bull Intelligence code.'
             exit 1
           fi
