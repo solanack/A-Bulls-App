@@ -35,7 +35,8 @@ document.addEventListener('DOMContentLoaded', () => {
           ['js/intelligence-where-were-you.js?v=8.6.0', 'BBRWhereWereYou', 'where-were-you'],
           ['js/intelligence-constellation.js?v=8.6.0', 'BBRWalletConstellation', 'wallet-constellation'],
           ['js/intelligence-nft-memory.js?v=8.6.0', 'BBRNFTMemory', 'nft-memory'],
-          ['js/intelligence-ghost-portfolio.js?v=8.6.0', 'BBRGhostPortfolio', 'ghost-portfolio']
+          ['js/intelligence-ghost-portfolio.js?v=8.6.0', 'BBRGhostPortfolio', 'ghost-portfolio'],
+          ['js/intelligence-game-weather.js?v=8.6.0', 'BBRCampaignChainWeather', 'campaign-chain-weather']
         ];
         modules.forEach(([src, globalName, label]) => {
           const script = document.createElement('script');
