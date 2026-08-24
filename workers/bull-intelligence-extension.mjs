@@ -20,8 +20,15 @@ const validWallet = value => WALLET_RE.test(String(value || '').trim());
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 const now = () => Math.floor(Date.now() / 1000);
 
+// Prefer a dedicated future intelligence binding, but reuse the existing
+// A Bulls App leaderboard D1 safely when that is the configured database.
+function dbOf(env = {}) {
+  const db = env.BULL_INTELLIGENCE_DB || env.LEADERBOARD_DB || env.DB;
+  return db && typeof db.prepare === 'function' ? db : null;
+}
+
 function d1Available(env) {
-  return Boolean(env?.DB && typeof env.DB.prepare === 'function');
+  return Boolean(dbOf(env));
 }
 
 export function intelligenceCapabilities(env = {}) {
@@ -68,8 +75,9 @@ async function safeAll(stmt) {
 }
 
 async function walletIndexedSummary(env, wallet) {
-  if (!d1Available(env)) return null;
-  const latestWindow = await safeFirst(env.DB.prepare(`
+  const db = dbOf(env);
+  if (!db) return null;
+  const latestWindow = await safeFirst(db.prepare(`
     SELECT window_key, window_start, window_end, tx_count, active_days, swaps,
            unique_mints, failures, sol_in, sol_out, fees_sol, top_holding_percent, updated_at
     FROM bull_wallet_windows
@@ -77,7 +85,7 @@ async function walletIndexedSummary(env, wallet) {
     ORDER BY window_end DESC
     LIMIT 1
   `).bind(wallet));
-  const eventBounds = await safeFirst(env.DB.prepare(`
+  const eventBounds = await safeFirst(db.prepare(`
     SELECT COUNT(*) AS event_count, MIN(block_time) AS first_seen, MAX(block_time) AS last_seen
     FROM bull_wallet_events
     WHERE wallet = ?
@@ -95,8 +103,9 @@ async function walletIndexedSummary(env, wallet) {
 }
 
 async function recentRelationships(env, wallet) {
-  if (!d1Available(env)) return [];
-  return safeAll(env.DB.prepare(`
+  const db = dbOf(env);
+  if (!db) return [];
+  return safeAll(db.prepare(`
     SELECT wallet_a, wallet_b, first_seen, last_seen, interaction_count,
            sol_volume, token_event_count, relationship_types
     FROM bull_wallet_relationships
@@ -107,8 +116,9 @@ async function recentRelationships(env, wallet) {
 }
 
 async function radarFeed(env) {
-  if (!d1Available(env)) return [];
-  return safeAll(env.DB.prepare(`
+  const db = dbOf(env);
+  if (!db) return [];
+  return safeAll(db.prepare(`
     SELECT anomaly_key, scope_type, scope_value, observed_at, severity,
            baseline_value, observed_value, sample_size, evidence_json, expires_at
     FROM bull_radar_anomalies
@@ -119,8 +129,9 @@ async function radarFeed(env) {
 }
 
 async function latestWeather(env) {
-  if (!d1Available(env)) return null;
-  return safeFirst(env.DB.prepare(`
+  const db = dbOf(env);
+  if (!db) return null;
+  return safeFirst(db.prepare(`
     SELECT bucket_start, bucket_seconds, regime, activity_score, volatility_score,
            concentration_score, rotation_score, convergence_score, nft_activity_score,
            evidence_json
