@@ -7,8 +7,7 @@
     // Bull Pen cosmetic workflow and EPOCH-specific ship presentation.
     bullpenNftCosmetics: false,
     themedEpochShips: false,
-    chunkyToyArt: true,
-    pilotSamples: true
+    chunkyToyArt: true
   });
 
   const bossKeys = Object.freeze([
@@ -25,24 +24,12 @@
     `assets/v7/backgrounds/level-${String(index + 1).padStart(2, '0')}.webp`
   ));
 
-  const pilotSamples = Object.freeze({
-    base: ['assets/v7/pilots/base/human-neutral.webp'],
-    skin: [
-      'assets/v7/pilots/skin/fire-state.webp',
-      'assets/v7/pilots/skin/ice-state.webp',
-      'assets/v7/pilots/skin/ghost-state.webp',
-      'assets/v7/pilots/skin/skeleton-state.webp'
-    ],
-    special: ['assets/v7/pilots/special/prism-special.webp']
-  });
-
   const config = Object.freeze({
     version: '7.0.1',
     playerShip: 'assets/v7/player-ship.webp',
     bearShip: 'assets/v7/enemies/bear-fighter.webp',
     bossAssets,
-    levelBackgrounds,
-    pilotSamples
+    levelBackgrounds
   });
 
   let lastUiCue = 0;
@@ -57,9 +44,31 @@
     } catch (_) {}
   }
 
+  function removePilotPresentation() {
+    // Pilot collection was abandoned. Remove its DOM presentation at startup
+    // without touching the hidden Bull Pen compatibility surfaces below.
+    document.querySelectorAll('.pilot-sample-panel, .pilot-sample-grid').forEach(node => node.remove());
+    document.querySelectorAll('img[src*="/pilots/"]').forEach(image => {
+      const card = image.closest('.feature-card');
+      if (card) card.remove();
+      else image.remove();
+    });
+    document.querySelectorAll('[data-home-action="herd"]').forEach(node => {
+      if (node.matches('.text-cta')) node.innerHTML = 'HERD <span aria-hidden="true">→</span>';
+    });
+    const hero = document.querySelector('#addBullsView .herd-hero');
+    if (hero) {
+      const chip = hero.querySelector('.season-chip');
+      const heading = hero.querySelector('h1');
+      if (chip) chip.textContent = 'HERD';
+      if (heading) heading.textContent = 'YOUR SHIPS. YOUR PROGRESS.';
+    }
+  }
+
   function applyFlags() {
     document.documentElement.classList.add('v7-art-direction');
     document.body?.classList.add('v7-art-direction');
+    removePilotPresentation();
     document.querySelectorAll('[data-requires-bullpen-cosmetics]').forEach(node => { node.hidden = !features.bullpenNftCosmetics; });
     const holdings = document.getElementById('bullpenHoldersPanel');
     if (holdings) holdings.hidden = !features.bullpenNftCosmetics;
