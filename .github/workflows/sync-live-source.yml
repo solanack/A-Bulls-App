@@ -1,0 +1,118 @@
+name: Sync deployed A Bulls App source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sync-live-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Crawl public deployment
+        env:
+          SITE_ORIGIN: https://www.abullsapp.com
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from urllib.parse import urljoin, urlparse
+          from urllib.request import Request, urlopen
+          import re, json, os, time
+
+          origin = os.environ['SITE_ORIGIN'].rstrip('/') + '/'
+          host = urlparse(origin).netloc
+          out = Path('site')
+          out.mkdir(exist_ok=True)
+          queue = ['index.html', 'sw.js', 'manifest.webmanifest', 'privacy.html', 'terms.html', 'games/claude-of-duty/index.html']
+          seen = set()
+          missing = []
+          text_ext = {'.html','.htm','.js','.mjs','.css','.json','.webmanifest','.svg','.xml','.txt','.md'}
+          quoted = re.compile(r'''["']([^"'?#]+\.(?:html?|js|mjs|css|json|webmanifest|svg|png|jpe?g|webp|gif|mp4|webm|wav|mp3|ogg))(?:[?#][^"']*)?["']''', re.I)
+          css_url = re.compile(r'''url\(\s*["']?([^\)"'?#]+)["']?\s*\)''', re.I)
+
+          def normalize(base_path, ref):
+              if not ref or ref.startswith(('data:','blob:','mailto:','javascript:','#','//')):
+                  return None
+              absolute = urljoin(origin + base_path, ref)
+              parsed = urlparse(absolute)
+              if parsed.netloc not in {host, 'abullsapp.com'}:
+                  return None
+              path = parsed.path.lstrip('/') or 'index.html'
+              if path.endswith('/'):
+                  path += 'index.html'
+              return path
+
+          while queue:
+              path = queue.pop(0)
+              if path in seen or '..' in Path(path).parts:
+                  continue
+              seen.add(path)
+              url = urljoin(origin, path)
+              try:
+                  req = Request(url, headers={'User-Agent':'A-Bulls-App-Source-Sync/1.0','Cache-Control':'no-cache'})
+                  with urlopen(req, timeout=25) as response:
+                      if response.status >= 400:
+                          raise RuntimeError(str(response.status))
+                      data = response.read()
+                      content_type = response.headers.get('content-type','')
+              except Exception as exc:
+                  missing.append(f'{path}: {exc}')
+                  continue
+
+              target = out / path
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_bytes(data)
+
+              suffix = target.suffix.lower()
+              if suffix not in text_ext and not any(x in content_type for x in ('text/','javascript','json','xml','svg')):
+                  continue
+              try:
+                  text = data.decode('utf-8')
+              except UnicodeDecodeError:
+                  continue
+              refs = [m.group(1) for m in quoted.finditer(text)] + [m.group(1) for m in css_url.finditer(text)]
+              for ref in refs:
+                  child = normalize(path, ref)
+                  if child and child not in seen:
+                      queue.append(child)
+
+          index = (out / 'index.html').read_text('utf-8', errors='ignore') if (out / 'index.html').exists() else ''
+          match = re.search(r'bbrs-build[^>]*content=["\']([^"\']+)', index)
+          build = match.group(1) if match else 'unknown'
+          files = [p for p in out.rglob('*') if p.is_file()]
+          report = [
+              '# Live source sync', '',
+              f'- Origin: {origin}',
+              f'- Build detected: {build}',
+              f'- Files downloaded: {len(files)}',
+              f'- Missing references: {len(missing)}', '',
+              '## Missing references',
+              *(missing[:100] or ['None'])
+          ]
+          (out / 'SYNC_REPORT.md').write_text('\n'.join(report) + '\n')
+          print(f'Build {build}; downloaded {len(files)} files; missing {len(missing)}')
+          PY
+
+      - name: Publish source snapshot branch
+        run: |
+          git config user.name 'A Bulls App Source Sync'
+          git config user.email 'actions@users.noreply.github.com'
+          rm -rf snapshot
+          mv site snapshot
+          git switch --orphan live-source-sync
+          git rm -rf . >/dev/null 2>&1 || true
+          cp -a snapshot/. .
+          rm -rf snapshot
+          git add -A
+          git commit -m 'Sync current deployed A Bulls App source'
+          git push --force origin HEAD:live-source-sync
