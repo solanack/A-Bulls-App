@@ -1,6 +1,6 @@
 /* A Bulls App — Ghost Portfolio
  * Counterfactual preview from observed swap-like entries and observed historical prices.
- * Never labels the result as today's value and never treats transfers/airdrops as purchases.
+ * This is not today's value and never treats transfers/airdrops as purchases.
  */
 (function (global) {
   'use strict';
