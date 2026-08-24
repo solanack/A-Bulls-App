@@ -36,9 +36,9 @@
     .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 
   const Platform = {
-    // Single source of truth for the Pages version stamp.
+    // Single source of truth for the Pages/Worker compatibility stamp.
     version: '7.0.1',
-    workerRequired: '5.2.1',
+    workerRequired: '8.0.2',
     buildStamp() {
       return `PAGES ${this.version} • WORKER ${this.workerRequired}`;
     },
