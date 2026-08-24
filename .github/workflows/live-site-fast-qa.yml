@@ -1,0 +1,117 @@
+name: Live Site Fast QA
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run external HTTP and rendered-DOM QA
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 - <<'PY'
+          import json, re, subprocess, sys, urllib.request, urllib.error
+
+          BASE='https://www.abullsapp.com'
+          WORKER='https://black-bull-run-sol.ckdsigns1.workers.dev'
+          WALLET='95DemfJx5nHkuQmLyKhCjaJ5iZERHFfQH8Lu4UorEqWS'
+          checks=[]
+          def check(name, ok, detail=''):
+              checks.append((name,bool(ok),str(detail)))
+              print(('PASS' if ok else 'FAIL')+' :: '+name+(' :: '+str(detail) if detail else ''))
+
+          def req(url, method='GET', data=None, headers=None, timeout=30):
+              body = None if data is None else json.dumps(data).encode()
+              h={'User-Agent':'A-Bulls-App-QA/1.0','Cache-Control':'no-cache','Pragma':'no-cache'}
+              if headers: h.update(headers)
+              if body is not None: h.setdefault('Content-Type','application/json')
+              r=urllib.request.Request(url,data=body,headers=h,method=method)
+              try:
+                  with urllib.request.urlopen(r,timeout=timeout) as resp:
+                      return resp.status, dict(resp.headers), resp.read()
+              except urllib.error.HTTPError as e:
+                  return e.code, dict(e.headers), e.read()
+
+          status, headers, body=req(BASE)
+          text=body.decode('utf-8','replace')
+          check('Homepage HTTP 200', status==200, status)
+          check('No Cloudflare Access HTML', 'cloudflareaccess.com' not in text.lower())
+          check('Title A Bulls App', '<title>A Bulls App</title>' in text)
+          check('Pages 8.4.0 live', '8.4.0' in text)
+          check('LIFE markup live', 'id="lifeView"' in text and 'id="lifeAnalyze"' in text)
+          check('Analytics markup live', 'id="trackView"' in text and 'id="trackAnalyze"' in text)
+          check('Bull Invaders markup live', 'id="invadersGameView"' in text and 'id="invadersCanvas"' in text)
+          check('Leaderboard markup live', 'id="invaderLeaderboardView"' in text)
+          check('Profile markup live', 'id="profileView"' in text)
+          check('Settings markup live', 'id="settingsView"' in text)
+          check('Help markup live', 'id="helpView"' in text)
+
+          static_paths=[
+            '/sw.js?v=8.4.0','/manifest.webmanifest','/privacy.html','/terms.html',
+            '/vendor/pixi-8.19.0.min.js','/js/main.js?v=8.4.0','/js/core.js?v=8.4.0',
+            '/js/bull-invaders.js?v=8.4.0','/js/bull-invaders-renderer-v2.js?v=8.4.0',
+            '/js/track.js?v=8.4.0','/js/life.js?v=8.4.0','/css/styles.css?v=8.4.0','/css/track.css?v=8.4.0'
+          ]
+          for path in static_paths:
+              s,h,b=req(BASE+path)
+              check('Static '+path, 200 <= s < 400, s)
+
+          # Range request avoids downloading the whole intro movie.
+          s,h,b=req(BASE+'/assets/opening/opening-sequence.mp4',headers={'Range':'bytes=0-1023'})
+          check('Opening video live', s in (200,206), f'{s}, {len(b)} bytes')
+
+          s,h,b=req(WORKER+'/api/health',headers={'Origin':BASE})
+          try: health=json.loads(b)
+          except Exception: health={}
+          check('Worker health 200', s==200, s)
+          check('Worker 8.0.4 live', health.get('data',{}).get('version')=='8.0.4', health.get('data',{}).get('version'))
+          check('Shared analytics cache bound', health.get('data',{}).get('services',{}).get('sharedAnalyticsCache') is True, health.get('data',{}).get('services',{}).get('sharedAnalyticsCache'))
+          check('Leaderboard binding active', health.get('data',{}).get('services',{}).get('leaderboard') is True, health.get('data',{}).get('services',{}).get('leaderboard'))
+          check('Wallet analytics active', health.get('data',{}).get('services',{}).get('walletAnalytics') is True, health.get('data',{}).get('services',{}).get('walletAnalytics'))
+          check('Worker version header', h.get('X-Worker-Version')=='8.0.4', h.get('X-Worker-Version'))
+          check('Server-Timing header', bool(h.get('Server-Timing')), h.get('Server-Timing'))
+
+          for name,path in [
+            ('NFT collection','/api/nft/collection-stats'),
+            ('NFT ecosystem','/api/nft/ecosystem-stats'),
+            ('ANSEM analytics','/api/ansem/analytics'),
+            ('Leaderboard top','/api/leaderboard/top?game=bull-invaders&limit=5')
+          ]:
+              s,h,b=req(WORKER+path,headers={'Origin':BASE},timeout=45)
+              check(name+' endpoint 200', s==200, s)
+              if s==200:
+                  try: payload=json.loads(b); check(name+' JSON ok', payload.get('ok') is True)
+                  except Exception: check(name+' JSON ok', False, 'invalid JSON')
+
+          for name,path,data in [
+            ('Wallet overview','/api/wallet/overview',{'address':WALLET}),
+            ('Wallet activity','/api/wallet/activity',{'address':WALLET,'range':'30d','limit':25})
+          ]:
+              s,h,b=req(WORKER+path,method='POST',data=data,headers={'Origin':BASE},timeout=60)
+              check(name+' endpoint 200', s==200, s)
+              if s==200:
+                  try: payload=json.loads(b); check(name+' JSON ok', payload.get('ok') is True)
+                  except Exception: check(name+' JSON ok', False, 'invalid JSON')
+
+          # Verify all first-party static refs directly declared in HTML.
+          refs=set(re.findall(r'(?:src|href)=["\']([^"\'#?]+)', text))
+          refs={r for r in refs if r and not re.match(r'^(?:https?:|data:|mailto:|#|//)',r)}
+          bad=[]
+          for ref in sorted(refs):
+              url=BASE+'/'+ref.lstrip('/')
+              s,h,b=req(url,timeout=30)
+              if s>=400: bad.append((ref,s))
+          check('HTML first-party refs healthy', not bad, bad[:10] if bad else f'{len(refs)} checked')
+
+          failed=[c for c in checks if not c[1]]
+          print('\nSUMMARY :: %d passed / %d total' % (len(checks)-len(failed),len(checks)))
+          if failed:
+              print('FAILED CHECKS:')
+              for c in failed: print(' -',c[0],c[2])
+              sys.exit(1)
+          PY
