@@ -1,0 +1,50 @@
+name = "black-bull-run-sol-api"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+ALLOWED_ORIGINS = "https://abullsapp.com,https://black-bull-run-sol.pages.dev,http://localhost:8788"
+ANSEM_MINT = "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump"
+# The scheduled task refreshes the holder scan and unified analytics snapshot.
+# Bull Intelligence indexing remains OFF until migration 0007 is applied.
+# After migration, optionally enable observed indexing with:
+# BULL_INDEXER_ENABLED = "true"
+# Keep BULL_ARCHIVAL_ENABLED unset/false until a true archival data source is configured.
+# Optional: set only if Kimji publishes a dedicated staking authority/delegate.
+# KIMJI_STAKING_AUTHORITY = "<PUBLIC_SOLANA_ADDRESS>"
+# Run before deploy:
+# npx wrangler secret put HELIUS_API_KEY
+# npx wrangler secret put GOOGLE_CLIENT_ID
+# npx wrangler secret put AUTH_SESSION_SECRET
+# Create and migrate the D1 leaderboard, then add the binding returned by Wrangler:
+# npx wrangler d1 create black-bull-run-leaderboard
+# npx wrangler d1 migrations apply black-bull-run-leaderboard --remote
+# [[d1_databases]]
+# binding = "LEADERBOARD_DB"
+# database_name = "black-bull-run-leaderboard"
+# database_id = "<YOUR_D1_DATABASE_ID>"
+# Strongly recommended shared analytics cache. A code-only dashboard paste does
+# not create this binding; create the namespace and replace the placeholder.
+# [[kv_namespaces]]
+# binding = "ANALYTICS_CACHE"
+# id = "<YOUR_KV_NAMESPACE_ID>"
+# If deploying in the dashboard, also create the */15 Cron Trigger manually.
+# Production Cloudflare Rate Limiting binding. Wrangler 4.36+ is required.
+# Choose a positive integer namespace_id unique to this Cloudflare account,
+# then uncomment this block. The code also applies tighter route-local budgets.
+# [[ratelimits]]
+# name = "RATE_LIMITER"
+# namespace_id = "1001"
+#   [ratelimits.simple]
+#   limit = 60
+#   period = 60
+# Without this binding, only the isolate-local development fallback is active.
+
+# Worker Logs / traces for production debugging. No request bodies or secrets are
+# deliberately logged by application code; failure logs redact credential-like values.
+[observability]
+enabled = true
+head_sampling_rate = 0.1
