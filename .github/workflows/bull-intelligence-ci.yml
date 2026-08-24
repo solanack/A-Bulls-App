@@ -12,9 +12,13 @@ on:
       - 'js/intelligence-time-machine.js'
       - 'js/life.js'
       - 'js/main.js'
+      - 'js/core.js'
       - 'workers/bull-intelligence-extension.mjs'
       - 'workers/intelligence-indexer.mjs'
       - 'workers/intelligence-aggregates.mjs'
+      - 'workers/migrations/0007_bull_intelligence.sql'
+      - 'workers/wrangler.toml'
+      - '.worker-sync/worker.js.gz.b64'
       - 'sw.js'
       - 'tests/bull-intelligence.test.mjs'
       - 'tests/intelligence-core.test.mjs'
@@ -38,6 +42,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Reconstruct and verify exact Worker payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .worker-sync/worker.js.gz.b64 | gzip -dc > /tmp/worker-8.1.0.js
+          echo '27db8a5ec6ea7b31cd800843c8d86f12ea77c94fec17be3fa4acc9f471b6cb26  /tmp/worker-8.1.0.js' | sha256sum -c -
+          node --check /tmp/worker-8.1.0.js
+          grep -q "const VERSION = '8.1.0';" /tmp/worker-8.1.0.js
+          grep -q "'/api/intelligence/time-machine'" /tmp/worker-8.1.0.js
+          grep -q "'/api/intelligence/parallel-universe'" /tmp/worker-8.1.0.js
+          grep -q "'/api/intelligence/radar'" /tmp/worker-8.1.0.js
+          grep -q "'/api/intelligence/weather'" /tmp/worker-8.1.0.js
+          grep -q 'indexWalletActivityObservations' /tmp/worker-8.1.0.js
+          grep -q "workerRequired: '8.1.0'" js/core.js
       - name: JavaScript syntax
         run: |
           node --check js/bull-intelligence.js
@@ -59,6 +77,13 @@ jobs:
           node tests/bull-intelligence-worker.test.mjs
           node tests/intelligence-indexer.test.mjs
           node tests/intelligence-aggregates.test.mjs
+      - name: Schema and migration contract
+        shell: bash
+        run: |
+          grep -q 'price_usd REAL' workers/migrations/0007_bull_intelligence.sql
+          grep -q 'bull_token_wallet_buckets' workers/migrations/0007_bull_intelligence.sql
+          grep -q 'BULL_INDEXER_ENABLED = "true"' workers/wrangler.toml
+          grep -q 'price_usd REAL' docs/BULL-INTELLIGENCE-D1-SCHEMA.sql
       - name: Read-only product guardrails
         shell: bash
         run: |
