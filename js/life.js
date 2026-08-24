@@ -86,6 +86,39 @@
     }
   }
 
+  function bullIntelligenceAdvice(address, overview, activity, range) {
+    try {
+      if (!global.BBRBullIntelligence?.deriveDNA || !address || !overview || !activity) return [];
+      const dna = global.BBRBullIntelligence.deriveDNA({ address, overview, activity, range });
+      const scores = Object.fromEntries((dna?.dimensions || []).map(item => [item.key, Number(item.score || 0)]));
+      const pieces = [];
+
+      if (scores.conviction >= 72) {
+        pieces.push('Your Bull DNA shows a concentrated visible footprint. Conviction can make a life coherent; the useful discipline is remembering that a strong commitment is still something you are allowed to examine again.');
+      }
+      if (scores.curiosity >= 72) {
+        pieces.push('Your Bull DNA shows broad exploration. Curiosity keeps a life open, but depth often begins where novelty stops being necessary. Give a few worthwhile things permission to become familiar.');
+      }
+      if (scores.pacing >= 78) {
+        pieces.push('Your Bull DNA shows comparatively measured pacing in the loaded history. Protect that rhythm. Space between actions is not inactivity when it helps you see more clearly.');
+      } else if (scores.pacing > 0 && scores.pacing <= 35) {
+        pieces.push('Your Bull DNA shows dense periods of activity. Motion can be energizing, but the quality of a decision is rarely improved simply because another decision follows it quickly.');
+      }
+      if (scores.rotation >= 75) {
+        pieces.push('Your Bull DNA shows substantial rotation across the visible range. Variety can be useful; so can learning which choices deserve enough time to reveal what they actually are.');
+      }
+      if (scores.reliability >= 96) {
+        pieces.push('Most visible transactions landed successfully. Quiet competence is easy to overlook because it rarely announces itself. Reliable process is worth appreciating even when the outcome is ordinary.');
+      }
+      if (dna?.archetype?.name === 'THE WATCHTOWER') {
+        pieces.push('The Watchtower pattern is less about waiting forever than about choosing what deserves attention. A calm vantage point can be its own form of progress.');
+      }
+      return pieces.slice(0, 2);
+    } catch (_) {
+      return [];
+    }
+  }
+
   function render() {
     const state = walletState();
     const address = String(state.address || global.profile?.publicWallet || '').trim();
@@ -111,7 +144,11 @@
       ['Range', range], ['Transactions', txs.toLocaleString()], ['Active days', days.toLocaleString()], ['Swaps', swaps.toLocaleString()]
     ].map(([label, value]) => `<div><small>${safe(label)}</small><b>${safe(value)}</b></div>`).join('');
 
-    const advice = [...bullVisionAdvice(address), ...adviceSet(state.overview, state.activity)];
+    const advice = [
+      ...bullVisionAdvice(address),
+      ...bullIntelligenceAdvice(address, state.overview, state.activity, state.range),
+      ...adviceSet(state.overview, state.activity)
+    ];
     phase.textContent = '';
     root.innerHTML = `<div class="life-advice-list">${[...new Set(advice)].slice(0, 6).map(piece => `<article>${safe(piece)}</article>`).join('')}</div>`;
   }
@@ -145,6 +182,9 @@
       if (document.getElementById('lifeView')?.classList.contains('active')) render();
     });
     global.addEventListener('abulls:bull-vision-life', () => {
+      if (document.getElementById('lifeView')?.classList.contains('active')) render();
+    });
+    global.addEventListener('abulls:bull-intelligence-ready', () => {
       if (document.getElementById('lifeView')?.classList.contains('active')) render();
     });
     render();
