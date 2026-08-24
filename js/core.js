@@ -36,7 +36,7 @@
     .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 
   const Platform = {
-    version: '8.6.0',
+    version: '8.6.1',
     workerRequired: '8.1.0',
     buildStamp() {
       return `PAGES ${this.version} • WORKER ${this.workerRequired}`;
