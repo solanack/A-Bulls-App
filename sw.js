@@ -1,4 +1,4 @@
-const BUILD = '8.6.0';
+const BUILD = '8.6.1';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
