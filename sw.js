@@ -21,7 +21,7 @@ const CORE = [
     './js/opening-sequence.js', './js/config.js', './js/api-client.js', './js/storage.js', './js/core.js',
     './js/background-manager.js', './js/audio-manager.js', './js/v7-art-system.js', './js/dusk-interactions.js', './js/run-recorder.js', './js/share-card.js',
     './js/leaderboard.js', './js/run-mode.js', './js/bull-invaders-renderer-v2.js', './js/bull-invaders.js', './js/profile-manager.js', './js/ui.js',
-    './js/track-formatters.js', './js/track.js', './js/life.js', './js/theme-customizer.js', './js/bull-vision.js', './js/bull-intelligence.js', './js/intelligence-core.js', './js/intelligence-lab.js', './js/intelligence-time-machine.js', './js/intelligence-radar-weather.js', './js/main.js'
+    './js/track-formatters.js', './js/track.js', './js/life.js', './js/theme-customizer.js', './js/bull-vision.js', './js/bull-intelligence.js', './js/intelligence-core.js', './js/intelligence-lab.js', './js/intelligence-time-machine.js', './js/intelligence-radar-weather.js', './js/intelligence-where-were-you.js', './js/main.js'
   ]),
   './vendor/pixi-8.19.0.min.js',
   './assets/v7/player-ship.webp', './assets/v7/enemies/bear-fighter.webp',
