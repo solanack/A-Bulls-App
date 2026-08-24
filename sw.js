@@ -42,16 +42,24 @@ const CORE = [
   './assets/powerups/super-bull.svg', './assets/powerups/magnet.svg', './assets/powerups/shockwave.svg',
   './assets/powerups/time-warp.svg', './assets/powerups/overdrive.svg',
   ...['rapid','spread','shield','overdrive','magnet','nova','double-trinity','triangle','twin','trinity','railgun','plasma','homing','bomb','bomb2']
-    .map(name => `./assets/powerups/ecosystem/${name}.svg`),
-  // The opening video and later level backgrounds are runtime-cached when used.
-  // This keeps first install light without removing offline support after a visit.
+    .map(name => `./assets/powerups/ecosystem/${name}.svg`)
 ];
+
+async function cacheOne(cache, path) {
+  try {
+    const request = new Request(path, { cache: 'reload' });
+    const response = await fetch(request);
+    if (response.ok) await cache.put(request, response);
+  } catch (_) {
+    // A missing optional asset must never abort the entire PWA installation.
+  }
+}
 
 self.addEventListener('install', event => event.waitUntil((async () => {
   const cache = await caches.open(CACHE);
-  // Chunking keeps installation gentle on memory-constrained mobile browsers
-  // while precaching the consolidated original roster and every player ship.
-  for (let index = 0; index < CORE.length; index += 32) await cache.addAll(CORE.slice(index, index + 32));
+  for (let index = 0; index < CORE.length; index += 24) {
+    await Promise.all(CORE.slice(index, index + 24).map(path => cacheOne(cache, path)));
+  }
   await self.skipWaiting();
 })()));
 
@@ -61,16 +69,39 @@ self.addEventListener('activate', event => event.waitUntil(
     .then(() => self.clients.claim())
 ));
 
+function isStaticAsset(url) {
+  return /\.(?:js|css|mjs|json|png|jpe?g|webp|svg|gif|avif|woff2?|ttf|mp3|m4a|wav|ogg|mp4|webm)$/i.test(url.pathname);
+}
+
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(CACHE);
+  const cached = await cache.match(request, { ignoreSearch: false });
+  const refresh = fetch(request)
+    .then(response => {
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => null);
+  return cached || await refresh || new Response('', { status: 504, statusText: 'Offline' });
+}
+
+async function networkFirst(request) {
+  const cache = await caches.open(CACHE);
+  try {
+    const response = await fetch(request, { cache: 'no-store' });
+    if (response.ok) await cache.put(request, response.clone());
+    return response;
+  } catch (_) {
+    return await cache.match(request) || await cache.match('./index.html') || new Response('', { status: 504, statusText: 'Offline' });
+  }
+}
+
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== location.origin || url.pathname.includes('/api/')) return;
-  event.respondWith(
-    fetch(event.request, { cache: 'no-store' })
-      .then(response => {
-        const copy = response.clone();
-        caches.open(CACHE).then(cache => cache.put(event.request, copy));
-        return response;
-      })
-      .catch(() => caches.match(event.request).then(hit => hit || caches.match('./index.html')))
-  );
+  if (event.request.mode === 'navigate') {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
+  event.respondWith(isStaticAsset(url) ? staleWhileRevalidate(event.request) : networkFirst(event.request));
 });
