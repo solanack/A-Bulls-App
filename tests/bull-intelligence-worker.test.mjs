@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { intelligenceCapabilities, handleBullIntelligenceRequest } from '../workers/bull-intelligence-extension.js';
+import { intelligenceCapabilities, handleBullIntelligenceRequest } from '../workers/bull-intelligence-extension.mjs';
 
 const caps = intelligenceCapabilities({});
 assert.equal(caps.readOnly, true);
