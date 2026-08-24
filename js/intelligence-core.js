@@ -114,13 +114,6 @@
     };
   }
 
-  function priceObservations(events, mint) {
-    return events
-      .filter(event => event.mint === mint && event.priceUsd && event.blockTime)
-      .map(event => ({ time: event.blockTime, priceUsd: event.priceUsd }))
-      .sort((a, b) => a.time - b.time);
-  }
-
   function firstObservationAtOrAfter(observations, time) {
     for (const point of observations) if (point.time >= time) return point;
     return null;
@@ -129,7 +122,9 @@
   function simulateFixedHold(rows = [], options = {}) {
     const holdSeconds = Math.max(60, Math.round(num(options.holdSeconds || options.hold_seconds || 86400)));
     const events = normalizeEvents(rows);
-    const buys = events.filter(event => event.mint && event.tokenDelta > 0 && event.priceUsd && event.blockTime);
+    // Only swap-like positive token deltas count as observed entries. Transfers,
+    // airdrops and mints must never be silently treated as purchases.
+    const buys = events.filter(event => event.eventClass === 'swap-like' && event.mint && event.tokenDelta > 0 && event.priceUsd && event.blockTime);
     const observations = new Map();
     for (const event of events) {
       if (!event.mint || !event.priceUsd || !event.blockTime) continue;
@@ -206,7 +201,6 @@
     const sampleFactor = clamp01(cWallets / 25);
     const severity = clamp100(strongest * (.55 + sampleFactor * .45));
 
-    let type = 'activity-shift';
     const scores = [
       ['wallet-convergence', convergence],
       ['inbound-convergence', accumulation],
@@ -214,10 +208,9 @@
       ['long-duration-shift', longDurationShift],
       ['fresh-wallet-shift', freshWalletShift]
     ].sort((a, b) => b[1] - a[1]);
-    if (scores[0]) type = scores[0][0];
 
     return {
-      type,
+      type: scores[0]?.[0] || 'activity-shift',
       severity,
       sampleSize: cWallets,
       scores: { convergence, accumulation, distribution, longDurationShift, freshWalletShift },
