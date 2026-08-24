@@ -1,4 +1,4 @@
-const BUILD = '8.5.0';
+const BUILD = '8.6.0';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -21,7 +21,7 @@ const CORE = [
     './js/opening-sequence.js', './js/config.js', './js/api-client.js', './js/storage.js', './js/core.js',
     './js/background-manager.js', './js/audio-manager.js', './js/v7-art-system.js', './js/dusk-interactions.js', './js/run-recorder.js', './js/share-card.js',
     './js/leaderboard.js', './js/run-mode.js', './js/bull-invaders-renderer-v2.js', './js/bull-invaders.js', './js/profile-manager.js', './js/ui.js',
-    './js/track-formatters.js', './js/track.js', './js/life.js', './js/theme-customizer.js', './js/main.js'
+    './js/track-formatters.js', './js/track.js', './js/life.js', './js/theme-customizer.js', './js/bull-vision.js', './js/main.js'
   ]),
   './vendor/pixi-8.19.0.min.js',
   './assets/v7/player-ship.webp', './assets/v7/enemies/bear-fighter.webp',
@@ -33,8 +33,6 @@ const CORE = [
   './assets/sol-incinerator.png', './assets/profile-fallback.svg',
   ...['rapid','spread','shield','overdrive','magnet','nova','double-trinity','triangle','twin','trinity','railgun','plasma','homing','bomb','bomb2']
     .map(name => `./assets/powerups/ecosystem/${name}.svg`),
-  // The opening video and later level backgrounds are runtime-cached when used.
-  // This keeps first install light without removing offline support after a visit.
 ];
 
 async function cacheOne(cache, path) {
@@ -42,14 +40,11 @@ async function cacheOne(cache, path) {
     const request = new Request(path, { cache: 'reload' });
     const response = await fetch(request);
     if (response.ok && response.type === 'basic') await cache.put(request, response);
-  } catch (_) {
-    // Optional/missing media must never abort the entire PWA installation.
-  }
+  } catch (_) {}
 }
 
 self.addEventListener('install', event => event.waitUntil((async () => {
   const cache = await caches.open(CACHE);
-  // Chunked and failure-tolerant: one missing optional asset cannot break install.
   for (let index = 0; index < CORE.length; index += 24) {
     await Promise.all(CORE.slice(index, index + 24).map(path => cacheOne(cache, path)));
   }
