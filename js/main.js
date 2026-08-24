@@ -7,6 +7,16 @@ document.addEventListener('DOMContentLoaded', () => {
   BullInvaders?.init();
   window.BBRLife?.init?.();
   window.BBRSThemeCustomizer?.init?.();
+
+  // Bull Vision is additive so this release can be layered onto the recovered
+  // production source without duplicating the heavy Trickshot reconstruction engine.
+  const bullVisionScript = document.createElement('script');
+  bullVisionScript.src = 'js/bull-vision.js?v=8.6.0';
+  bullVisionScript.defer = true;
+  bullVisionScript.onload = () => window.BBRBullVision?.init?.();
+  bullVisionScript.onerror = () => console.warn('[bull-vision] client failed to load');
+  document.head.append(bullVisionScript);
+
   const serviceBanner = document.getElementById('serviceStatusBanner');
   const serviceText = document.getElementById('serviceStatusText');
   const updateServiceBanner = detail => {
@@ -25,9 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
   updateServiceBanner({});
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
-    navigator.serviceWorker.register('sw.js?v=8.5.0', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('sw.js?v=8.6.0', { updateViaCache: 'none' })
       .then(registration => registration.update())
       .catch(error => console.warn('[pwa]', error));
   }
-  console.log('%cA Bulls App 8.5.0 — Bull Invaders Evolution', 'color:#c4afcf;font-weight:bold');
+  console.log('%cA Bulls App 8.6.0 — Bull Vision', 'color:#c4afcf;font-weight:bold');
 });
