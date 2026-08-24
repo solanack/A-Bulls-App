@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/sync-live-source.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/sync-live-source.yml'
   workflow_dispatch:
 
 permissions:
@@ -27,7 +31,7 @@ jobs:
           from pathlib import Path
           from urllib.parse import urljoin, urlparse
           from urllib.request import Request, urlopen
-          import re, json, os, time
+          import re, os
 
           origin = os.environ['SITE_ORIGIN'].rstrip('/') + '/'
           host = urlparse(origin).netloc
@@ -57,9 +61,8 @@ jobs:
               if path in seen or '..' in Path(path).parts:
                   continue
               seen.add(path)
-              url = urljoin(origin, path)
               try:
-                  req = Request(url, headers={'User-Agent':'A-Bulls-App-Source-Sync/1.0','Cache-Control':'no-cache'})
+                  req = Request(urljoin(origin, path), headers={'User-Agent':'A-Bulls-App-Source-Sync/1.1','Cache-Control':'no-cache'})
                   with urlopen(req, timeout=25) as response:
                       if response.status >= 400:
                           raise RuntimeError(str(response.status))
@@ -73,8 +76,7 @@ jobs:
               target.parent.mkdir(parents=True, exist_ok=True)
               target.write_bytes(data)
 
-              suffix = target.suffix.lower()
-              if suffix not in text_ext and not any(x in content_type for x in ('text/','javascript','json','xml','svg')):
+              if target.suffix.lower() not in text_ext and not any(x in content_type for x in ('text/','javascript','json','xml','svg')):
                   continue
               try:
                   text = data.decode('utf-8')
