@@ -1,0 +1,28 @@
+name: Bull Vision Release CI
+
+on:
+  pull_request:
+    branches:
+      - release/v8.6.0-bull-vision
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Bull Vision release JavaScript
+        run: |
+          node --check js/bull-vision.js
+          node --check js/life.js
+          node --check js/config.js
+          node --check js/core.js
+          node --check js/main.js
+          node --check sw.js
+      - name: Validate release wiring
+        run: |
+          grep -q "version: '8.6.0'" js/core.js
+          grep -q "bullVisionBase" js/config.js
+          grep -q "bull-vision.js?v=8.6.0" js/main.js
+          grep -q "./js/bull-vision.js" sw.js
+          grep -q "abulls_bull_vision_life" js/life.js
