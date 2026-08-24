@@ -10,7 +10,7 @@ on:
       - 'js/intelligence-lab.js'
       - 'js/life.js'
       - 'js/main.js'
-      - 'workers/bull-intelligence-extension.js'
+      - 'workers/bull-intelligence-extension.mjs'
       - 'sw.js'
       - 'tests/bull-intelligence.test.mjs'
       - 'tests/intelligence-lab.test.mjs'
@@ -36,7 +36,7 @@ jobs:
           node --check js/intelligence-lab.js
           node --check js/life.js
           node --check js/main.js
-          node --check workers/bull-intelligence-extension.js
+          node --check workers/bull-intelligence-extension.mjs
           node --check sw.js
       - name: Bull Intelligence unit tests
         run: |
@@ -46,11 +46,11 @@ jobs:
       - name: Read-only product guardrails
         shell: bash
         run: |
-          if grep -Eqi '(seed phrase|private key import|copy trading|sniper bot|submit transaction|signTransaction|sendTransaction)' js/bull-intelligence.js js/intelligence-lab.js workers/bull-intelligence-extension.js; then
+          if grep -Eqi '(seed phrase|private key import|copy trading|sniper bot|submit transaction|signTransaction|sendTransaction)' js/bull-intelligence.js js/intelligence-lab.js workers/bull-intelligence-extension.mjs; then
             echo 'Forbidden execution/custody behavior detected in Bull Intelligence code.'
             exit 1
           fi
           grep -q 'Partial history is never presented as complete history' js/bull-intelligence.js
           grep -q 'not a claim about what the wallet would be worth today' js/intelligence-lab.js
-          grep -q 'publicAddressOnly: true' workers/bull-intelligence-extension.js
+          grep -q 'publicAddressOnly: true' workers/bull-intelligence-extension.mjs
           grep -q 'Public address only' docs/BULL-INTELLIGENCE-ENGINE.md
