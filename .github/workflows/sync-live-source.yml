@@ -1,14 +1,11 @@
 name: Sync deployed A Bulls App source
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/sync-live-source.yml'
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/sync-live-source.yml'
+      - '.source-sync/pages-runtime-manifest.txt'
   workflow_dispatch:
 
 permissions:
@@ -17,104 +14,80 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Crawl public deployment
+      - name: Download canonical runtime files
         env:
           SITE_ORIGIN: https://www.abullsapp.com
         run: |
+          set -euo pipefail
+          rm -rf site sync-log
+          mkdir -p site sync-log
+          cp .source-sync/pages-runtime-manifest.txt sync-log/manifest.txt
+
           python - <<'PY'
           from pathlib import Path
-          from urllib.parse import urljoin, urlparse
-          from urllib.request import Request, urlopen
-          import re, os
+          paths=[]
+          for line in Path('sync-log/manifest.txt').read_text().splitlines():
+              path=line.strip()
+              if path and not path.startswith('#'):
+                  paths.append(path)
+          Path('sync-log/paths.txt').write_text('\n'.join(paths)+'\n')
+          print(f'{len(paths)} runtime paths queued')
+          PY
 
-          origin = os.environ['SITE_ORIGIN'].rstrip('/') + '/'
-          host = urlparse(origin).netloc
-          out = Path('site')
-          out.mkdir(exist_ok=True)
-          queue = ['index.html', 'sw.js', 'manifest.webmanifest', 'privacy.html', 'terms.html', 'games/claude-of-duty/index.html']
-          seen = set()
-          missing = []
-          text_ext = {'.html','.htm','.js','.mjs','.css','.json','.webmanifest','.svg','.xml','.txt','.md'}
-          quoted = re.compile(r'''["']([^"'?#]+\.(?:html?|js|mjs|css|json|webmanifest|svg|png|jpe?g|webp|gif|mp4|webm|wav|mp3|ogg))(?:[?#][^"']*)?["']''', re.I)
-          css_url = re.compile(r'''url\(\s*["']?([^\)"'?#]+)["']?\s*\)''', re.I)
+          download_one() {
+            path="$1"
+            mkdir -p "site/$(dirname "$path")"
+            if curl -fsSL --retry 2 --retry-delay 1 --connect-timeout 8 --max-time 35 \
+              -H 'Cache-Control: no-cache' -A 'A-Bulls-App-Source-Sync/2.0' \
+              "$SITE_ORIGIN/$path" -o "site/$path"; then
+              printf 'OK\t%s\n' "$path" >> sync-log/results.tsv
+            else
+              rm -f "site/$path"
+              printf 'MISS\t%s\n' "$path" >> sync-log/results.tsv
+            fi
+          }
+          export -f download_one
+          export SITE_ORIGIN
+          : > sync-log/results.tsv
+          xargs -r -P 12 -I{} bash -c 'download_one "$1"' _ {} < sync-log/paths.txt
 
-          def normalize(base_path, ref):
-              if not ref or ref.startswith(('data:','blob:','mailto:','javascript:','#','//')):
-                  return None
-              absolute = urljoin(origin + base_path, ref)
-              parsed = urlparse(absolute)
-              if parsed.netloc not in {host, 'abullsapp.com'}:
-                  return None
-              path = parsed.path.lstrip('/') or 'index.html'
-              if path.endswith('/'):
-                  path += 'index.html'
-              return path
-
-          while queue:
-              path = queue.pop(0)
-              if path in seen or '..' in Path(path).parts:
-                  continue
-              seen.add(path)
-              try:
-                  req = Request(urljoin(origin, path), headers={'User-Agent':'A-Bulls-App-Source-Sync/1.1','Cache-Control':'no-cache'})
-                  with urlopen(req, timeout=25) as response:
-                      if response.status >= 400:
-                          raise RuntimeError(str(response.status))
-                      data = response.read()
-                      content_type = response.headers.get('content-type','')
-              except Exception as exc:
-                  missing.append(f'{path}: {exc}')
-                  continue
-
-              target = out / path
-              target.parent.mkdir(parents=True, exist_ok=True)
-              target.write_bytes(data)
-
-              if target.suffix.lower() not in text_ext and not any(x in content_type for x in ('text/','javascript','json','xml','svg')):
-                  continue
-              try:
-                  text = data.decode('utf-8')
-              except UnicodeDecodeError:
-                  continue
-              refs = [m.group(1) for m in quoted.finditer(text)] + [m.group(1) for m in css_url.finditer(text)]
-              for ref in refs:
-                  child = normalize(path, ref)
-                  if child and child not in seen:
-                      queue.append(child)
-
-          index = (out / 'index.html').read_text('utf-8', errors='ignore') if (out / 'index.html').exists() else ''
-          match = re.search(r'bbrs-build[^>]*content=["\']([^"\']+)', index)
-          build = match.group(1) if match else 'unknown'
-          files = [p for p in out.rglob('*') if p.is_file()]
-          report = [
-              '# Live source sync', '',
-              f'- Origin: {origin}',
-              f'- Build detected: {build}',
-              f'- Files downloaded: {len(files)}',
-              f'- Missing references: {len(missing)}', '',
-              '## Missing references',
-              *(missing[:100] or ['None'])
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          rows=Path('sync-log/results.tsv').read_text().splitlines()
+          ok=[r.split('\t',1)[1] for r in rows if r.startswith('OK\t')]
+          missing=[r.split('\t',1)[1] for r in rows if r.startswith('MISS\t')]
+          index=Path('site/index.html').read_text('utf-8',errors='ignore') if Path('site/index.html').exists() else ''
+          m=re.search(r'bbrs-build[^>]*content=["\']([^"\']+)', index)
+          build=m.group(1) if m else 'unknown'
+          report=[
+            '# Live source sync','',
+            '- Origin: https://www.abullsapp.com',
+            f'- Build detected: {build}',
+            f'- Runtime files downloaded: {len(ok)}',
+            f'- Missing paths: {len(missing)}','',
+            '## Missing paths',*(missing or ['None'])
           ]
-          (out / 'SYNC_REPORT.md').write_text('\n'.join(report) + '\n')
-          print(f'Build {build}; downloaded {len(files)} files; missing {len(missing)}')
+          Path('site/SYNC_REPORT.md').write_text('\n'.join(report)+'\n')
+          print(f'build={build} ok={len(ok)} missing={len(missing)}')
+          if not Path('site/index.html').exists():
+              raise SystemExit('index.html was not downloaded')
           PY
 
       - name: Publish source snapshot branch
         run: |
           git config user.name 'A Bulls App Source Sync'
           git config user.email 'actions@users.noreply.github.com'
-          rm -rf snapshot
-          mv site snapshot
+          mv site /tmp/a-bulls-app-site
           git switch --orphan live-source-sync
           git rm -rf . >/dev/null 2>&1 || true
-          cp -a snapshot/. .
-          rm -rf snapshot
+          cp -a /tmp/a-bulls-app-site/. .
           git add -A
           git commit -m 'Sync current deployed A Bulls App source'
           git push --force origin HEAD:live-source-sync
