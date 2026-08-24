@@ -1,6 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
   BackgroundManager?.migrateProfile(profile);
-  // Drive footer stamp from single build constant (Platform.version)
   const stamp = document.querySelector('.build-stamp');
   if (stamp && window.BBRPlatform?.buildStamp) stamp.textContent = BBRPlatform.buildStamp();
   initUI();
@@ -8,8 +7,6 @@ document.addEventListener('DOMContentLoaded', () => {
   window.BBRLife?.init?.();
   window.BBRSThemeCustomizer?.init?.();
 
-  // Bull Vision is additive so this release can be layered onto the recovered
-  // production source without duplicating the heavy Trickshot reconstruction engine.
   const bullVisionScript = document.createElement('script');
   bullVisionScript.src = 'js/bull-vision.js?v=8.6.0';
   bullVisionScript.defer = true;
@@ -17,8 +14,6 @@ document.addEventListener('DOMContentLoaded', () => {
   bullVisionScript.onerror = () => console.warn('[bull-vision] client failed to load');
   document.head.append(bullVisionScript);
 
-  // Bull Intelligence stays an additive read-only layer. The pure reconstruction core
-  // loads before the UI experiments so unavailable archival data remains capability-gated.
   const bullIntelligenceScript = document.createElement('script');
   bullIntelligenceScript.src = 'js/bull-intelligence.js?v=8.6.0';
   bullIntelligenceScript.defer = true;
@@ -34,33 +29,21 @@ document.addEventListener('DOMContentLoaded', () => {
       labScript.onload = () => {
         window.BBRIntelligenceLab?.init?.();
 
-        const historyScript = document.createElement('script');
-        historyScript.src = 'js/intelligence-time-machine.js?v=8.6.0';
-        historyScript.defer = true;
-        historyScript.onload = () => window.BBRIntelligenceHistory?.init?.();
-        historyScript.onerror = () => console.warn('[intelligence-history] client failed to load');
-        document.head.append(historyScript);
-
-        const environmentScript = document.createElement('script');
-        environmentScript.src = 'js/intelligence-radar-weather.js?v=8.6.0';
-        environmentScript.defer = true;
-        environmentScript.onload = () => window.BBRRadarWeather?.init?.();
-        environmentScript.onerror = () => console.warn('[bull-radar-weather] client failed to load');
-        document.head.append(environmentScript);
-
-        const whereWereYouScript = document.createElement('script');
-        whereWereYouScript.src = 'js/intelligence-where-were-you.js?v=8.6.0';
-        whereWereYouScript.defer = true;
-        whereWereYouScript.onload = () => window.BBRWhereWereYou?.init?.();
-        whereWereYouScript.onerror = () => console.warn('[where-were-you] client failed to load');
-        document.head.append(whereWereYouScript);
-
-        const constellationScript = document.createElement('script');
-        constellationScript.src = 'js/intelligence-constellation.js?v=8.6.0';
-        constellationScript.defer = true;
-        constellationScript.onload = () => window.BBRWalletConstellation?.init?.();
-        constellationScript.onerror = () => console.warn('[wallet-constellation] client failed to load');
-        document.head.append(constellationScript);
+        const modules = [
+          ['js/intelligence-time-machine.js?v=8.6.0', 'BBRIntelligenceHistory', 'intelligence-history'],
+          ['js/intelligence-radar-weather.js?v=8.6.0', 'BBRRadarWeather', 'bull-radar-weather'],
+          ['js/intelligence-where-were-you.js?v=8.6.0', 'BBRWhereWereYou', 'where-were-you'],
+          ['js/intelligence-constellation.js?v=8.6.0', 'BBRWalletConstellation', 'wallet-constellation'],
+          ['js/intelligence-nft-memory.js?v=8.6.0', 'BBRNFTMemory', 'nft-memory']
+        ];
+        modules.forEach(([src, globalName, label]) => {
+          const script = document.createElement('script');
+          script.src = src;
+          script.defer = true;
+          script.onload = () => window[globalName]?.init?.();
+          script.onerror = () => console.warn(`[${label}] client failed to load`);
+          document.head.append(script);
+        });
       };
       labScript.onerror = () => console.warn('[intelligence-lab] client failed to load');
       document.head.append(labScript);
