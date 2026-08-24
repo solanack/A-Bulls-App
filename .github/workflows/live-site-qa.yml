@@ -1,0 +1,116 @@
+name: Live Site QA
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Playwright
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install --save-dev playwright@1.55.0 >/dev/null 2>&1
+          npx playwright install --with-deps chromium >/dev/null 2>&1
+
+      - name: Run live QA
+        run: |
+          cat > live-qa.mjs <<'EOF'
+          import { chromium } from 'playwright';
+          import fs from 'node:fs';
+
+          const base = 'https://www.abullsapp.com';
+          const worker = 'https://black-bull-run-sol.ckdsigns1.workers.dev';
+          const report = { base, worker, startedAt: new Date().toISOString(), checks: [], consoleErrors: [], pageErrors: [], failedRequests: [] };
+          const check = (name, ok, detail='') => {
+            report.checks.push({ name, ok: Boolean(ok), detail: String(detail || '') });
+            console.log(`${ok ? 'PASS' : 'FAIL'} :: ${name}${detail ? ' :: ' + detail : ''}`);
+          };
+
+          const browser = await chromium.launch({ headless: true });
+          const context = await browser.newContext({ viewport: { width: 390, height: 844 }, userAgent: 'A-Bulls-App-QA/1.0' });
+          const page = await context.newPage();
+          page.on('console', msg => { if (msg.type() === 'error') report.consoleErrors.push(msg.text()); });
+          page.on('pageerror', err => report.pageErrors.push(err.message));
+          page.on('requestfailed', req => report.failedRequests.push({ url: req.url(), error: req.failure()?.errorText || 'failed' }));
+
+          try {
+            const response = await page.goto(base, { waitUntil: 'networkidle', timeout: 60000 });
+            check('Homepage HTTP success', !!response && response.status() < 400, response ? `status ${response.status()}` : 'no response');
+            check('Not redirected to Cloudflare Access', !page.url().includes('cloudflareaccess.com'), page.url());
+            const title = await page.title();
+            check('Page title loaded', /bull/i.test(title), title);
+            const html = await page.content();
+            check('Pages 8.4.0 marker', html.includes('8.4.0'), 'searched rendered HTML');
+            check('LIFE view present', !!(await page.$('#lifeView')), '#lifeView');
+            check('Analytics view present', !!(await page.$('#intelligenceView')), '#intelligenceView');
+            check('Bull Invaders canvas present', !!(await page.$('#invadersCanvas')), '#invadersCanvas');
+            check('Service worker file reachable', (await page.request.get(base + '/sw.js?v=8.4.0')).status() < 400);
+            check('Manifest reachable', (await page.request.get(base + '/manifest.webmanifest')).status() < 400);
+            check('Privacy page reachable', (await page.request.get(base + '/privacy.html')).status() < 400);
+            check('Terms page reachable', (await page.request.get(base + '/terms.html')).status() < 400);
+
+            const lifeNav = page.locator('[data-view="life"]').first();
+            if (await lifeNav.count()) {
+              await lifeNav.click();
+              await page.waitForTimeout(350);
+              check('LIFE navigation works', await page.locator('#lifeView.active').count() === 1);
+            } else check('LIFE navigation works', false, 'nav control missing');
+
+            const analyticsNav = page.locator('[data-view="intelligence"]').first();
+            if (await analyticsNav.count()) {
+              await analyticsNav.click();
+              await page.waitForTimeout(350);
+              check('Analytics navigation works', await page.locator('#intelligenceView.active').count() === 1);
+            } else check('Analytics navigation works', false, 'nav control missing');
+
+            const health = await page.request.get(worker + '/api/health', { headers: { Origin: base } });
+            const healthText = await health.text();
+            let healthJson = null;
+            try { healthJson = JSON.parse(healthText); } catch {}
+            check('Worker health HTTP success', health.status() === 200, `status ${health.status()}`);
+            check('Worker reports 8.0.4', healthJson?.data?.version === '8.0.4', healthJson?.data?.version || healthText.slice(0,120));
+            check('Worker version header present', health.headers()['x-worker-version'] === '8.0.4', health.headers()['x-worker-version'] || 'missing');
+            check('Worker Server-Timing present', !!health.headers()['server-timing'], health.headers()['server-timing'] || 'missing');
+
+            const assetUrls = await page.evaluate(() => [...document.querySelectorAll('script[src],link[href],img[src]')].map(el => el.src || el.href).filter(Boolean));
+            const uniqueAssets = [...new Set(assetUrls)].filter(u => u.startsWith(location.origin)).slice(0, 80);
+            let badAssets = [];
+            for (const u of uniqueAssets) {
+              const r = await page.request.get(u);
+              if (r.status() >= 400) badAssets.push({ url: u, status: r.status() });
+            }
+            check('Loaded first-party assets healthy', badAssets.length === 0, badAssets.length ? JSON.stringify(badAssets.slice(0,8)) : `${uniqueAssets.length} checked`);
+            await page.screenshot({ path: 'live-home.png', fullPage: true });
+          } catch (err) {
+            check('QA runner completed navigation', false, err.stack || err.message);
+          }
+
+          report.finishedAt = new Date().toISOString();
+          report.pass = report.checks.every(c => c.ok);
+          fs.writeFileSync('live-qa-report.json', JSON.stringify(report, null, 2));
+          console.log('Console errors:', report.consoleErrors.length);
+          for (const e of report.consoleErrors.slice(0,20)) console.log('CONSOLE_ERROR :: ' + e);
+          console.log('Page errors:', report.pageErrors.length);
+          for (const e of report.pageErrors.slice(0,20)) console.log('PAGE_ERROR :: ' + e);
+          console.log('Failed requests:', report.failedRequests.length);
+          for (const e of report.failedRequests.slice(0,20)) console.log('REQUEST_FAILED :: ' + e.url + ' :: ' + e.error);
+          await browser.close();
+          if (!report.pass) process.exitCode = 1;
+          EOF
+          node live-qa.mjs
+
+      - name: Upload QA artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-site-qa
+          path: |
+            live-qa-report.json
+            live-home.png
