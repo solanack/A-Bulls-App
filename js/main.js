@@ -54,6 +54,13 @@ document.addEventListener('DOMContentLoaded', () => {
         whereWereYouScript.onload = () => window.BBRWhereWereYou?.init?.();
         whereWereYouScript.onerror = () => console.warn('[where-were-you] client failed to load');
         document.head.append(whereWereYouScript);
+
+        const constellationScript = document.createElement('script');
+        constellationScript.src = 'js/intelligence-constellation.js?v=8.6.0';
+        constellationScript.defer = true;
+        constellationScript.onload = () => window.BBRWalletConstellation?.init?.();
+        constellationScript.onerror = () => console.warn('[wallet-constellation] client failed to load');
+        document.head.append(constellationScript);
       };
       labScript.onerror = () => console.warn('[intelligence-lab] client failed to load');
       document.head.append(labScript);
