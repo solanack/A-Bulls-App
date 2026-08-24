@@ -1,5 +1,5 @@
--- Bull Intelligence D1 schema blueprint
--- Not yet applied to production. Designed for staged Worker integration.
+-- Bull Intelligence D1 schema blueprint — aligned with Worker migration 0007.
+-- Not yet applied to production.
 
 CREATE TABLE IF NOT EXISTS bull_wallet_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -9,25 +9,23 @@ CREATE TABLE IF NOT EXISTS bull_wallet_events (
   wallet TEXT NOT NULL,
   counterparty TEXT,
   program_id TEXT,
-  mint TEXT,
+  mint TEXT NOT NULL DEFAULT '',
   collection TEXT,
   event_class TEXT NOT NULL,
-  sol_delta REAL,
-  token_delta REAL,
-  fee_lamports INTEGER,
+  sol_delta REAL NOT NULL DEFAULT 0,
+  token_delta REAL NOT NULL DEFAULT 0,
+  fee_lamports INTEGER NOT NULL DEFAULT 0,
+  price_usd REAL,
   source TEXT NOT NULL,
   confidence REAL NOT NULL DEFAULT 1.0,
   decoder_version TEXT,
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_bull_wallet_events_unique
-  ON bull_wallet_events(signature, wallet, event_class, COALESCE(mint, ''));
-CREATE INDEX IF NOT EXISTS idx_bull_wallet_events_wallet_time
-  ON bull_wallet_events(wallet, block_time DESC);
-CREATE INDEX IF NOT EXISTS idx_bull_wallet_events_mint_time
-  ON bull_wallet_events(mint, block_time DESC);
-CREATE INDEX IF NOT EXISTS idx_bull_wallet_events_counterparty
-  ON bull_wallet_events(counterparty, block_time DESC);
+  ON bull_wallet_events(signature, wallet, event_class, mint, token_delta, sol_delta);
+CREATE INDEX IF NOT EXISTS idx_bull_wallet_events_wallet_time ON bull_wallet_events(wallet, block_time DESC);
+CREATE INDEX IF NOT EXISTS idx_bull_wallet_events_mint_time ON bull_wallet_events(mint, block_time DESC);
+CREATE INDEX IF NOT EXISTS idx_bull_wallet_events_counterparty ON bull_wallet_events(counterparty, block_time DESC);
 
 CREATE TABLE IF NOT EXISTS bull_wallet_windows (
   wallet TEXT NOT NULL,
@@ -47,8 +45,7 @@ CREATE TABLE IF NOT EXISTS bull_wallet_windows (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
   PRIMARY KEY(wallet, window_key, window_start)
 );
-CREATE INDEX IF NOT EXISTS idx_bull_wallet_windows_end
-  ON bull_wallet_windows(window_end DESC);
+CREATE INDEX IF NOT EXISTS idx_bull_wallet_windows_end ON bull_wallet_windows(window_end DESC);
 
 CREATE TABLE IF NOT EXISTS bull_wallet_relationships (
   wallet_a TEXT NOT NULL,
@@ -62,10 +59,22 @@ CREATE TABLE IF NOT EXISTS bull_wallet_relationships (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
   PRIMARY KEY(wallet_a, wallet_b)
 );
-CREATE INDEX IF NOT EXISTS idx_bull_relationships_a
-  ON bull_wallet_relationships(wallet_a, last_seen DESC);
-CREATE INDEX IF NOT EXISTS idx_bull_relationships_b
-  ON bull_wallet_relationships(wallet_b, last_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_bull_relationships_a ON bull_wallet_relationships(wallet_a, last_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_bull_relationships_b ON bull_wallet_relationships(wallet_b, last_seen DESC);
+
+CREATE TABLE IF NOT EXISTS bull_token_wallet_buckets (
+  mint TEXT NOT NULL,
+  bucket_start INTEGER NOT NULL,
+  bucket_seconds INTEGER NOT NULL,
+  wallet TEXT NOT NULL,
+  inbound INTEGER NOT NULL DEFAULT 0,
+  outbound INTEGER NOT NULL DEFAULT 0,
+  event_count INTEGER NOT NULL DEFAULT 0,
+  last_seen INTEGER,
+  PRIMARY KEY(mint, bucket_start, bucket_seconds, wallet)
+);
+CREATE INDEX IF NOT EXISTS idx_bull_token_wallet_bucket_time ON bull_token_wallet_buckets(bucket_start DESC);
+CREATE INDEX IF NOT EXISTS idx_bull_token_wallet_bucket_wallet ON bull_token_wallet_buckets(wallet, bucket_start DESC);
 
 CREATE TABLE IF NOT EXISTS bull_token_cohorts (
   mint TEXT NOT NULL,
@@ -80,8 +89,7 @@ CREATE TABLE IF NOT EXISTS bull_token_cohorts (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
   PRIMARY KEY(mint, bucket_start, bucket_seconds)
 );
-CREATE INDEX IF NOT EXISTS idx_bull_token_cohorts_bucket
-  ON bull_token_cohorts(bucket_start DESC);
+CREATE INDEX IF NOT EXISTS idx_bull_token_cohorts_bucket ON bull_token_cohorts(bucket_start DESC);
 
 CREATE TABLE IF NOT EXISTS bull_radar_anomalies (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,10 +105,7 @@ CREATE TABLE IF NOT EXISTS bull_radar_anomalies (
   expires_at INTEGER,
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_bull_radar_unique
-  ON bull_radar_anomalies(anomaly_key, scope_type, COALESCE(scope_value, ''), observed_at);
-CREATE INDEX IF NOT EXISTS idx_bull_radar_recent
-  ON bull_radar_anomalies(observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bull_radar_recent ON bull_radar_anomalies(observed_at DESC);
 
 CREATE TABLE IF NOT EXISTS bull_chain_weather (
   bucket_start INTEGER PRIMARY KEY,
@@ -124,5 +129,4 @@ CREATE TABLE IF NOT EXISTS bull_intelligence_cache (
   generated_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_bull_intelligence_cache_expiry
-  ON bull_intelligence_cache(expires_at);
+CREATE INDEX IF NOT EXISTS idx_bull_intelligence_cache_expiry ON bull_intelligence_cache(expires_at);
