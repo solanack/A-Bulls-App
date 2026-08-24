@@ -1,7 +1,5 @@
 /* A Bulls App — Bull Intelligence Worker extension
  * Staged, read-only API module. This file is NOT deployed by itself.
- * Import handleBullIntelligenceRequest() from the production Worker when the
- * current Worker source is synchronized into this repository.
  */
 
 const WALLET_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
@@ -20,8 +18,6 @@ const validWallet = value => WALLET_RE.test(String(value || '').trim());
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 const now = () => Math.floor(Date.now() / 1000);
 
-// Prefer a dedicated future intelligence binding, but reuse the existing
-// A Bulls App leaderboard D1 safely when that is the configured database.
 function dbOf(env = {}) {
   const db = env.BULL_INTELLIGENCE_DB || env.LEADERBOARD_DB || env.DB;
   return db && typeof db.prepare === 'function' ? db : null;
@@ -35,13 +31,15 @@ export function intelligenceCapabilities(env = {}) {
   const d1 = d1Available(env);
   const archival = String(env.BULL_ARCHIVAL_ENABLED || '').toLowerCase() === 'true';
   const indexer = String(env.BULL_INDEXER_ENABLED || '').toLowerCase() === 'true';
+  const nftIndexer = String(env.BULL_NFT_INDEXER_ENABLED || '').toLowerCase() === 'true';
   const aggregate = d1 && indexer;
   return {
-    version: 1,
+    version: 2,
     readOnly: true,
     publicAddressOnly: true,
     d1,
     indexer,
+    nftIndexer,
     archival,
     features: {
       bullDna: { state: 'ready', source: 'wallet-analytics' },
@@ -54,7 +52,8 @@ export function intelligenceCapabilities(env = {}) {
       parallelUniverse: { state: archival && d1 ? 'ready' : 'index-required', source: 'normalized-events+historical-prices' },
       radar: { state: aggregate ? 'ready' : 'index-required', source: 'cohort-aggregates' },
       weather: { state: aggregate ? 'ready' : 'index-required', source: 'chain-aggregates' },
-      deepConstellation: { state: aggregate ? 'ready' : 'index-required', source: 'relationship-edges' }
+      deepConstellation: { state: aggregate ? 'ready' : 'index-required', source: 'relationship-edges' },
+      nftMemory: { state: d1 && nftIndexer ? 'ready' : 'index-required', source: 'nft-observation-index' }
     }
   };
 }
@@ -115,6 +114,35 @@ async function recentRelationships(env, wallet) {
   `).bind(wallet, wallet));
 }
 
+async function nftMemory(env, wallet) {
+  const db = dbOf(env);
+  if (!db) return { events: [], collections: [], bounds: null };
+  const events = await safeAll(db.prepare(`
+    SELECT signature, block_time, asset_id, collection, event_class, marketplace,
+           counterparty, sol_value, usd_value, confidence
+    FROM bull_nft_wallet_events
+    WHERE wallet = ?
+    ORDER BY block_time ASC
+    LIMIT 250
+  `).bind(wallet));
+  const collections = await safeAll(db.prepare(`
+    SELECT collection, window_start, window_end, acquired_count, disposed_count,
+           transfer_in_count, transfer_out_count, unique_assets, first_seen, last_seen,
+           observed_sol_in, observed_sol_out
+    FROM bull_nft_wallet_collection_windows
+    WHERE wallet = ?
+    ORDER BY last_seen DESC
+    LIMIT 50
+  `).bind(wallet));
+  const bounds = await safeFirst(db.prepare(`
+    SELECT COUNT(*) AS event_count, MIN(block_time) AS first_seen, MAX(block_time) AS last_seen,
+           COUNT(DISTINCT collection) AS collections
+    FROM bull_nft_wallet_events
+    WHERE wallet = ?
+  `).bind(wallet));
+  return { events, collections, bounds };
+}
+
 async function radarFeed(env) {
   const db = dbOf(env);
   if (!db) return [];
@@ -165,6 +193,18 @@ export async function handleBullIntelligenceRequest(request, env = {}) {
       limitations: indexed ? [] : ['No normalized D1 history is available for this wallet yet.'],
       generatedAt: Date.now()
     });
+  }
+
+  if (url.pathname === '/api/intelligence/nft-memory' && request.method === 'POST') {
+    const body = await parseJson(request);
+    const wallet = String(body.wallet || body.address || '').trim();
+    if (!validWallet(wallet)) return json({ ok: false, error: 'invalid_public_wallet' }, 400);
+    const capabilities = intelligenceCapabilities(env);
+    if (capabilities.features.nftMemory.state !== 'ready') {
+      return json({ ok: true, wallet, state: 'index-required', events: [], collections: [], bounds: null, capabilities, generatedAt: Date.now() });
+    }
+    const memory = await nftMemory(env, wallet);
+    return json({ ok: true, wallet, state: 'ready', ...memory, capabilities, generatedAt: Date.now() });
   }
 
   if (url.pathname === '/api/intelligence/radar' && request.method === 'GET') {
