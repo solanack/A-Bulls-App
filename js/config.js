@@ -7,7 +7,6 @@ const CONFIG = {
   feedWallet: '95DemfJx5nHkuQmLyKhCjaJ5iZERHFfQH8Lu4UorEqWS',
   // Google ID tokens and NFT analytics are verified/proxied by the Worker.
   apiBase: 'https://black-bull-run-sol.ckdsigns1.workers.dev',
-  // Set after the user-owned Trickshot/Bull Vision deployment is connected.
-  // The paid Helius key remains server-side in that deployment and is never shipped to Pages.
-  bullVisionBase: ''
+  // Bull Vision runs on the user-owned Vercel project. Helius remains server-side there.
+  bullVisionBase: 'https://trickshot-bull-vision-kkay918-8652.vercel.app'
 };
