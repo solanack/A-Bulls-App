@@ -24,7 +24,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const bullIntelligenceScript = document.createElement('script');
   bullIntelligenceScript.src = 'js/bull-intelligence.js?v=8.6.0';
   bullIntelligenceScript.defer = true;
-  bullIntelligenceScript.onload = () => window.BBRBullIntelligence?.init?.();
+  bullIntelligenceScript.onload = () => {
+    window.BBRBullIntelligence?.init?.();
+    const labScript = document.createElement('script');
+    labScript.src = 'js/intelligence-lab.js?v=8.6.0';
+    labScript.defer = true;
+    labScript.onload = () => window.BBRIntelligenceLab?.init?.();
+    labScript.onerror = () => console.warn('[intelligence-lab] client failed to load');
+    document.head.append(labScript);
+  };
   bullIntelligenceScript.onerror = () => console.warn('[bull-intelligence] client failed to load');
   document.head.append(bullIntelligenceScript);
 
