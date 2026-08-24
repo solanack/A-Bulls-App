@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -q "version: '8.6.1'" js/core.js
-          grep -q "workerRequired: '8.1.0'" js/core.js
+          grep -q "workerRequired: '8.1.1'" js/core.js
           grep -q "const BUILD = '8.6.1'" sw.js
           grep -q "sw.js?v=8.6.1" js/main.js
           grep -q "intelligence-game-weather.js?v=8.6.1" js/main.js
