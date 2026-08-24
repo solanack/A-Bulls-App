@@ -6,7 +6,7 @@ compatibility_date = "2026-08-01"
 crons = ["*/15 * * * *"]
 
 [vars]
-ALLOWED_ORIGINS = "https://abullsapp.com,https://black-bull-run-sol.pages.dev,http://localhost:8788"
+ALLOWED_ORIGINS = "https://abullsapp.com,https://www.abullsapp.com,https://black-bull-run-sol.pages.dev,http://localhost:8788"
 ANSEM_MINT = "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump"
 # The scheduled task refreshes the holder scan and unified analytics snapshot.
 # Bull Intelligence indexing remains OFF until migration 0007 is applied.
