@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/bull-intelligence-engine
+      - release/v8.6.1-intelligence
   pull_request:
     paths:
       - 'js/bull-intelligence.js'
@@ -89,17 +90,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q "intelligence-radar-weather.js?v=8.6.0" js/main.js
+          grep -q "version: '8.6.1'" js/core.js
+          grep -q "workerRequired: '8.1.1'" js/core.js
+          grep -q "intelligence-radar-weather.js?v=8.6.1" js/main.js
           grep -q "BBRRadarWeather" js/main.js
-          grep -q "intelligence-where-were-you.js?v=8.6.0" js/main.js
+          grep -q "intelligence-where-were-you.js?v=8.6.1" js/main.js
           grep -q "BBRWhereWereYou" js/main.js
-          grep -q "intelligence-constellation.js?v=8.6.0" js/main.js
+          grep -q "intelligence-constellation.js?v=8.6.1" js/main.js
           grep -q "BBRWalletConstellation" js/main.js
-          grep -q "intelligence-nft-memory.js?v=8.6.0" js/main.js
+          grep -q "intelligence-nft-memory.js?v=8.6.1" js/main.js
           grep -q "BBRNFTMemory" js/main.js
-          grep -q "intelligence-ghost-portfolio.js?v=8.6.0" js/main.js
+          grep -q "intelligence-ghost-portfolio.js?v=8.6.1" js/main.js
           grep -q "BBRGhostPortfolio" js/main.js
-          grep -q "intelligence-game-weather.js?v=8.6.0" js/main.js
+          grep -q "intelligence-game-weather.js?v=8.6.1" js/main.js
           grep -q "BBRCampaignChainWeather" js/main.js
           grep -q "./js/intelligence-radar-weather.js" sw.js
           grep -q "./js/intelligence-where-were-you.js" sw.js
