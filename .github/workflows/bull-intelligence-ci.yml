@@ -10,10 +10,13 @@ on:
       - 'js/intelligence-lab.js'
       - 'js/life.js'
       - 'js/main.js'
+      - 'workers/bull-intelligence-extension.js'
       - 'sw.js'
       - 'tests/bull-intelligence.test.mjs'
       - 'tests/intelligence-lab.test.mjs'
+      - 'tests/bull-intelligence-worker.test.mjs'
       - 'docs/BULL-INTELLIGENCE-ENGINE.md'
+      - 'docs/BULL-INTELLIGENCE-D1-SCHEMA.sql'
       - '.github/workflows/bull-intelligence-ci.yml'
 
 permissions:
@@ -33,18 +36,21 @@ jobs:
           node --check js/intelligence-lab.js
           node --check js/life.js
           node --check js/main.js
+          node --check workers/bull-intelligence-extension.js
           node --check sw.js
       - name: Bull Intelligence unit tests
         run: |
           node tests/bull-intelligence.test.mjs
           node tests/intelligence-lab.test.mjs
+          node tests/bull-intelligence-worker.test.mjs
       - name: Read-only product guardrails
         shell: bash
         run: |
-          if grep -Eqi '(seed phrase|private key import|copy trading|sniper bot|submit transaction|signTransaction|sendTransaction)' js/bull-intelligence.js js/intelligence-lab.js; then
-            echo 'Forbidden execution/custody behavior detected in Bull Intelligence clients.'
+          if grep -Eqi '(seed phrase|private key import|copy trading|sniper bot|submit transaction|signTransaction|sendTransaction)' js/bull-intelligence.js js/intelligence-lab.js workers/bull-intelligence-extension.js; then
+            echo 'Forbidden execution/custody behavior detected in Bull Intelligence code.'
             exit 1
           fi
           grep -q 'Partial history is never presented as complete history' js/bull-intelligence.js
           grep -q 'not a claim about what the wallet would be worth today' js/intelligence-lab.js
+          grep -q 'publicAddressOnly: true' workers/bull-intelligence-extension.js
           grep -q 'Public address only' docs/BULL-INTELLIGENCE-ENGINE.md
