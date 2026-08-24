@@ -1,5 +1,5 @@
 /**
- * A Bulls App API Worker v8.0.5
+ * A Bulls App API Worker v8.0.6
  * Secrets: HELIUS_API_KEY, GOOGLE_CLIENT_ID, AUTH_SESSION_SECRET
  * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COINGECKO_API_KEY (optional),
  *       KIMJI_STAKING_AUTHORITY (optional)
@@ -9,7 +9,7 @@
  * Public analytics are cache-first and refreshed in the background. Google
  * Sign-In remains the identity system; this Worker has no payment surface.
  */
-const VERSION = '8.0.5';
+const VERSION = '8.0.6';
 const MAX_JSON_BYTES = 16 * 1024;
 const MAX_SIGNED_TOKEN_CHARS = 8192;
 const API_SECURITY_HEADERS = Object.freeze({
@@ -75,12 +75,13 @@ const ROUTES = Object.freeze({
   'POST /api/auth/google': Object.freeze({ group: 'auth', access: 'origin', rate: 20, handle: ({ request, env, cors }) => verifyGoogle(request, env, cors) }),
   'GET /api/auth/google/session': Object.freeze({ group: 'auth', access: 'origin', rate: 20, handle: ({ request, env, cors }) => googleSession(request, env, cors) }),
   'POST /api/auth/player-session': Object.freeze({ group: 'auth', access: 'origin', rate: 20, handle: ({ env, cors }) => playerSession(env, cors) }),
-  'GET /api/nft/collection-stats': Object.freeze({ group: 'bullpen', access: 'public', rate: 40, handle: ({ env, cors, ctx }) => nftCollectionStats(env, cors, ctx) }),
-  'GET /api/nft/ecosystem-stats': Object.freeze({ group: 'bullpen', access: 'public', rate: 40, handle: ({ env, cors, ctx }) => nftEcosystemStats(env, cors, ctx) }),
+  'GET /api/nft/collection-stats': Object.freeze({ group: 'bullpen', access: 'public', rate: 40, handle: ({ url, env, cors, ctx }) => nftCollectionStats(env, cors, ctx, url) }),
+  'GET /api/nft/ecosystem-stats': Object.freeze({ group: 'bullpen', access: 'public', rate: 40, handle: ({ url, env, cors, ctx }) => nftEcosystemStats(env, cors, ctx, url) }),
   'GET /api/leaderboard/top': Object.freeze({ group: 'leaderboard', access: 'public', rate: 75, handle: ({ url, env, cors }) => leaderboardTop(url, env, cors) }),
   'POST /api/leaderboard/challenge': Object.freeze({ group: 'leaderboard', access: 'origin', rate: 30, handle: ({ request, env, cors }) => leaderboardChallenge(request, env, cors) }),
   'POST /api/leaderboard/submit': Object.freeze({ group: 'leaderboard', access: 'origin', rate: 30, handle: ({ request, env, cors }) => leaderboardSubmit(request, env, cors) }),
-  'GET /api/ansem/analytics': Object.freeze({ group: 'analytics', access: 'public', rate: 24, handle: ({ env, cors, ctx }) => ansemAnalytics(env, cors, ctx) }),
+  'GET /api/ansem/analytics': Object.freeze({ group: 'analytics', access: 'public', rate: 24, handle: ({ url, env, cors, ctx }) => ansemAnalytics(env, cors, ctx, url) }),
+  'GET /api/ansemio/snapshot': Object.freeze({ group: 'analytics', access: 'public', rate: 24, handle: ({ url, env, cors, ctx }) => ansemIoSnapshot(env, cors, ctx, url) }),
   'POST /api/wallet/overview': Object.freeze({ group: 'wallet', access: 'public', rate: 24, handle: ({ request, env, cors }) => walletOverview(request, env, cors) }),
   'POST /api/wallet/activity': Object.freeze({ group: 'wallet', access: 'public', rate: 24, handle: ({ request, env, cors }) => walletActivity(request, env, cors) })
 });
@@ -1071,7 +1072,19 @@ async function refreshAnsemAnalytics(env) {
   return storeSnapshot(env, ANSEM_ANALYTICS_KEY, data);
 }
 
-async function ansemAnalytics(env, cors, ctx) {
+async function ansemAnalytics(env, cors, ctx, url) {
+  const force = url?.searchParams?.get('refresh') === '1';
+  if (force) {
+    try {
+      const built = await refreshAnsemAnalytics(env);
+      return json({
+        ok: true, data: built, updatedAt: built.updatedAt,
+        meta: { cached: false, stale: false, partial: built.partial === true, policy: 'manual-refresh' }
+      }, 200, cors, 'no-store');
+    } catch (error) {
+      logFailure('manual ansem refresh', error);
+    }
+  }
   const fresh = await cacheGet(env, ANSEM_ANALYTICS_KEY + ':fresh');
   if (fresh) {
     const age = Date.now() - Date.parse(fresh.updatedAt || 0);
@@ -1104,6 +1117,120 @@ async function ansemAnalytics(env, cors, ctx) {
     }, 503, cors, 'no-store');
   }
 }
+
+const ANSEMIO_SNAPSHOT_KEY = 'ansemio:protocol:v1';
+const ANSEMIO_REFERENCE = Object.freeze({
+  projectsLaunched: 1153,
+  airdroppedToHolders: '23.2B',
+  volumeTraded: '$334.09M',
+  curated: Object.freeze([
+    { name: 'Bullshit Coin', ticker: '$BULLSHIT', tier: 'GOLD' },
+    { name: 'dogwifpants', ticker: '$PANTS', tier: 'DIAMOND' },
+    { name: "BULLS'S EYE", ticker: '$EYE', tier: 'DIAMOND' },
+    { name: 'RETURN TO MEMES', ticker: '$RTM', tier: 'GOLD' },
+    { name: 'Z', ticker: '$Z', tier: 'DIAMOND' },
+    { name: 'Yes, This is Dog', ticker: '$YESDOG', tier: 'GOLD' },
+    { name: 'Magic Internet Money', ticker: '$MIM', tier: 'GOLD' },
+    { name: 'The Black Baby Bull', ticker: '$BABYANSEM', tier: 'GOLD' },
+    { name: 'kimchi', ticker: '$KIMICHI', tier: 'GOLD' },
+    { name: 'ANSEM6900', ticker: '$ANSEM6900', tier: 'GOLD' }
+  ])
+});
+function compactHtmlText(html) {
+  return String(html || '')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&#36;/g, '$')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function metricAfterLabel(text, label, pattern) {
+  const index = text.toLowerCase().indexOf(label.toLowerCase());
+  if (index < 0) return null;
+  const window = text.slice(index + label.length, index + label.length + 180);
+  const match = window.match(pattern);
+  return match ? match[1] : null;
+}
+function curatedRowsFromHtml(html) {
+  const rows = [];
+  for (const match of String(html || '').matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const text = compactHtmlText(match[1]);
+    const tierMatch = text.match(/\b(GOLD|DIAMOND)\b/i);
+    const tickerMatch = text.match(/(\$[A-Z0-9_]{1,20})/i);
+    if (!tierMatch || !tickerMatch) continue;
+    const beforeTicker = text.slice(0, text.indexOf(tickerMatch[1]))
+      .replace(/^\s*\d+\s*/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!beforeTicker) continue;
+    rows.push({ name: beforeTicker.slice(0, 64), ticker: tickerMatch[1].toUpperCase(), tier: tierMatch[1].toUpperCase() });
+    if (rows.length >= 10) break;
+  }
+  return rows;
+}
+async function refreshAnsemIoSnapshot(env) {
+  const [homeResponse, z500Response] = await Promise.all([
+    fetchWithPolicy('https://ansem.io/', {
+      headers: { Accept: 'text/html,application/xhtml+xml', 'User-Agent': 'A-Bulls-App-Analytics/' + VERSION }
+    }, { timeoutMs: 9000 }),
+    fetchWithPolicy('https://ansem.io/z500', {
+      headers: { Accept: 'text/html,application/xhtml+xml', 'User-Agent': 'A-Bulls-App-Analytics/' + VERSION }
+    }, { timeoutMs: 9000 })
+  ]);
+  const homeHtml = homeResponse.ok ? await homeResponse.text() : '';
+  const z500Html = z500Response.ok ? await z500Response.text() : '';
+  const text = compactHtmlText(homeHtml);
+
+  const projectRaw = metricAfterLabel(text, 'Projects launched', /([0-9][0-9,]*)/);
+  const airdropRaw = metricAfterLabel(text, 'Airdropped to holders', /([~≈]?\s*\$?[0-9][0-9.,]*\s*[KMBT]?)/i);
+  const volumeRaw = metricAfterLabel(text, 'Volume traded', /(\$[0-9][0-9.,]*\s*[KMBT]?)/i);
+  const curated = curatedRowsFromHtml(z500Html);
+
+  const data = {
+    projectsLaunched: projectRaw ? Number(projectRaw.replaceAll(',', '')) : ANSEMIO_REFERENCE.projectsLaunched,
+    airdroppedToHolders: airdropRaw ? airdropRaw.replace(/\s+/g, '') : ANSEMIO_REFERENCE.airdroppedToHolders,
+    volumeTraded: volumeRaw ? volumeRaw.replace(/\s+/g, '') : ANSEMIO_REFERENCE.volumeTraded,
+    curated: curated.length >= 5 ? curated : ANSEMIO_REFERENCE.curated,
+    updatedAt: new Date().toISOString(),
+    upstream: {
+      home: homeResponse.status,
+      z500: z500Response.status
+    }
+  };
+  await cachePut(env, ANSEMIO_SNAPSHOT_KEY, data, 5 * 60_000);
+  return data;
+}
+async function ansemIoSnapshot(env, cors, ctx, url) {
+  const force = url?.searchParams?.get('refresh') === '1';
+  if (force) {
+    try {
+      const data = await refreshAnsemIoSnapshot(env);
+      return json({ ok: true, data, cached: false, updatedAt: data.updatedAt }, 200, cors, 'no-store');
+    } catch (error) {
+      logFailure('manual ansem.io refresh', error);
+      const cached = await cacheGet(env, ANSEMIO_SNAPSHOT_KEY);
+      if (cached) return json({ ok: true, data: cached, cached: true, updatedAt: cached.updatedAt }, 200, cors, 'no-store');
+      return json({ ok: true, data: { ...ANSEMIO_REFERENCE, updatedAt: new Date().toISOString() }, cached: true }, 200, cors, 'no-store');
+    }
+  }
+  const cached = await cacheGet(env, ANSEMIO_SNAPSHOT_KEY);
+  if (cached) {
+    ctx?.waitUntil?.(refreshAnsemIoSnapshot(env).catch(() => null));
+    return json({ ok: true, data: cached, cached: true, updatedAt: cached.updatedAt }, 200, cors, 'public, max-age=60, stale-while-revalidate=300');
+  }
+  try {
+    const data = await refreshAnsemIoSnapshot(env);
+    return json({ ok: true, data, cached: false, updatedAt: data.updatedAt }, 200, cors, 'public, max-age=60');
+  } catch (error) {
+    logFailure('ansem.io snapshot', error);
+    const data = { ...ANSEMIO_REFERENCE, updatedAt: new Date().toISOString() };
+    return json({ ok: true, data, cached: true, updatedAt: data.updatedAt }, 200, cors, 'public, max-age=60');
+  }
+}
+
 async function scanFundedHolders(env, mint, warnings) {
   const limit = 1000;
   const maxPages = 40;
@@ -1392,8 +1519,12 @@ async function buildNftCollectionStats(env) {
   if (!hasMarket && !data.salesAnalyzed && warnings.length) throw new Error(warnings.join('; '));
   return storeSnapshot(env, cacheKey, data, 5 * 60_000);
 }
-async function nftCollectionStats(env, cors, ctx) {
+async function nftCollectionStats(env, cors, ctx, url) {
   const cacheKey = 'nft-collection-stats:' + BULL_PEN_SYMBOL;
+  if (url?.searchParams?.get('refresh') === '1') {
+    const data = await buildNftCollectionStats(env);
+    return json({ ok: true, data, cached: false, stale: false, updatedAt: data.updatedAt }, 200, cors, 'no-store');
+  }
   const fresh = await cacheGet(env, cacheKey + ':fresh') || await cacheGet(env, cacheKey); // one-release key migration
   if (fresh) return json({ ok: true, data: fresh, cached: true, stale: false, updatedAt: fresh.updatedAt }, 200, cors, 'public, max-age=60');
   const lastKnown = await cacheGet(env, cacheKey + ':last-success');
@@ -1450,10 +1581,12 @@ function kimjiStakeSignal(asset, configuredAuthority = '') {
   // signature, transaction, or private Kimji integration is used here.
   return ownership.frozen === true;
 }
-async function kimjiBullPenStats(env) {
+async function kimjiBullPenStats(env, force = false) {
   requireHelius(env);
-  const cached = await cacheGet(env, 'nft:kimji-staking:' + BULL_PEN_COLLECTION);
-  if (cached) return { ...cached, cached: true };
+  if (!force) {
+    const cached = await cacheGet(env, 'nft:kimji-staking:' + BULL_PEN_COLLECTION);
+    if (cached) return { ...cached, cached: true };
+  }
   const assets = await allBullPenCollectionAssets(env);
   const authority = String(env.KIMJI_STAKING_AUTHORITY || '').trim();
   const staked = assets.filter(asset => kimjiStakeSignal(asset, authority)).length;
@@ -1468,9 +1601,11 @@ async function kimjiBullPenStats(env) {
   await cachePut(env, 'nft:kimji-staking:' + BULL_PEN_COLLECTION, data, 5 * 60_000);
   return data;
 }
-async function theBullsBuybackStats(env) {
-  const cached = await cacheGet(env, 'nft:the-bulls-buybacks');
-  if (cached) return { ...cached, cached: true };
+async function theBullsBuybackStats(env, force = false) {
+  if (!force) {
+    const cached = await cacheGet(env, 'nft:the-bulls-buybacks');
+    if (cached) return { ...cached, cached: true };
+  }
   const stats = await fetchPublicJson(THE_BULLS_API + '/api/stats');
   const data = {
     solTwap: finiteOrNull(stats?.solBuyback),
@@ -1484,10 +1619,10 @@ async function theBullsBuybackStats(env) {
   await cachePut(env, 'nft:the-bulls-buybacks', data, 60_000);
   return data;
 }
-async function buildNftEcosystemStats(env) {
+async function buildNftEcosystemStats(env, force = false) {
   const [kimjiResult, buybackResult] = await Promise.allSettled([
-    kimjiBullPenStats(env),
-    theBullsBuybackStats(env)
+    kimjiBullPenStats(env, force),
+    theBullsBuybackStats(env, force)
   ]);
   const warnings = [];
   const kimji = kimjiResult.status === 'fulfilled' ? kimjiResult.value : null;
@@ -1501,8 +1636,12 @@ async function buildNftEcosystemStats(env) {
   await cachePut(env, 'nft:ecosystem-stats:fresh', data, 15_000);
   return data;
 }
-async function nftEcosystemStats(env, cors, ctx) {
+async function nftEcosystemStats(env, cors, ctx, url) {
   const cacheKey = 'nft:ecosystem-stats';
+  if (url?.searchParams?.get('refresh') === '1') {
+    const data = await buildNftEcosystemStats(env, true);
+    return json({ ok: true, data, cached: false, stale: false, updatedAt: data.updatedAt }, 200, cors, 'no-store');
+  }
   const fresh = await cacheGet(env, cacheKey + ':fresh') || await cacheGet(env, cacheKey); // one-release key migration
   if (fresh) return json({ ok: true, data: fresh, cached: true, stale: false, updatedAt: fresh.updatedAt }, 200, cors, 'public, max-age=30');
   const lastKnown = await cacheGet(env, cacheKey + ':last-success');
