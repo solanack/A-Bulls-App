@@ -1,0 +1,44 @@
+name: Bull Intelligence CI
+
+on:
+  push:
+    branches:
+      - feature/bull-intelligence-engine
+  pull_request:
+    paths:
+      - 'js/bull-intelligence.js'
+      - 'js/life.js'
+      - 'js/main.js'
+      - 'sw.js'
+      - 'tests/bull-intelligence.test.mjs'
+      - 'docs/BULL-INTELLIGENCE-ENGINE.md'
+      - '.github/workflows/bull-intelligence-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: |
+          node --check js/bull-intelligence.js
+          node --check js/life.js
+          node --check js/main.js
+          node --check sw.js
+      - name: Bull Intelligence unit tests
+        run: node tests/bull-intelligence.test.mjs
+      - name: Read-only product guardrails
+        shell: bash
+        run: |
+          if grep -Eqi '(seed phrase|private key import|copy trading|sniper bot|submit transaction|signTransaction|sendTransaction)' js/bull-intelligence.js; then
+            echo 'Forbidden execution/custody behavior detected in Bull Intelligence client.'
+            exit 1
+          fi
+          grep -q 'Partial history is never presented as complete history' js/bull-intelligence.js
+          grep -q 'Public address only' docs/BULL-INTELLIGENCE-ENGINE.md
