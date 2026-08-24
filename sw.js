@@ -10,15 +10,9 @@ const EPOCH_ATLASES = ['./assets/atlases/invaders-epoch-1-v630.json', './assets/
 const V7_BOSSES = ['rugpaw','diamond-fang','candlewick','gasfee-golem','whale-song','ponzimouse','rekt-raven','slippage-slug','copium-cat','fud-hound','paperhand-phantom','moonboy-owl','dump-truck-turtle','airdrop-vulture','honeypot-wasp','gas-war-goat','snipe-serpent','bagholder-bear','exit-liquidity-eel']
   .map(name => `./assets/v7/bosses/${name}.webp`);
 const V7_BACKGROUNDS = numbered('./assets/v7/backgrounds', 'level-', 'webp', 1, 19);
-const V7_PILOTS = [
-  './assets/v7/pilots/base/human-neutral.webp',
-  './assets/v7/pilots/skin/fire-state.webp', './assets/v7/pilots/skin/ice-state.webp',
-  './assets/v7/pilots/skin/ghost-state.webp', './assets/v7/pilots/skin/skeleton-state.webp',
-  './assets/v7/pilots/special/prism-special.webp'
-];
 
 const CORE = [
-  './', './index.html', './privacy.html', './terms.html', './.well-known/assetlinks.json', './BUILD.txt',
+  './', './index.html', './privacy.html', './terms.html', './BUILD.txt',
   ...versioned(['./manifest.webmanifest', './css/styles.css', './css/track.css']),
   ...versioned([
     './js/opening-sequence.js', './js/config.js', './js/api-client.js', './js/storage.js', './js/core.js',
@@ -33,7 +27,7 @@ const CORE = [
   './assets/atlases/invaders-v7.json', './assets/atlases/invaders-v7.webp',
   ...EPOCH_ATLASES,
   './assets/v7/player-ship.webp', './assets/v7/enemies/bear-fighter.webp',
-  ...V7_BOSSES, V7_BACKGROUNDS[0], ...V7_PILOTS,
+  ...V7_BOSSES, V7_BACKGROUNDS[0],
   './assets/opening/opening-fade-1-title.jpg',
   './assets/opening/opening-fade-2-studio.png', './assets/opening/menu-bull-solana.webp',
   './assets/icons/icon-192.png', './assets/icons/icon-512.png', './assets/icons/icon-maskable-192.png', './assets/icons/icon-maskable-512.png',
