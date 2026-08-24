@@ -36,8 +36,7 @@
     .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 
   const Platform = {
-    // Single source of truth for the Pages version stamp.
-    version: '8.5.0',
+    version: '8.6.0',
     workerRequired: '8.0.5',
     buildStamp() {
       return `PAGES ${this.version} • WORKER ${this.workerRequired}`;
@@ -49,7 +48,6 @@
       const game = this.games.get(id);
       if (!game) throw new Error('Game is not installed');
       this.activeGame = id;
-      // This must run before the first await so YouTube receives the actual Play Now gesture.
       const mediaTarget = 'invaders';
       if (global.BackgroundManager && typeof profile !== 'undefined') {
         global.BackgroundManager.armFromGesture?.(profile, mediaTarget);
