@@ -47,6 +47,13 @@ document.addEventListener('DOMContentLoaded', () => {
         environmentScript.onload = () => window.BBRRadarWeather?.init?.();
         environmentScript.onerror = () => console.warn('[bull-radar-weather] client failed to load');
         document.head.append(environmentScript);
+
+        const whereWereYouScript = document.createElement('script');
+        whereWereYouScript.src = 'js/intelligence-where-were-you.js?v=8.6.0';
+        whereWereYouScript.defer = true;
+        whereWereYouScript.onload = () => window.BBRWhereWereYou?.init?.();
+        whereWereYouScript.onerror = () => console.warn('[where-were-you] client failed to load');
+        document.head.append(whereWereYouScript);
       };
       labScript.onerror = () => console.warn('[intelligence-lab] client failed to load');
       document.head.append(labScript);
