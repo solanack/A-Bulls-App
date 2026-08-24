@@ -37,7 +37,7 @@
 
   const Platform = {
     version: '8.6.0',
-    workerRequired: '8.0.7',
+    workerRequired: '8.1.0',
     buildStamp() {
       return `PAGES ${this.version} • WORKER ${this.workerRequired}`;
     },

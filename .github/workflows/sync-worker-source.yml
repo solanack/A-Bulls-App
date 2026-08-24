@@ -1,0 +1,43 @@
+name: Sync exact Worker source
+
+on:
+  push:
+    branches:
+      - feature/bull-intelligence-engine
+    paths:
+      - '.worker-sync/worker.js.gz.b64'
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruct:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/bull-intelligence-engine
+      - name: Reconstruct Worker 8.1.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p workers
+          base64 -d .worker-sync/worker.js.gz.b64 | gzip -dc > workers/worker.js
+          echo '27db8a5ec6ea7b31cd800843c8d86f12ea77c94fec17be3fa4acc9f471b6cb26  workers/worker.js' | sha256sum -c -
+          node --check workers/worker.js
+          grep -q "const VERSION = '8.1.0';" workers/worker.js
+          grep -q "/api/intelligence/time-machine" workers/worker.js
+          grep -q "/api/intelligence/radar" workers/worker.js
+      - name: Commit reconstructed Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add workers/worker.js
+          if git diff --cached --quiet; then
+            echo 'Exact Worker source is already synchronized.'
+            exit 0
+          fi
+          git commit -m 'chore: sync exact Worker 8.1.0 source'
+          git push origin HEAD:feature/bull-intelligence-engine
