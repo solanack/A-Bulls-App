@@ -80,10 +80,15 @@ jobs:
       - name: Schema and migration contract
         shell: bash
         run: |
+          set -euo pipefail
           grep -q 'price_usd REAL' workers/migrations/0007_bull_intelligence.sql
           grep -q 'bull_token_wallet_buckets' workers/migrations/0007_bull_intelligence.sql
-          grep -q 'BULL_INDEXER_ENABLED = "true"' workers/wrangler.toml
           grep -q 'price_usd REAL' docs/BULL-INTELLIGENCE-D1-SCHEMA.sql
+          grep -q '# BULL_INDEXER_ENABLED = "true"' workers/wrangler.toml
+          if grep -Eq '^[[:space:]]*BULL_INDEXER_ENABLED[[:space:]]*=' workers/wrangler.toml; then
+            echo 'Bull Intelligence indexing must remain disabled until migration 0007 is applied to production.'
+            exit 1
+          fi
       - name: Read-only product guardrails
         shell: bash
         run: |
