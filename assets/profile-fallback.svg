@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Bull profile placeholder">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b0d3c4"/><stop offset=".55" stop-color="#a8c9d5"/><stop offset="1" stop-color="#c4afcf"/></linearGradient></defs>
+  <rect width="256" height="256" rx="128" fill="#292a34"/>
+  <path d="M53 79c15 2 28 9 37 20 11-12 24-19 38-19s27 7 38 19c9-11 22-18 37-20-4 22-15 38-32 47 1 5 2 10 2 15 0 38-20 66-45 66s-45-28-45-66c0-5 1-10 2-15-17-9-28-25-32-47Z" fill="url(#g)"/>
+  <path d="M101 145c8 7 46 7 54 0-2 28-13 43-27 43s-25-15-27-43Z" fill="#1d1820" opacity=".75"/>
+  <circle cx="107" cy="128" r="6" fill="#1d1820"/><circle cx="149" cy="128" r="6" fill="#1d1820"/>
+</svg>
