@@ -32,7 +32,9 @@ const events = api.observedEvents(state);
 assert.equal(events.length, 3);
 assert.equal(events[0].wallet, state.address);
 assert.equal(events[0].feeLamports, 5000);
-assert.deepEqual(api.eventBounds(events), { first: 100, last: 300 });
+const bounds = api.eventBounds(events);
+assert.equal(bounds.first, 100);
+assert.equal(bounds.last, 300);
 
 const slice = api.reconstruct(events, 220);
 assert.equal(slice.eventCount, 2);
