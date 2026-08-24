@@ -8,7 +8,14 @@ Target runtime:
 
 ## Release state
 
-The Bull Intelligence feature branch has been merged into the v8.6 release line. The dedicated v8.6.1 release gate passes syntax, unit/contract tests, migration safety, read-only guardrails, and Ranked-isolation checks.
+The Bull Intelligence feature work is staged in the v8.6 release line. The release candidate is validated by the dedicated v8.6.1 package gate plus Bull Vision and Bull Intelligence CI. Syntax, unit/contract tests, migration safety, read-only guardrails, version wiring and Ranked-isolation checks pass.
+
+Release-candidate PR: `#11` (draft; intentionally not merged before production verification).
+
+Validated deployable artifacts:
+- Pages ZIP SHA-256: `adceb73f7d27776e859072d141e4e9be4da982091a8ffb4484585617af59f7fa`
+- Worker ZIP SHA-256: `7782849defb2fa2fd1817a4ee4874753b3dd8bc6a3cf206677f0d341ef0d9a7d`
+- Exact Worker source SHA-256: `704e86bec37c7b76544534785c2848f84b282ee79cee0d225e166eeaf879e32c`
 
 ## Safe production order
 
