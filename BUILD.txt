@@ -3,6 +3,9 @@ BUILD: 7.0.1
 RELEASE: PREMIUM PLAY ART DIRECTION · ORIGINAL BOSS ROSTER · HUMAN PILOT SAMPLES
 
 Expected live drawer stamp:
-PAGES 7.0.1 • WORKER 5.2.1
+PAGES 7.0.1 • WORKER 8.0.2
 
 Bullion purchase UI and native billing are disabled for this launch. Do not configure Stripe or Google Play purchase secrets until the later purchase release. ALLOWED_ORIGINS must include https://abullsapp.com.
+
+UPGRADE BRANCH NOTE:
+Bull Invaders hitch-aware local performance diagnostics are being added on upgrade/bull-invaders-performance-v1. Ranked scoring, hitboxes, projectile rules, and wallet/payment constraints remain unchanged.
