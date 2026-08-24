@@ -1,5 +1,5 @@
 /**
- * A Bulls App API Worker v8.0.4
+ * A Bulls App API Worker v8.0.5
  * Secrets: HELIUS_API_KEY, GOOGLE_CLIENT_ID, AUTH_SESSION_SECRET
  * Vars: ALLOWED_ORIGINS, ANSEM_MINT, COINGECKO_API_KEY (optional),
  *       KIMJI_STAKING_AUTHORITY (optional)
@@ -9,7 +9,7 @@
  * Public analytics are cache-first and refreshed in the background. Google
  * Sign-In remains the identity system; this Worker has no payment surface.
  */
-const VERSION = '8.0.4';
+const VERSION = '8.0.5';
 const MAX_JSON_BYTES = 16 * 1024;
 const MAX_SIGNED_TOKEN_CHARS = 8192;
 const API_SECURITY_HEADERS = Object.freeze({
@@ -729,7 +729,7 @@ function activityAnalytics(transactions, ansemMint) {
     const hasIn = changes.some(change => Number(change.amount) > 0);
     const hasOut = changes.some(change => Number(change.amount) < 0);
     if (tx.error) failedCount++; else successCount++;
-    feesSol += Number(tx.fee || 0);
+    feesSol += Number(tx.fee || 0) / 1_000_000_000;
     if (hasIn) transferInCount++;
     if (hasOut) transferOutCount++;
     if (hasIn && hasOut && new Set(changes.map(item => item.mint)).size >= 2) swapCount++;
@@ -766,7 +766,7 @@ function activityAnalytics(transactions, ansemMint) {
     return {
       signature: tx.signature,
       blockTime: timestamp || null,
-      feeSol: Number(tx.fee || 0),
+      feeSol: Number(tx.fee || 0) / 1_000_000_000,
       err: tx.error || null,
       type: inferTx(changes, tx.error),
       summary: summaryFor(changes, ansemMint),
