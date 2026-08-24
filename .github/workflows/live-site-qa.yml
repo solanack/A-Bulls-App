@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - qa/live-site-smoke
+  pull_request:
+    branches:
+      - main
 
 jobs:
   qa:
@@ -97,8 +100,6 @@ jobs:
             check('Loaded first-party assets healthy', badAssets.length === 0, badAssets.length ? JSON.stringify(badAssets.slice(0,8)) : `${uniqueAssets.length} checked`);
 
             await page.screenshot({ path: 'live-home.png', fullPage: true });
-
-            const mobile = await browser.newPage ? null : null;
           } catch (err) {
             check('QA runner completed navigation', false, err.stack || err.message);
           }
