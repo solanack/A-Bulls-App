@@ -12,6 +12,8 @@ on:
       - 'js/intelligence-time-machine.js'
       - 'js/intelligence-radar-weather.js'
       - 'js/intelligence-where-were-you.js'
+      - 'js/intelligence-constellation.js'
+      - 'js/intelligence-nft-memory.js'
       - 'js/life.js'
       - 'js/main.js'
       - 'js/core.js'
@@ -19,6 +21,7 @@ on:
       - 'workers/intelligence-indexer.mjs'
       - 'workers/intelligence-aggregates.mjs'
       - 'workers/migrations/0007_bull_intelligence.sql'
+      - 'workers/migrations/0008_bull_nft_intelligence.sql'
       - 'workers/wrangler.toml'
       - 'sw.js'
       - 'tests/bull-intelligence.test.mjs'
@@ -51,6 +54,8 @@ jobs:
           node --check js/intelligence-time-machine.js
           node --check js/intelligence-radar-weather.js
           node --check js/intelligence-where-were-you.js
+          node --check js/intelligence-constellation.js
+          node --check js/intelligence-nft-memory.js
           node --check js/life.js
           node --check js/main.js
           node --check workers/bull-intelligence-extension.mjs
@@ -74,26 +79,40 @@ jobs:
           grep -q "BBRRadarWeather" js/main.js
           grep -q "intelligence-where-were-you.js?v=8.6.0" js/main.js
           grep -q "BBRWhereWereYou" js/main.js
+          grep -q "intelligence-constellation.js?v=8.6.0" js/main.js
+          grep -q "BBRWalletConstellation" js/main.js
+          grep -q "intelligence-nft-memory.js?v=8.6.0" js/main.js
+          grep -q "BBRNFTMemory" js/main.js
           grep -q "./js/intelligence-radar-weather.js" sw.js
           grep -q "./js/intelligence-where-were-you.js" sw.js
+          grep -q "./js/intelligence-constellation.js" sw.js
+          grep -q "./js/intelligence-nft-memory.js" sw.js
           grep -q "/api/intelligence/radar" workers/bull-intelligence-extension.mjs
           grep -q "/api/intelligence/weather" workers/bull-intelligence-extension.mjs
+          grep -q "/api/intelligence/wallet-summary" workers/bull-intelligence-extension.mjs
+          grep -q "/api/intelligence/nft-memory" workers/bull-intelligence-extension.mjs
       - name: Schema and migration contract
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'price_usd REAL' workers/migrations/0007_bull_intelligence.sql
           grep -q 'bull_token_wallet_buckets' workers/migrations/0007_bull_intelligence.sql
+          grep -q 'CREATE TABLE IF NOT EXISTS bull_nft_wallet_events' workers/migrations/0008_bull_nft_intelligence.sql
+          grep -q 'CREATE TABLE IF NOT EXISTS bull_nft_collection_cohorts' workers/migrations/0008_bull_nft_intelligence.sql
           grep -q 'price_usd REAL' docs/BULL-INTELLIGENCE-D1-SCHEMA.sql
           grep -q '# BULL_INDEXER_ENABLED = "true"' workers/wrangler.toml
           if grep -Eq '^[[:space:]]*BULL_INDEXER_ENABLED[[:space:]]*=' workers/wrangler.toml; then
             echo 'Bull Intelligence indexing must remain disabled until migration 0007 is applied to production.'
             exit 1
           fi
+          if grep -Eq '^[[:space:]]*BULL_NFT_INDEXER_ENABLED[[:space:]]*=' workers/wrangler.toml; then
+            echo 'NFT indexing must remain disabled until migration 0008 and a normalized NFT ingest source are ready.'
+            exit 1
+          fi
       - name: Read-only product guardrails
         shell: bash
         run: |
-          if grep -Eqi '(seed phrase|private key import|copy trading|sniper bot|submit transaction|signTransaction|sendTransaction)' js/bull-intelligence.js js/intelligence-core.js js/intelligence-lab.js js/intelligence-time-machine.js js/intelligence-radar-weather.js js/intelligence-where-were-you.js workers/bull-intelligence-extension.mjs workers/intelligence-indexer.mjs workers/intelligence-aggregates.mjs; then
+          if grep -Eqi '(seed phrase|private key import|copy trading|sniper bot|submit transaction|signTransaction|sendTransaction)' js/bull-intelligence.js js/intelligence-core.js js/intelligence-lab.js js/intelligence-time-machine.js js/intelligence-radar-weather.js js/intelligence-where-were-you.js js/intelligence-constellation.js js/intelligence-nft-memory.js workers/bull-intelligence-extension.mjs workers/intelligence-indexer.mjs workers/intelligence-aggregates.mjs; then
             echo 'Forbidden execution/custody behavior detected in Bull Intelligence code.'
             exit 1
           fi
@@ -103,5 +122,7 @@ jobs:
           grep -q 'not a market forecast' js/intelligence-core.js
           grep -q 'does not recommend a strategy or predict future performance' js/intelligence-time-machine.js
           grep -q 'never infers real-world identity or location' js/intelligence-where-were-you.js
+          grep -q 'never ownership or identity claims' js/intelligence-constellation.js
+          grep -q 'never treats partial indexing as complete ownership history' js/intelligence-nft-memory.js
           grep -q 'publicAddressOnly: true' workers/bull-intelligence-extension.mjs
           grep -q 'Public address only' docs/BULL-INTELLIGENCE-ENGINE.md
