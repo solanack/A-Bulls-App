@@ -30,14 +30,15 @@ assert.equal(slice.feesLamports, 10000);
 assert.equal(slice.coverage.complete, false);
 
 const sim = core.simulateFixedHold(raw, { holdSeconds: 100 });
-assert.equal(sim.buyLegs, 2); // M1 buy + M2 inbound positive event with observed price
+assert.equal(sim.buyLegs, 1);
 assert.equal(sim.pricedLegs, 1);
-assert.equal(sim.missingExitPrice, 1);
+assert.equal(sim.missingExitPrice, 0);
 const m1 = sim.legs.find(leg => leg.mint === 'M1');
 assert.equal(m1.entryPriceUsd, 2);
 assert.equal(m1.exitPriceUsd, 3);
 assert.equal(m1.pnlUsd, 10);
-assert.equal(sim.coverage.complete, false);
+assert.equal(sim.coverage.complete, true);
+assert.equal(sim.legs.some(leg => leg.mint === 'M2'), false, 'Transfers must not be treated as buys');
 
 const radar = core.scoreRadar(
   { uniqueWallets: 40, inboundWallets: 30, outboundWallets: 8, longDurationWallets: 12, newWallets: 20 },
