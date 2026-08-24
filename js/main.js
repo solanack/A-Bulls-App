@@ -17,19 +17,13 @@ document.addEventListener('DOMContentLoaded', () => {
   bullVisionScript.onerror = () => console.warn('[bull-vision] client failed to load');
   document.head.append(bullVisionScript);
 
-  // Bull Intelligence is intentionally a separate read-only layer. It starts with
-  // explainable wallet DNA, a recent-history Museum, and wallet rivalries using the
-  // Worker endpoints already deployed for public wallet analytics. Advanced archival
-  // modules can replace/extend its data adapter later without changing the UI contract.
+  // Bull Intelligence stays an additive read-only layer. The pure reconstruction core
+  // loads before the UI experiments so unavailable archival data remains capability-gated.
   const bullIntelligenceScript = document.createElement('script');
   bullIntelligenceScript.src = 'js/bull-intelligence.js?v=8.6.0';
   bullIntelligenceScript.defer = true;
   bullIntelligenceScript.onload = () => {
     window.BBRBullIntelligence?.init?.();
-
-    // The pure core contains normalized-event reconstruction, historical rule replay,
-    // Radar scoring and Solana Weather classification. It is intentionally loaded before
-    // Intelligence Lab so the UI can activate these features only when defensible data exists.
     const intelligenceCoreScript = document.createElement('script');
     intelligenceCoreScript.src = 'js/intelligence-core.js?v=8.6.0';
     intelligenceCoreScript.defer = true;
@@ -37,7 +31,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const labScript = document.createElement('script');
       labScript.src = 'js/intelligence-lab.js?v=8.6.0';
       labScript.defer = true;
-      labScript.onload = () => window.BBRIntelligenceLab?.init?.();
+      labScript.onload = () => {
+        window.BBRIntelligenceLab?.init?.();
+        const historyScript = document.createElement('script');
+        historyScript.src = 'js/intelligence-time-machine.js?v=8.6.0';
+        historyScript.defer = true;
+        historyScript.onload = () => window.BBRIntelligenceHistory?.init?.();
+        historyScript.onerror = () => console.warn('[intelligence-history] client failed to load');
+        document.head.append(historyScript);
+      };
       labScript.onerror = () => console.warn('[intelligence-lab] client failed to load');
       document.head.append(labScript);
     };
