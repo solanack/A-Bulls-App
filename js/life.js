@@ -69,6 +69,23 @@
     return [...new Set(pieces)].slice(0, 6);
   }
 
+  function bullVisionAdvice(address) {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('abulls_bull_vision_life') || 'null');
+      if (!saved || String(saved.wallet || '') !== String(address || '')) return [];
+      const ids = new Set((saved.observed?.signals || []).map(signal => signal?.id));
+      const pieces = [];
+      if (ids.has('rapid-rotation')) pieces.push('One reconstructed trade replay showed decisions arriving in quick succession. Speed can be useful, but clarity usually improves when there is enough room to notice whether the next move is necessary or merely available.');
+      if (ids.has('scaled-entry')) pieces.push('A reconstructed position was built in stages. That same patience has value away from markets: meaningful things often become stronger when they are built deliberately rather than demanded all at once.');
+      if (ids.has('staged-exit')) pieces.push('A reconstructed position was released in stages. Completion does not always need a single dramatic moment; sometimes good judgment is simply knowing how to loosen your grip a little at a time.');
+      if (ids.has('gave-back-peak')) pieces.push('One replay moved well beyond its eventual result before giving some of that ground back. Peaks are information, not obligations. A life measured only against its best moment will always feel smaller than it really is.');
+      if (ids.has('deep-drawdown')) pieces.push('One replay passed through a deep drawdown. Endurance matters, but so does remembering that persistence is a choice rather than a debt you owe to an earlier decision.');
+      return pieces.slice(0, 2);
+    } catch (_) {
+      return [];
+    }
+  }
+
   function render() {
     const state = walletState();
     const address = String(state.address || global.profile?.publicWallet || '').trim();
@@ -91,15 +108,12 @@
     const swaps = Number(state.activity?.trading?.swapCount || 0);
     const range = String(state.range || '90d').toUpperCase();
     context.innerHTML = [
-      ['Range', range],
-      ['Transactions', txs.toLocaleString()],
-      ['Active days', days.toLocaleString()],
-      ['Swaps', swaps.toLocaleString()]
+      ['Range', range], ['Transactions', txs.toLocaleString()], ['Active days', days.toLocaleString()], ['Swaps', swaps.toLocaleString()]
     ].map(([label, value]) => `<div><small>${safe(label)}</small><b>${safe(value)}</b></div>`).join('');
 
-    const advice = adviceSet(state.overview, state.activity);
+    const advice = [...bullVisionAdvice(address), ...adviceSet(state.overview, state.activity)];
     phase.textContent = '';
-    root.innerHTML = `<div class="life-advice-list">${advice.map(piece => `<article>${safe(piece)}</article>`).join('')}</div>`;
+    root.innerHTML = `<div class="life-advice-list">${[...new Set(advice)].slice(0, 6).map(piece => `<article>${safe(piece)}</article>`).join('')}</div>`;
   }
 
   async function analyze() {
@@ -128,6 +142,9 @@
     byId('lifeAnalyze')?.addEventListener('click', analyze);
     byId('lifeWalletInput')?.addEventListener('keydown', event => { if (event.key === 'Enter') analyze(); });
     global.addEventListener('bbrs:wallet-analysis-complete', () => {
+      if (document.getElementById('lifeView')?.classList.contains('active')) render();
+    });
+    global.addEventListener('abulls:bull-vision-life', () => {
       if (document.getElementById('lifeView')?.classList.contains('active')) render();
     });
     render();
