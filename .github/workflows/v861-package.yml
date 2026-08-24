@@ -18,6 +18,9 @@ on:
       - 'games/**'
       - 'sw.js'
       - 'RELEASE-v8.6.1.md'
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
