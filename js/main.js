@@ -17,6 +17,17 @@ document.addEventListener('DOMContentLoaded', () => {
   bullVisionScript.onerror = () => console.warn('[bull-vision] client failed to load');
   document.head.append(bullVisionScript);
 
+  // Bull Intelligence is intentionally a separate read-only layer. It starts with
+  // explainable wallet DNA, a recent-history Museum, and wallet rivalries using the
+  // Worker endpoints already deployed for public wallet analytics. Advanced archival
+  // modules can replace/extend its data adapter later without changing the UI contract.
+  const bullIntelligenceScript = document.createElement('script');
+  bullIntelligenceScript.src = 'js/bull-intelligence.js?v=8.6.0';
+  bullIntelligenceScript.defer = true;
+  bullIntelligenceScript.onload = () => window.BBRBullIntelligence?.init?.();
+  bullIntelligenceScript.onerror = () => console.warn('[bull-intelligence] client failed to load');
+  document.head.append(bullIntelligenceScript);
+
   const serviceBanner = document.getElementById('serviceStatusBanner');
   const serviceText = document.getElementById('serviceStatusText');
   const updateServiceBanner = detail => {
@@ -39,5 +50,5 @@ document.addEventListener('DOMContentLoaded', () => {
       .then(registration => registration.update())
       .catch(error => console.warn('[pwa]', error));
   }
-  console.log('%cA Bulls App 8.6.0 — Bull Vision', 'color:#c4afcf;font-weight:bold');
+  console.log('%cA Bulls App 8.6.0 — Bull Vision + Bull Intelligence', 'color:#c4afcf;font-weight:bold');
 });
