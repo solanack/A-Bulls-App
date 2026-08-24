@@ -1,11 +1,18 @@
 A BULLS APP
-BUILD: 7.0.1
-RELEASE: PREMIUM PLAY ART DIRECTION · ORIGINAL BOSS ROSTER · HUMAN PILOT SAMPLES
+BUILD: 7.0.1-upgrade
+RELEASE: BULL INVADERS PERFORMANCE · FLAT-PAGES COMPATIBILITY · PILOT SYSTEM REMOVED
 
-Expected live drawer stamp:
-PAGES 7.0.1 • WORKER 8.0.2
+Expected backend:
+WORKER 8.0.2
 
-Bullion purchase UI and native billing are disabled for this launch. Do not configure Stripe or Google Play purchase secrets until the later purchase release. ALLOWED_ORIGINS must include https://abullsapp.com.
+Upgrade branch:
+upgrade/bull-invaders-performance-v1
 
-UPGRADE BRANCH NOTE:
-Bull Invaders hitch-aware local performance diagnostics are being added on upgrade/bull-invaders-performance-v1. Ranked scoring, hitboxes, projectile rules, and wallet/payment constraints remain unchanged.
+Changes in this branch:
+- Bull Invaders hitch-aware local performance diagnostics and adaptive decorative-FX pressure handling.
+- Resilient PWA precaching and stale-while-revalidate static asset delivery.
+- Cloudflare Pages rewrites make the flattened GitHub artifact resolve the existing js/, css/, vendor/, and assets/ URLs.
+- Abandoned Pilot presentation and Pilot art manifest removed; Pilot assets are no longer precached.
+- Bull Pen compatibility remains hidden behind the existing feature flag.
+
+Ranked scoring, hitboxes, projectile rules, read-only wallet constraints, and payment constraints remain unchanged.
