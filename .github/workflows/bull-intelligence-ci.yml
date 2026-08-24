@@ -15,6 +15,7 @@ on:
       - 'js/intelligence-constellation.js'
       - 'js/intelligence-nft-memory.js'
       - 'js/intelligence-ghost-portfolio.js'
+      - 'js/intelligence-game-weather.js'
       - 'js/life.js'
       - 'js/main.js'
       - 'js/core.js'
@@ -59,6 +60,7 @@ jobs:
           node --check js/intelligence-constellation.js
           node --check js/intelligence-nft-memory.js
           node --check js/intelligence-ghost-portfolio.js
+          node --check js/intelligence-game-weather.js
           node --check js/life.js
           node --check js/main.js
           node --check workers/bull-intelligence-extension.mjs
@@ -89,11 +91,14 @@ jobs:
           grep -q "BBRNFTMemory" js/main.js
           grep -q "intelligence-ghost-portfolio.js?v=8.6.0" js/main.js
           grep -q "BBRGhostPortfolio" js/main.js
+          grep -q "intelligence-game-weather.js?v=8.6.0" js/main.js
+          grep -q "BBRCampaignChainWeather" js/main.js
           grep -q "./js/intelligence-radar-weather.js" sw.js
           grep -q "./js/intelligence-where-were-you.js" sw.js
           grep -q "./js/intelligence-constellation.js" sw.js
           grep -q "./js/intelligence-nft-memory.js" sw.js
           grep -q "./js/intelligence-ghost-portfolio.js" sw.js
+          grep -q "./js/intelligence-game-weather.js" sw.js
           grep -q "/api/intelligence/radar" workers/bull-intelligence-extension.mjs
           grep -q "/api/intelligence/weather" workers/bull-intelligence-extension.mjs
           grep -q "/api/intelligence/wallet-summary" workers/bull-intelligence-extension.mjs
@@ -119,7 +124,7 @@ jobs:
       - name: Read-only product guardrails
         shell: bash
         run: |
-          if grep -Eqi '(seed phrase|private key import|copy trading|sniper bot|submit transaction|signTransaction|sendTransaction)' js/bull-intelligence.js js/intelligence-core.js js/intelligence-lab.js js/intelligence-time-machine.js js/intelligence-radar-weather.js js/intelligence-where-were-you.js js/intelligence-constellation.js js/intelligence-nft-memory.js js/intelligence-ghost-portfolio.js workers/bull-intelligence-extension.mjs workers/intelligence-indexer.mjs workers/intelligence-aggregates.mjs; then
+          if grep -Eqi '(seed phrase|private key import|copy trading|sniper bot|submit transaction|signTransaction|sendTransaction)' js/bull-intelligence.js js/intelligence-core.js js/intelligence-lab.js js/intelligence-time-machine.js js/intelligence-radar-weather.js js/intelligence-where-were-you.js js/intelligence-constellation.js js/intelligence-nft-memory.js js/intelligence-ghost-portfolio.js js/intelligence-game-weather.js workers/bull-intelligence-extension.mjs workers/intelligence-indexer.mjs workers/intelligence-aggregates.mjs; then
             echo 'Forbidden execution/custody behavior detected in Bull Intelligence code.'
             exit 1
           fi
@@ -132,5 +137,7 @@ jobs:
           grep -q 'never ownership or identity claims' js/intelligence-constellation.js
           grep -q 'never treats partial indexing as complete ownership history' js/intelligence-nft-memory.js
           grep -q "not today's value" js/intelligence-ghost-portfolio.js
+          grep -q 'Never changes game state, collision, scoring, spawn rates' js/intelligence-game-weather.js
+          grep -q "selectedMode() === 'arcade'" js/intelligence-game-weather.js
           grep -q 'publicAddressOnly: true' workers/bull-intelligence-extension.mjs
           grep -q 'Public address only' docs/BULL-INTELLIGENCE-ENGINE.md
