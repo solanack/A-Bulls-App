@@ -2,6 +2,14 @@
  * Staged, read-only API module. This file is NOT deployed by itself.
  */
 
+import {
+  backfillWalletPass,
+  getMeshStatus,
+  getWalletCoverage,
+  meshEnabled,
+  queueWalletBackfill
+} from './bull-data-mesh.mjs';
+
 const WALLET_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const JSON_HEADERS = Object.freeze({
   'content-type': 'application/json; charset=utf-8',
@@ -32,28 +40,34 @@ export function intelligenceCapabilities(env = {}) {
   const archival = String(env.BULL_ARCHIVAL_ENABLED || '').toLowerCase() === 'true';
   const indexer = String(env.BULL_INDEXER_ENABLED || '').toLowerCase() === 'true';
   const nftIndexer = String(env.BULL_NFT_INDEXER_ENABLED || '').toLowerCase() === 'true';
+  const mesh = meshEnabled(env);
   const aggregate = d1 && indexer;
+  const progressive = d1 && indexer && mesh;
   return {
-    version: 2,
+    version: 3,
     readOnly: true,
     publicAddressOnly: true,
     d1,
     indexer,
     nftIndexer,
     archival,
+    mesh,
     features: {
       bullDna: { state: 'ready', source: 'wallet-analytics' },
       walletMuseum: { state: 'ready', source: 'wallet-analytics' },
       walletRivalries: { state: 'ready', source: 'wallet-analytics' },
       ghostLedger: { state: 'ready', source: 'decoded-flow' },
-      activityConstellation: { state: 'limited', source: 'decoded-flow' },
-      timeMachine: { state: archival && d1 ? 'ready' : 'index-required', source: 'normalized-events' },
-      ghostPortfolio: { state: archival && d1 ? 'ready' : 'index-required', source: 'normalized-events+historical-prices' },
-      parallelUniverse: { state: archival && d1 ? 'ready' : 'index-required', source: 'normalized-events+historical-prices' },
+      activityConstellation: { state: progressive ? 'indexing' : 'limited', source: 'decoded-flow+mesh' },
+      timeMachine: { state: archival && d1 ? 'ready' : progressive ? 'indexing' : 'index-required', source: 'normalized-events' },
+      ghostPortfolio: { state: archival && d1 ? 'ready' : progressive ? 'indexing' : 'index-required', source: 'normalized-events+historical-prices' },
+      parallelUniverse: { state: archival && d1 ? 'ready' : progressive ? 'indexing' : 'index-required', source: 'normalized-events+historical-prices' },
       radar: { state: aggregate ? 'ready' : 'index-required', source: 'cohort-aggregates' },
       weather: { state: aggregate ? 'ready' : 'index-required', source: 'chain-aggregates' },
-      deepConstellation: { state: aggregate ? 'ready' : 'index-required', source: 'relationship-edges' },
-      nftMemory: { state: d1 && nftIndexer ? 'ready' : 'index-required', source: 'nft-observation-index' }
+      deepConstellation: { state: progressive ? 'indexing' : aggregate ? 'ready' : 'index-required', source: 'relationship-edges' },
+      nftMemory: { state: d1 && nftIndexer ? 'ready' : 'index-required', source: 'nft-observation-index' },
+      progressiveHistory: { state: progressive ? 'ready' : 'disabled', source: 'standard-solana-rpc+mesh' },
+      tradeRoutes: { state: 'adapter-ready', source: 'substreams-svm' },
+      onchainCandles: { state: 'adapter-ready', source: 'substreams-svm' }
     }
   };
 }
@@ -178,21 +192,61 @@ export async function handleBullIntelligenceRequest(request, env = {}) {
     return json({ ok: true, capabilities: intelligenceCapabilities(env), generatedAt: Date.now() });
   }
 
+  if (url.pathname === '/api/intelligence/mesh-status' && request.method === 'GET') {
+    return json({ ok: true, mesh: await getMeshStatus(env), capabilities: intelligenceCapabilities(env), generatedAt: Date.now() });
+  }
+
   if (url.pathname === '/api/intelligence/wallet-summary' && request.method === 'POST') {
     const body = await parseJson(request);
     const wallet = String(body.wallet || body.address || '').trim();
     if (!validWallet(wallet)) return json({ ok: false, error: 'invalid_public_wallet' }, 400);
     const indexed = await walletIndexedSummary(env, wallet);
+    const coverage = await getWalletCoverage(env, wallet).catch(() => null);
     const relationships = indexed ? await recentRelationships(env, wallet) : [];
     return json({
       ok: true,
       wallet,
       indexed,
+      coverage,
       relationships,
       capabilities: intelligenceCapabilities(env),
-      limitations: indexed ? [] : ['No normalized D1 history is available for this wallet yet.'],
+      limitations: indexed ? [] : ['No normalized history is available for this wallet yet.'],
       generatedAt: Date.now()
     });
+  }
+
+  if (url.pathname === '/api/intelligence/index-coverage' && request.method === 'POST') {
+    const body = await parseJson(request);
+    const wallet = String(body.wallet || body.address || '').trim();
+    if (!validWallet(wallet)) return json({ ok: false, error: 'invalid_public_wallet' }, 400);
+    const coverage = await getWalletCoverage(env, wallet);
+    return json({ ok: true, wallet, coverage, generatedAt: Date.now() });
+  }
+
+  if (url.pathname === '/api/intelligence/backfill/queue' && request.method === 'POST') {
+    if (!meshEnabled(env)) return json({ ok: false, error: 'bull_mesh_disabled' }, 503);
+    const body = await parseJson(request);
+    const wallet = String(body.wallet || body.address || '').trim();
+    if (!validWallet(wallet)) return json({ ok: false, error: 'invalid_public_wallet' }, 400);
+    const queued = await queueWalletBackfill(env, wallet, { before: body.before, pageSize: body.pageSize });
+    return json({ ok: true, ...queued, generatedAt: Date.now() }, 202);
+  }
+
+  if (url.pathname === '/api/intelligence/backfill/pass' && request.method === 'POST') {
+    if (!meshEnabled(env)) return json({ ok: false, error: 'bull_mesh_disabled' }, 503);
+    const body = await parseJson(request);
+    const wallet = String(body.wallet || body.address || '').trim();
+    if (!validWallet(wallet)) return json({ ok: false, error: 'invalid_public_wallet' }, 400);
+    try {
+      const result = await backfillWalletPass(env, wallet, {
+        before: body.before,
+        pageSize: body.pageSize,
+        jobId: body.jobId
+      });
+      return json({ ...result, generatedAt: Date.now() });
+    } catch (error) {
+      return json({ ok: false, error: 'backfill_failed', detail: String(error?.message || error), generatedAt: Date.now() }, 502);
+    }
   }
 
   if (url.pathname === '/api/intelligence/nft-memory' && request.method === 'POST') {
