@@ -4,6 +4,7 @@
 
 import { handleIntelligenceMeshIngestRequest } from './intelligence-mesh-ingest.mjs';
 import { handleIntelligenceAdapterRequest } from './intelligence-adapter-router.mjs';
+import { handleIntelligenceAssetRequest } from './intelligence-asset-router.mjs';
 import { handleIntelligenceMeshRequest } from './intelligence-mesh-router.mjs';
 import { backfillHistoryPass } from './intelligence-history-engine.mjs';
 import { queueHistoryJob } from './intelligence-mesh-scheduler.mjs';
@@ -51,6 +52,8 @@ export async function handleIntelligenceVNext(request, env = {}) {
   response = await handleIntelligenceAdapterRequest(request, env);
   if (response) return response;
   response = await handleHistoryRoutes(request, env);
+  if (response) return response;
+  response = await handleIntelligenceAssetRequest(request, env);
   if (response) return response;
   response = await handleIntelligenceMeshRequest(request, env);
   if (response) return response;
