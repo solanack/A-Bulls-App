@@ -30,3 +30,10 @@ test('keeps simulation cues distinct from observed buy and sell impacts',()=>{
   assert.equal(summary.sceneTransitions,2);
   assert.equal(summary.simulationTransitions,1);
 });
+
+test('places Wallet A left and Wallet B right while simulations remain centered',()=>{
+  const plan=buildTricksterAudioCuePlan({timeline:{fps:30,totalFrames:60},renderPlan:[{sceneId:'compare',mode:'comparison-replay',startFrame:0,endFrame:59,durationFrames:60,chainTimeFrom:1000,chainTimeTo:3000,walletA:'A',walletB:'B'}],replayEvents:[{id:'a',wallet:'A',timestamp:1500,side:'buy'},{id:'b',wallet:'B',timestamp:2500,side:'sell'}]});
+  assert.equal(plan.cues.find(c=>c.eventId==='a').pan,-.35);
+  assert.equal(plan.cues.find(c=>c.eventId==='b').pan,.35);
+  assert.equal(buildTricksterAudioCuePlan({timeline,renderPlan,replayEvents,whatIf}).cues.find(c=>c.eventId==='sim-a').pan,0);
+});
