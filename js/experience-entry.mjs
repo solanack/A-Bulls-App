@@ -5,6 +5,7 @@ import { IntelligenceWorkspace } from './intelligence-workspace-vnext.mjs';
 import { TricksterStudio } from './trickster-studio.mjs';
 import { validateStoryForExport } from './trickster-validation-client.mjs';
 import { loadThree } from './experience-dependencies.mjs';
+import { createBullInvadersHost, installBullInvadersNavigationBridge } from './bull-invaders-host.mjs';
 
 function node(tag,className,text) {
   const item=document.createElement(tag);
@@ -27,16 +28,16 @@ function productPage(title,description) {
 function unavailablePage(title,description) {
   const {page,body}=productPage(title,description);
   const card=node('article','product-card product-card--featured');
-  card.append(node('span','product-card__index','FOUNDATION READY'),node('h2','','Disabled until its data gate is enabled'),node('p','','The product remains visible in the architecture but does not silently fall back to legacy or unverified data.'));
+  card.append(node('span','product-card__index','FOUNDATION READY'),node('h2','','Data gate is not enabled'),node('p','','This surface fails closed rather than falling back to retired or unverified data.'));
   body.append(card);return page;
 }
 
-function gamesPage(onLaunch) {
-  const {page,body}=productPage('Games','Bull Invaders is the arcade experience, preserved alongside the Solana intelligence platform.');
+function gamesPage(onOpen) {
+  const {page,body}=productPage('Games','Bull Invaders is the single arcade experience inside the full-chain intelligence platform.');
   const invaders=node('button','product-card product-card--featured');
   invaders.type='button';
-  invaders.append(node('span','product-card__index','01'),node('h2','','Bull Invaders'),node('p','','Ranked and campaign play with the existing deterministic scoring and replay rules.'),node('span','product-card__action','OPEN LOADOUT →'));
-  invaders.addEventListener('click',()=>onLaunch?.('bull-invaders'));
+  invaders.append(node('span','product-card__index','ONLY GAME'),node('h2','','Bull Invaders'),node('p','','Ranked and 10-EPOCH campaign play with preserved scoring, hitboxes, physics, replay validation, ships, power-ups and boss behavior.'),node('span','product-card__action','OPEN LOADOUT →'));
+  invaders.addEventListener('click',()=>onOpen?.());
   body.append(invaders);
   return page;
 }
@@ -48,13 +49,16 @@ async function setup() {
   const universeRequested=flags.universeEnabled===true||String(flags.UNIVERSE_ENABLED||'').toLowerCase()==='true';
   const tricksterRequested=flags.tricksterStudioEnabled===true||String(flags.TRICKSTER_STUDIO_ENABLED||'').toLowerCase()==='true';
   const THREE=globalThis.THREE||(universeRequested?await loadThree():null);
-  const existing=document.getElementById('app');
+  const legacyApp=document.getElementById('app');
   let app=null;
   const host=node('div');
   host.id='nextProductShell';
   document.body.append(host);
   const instances=new Map();
   const adapters=new ProductAdapterRegistry();
+  let gameHost=null;
+  let gameInitialized=false;
+  let removeGameBridge=null;
 
   function openStory(bundle) {
     globalThis.BBR_TRICKSTER_EVIDENCE=bundle;
@@ -62,6 +66,41 @@ async function setup() {
     if(content instanceof Element) app?.shell.mountProduct(content);
     app?.shell.setActiveProduct('trickster');
     instances.get('trickster')?.loadEvidence(bundle);
+  }
+
+  function showGamesLanding() {
+    const content=gamesPage(openBullInvaders);
+    app?.shell.mountProduct(content);
+    app?.shell.setActiveProduct('games');
+  }
+
+  function ensureBullInvadersHost() {
+    if(gameHost) return gameHost;
+    gameHost=createBullInvadersHost();
+    removeGameBridge=installBullInvadersNavigationBridge({onExit:showGamesLanding});
+    const start=gameHost.querySelector('#startInvaders');
+    start?.addEventListener('click',async()=>{
+      gameHost.classList.add('active');
+      try {
+        await globalThis.BBRPlatform?.launch?.('bull-invaders');
+      } catch(error) {
+        console.error('[Bull Invaders launch]',error);
+        globalThis.toast?.('Bull Invaders could not start');
+      }
+    });
+    if(!gameInitialized) {
+      globalThis.BBRRunMode?.init?.();
+      globalThis.BullInvaders?.init?.();
+      gameInitialized=true;
+    }
+    return gameHost;
+  }
+
+  function openBullInvaders() {
+    const view=ensureBullInvadersHost();
+    app?.shell.mountProduct(view);
+    app?.shell.setActiveProduct('games');
+    requestAnimationFrame(()=>globalThis.dispatchEvent(new Event('resize')));
   }
 
   adapters.register('universe',{
@@ -121,9 +160,7 @@ async function setup() {
           app?.shell.setActiveProduct('intelligence');
         },
         onExport:async(detail)=>{
-          const validation=await validateStoryForExport(detail.manifest,{
-            apiBase:globalThis.BBRConfig?.apiBase||location.origin
-          });
+          const validation=await validateStoryForExport(detail.manifest,{apiBase:globalThis.BBRConfig?.apiBase||location.origin});
           const exportDetail=Object.freeze({...detail,validation});
           globalThis.dispatchEvent(new CustomEvent('abulls:trickster-export',{detail:exportDetail}));
           return validation;
@@ -140,26 +177,11 @@ async function setup() {
     }
   });
 
-  let gameView=null;
-  let gamePlaceholder=null;
   adapters.register('games',{
-    activate() {
-      return gamesPage(async(gameId)=>{
-        gameView=document.getElementById('invadersGameView');
-        if(!gameView) return;
-        if(!gamePlaceholder) {
-          gamePlaceholder=document.createComment('product-portal:invadersGameView');
-          gameView.parentNode?.insertBefore(gamePlaceholder,gameView);
-        }
-        globalThis.showView?.('invadersGame');
-        app?.shell.mountProduct(gameView);
-        await globalThis.BBRPlatform?.launch?.(gameId);
-      });
-    },
+    activate() { return gamesPage(openBullInvaders); },
     deactivate() {
       const leaving=globalThis.BBRPlatform?.leaveGame?.();
       leaving?.catch?.(()=>{});
-      if(gameView&&gamePlaceholder?.parentNode) gamePlaceholder.parentNode.insertBefore(gameView,gamePlaceholder.nextSibling);
     }
   });
 
@@ -176,10 +198,19 @@ async function setup() {
     host.remove();
     return;
   }
-  if(existing) existing.hidden=true;
+
+  // vNext is the application. The retired shell is physically removed from the DOM
+  // so desktop/mobile behavior cannot fall back to old phone-oriented markup.
+  legacyApp?.remove();
+
   globalThis.BBRNextExperience=Object.freeze({
     ...app,
-    loadStory:openStory
+    loadStory:openStory,
+    openBullInvaders,
+    destroy() {
+      removeGameBridge?.();
+      app?.destroy?.();
+    }
   });
 }
 
