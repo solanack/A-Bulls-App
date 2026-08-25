@@ -19,6 +19,7 @@ const NEXT_EXPERIENCE = [
   './css/universe.css?v=universe1',
   './css/trickster-studio.css?v=universe1',
   './css/intelligence-workspace-vnext.css?v=1',
+  './css/bull-invaders-vnext.css?v=1',
   './js/experience-entry.mjs?v=universe1',
   ...[
     'experience-bootstrap','experience-feature-flags','experience-dependencies','product-registry','product-shell-vnext',
@@ -27,28 +28,26 @@ const NEXT_EXPERIENCE = [
     'universe-experience','trickster-story-manifest','trickster-composer',
     'trickster-export-capabilities','trickster-timeline','trickster-clip-export','trickster-validation-client','trickster-studio',
     'temporal-replay-engine','trade-comparison-replay','trade-replay-player','replay-bundle-client','intelligence-workspace-vnext',
-    'evidence-state'
+    'bull-invaders-host','evidence-state'
   ].map(name => `./js/${name}.mjs`)
 ];
 
+const GAME_RUNTIME = versioned([
+  './js/config.js','./js/api-client.js','./js/storage.js','./js/core.js',
+  './js/background-manager.js','./js/audio-manager.js','./js/v7-art-system.js','./js/run-recorder.js','./js/share-card.js',
+  './js/leaderboard.js','./js/run-mode.js','./js/bull-invaders-renderer-v2.js','./js/bull-invaders.js','./js/main.js'
+]);
+
 const CORE = [
-  './', './index.html', './privacy.html', './terms.html', './favicon.svg',
+  './','./index.html','./privacy.html','./terms.html','./favicon.svg',
   ...NEXT_EXPERIENCE,
-  ...versioned(['./manifest.webmanifest', './css/styles.css', './css/track.css', './css/dusk-atelier.css']),
-  ...versioned([
-    './js/opening-sequence.js', './js/config.js', './js/api-client.js', './js/storage.js', './js/core.js',
-    './js/background-manager.js', './js/audio-manager.js', './js/v7-art-system.js', './js/dusk-interactions.js', './js/run-recorder.js', './js/share-card.js',
-    './js/leaderboard.js', './js/run-mode.js', './js/bull-invaders-renderer-v2.js', './js/bull-invaders.js', './js/profile-manager.js', './js/ui.js',
-    './js/theme-customizer.js', './js/main.js'
-  ]),
+  ...versioned(['./manifest.webmanifest','./css/styles.css','./css/dusk-atelier.css']),
+  ...GAME_RUNTIME,
   './vendor/pixi-8.19.0.min.js',
-  './assets/v7/player-ship.webp', './assets/v7/enemies/bear-fighter.webp',
-  ...V7_BOSSES, ...V7_BACKGROUNDS, ...SHIPS,
+  './assets/v7/player-ship.webp','./assets/v7/enemies/bear-fighter.webp',
+  ...V7_BOSSES,...V7_BACKGROUNDS,...SHIPS,
   './assets/game/bull-invader-ship.webp',
-  './assets/opening/opening-fade-1-title.jpg',
-  './assets/opening/opening-fade-2-studio.png', './assets/opening/menu-bull-solana.webp',
-  './assets/icons/icon-192.png', './assets/icons/icon-512.png', './assets/icons/icon-maskable-192.png', './assets/icons/icon-maskable-512.png',
-  './assets/profile-fallback.svg',
+  './assets/icons/icon-192.png','./assets/icons/icon-512.png','./assets/icons/icon-maskable-192.png','./assets/icons/icon-maskable-512.png',
   ...['rapid','spread','shield','overdrive','magnet','nova','double-trinity','triangle','twin','trinity','railgun','plasma','homing','bomb','bomb2']
     .map(name => `./assets/powerups/ecosystem/${name}.svg`),
 ];
@@ -106,12 +105,7 @@ async function networkFirst(request) {
 
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
-  if (
-    event.request.method !== 'GET' ||
-    url.origin !== location.origin ||
-    url.pathname.includes('/api/') ||
-    event.request.headers.has('Authorization')
-  ) return;
+  if (event.request.method !== 'GET' || url.origin !== location.origin || url.pathname.includes('/api/') || event.request.headers.has('Authorization')) return;
   if (event.request.mode === 'navigate') {
     event.respondWith(networkFirst(event.request));
     return;
