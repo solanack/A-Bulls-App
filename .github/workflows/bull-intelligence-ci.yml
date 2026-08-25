@@ -3,13 +3,11 @@ name: Solana Intelligence Compatibility CI
 on:
   pull_request:
     paths:
-      - 'js/intelligence-*.js'
-      - 'js/intelligence-*.mjs'
+      - 'js/intelligence-workspace-*.mjs'
       - 'js/replay-*.mjs'
       - 'js/trade-*.mjs'
+      - 'js/temporal-*.mjs'
       - 'workers/intelligence-*.mjs'
-      - 'workers/migrations/0007_bull_intelligence.sql'
-      - 'workers/migrations/0008_bull_nft_intelligence.sql'
       - 'workers/migrations/0009_intelligence_mesh.sql'
       - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
       - 'sw.js'
@@ -31,14 +29,14 @@ jobs:
         run: |
           set -euo pipefail
           for f in workers/intelligence-*.mjs; do node --check "$f"; done
-          for f in js/intelligence-*.js js/intelligence-*.mjs js/replay-*.mjs js/trade-*.mjs; do
+          for f in js/intelligence-workspace-*.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs; do
             [ -e "$f" ] && node --check "$f"
           done
       - name: Intelligence tests
         run: |
           set -euo pipefail
           node --test workers/intelligence-*.test.mjs
-          for f in tests/intelligence-*.test.mjs; do [ -e "$f" ] && node "$f"; done
+          node --test js/temporal-replay-engine.test.mjs js/trade-comparison-replay.test.mjs
       - name: vNext wiring
         shell: bash
         run: |
@@ -53,7 +51,11 @@ jobs:
         run: |
           set -euo pipefail
           test ! -e js/life.js
-          ! grep -Eiq 'Ansem\.io|\$ANSEM|Bullpen|community-integrations|claude-of-duty|Solana Bang Bang|BBRLife|lifeView' js/product-registry.mjs js/experience-entry.mjs js/intelligence-workspace-vnext.mjs workers/intelligence-asset-router.mjs workers/intelligence-operations.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
+          test ! -e js/bull-intelligence.js
+          test ! -e js/bull-vision.js
+          test ! -e js/track.js
+          test ! -e js/ui.js
+          ! grep -Eiq 'Ansem\.io|\$ANSEM|Bullpen|community-integrations|claude-of-duty|Solana Bang Bang|BBRLife|lifeView' index.html js/config.js js/product-registry.mjs js/experience-entry.mjs js/intelligence-workspace-vnext.mjs workers/intelligence-asset-router.mjs workers/intelligence-operations.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
       - name: Generic NFT capability remains
         shell: bash
         run: |
@@ -64,4 +66,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'seed phrase|private key import|signTransaction|sendTransaction|secretKey' workers/intelligence-*.mjs js/intelligence-*.js js/intelligence-*.mjs js/replay-*.mjs js/trade-*.mjs
+          ! grep -Eiq 'seed phrase|private key import|signTransaction|sendTransaction|secretKey' workers/intelligence-*.mjs js/intelligence-workspace-*.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs
