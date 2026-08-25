@@ -78,7 +78,7 @@ export function createProductShell({
   const heading = element('div');
   heading.append(element('small', '', 'SOLANA INTELLIGENCE · STORIES · EXPERIENCES'));
   heading.append(element('h1', '', 'See the chain. Understand the evidence. Tell the story.'));
-  intro.append(heading, element('p', '', 'Explore live activity, investigate public-chain history, build verifiable data stories, reflect privately, or enter the arcade.'));
+  intro.append(heading, element('p', '', 'Explore live activity, investigate public-chain history, build verifiable data stories, or enter the arcade.'));
 
   const grid = element('section', 'product-grid');
   grid.setAttribute('aria-label', 'Products');
