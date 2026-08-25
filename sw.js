@@ -1,4 +1,4 @@
-const BUILD = '8.7.0-vnext-27';
+const BUILD = '8.7.0-vnext-28';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -29,7 +29,7 @@ const NEXT_EXPERIENCE = [
     'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','event-story-scene-runtime','event-story-scene-slice','event-story-render-plan','event-story-scene-transition','event-story-frame-model','event-story-frame-renderer','event-story-frame-drawer','event-story-video-export','wallet-comparison-story-runtime','wallet-comparison-render-plan','wallet-comparison-frame-model','wallet-comparison-frame-renderer','wallet-comparison-frame-drawer','wallet-comparison-video-export','wallet-comparison-what-if','intelligence-event-ledger','universe-contracts','universe-quality',
     'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
     'universe-experience','trickster-story-manifest','trickster-composer',
-    'trickster-export-capabilities','trickster-timeline','trickster-clip-export','trickster-validation-client','trickster-video-delivery','trickster-studio',
+    'trickster-export-capabilities','trickster-timeline','trickster-caption-plan','trickster-caption-renderer','trickster-clip-export','trickster-validation-client','trickster-video-delivery','trickster-studio',
     'temporal-replay-engine','trade-comparison-replay','trade-replay-player','replay-bundle-client','intelligence-workspace-vnext',
     'bull-invaders-host','evidence-state'
   ].map(name => `./js/${name}.mjs`)
@@ -56,62 +56,11 @@ const CORE = [
 ];
 
 async function cacheOne(cache, path) {
-  try {
-    const request = new Request(path, { cache: 'reload' });
-    const response = await fetch(request);
-    if (response.ok && response.type === 'basic') await cache.put(request, response);
-  } catch (_) {}
+  try {const request=new Request(path,{cache:'reload'});const response=await fetch(request);if(response.ok&&response.type==='basic')await cache.put(request,response);}catch(_){}
 }
-
-self.addEventListener('install', event => event.waitUntil((async () => {
-  const cache = await caches.open(CACHE);
-  for (let index = 0; index < CORE.length; index += 24) {
-    await Promise.all(CORE.slice(index, index + 24).map(path => cacheOne(cache, path)));
-  }
-  await self.skipWaiting();
-})()));
-
-self.addEventListener('activate', event => event.waitUntil(
-  caches.keys()
-    .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
-    .then(() => self.clients.claim())
-));
-
-function isStaticAsset(url) {
-  return /\.(?:js|css|mjs|json|png|jpe?g|webp|svg|gif|avif|woff2?|ttf|mp3|m4a|wav|ogg|mp4|webm)$/i.test(url.pathname);
-}
-
-async function staleWhileRevalidate(request) {
-  const cache = await caches.open(CACHE);
-  const cached = await cache.match(request, { ignoreSearch: false });
-  const refresh = fetch(request).then(async response => {
-    if (response.ok && response.type === 'basic') await cache.put(request, response.clone());
-    return response;
-  }).catch(() => null);
-  return cached || await refresh || new Response('Offline and this resource has not been cached.', {
-    status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }
-  });
-}
-
-async function networkFirst(request) {
-  const cache = await caches.open(CACHE);
-  try {
-    const response = await fetch(request, { cache: 'no-store' });
-    if (response.ok && response.type === 'basic') await cache.put(request, response.clone());
-    return response;
-  } catch (_) {
-    return await cache.match(request) || (request.mode === 'navigate' ? await cache.match('./index.html') : null) || new Response('Offline and this resource has not been cached.', {
-      status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }
-    });
-  }
-}
-
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
-  if (event.request.method !== 'GET' || url.origin !== location.origin || url.pathname.includes('/api/') || event.request.headers.has('Authorization')) return;
-  if (event.request.mode === 'navigate') {
-    event.respondWith(networkFirst(event.request));
-    return;
-  }
-  event.respondWith(isStaticAsset(url) ? staleWhileRevalidate(event.request) : networkFirst(event.request));
-});
+self.addEventListener('install',event=>event.waitUntil((async()=>{const cache=await caches.open(CACHE);for(let index=0;index<CORE.length;index+=24)await Promise.all(CORE.slice(index,index+24).map(path=>cacheOne(cache,path)));await self.skipWaiting();})()));
+self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
+function isStaticAsset(url){return /\.(?:js|css|mjs|json|png|jpe?g|webp|svg|gif|avif|woff2?|ttf|mp3|m4a|wav|ogg|mp4|webm)$/i.test(url.pathname);}
+async function staleWhileRevalidate(request){const cache=await caches.open(CACHE),cached=await cache.match(request,{ignoreSearch:false}),refresh=fetch(request).then(async response=>{if(response.ok&&response.type==='basic')await cache.put(request,response.clone());return response;}).catch(()=>null);return cached||await refresh||new Response('Offline and this resource has not been cached.',{status:503,headers:{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'}});}
+async function networkFirst(request){const cache=await caches.open(CACHE);try{const response=await fetch(request,{cache:'no-store'});if(response.ok&&response.type==='basic')await cache.put(request,response.clone());return response;}catch(_){return await cache.match(request)||(request.mode==='navigate'?await cache.match('./index.html'):null)||new Response('Offline and this resource has not been cached.',{status:503,headers:{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'}});}}
+self.addEventListener('fetch',event=>{const url=new URL(event.request.url);if(event.request.method!=='GET'||url.origin!==location.origin||url.pathname.includes('/api/')||event.request.headers.has('Authorization'))return;if(event.request.mode==='navigate'){event.respondWith(networkFirst(event.request));return;}event.respondWith(isStaticAsset(url)?staleWhileRevalidate(event.request):networkFirst(event.request));});
