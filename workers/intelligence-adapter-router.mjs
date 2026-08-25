@@ -3,6 +3,7 @@
 import { normalizeAdapterBatch } from './intelligence-adapters.mjs';
 import { ingestIntelligenceBatch } from './intelligence-mesh-ingest.mjs';
 import { buildOhlc, persistCandles, persistTradeRoute } from './intelligence-mesh-runtime.mjs';
+import { ingestNftObservations } from './intelligence-nft-layer.mjs';
 
 const s = v => String(v == null ? '' : v).trim();
 const n = v => Number.isFinite(Number(v)) ? Number(v) : 0;
@@ -33,22 +34,26 @@ export async function handleIntelligenceAdapterRequest(request, env = {}) {
   const wallet = s(payload.wallet || payload.address);
   const source = s(payload.source || kind);
   const rows = Array.isArray(payload.rows) ? payload.rows : Array.isArray(payload.events) ? payload.events : [];
+  const nftRows = Array.isArray(payload.nftRows) ? payload.nftRows : Array.isArray(payload.nft_events) ? payload.nft_events : [];
   if (!wallet) return json({ ok:false, error:'wallet_required' }, 400);
-  if (!rows.length) return json({ ok:false, error:'rows_required' }, 400);
-  if (rows.length > 500) return json({ ok:false, error:'batch_too_large' }, 400);
+  if (!rows.length && !nftRows.length) return json({ ok:false, error:'rows_required' }, 400);
+  if (rows.length > 500 || nftRows.length > 500) return json({ ok:false, error:'batch_too_large' }, 400);
 
   try {
     const normalizedKind = kind === 'richat' ? 'yellowstone' : kind;
     const normalized = normalizeAdapterBatch(normalizedKind, rows, wallet, source);
-    const ingest = await ingestIntelligenceBatch(env, {
-      wallet,
-      source,
-      sourceKind: kind,
-      events: normalized.events,
-      verified: normalized.verified,
-      archiveRef: normalized.archiveRefs[0] || '',
-      windowKey: `adapter-${kind}`
-    });
+    let ingest = { accepted: 0 };
+    if (normalized.events.length) {
+      ingest = await ingestIntelligenceBatch(env, {
+        wallet,
+        source,
+        sourceKind: kind,
+        events: normalized.events,
+        verified: normalized.verified,
+        archiveRef: normalized.archiveRefs[0] || '',
+        windowKey: `adapter-${kind}`
+      });
+    }
 
     let routeHops = 0;
     for (const route of normalized.routes) routeHops += await persistTradeRoute(env, route);
@@ -61,7 +66,8 @@ export async function handleIntelligenceAdapterRequest(request, env = {}) {
       candlesWritten = await persistCandles(env, mint, quoteMint, buildOhlc(normalized.swaps, bucketSeconds));
     }
 
-    return json({ ok:true, adapter:kind, source, accepted:ingest.accepted, routeHops, candlesWritten, verified:normalized.verified });
+    const nftIngest = nftRows.length ? await ingestNftObservations(env, wallet, nftRows, source) : { accepted: 0 };
+    return json({ ok:true, adapter:kind, source, accepted:ingest.accepted, nftAccepted:nftIngest.accepted, routeHops, candlesWritten, verified:normalized.verified });
   } catch (error) {
     return json({ ok:false, error:s(error?.message || error) }, 400);
   }
