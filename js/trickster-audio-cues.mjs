@@ -24,17 +24,21 @@ function sceneEvents(scene,replayEvents=[],whatIf=null){
   }
   return [];
 }
+function cuePan(scene,event,simulated){
+  if(simulated||scene.mode!=='comparison-replay')return 0;
+  const wallet=text(event?.wallet);if(wallet&&wallet===text(scene.walletA))return -.35;if(wallet&&wallet===text(scene.walletB))return .35;return 0;
+}
 
 export function buildTricksterAudioCuePlan({timeline={},renderPlan=[],replayEvents=[],whatIf=null}={}){
   const fps=Math.max(1,Number(timeline?.fps)||30),totalFrames=Math.max(0,Number(timeline?.totalFrames)||0),cues=[];
   for(const scene of renderPlan||[]){
     const startFrame=Math.max(0,Number(scene.startFrame)||0);
-    cues.push(Object.freeze({kind:scene.mode==='comparison-simulation'?'simulation-transition':'scene-transition',sceneId:String(scene.sceneId||''),frame:startFrame,time:sceneSecond(startFrame,fps)}));
+    cues.push(Object.freeze({kind:scene.mode==='comparison-simulation'?'simulation-transition':'scene-transition',sceneId:String(scene.sceneId||''),frame:startFrame,time:sceneSecond(startFrame,fps),pan:0}));
     for(const event of sceneEvents(scene,replayEvents,whatIf)){
       const side=eventSide(event);if(!side)continue;
       const frame=eventFrame(scene,event);if(frame==null)continue;
       const simulated=scene.mode==='comparison-simulation'||event?.hypothetical===true||text(event?.verification)==='simulation';
-      cues.push(Object.freeze({kind:simulated?'simulation-impact':`${side}-impact`,side,simulated,eventId:eventId(event),sceneId:String(scene.sceneId||''),frame,time:sceneSecond(frame,fps)}));
+      cues.push(Object.freeze({kind:simulated?'simulation-impact':`${side}-impact`,side,simulated,eventId:eventId(event),sceneId:String(scene.sceneId||''),frame,time:sceneSecond(frame,fps),pan:cuePan(scene,event,simulated)}));
     }
   }
   cues.sort((a,b)=>a.frame-b.frame||a.kind.localeCompare(b.kind)||a.eventId?.localeCompare?.(b.eventId||'')||0);
