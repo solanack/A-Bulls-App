@@ -10,6 +10,9 @@ on:
       - 'js/experience-*.mjs'
       - 'js/evidence-state*.mjs'
       - 'js/config.js'
+      - 'js/main.js'
+      - 'js/ui.js'
+      - 'js/bull-vision.js'
       - 'workers/intelligence-universe-*.mjs'
       - 'workers/intelligence-worker-hooks.mjs'
       - 'workers/migrations/0011_universe_trickster.sql'
@@ -78,6 +81,9 @@ jobs:
             js/experience-feature-flags.mjs \
             js/evidence-state.mjs \
             js/config.js \
+            js/main.js \
+            js/ui.js \
+            js/bull-vision.js \
             sw.js \
             workers/intelligence-universe-runtime.mjs \
             workers/intelligence-universe-router.mjs \
