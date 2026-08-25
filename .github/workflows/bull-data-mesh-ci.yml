@@ -1,0 +1,59 @@
+name: Bull Data Mesh CI
+
+on:
+  push:
+    branches:
+      - feature/bull-data-mesh-v1
+    paths:
+      - 'workers/bull-data-mesh.mjs'
+      - 'workers/bull-data-mesh.test.mjs'
+      - 'workers/bull-intelligence-extension.mjs'
+      - 'workers/intelligence-indexer.mjs'
+      - 'workers/migrations/0009_bull_data_mesh.sql'
+      - 'docs/BULL-DATA-MESH.md'
+      - '.github/workflows/bull-data-mesh-ci.yml'
+  pull_request:
+    paths:
+      - 'workers/bull-data-mesh.mjs'
+      - 'workers/bull-data-mesh.test.mjs'
+      - 'workers/bull-intelligence-extension.mjs'
+      - 'workers/intelligence-indexer.mjs'
+      - 'workers/migrations/0009_bull_data_mesh.sql'
+      - 'docs/BULL-DATA-MESH.md'
+      - '.github/workflows/bull-data-mesh-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check workers/bull-data-mesh.mjs
+          node --check workers/bull-intelligence-extension.mjs
+          node --check workers/intelligence-indexer.mjs
+      - name: Unit tests
+        run: node --test workers/bull-data-mesh.test.mjs
+      - name: Migration safety contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'CREATE TABLE IF NOT EXISTS bull_index_coverage' workers/migrations/0009_bull_data_mesh.sql
+          grep -q 'CREATE TABLE IF NOT EXISTS bull_event_provenance' workers/migrations/0009_bull_data_mesh.sql
+          grep -q 'CREATE TABLE IF NOT EXISTS bull_price_candles' workers/migrations/0009_bull_data_mesh.sql
+          ! grep -Eiq 'DROP[[:space:]]+TABLE|DELETE[[:space:]]+FROM|TRUNCATE' workers/migrations/0009_bull_data_mesh.sql
+      - name: Read-only guardrails
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Eiq 'sendTransaction|signTransaction|private[_ -]?key|seed phrase|secretKey' workers/bull-data-mesh.mjs
+          grep -q 'getSignaturesForAddress' workers/bull-data-mesh.mjs
+          grep -q 'getTransaction' workers/bull-data-mesh.mjs
+          grep -q 'publicAddressOnly: true' workers/bull-data-mesh.mjs
