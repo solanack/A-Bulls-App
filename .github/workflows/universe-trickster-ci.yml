@@ -66,6 +66,7 @@ jobs:
           grep -q '@media(max-width:760px)' css/product-shell-vnext.css
           grep -q '@media(max-width:760px)' css/bull-invaders-vnext.css
           grep -q '@media(max-width:760px)' css/intelligence-workspace-vnext.css
+          grep -q '@media(max-width:760px)' css/intelligence-event-inspector.css
           grep -q '/api/intelligence/replay-bundle' workers/intelligence-replay-bundle.mjs
           grep -q '/api/intelligence/resolve' workers/intelligence-entity-resolver.mjs
           grep -q '/api/intelligence/wallet-tokens' workers/intelligence-wallet-token-index.mjs
@@ -73,6 +74,8 @@ jobs:
           grep -q 'WalletTokenIndexClient' js/intelligence-workspace-vnext.mjs
           grep -q 'createEvidenceLedger' js/intelligence-workspace-vnext.mjs
           grep -q 'focusReplayEvent' js/trade-replay-player.mjs
+          grep -q 'DIRECT EXECUTION EVIDENCE' js/intelligence-event-ledger.mjs
+          grep -q 'intelligence-event-inspector.css' sw.js
           grep -q 'Around transaction (12h)' js/intelligence-workspace-vnext.mjs
           grep -q "adapters.activate('intelligence', { source: 'universal-search', request })" js/experience-bootstrap.mjs
           test ! -d games
