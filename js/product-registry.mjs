@@ -26,7 +26,7 @@ const PRODUCTS = Object.freeze([
   Object.freeze({
     id: 'games',
     label: 'Games',
-    description: 'Enter Bull Invaders and other interactive experiences.',
+    description: 'Play Bull Invaders with the preserved Ranked and campaign rules.',
     tier: 'primary',
     order: 4,
     icon: 'games'
@@ -40,19 +40,11 @@ const PRODUCTS = Object.freeze([
     icon: 'media'
   }),
   Object.freeze({
-    id: 'communities',
-    label: 'Community Integrations',
-    description: 'Open optional Bullpen, Ansem, Ansem.io, and future community tools.',
-    tier: 'secondary',
-    order: 6,
-    icon: 'community'
-  }),
-  Object.freeze({
     id: 'profile',
     label: 'Profile',
     description: 'Manage local presentation and preferences.',
     tier: 'utility',
-    order: 7,
+    order: 6,
     icon: 'profile'
   })
 ]);
