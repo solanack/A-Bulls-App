@@ -7,6 +7,8 @@ on:
     paths:
       - 'workers/bull-data-mesh.mjs'
       - 'workers/bull-data-mesh.test.mjs'
+      - 'workers/bull-mesh-ingest.mjs'
+      - 'workers/bull-intelligence-router.mjs'
       - 'workers/bull-intelligence-extension.mjs'
       - 'workers/intelligence-indexer.mjs'
       - 'workers/migrations/0009_bull_data_mesh.sql'
@@ -16,6 +18,8 @@ on:
     paths:
       - 'workers/bull-data-mesh.mjs'
       - 'workers/bull-data-mesh.test.mjs'
+      - 'workers/bull-mesh-ingest.mjs'
+      - 'workers/bull-intelligence-router.mjs'
       - 'workers/bull-intelligence-extension.mjs'
       - 'workers/intelligence-indexer.mjs'
       - 'workers/migrations/0009_bull_data_mesh.sql'
@@ -37,6 +41,8 @@ jobs:
       - name: Syntax
         run: |
           node --check workers/bull-data-mesh.mjs
+          node --check workers/bull-mesh-ingest.mjs
+          node --check workers/bull-intelligence-router.mjs
           node --check workers/bull-intelligence-extension.mjs
           node --check workers/intelligence-indexer.mjs
       - name: Unit tests
@@ -53,7 +59,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'sendTransaction|signTransaction|private[_ -]?key|seed phrase|secretKey' workers/bull-data-mesh.mjs
+          ! grep -Eiq 'sendTransaction|signTransaction|private[_ -]?key|seed phrase|secretKey' workers/bull-data-mesh.mjs workers/bull-mesh-ingest.mjs
           grep -q 'getSignaturesForAddress' workers/bull-data-mesh.mjs
           grep -q 'getTransaction' workers/bull-data-mesh.mjs
           grep -q 'publicAddressOnly: true' workers/bull-data-mesh.mjs
+          grep -q 'BULL_MESH_INGEST_TOKEN' workers/bull-mesh-ingest.mjs
