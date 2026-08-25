@@ -90,21 +90,7 @@ export class UniverseRenderer {
     this.#camera = new T.PerspectiveCamera(55, 1, 0.1, 500);
     this.#camera.position.set(0, 0, 125);
 
-    const visible = this.#snapshot.particles.slice(0, profile.particleLimit);
-    const positions = new Float32Array(visible.length * 3);
-    const colors = new Float32Array(visible.length * 3);
-    const sizes = new Float32Array(visible.length);
-    visible.forEach((entity, index) => {
-      positions.set(entity.position, index * 3);
-      colors.set(COLORS[entity.category] ?? COLORS.unknown, index * 3);
-      sizes[index] = 1.4 + entity.magnitudeBand * 4;
-    });
-
-    const geometry = new T.BufferGeometry();
-    geometry.setAttribute('position', new T.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new T.BufferAttribute(colors, 3));
-    geometry.setAttribute('aSize', new T.BufferAttribute(sizes, 1));
-    geometry.userData.entities = visible;
+    const geometry = this.#geometryForSnapshot(this.#snapshot);
 
     this.#material = new T.ShaderMaterial({
       transparent: true,
@@ -148,6 +134,38 @@ export class UniverseRenderer {
     this.#raf = requestAnimationFrame(this.#frame);
   }
 
+  #geometryForSnapshot(snapshot) {
+    const T = this.#three;
+    const visible = snapshot.particles.slice(0, this.#quality.profile.particleLimit);
+    const positions = new Float32Array(visible.length * 3);
+    const colors = new Float32Array(visible.length * 3);
+    const sizes = new Float32Array(visible.length);
+    visible.forEach((entity, index) => {
+      positions.set(entity.position, index * 3);
+      colors.set(COLORS[entity.category] ?? COLORS.unknown, index * 3);
+      sizes[index] = 1.4 + entity.magnitudeBand * 4;
+    });
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new T.BufferAttribute(colors, 3));
+    geometry.setAttribute('aSize', new T.BufferAttribute(sizes, 1));
+    geometry.userData.entities = visible;
+    return geometry;
+  }
+
+  updateSnapshot(snapshot) {
+    if (!snapshot?.particles) throw new TypeError('valid snapshot is required');
+    this.#snapshot = snapshot;
+    if (!this.#renderer) {
+      this.#removeFallback?.();
+      this.#removeFallback = createFallback(this.#host, snapshot, this.#onSelect);
+      return;
+    }
+    const previous = this.#points.geometry;
+    this.#points.geometry = this.#geometryForSnapshot(snapshot);
+    previous.dispose();
+  }
+
   #resize = () => {
     if (!this.#renderer) return;
     const width = Math.max(1, this.#host.clientWidth);
@@ -171,6 +189,7 @@ export class UniverseRenderer {
     if (!hit) return;
     const entity = this.#points.geometry.userData.entities[hit.index];
     if (!entity) return;
+    this.#destinationReady = false;
     this.#transition.start(entity);
     this.#onSelect?.(entity, destinationForEntity(entity), this.#transition);
   };
