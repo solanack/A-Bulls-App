@@ -1,4 +1,4 @@
-const BUILD = '8.7.0-vnext-8';
+const BUILD = '8.7.0-vnext-9';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -19,7 +19,7 @@ const NEXT_EXPERIENCE = [
   './css/universe.css?v=universe1',
   './css/trickster-studio.css?v=universe1',
   './css/intelligence-workspace-vnext.css?v=9',
-  './css/intelligence-event-inspector.css?v=1',
+  './css/intelligence-event-inspector.css?v=2',
   './css/bull-invaders-vnext.css?v=1',
   './js/experience-entry.mjs?v=universe1',
   ...[
