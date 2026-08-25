@@ -44,6 +44,7 @@ jobs:
             js/trickster-caption-renderer.test.mjs \
             js/trickster-audio-cues.test.mjs \
             js/trickster-audio-renderer.test.mjs \
+            js/trickster-narration-plan.test.mjs \
             js/trickster-validation-client.test.mjs \
             js/trickster-video-delivery.test.mjs \
             js/temporal-replay-engine.test.mjs \
@@ -91,6 +92,7 @@ jobs:
           grep -q 'applyExplicitEventStoryPriceSelection' js/experience-entry.mjs
           grep -q 'renderEventStoryVideo' js/experience-entry.mjs
           grep -q 'renderWalletComparisonVideo' js/experience-entry.mjs
+          grep -q 'buildTricksterNarrationPlan' js/experience-entry.mjs
           grep -q 'validateStoryForExport' js/experience-entry.mjs
           grep -q 'walletComparisonScenePlan' js/trickster-studio.mjs
           grep -q 'buildWalletComparisonStoryWhatIf' js/trickster-studio.mjs
@@ -115,10 +117,14 @@ jobs:
           grep -q 'sell-impact' js/trickster-audio-cues.mjs
           grep -q 'simulation-impact' js/trickster-audio-cues.mjs
           grep -q 'OfflineAudioContext' js/trickster-audio-renderer.mjs
+          grep -q 'createStereoPanner' js/trickster-audio-renderer.mjs
+          grep -q 'Narration is assembled only from validated manifest claims' js/trickster-narration-plan.mjs
+          grep -q 'Claim-free scenes remain silent' js/trickster-narration-plan.mjs
           grep -q 'audioBuffer' js/trickster-clip-export.mjs
           grep -q 'SOUND' js/trickster-video-delivery.mjs
           grep -q 'SILENT FALLBACK' js/trickster-video-delivery.mjs
           grep -q 'trickster-simulation.css' index.html
+          grep -q 'experience-entry.mjs?v=6' index.html
           grep -q '@media(max-width:760px)' css/trickster-simulation.css
           grep -q 'eventLightningState' js/event-story-frame-renderer.mjs
           grep -q 'SAVE VIDEO' js/trickster-video-delivery.mjs
@@ -130,6 +136,7 @@ jobs:
           grep -q 'trickster-caption-renderer' sw.js
           grep -q 'trickster-audio-cues' sw.js
           grep -q 'trickster-audio-renderer' sw.js
+          grep -q 'trickster-narration-plan' sw.js
           grep -q 'event-story-video-export' sw.js
           grep -q 'wallet-comparison-video-export' sw.js
           grep -q 'wallet-comparison-what-if' sw.js
