@@ -76,3 +76,37 @@ export function legacyViewAdapter({
     }
   });
 }
+
+export function domPortalAdapter({
+  viewId,
+  activateView,
+  onActivate,
+  onDeactivate
+}) {
+  if (!viewId) throw new TypeError('viewId is required');
+  if (typeof activateView !== 'function') throw new TypeError('activateView is required');
+  let node = null;
+  let placeholder = null;
+
+  return Object.freeze({
+    activate(context) {
+      node = document.getElementById(viewId);
+      if (!node) throw new Error(`legacy view unavailable: ${viewId}`);
+      if (!placeholder) {
+        placeholder = document.createComment(`product-portal:${viewId}`);
+        node.parentNode?.insertBefore(placeholder, node);
+      }
+      activateView(context);
+      onActivate?.(node, context);
+      return node;
+    },
+    deactivate(context) {
+      onDeactivate?.(node, context);
+      if (node && placeholder?.parentNode) placeholder.parentNode.insertBefore(node, placeholder.nextSibling);
+    },
+    status() {
+      const exists = typeof document === 'undefined' || Boolean(document.getElementById(viewId));
+      return Object.freeze({ state: exists ? 'available' : 'unavailable', legacyViewId: viewId });
+    }
+  });
+}
