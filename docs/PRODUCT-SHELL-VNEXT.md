@@ -38,7 +38,7 @@ The home screen is a working surface, not a marketing hero. It contains:
 - clear read-only reassurance;
 - current network observation/coverage state;
 - immediate entry into Universe and Intelligence;
-- visible launch points for Trickster, LIFE, and Games;
+- visible launch points for Trickster and Games;
 - recent local work only when it exists.
 
 No carousel, hidden product drawer, autoplaying promotional copy, or mandatory 3D intro
@@ -56,7 +56,7 @@ Desktop/tablet:
 
 Phone:
 
-- bottom navigation for Universe, Intelligence, Trickster, LIFE, and Games;
+- bottom navigation for Universe, Intelligence, Trickster, and Games;
 - More sheet for Media, Communities, Profile, Help, and Settings;
 - minimum 44px touch targets;
 - no hover-only actions;
@@ -117,3 +117,9 @@ This shell wraps existing products; it does not rewrite their business logic.
 Existing feature modules mount through product adapters. Ranked game invariants and
 Intelligence evidence contracts remain unchanged. Legacy/community functionality is
 moved only after route and behavior parity tests pass.
+
+## Product removal decision — 2026-08-25
+
+LIFE has been removed from the product direction at the owner's request. It is not a
+navigation item, route, adapter, cached asset, or compatibility surface. Reflective-wallet
+features must not be reintroduced implicitly through Intelligence or another product.
