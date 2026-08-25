@@ -44,11 +44,10 @@ export function bootstrapNextExperience({
     onSearch(value) {
       const request = searchRequest(value);
       onSearchRequest?.(request);
-      if (request.destination === 'transaction' || request.destination === 'resolve-address') {
-        const content = adapters.activate('intelligence', { source: 'universal-search', request });
-        if (content instanceof Element) shell.mountProduct(content);
-        shell.setActiveProduct('intelligence');
-      }
+      if (request.kind === 'empty') return;
+      const content = adapters.activate('intelligence', { source: 'universal-search', request });
+      if (content instanceof Element) shell.mountProduct(content);
+      shell.setActiveProduct('intelligence');
     }
   });
 
