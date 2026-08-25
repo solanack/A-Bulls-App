@@ -1,4 +1,4 @@
-const BUILD = '8.7.0-vnext-23';
+const BUILD = '8.7.0-vnext-24';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -25,7 +25,7 @@ const NEXT_EXPERIENCE = [
   './js/market-context-player-bridge.mjs?v=3',
   ...[
     'experience-bootstrap','experience-feature-flags','experience-dependencies','product-registry','product-shell-vnext',
-    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','event-story-scene-runtime','event-story-scene-slice','event-story-render-plan','event-story-frame-model','event-story-frame-renderer','event-story-video-export','intelligence-event-ledger','universe-contracts','universe-quality',
+    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','event-story-scene-runtime','event-story-scene-slice','event-story-render-plan','event-story-scene-transition','event-story-frame-model','event-story-frame-renderer','event-story-frame-drawer','event-story-video-export','intelligence-event-ledger','universe-contracts','universe-quality',
     'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
     'universe-experience','trickster-story-manifest','trickster-composer',
     'trickster-export-capabilities','trickster-timeline','trickster-clip-export','trickster-validation-client','trickster-video-delivery','trickster-studio',
