@@ -8,6 +8,9 @@ function enabled(value) {
 
 export function resolveExperienceFlags(source = {}) {
   return Object.freeze({
+    nextProductShellEnabled: enabled(
+      source.NEXT_PRODUCT_SHELL_ENABLED ?? source.nextProductShellEnabled
+    ),
     universeEnabled: enabled(source.UNIVERSE_ENABLED ?? source.universeEnabled),
     tricksterStudioEnabled: enabled(
       source.TRICKSTER_STUDIO_ENABLED ?? source.tricksterStudioEnabled
