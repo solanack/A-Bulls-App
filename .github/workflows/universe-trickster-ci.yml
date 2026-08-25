@@ -42,6 +42,8 @@ jobs:
             js/trickster-timeline.test.mjs \
             js/trickster-caption-plan.test.mjs \
             js/trickster-caption-renderer.test.mjs \
+            js/trickster-audio-cues.test.mjs \
+            js/trickster-audio-renderer.test.mjs \
             js/trickster-validation-client.test.mjs \
             js/trickster-video-delivery.test.mjs \
             js/temporal-replay-engine.test.mjs \
@@ -105,6 +107,17 @@ jobs:
           grep -q 'OBSERVED ON CHAIN' js/trickster-caption-plan.mjs
           grep -q 'CALCULATED FROM EVIDENCE' js/trickster-caption-plan.mjs
           grep -q 'SIMULATION' js/trickster-caption-plan.mjs
+          grep -q 'buildTricksterAudioCuePlan' js/event-story-video-export.mjs
+          grep -q 'buildTricksterAudioCuePlan' js/wallet-comparison-video-export.mjs
+          grep -q 'renderTricksterAudioBuffer' js/event-story-video-export.mjs
+          grep -q 'renderTricksterAudioBuffer' js/wallet-comparison-video-export.mjs
+          grep -q 'buy-impact' js/trickster-audio-cues.mjs
+          grep -q 'sell-impact' js/trickster-audio-cues.mjs
+          grep -q 'simulation-impact' js/trickster-audio-cues.mjs
+          grep -q 'OfflineAudioContext' js/trickster-audio-renderer.mjs
+          grep -q 'audioBuffer' js/trickster-clip-export.mjs
+          grep -q 'SOUND' js/trickster-video-delivery.mjs
+          grep -q 'SILENT FALLBACK' js/trickster-video-delivery.mjs
           grep -q 'trickster-simulation.css' index.html
           grep -q '@media(max-width:760px)' css/trickster-simulation.css
           grep -q 'eventLightningState' js/event-story-frame-renderer.mjs
@@ -115,6 +128,8 @@ jobs:
           grep -q 'CREATE EVENT STORY' js/intelligence-event-ledger.mjs
           grep -q 'trickster-caption-plan' sw.js
           grep -q 'trickster-caption-renderer' sw.js
+          grep -q 'trickster-audio-cues' sw.js
+          grep -q 'trickster-audio-renderer' sw.js
           grep -q 'event-story-video-export' sw.js
           grep -q 'wallet-comparison-video-export' sw.js
           grep -q 'wallet-comparison-what-if' sw.js
