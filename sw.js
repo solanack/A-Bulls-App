@@ -1,4 +1,4 @@
-const BUILD = '8.7.0-vnext-28';
+const BUILD = '8.7.0-vnext-29';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -29,7 +29,7 @@ const NEXT_EXPERIENCE = [
     'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','event-story-scene-runtime','event-story-scene-slice','event-story-render-plan','event-story-scene-transition','event-story-frame-model','event-story-frame-renderer','event-story-frame-drawer','event-story-video-export','wallet-comparison-story-runtime','wallet-comparison-render-plan','wallet-comparison-frame-model','wallet-comparison-frame-renderer','wallet-comparison-frame-drawer','wallet-comparison-video-export','wallet-comparison-what-if','intelligence-event-ledger','universe-contracts','universe-quality',
     'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
     'universe-experience','trickster-story-manifest','trickster-composer',
-    'trickster-export-capabilities','trickster-timeline','trickster-caption-plan','trickster-caption-renderer','trickster-clip-export','trickster-validation-client','trickster-video-delivery','trickster-studio',
+    'trickster-export-capabilities','trickster-timeline','trickster-caption-plan','trickster-caption-renderer','trickster-audio-cues','trickster-audio-renderer','trickster-clip-export','trickster-validation-client','trickster-video-delivery','trickster-studio',
     'temporal-replay-engine','trade-comparison-replay','trade-replay-player','replay-bundle-client','intelligence-workspace-vnext',
     'bull-invaders-host','evidence-state'
   ].map(name => `./js/${name}.mjs`)
