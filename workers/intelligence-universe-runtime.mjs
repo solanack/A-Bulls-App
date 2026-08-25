@@ -127,8 +127,8 @@ export async function universeSnapshot(env = {}, { windowSeconds = 60, limit = 2
     coverageStatement:`${sampled.length.toLocaleString()} of ${rows.length.toLocaleString()} observations shown from the last ${window} seconds`,
     sources,
     particles:sampled.map((row)=>({
-      id:s(row.event_id),
-      entityId:s(row.entity_id),
+      id:s(row.entity_id),
+      observationId:s(row.event_id),
       kind:s(row.entity_kind),
       category:s(row.category)||'unknown',
       verificationState:COMMITMENTS.has(s(row.commitment))?s(row.commitment):'observed',
