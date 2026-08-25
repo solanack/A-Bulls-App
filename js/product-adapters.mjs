@@ -1,6 +1,6 @@
 import { productById } from './product-registry.mjs';
 
-const REQUIRED_PRIMARY = Object.freeze(['universe','intelligence','trickster','life','games']);
+const REQUIRED_PRIMARY = Object.freeze(['universe','intelligence','trickster','games']);
 
 function adapter(id, definition = {}) {
   if (!productById(id)) throw new RangeError(`unknown product: ${id}`);
