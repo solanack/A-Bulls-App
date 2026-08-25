@@ -8,6 +8,7 @@ import { handleIntelligenceAssetRequest } from './intelligence-asset-router.mjs'
 import { handleIntelligenceMeshRequest } from './intelligence-mesh-router.mjs';
 import { backfillHistoryPass } from './intelligence-history-engine.mjs';
 import { queueHistoryJob } from './intelligence-mesh-scheduler.mjs';
+import { handleEntityResolverRequest } from './intelligence-entity-resolver.mjs';
 import { handleBullIntelligenceRequest } from './bull-intelligence-extension.mjs';
 
 const WALLET_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
@@ -50,6 +51,8 @@ export async function handleIntelligenceVNext(request, env = {}) {
   let response = await handleIntelligenceMeshIngestRequest(request, env);
   if (response) return response;
   response = await handleIntelligenceAdapterRequest(request, env);
+  if (response) return response;
+  response = await handleEntityResolverRequest(request, env);
   if (response) return response;
   response = await handleHistoryRoutes(request, env);
   if (response) return response;
