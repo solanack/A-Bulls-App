@@ -37,6 +37,10 @@ test('builds bounded all-wallet market context without ownership or intent claim
   assert.equal(context.activity.buyCount,1);
   assert.equal(context.activity.sellCount,1);
   assert.equal(context.pricePairs[0].quoteMint,quote);
+  assert.equal(context.pricePairs[0].candles.length,5);
+  assert.equal(context.pricePairs[0].candles[0].timestamp,600000);
+  assert.equal(context.pricePairs[0].candles[0].bucketSeconds,60);
+  assert.deepEqual(context.pricePairs[0].candles[0].sources,['archive-b']);
   assert.equal(Math.round(context.pricePairs[0].changePercent),125);
   assert.equal(context.routes.venues[0].id,'Jupiter');
   assert.equal(context.selected.signature,'sig-a');
