@@ -14,6 +14,7 @@ on:
       - 'js/ui.js'
       - 'js/bull-vision.js'
       - 'workers/intelligence-universe-*.mjs'
+      - 'workers/intelligence-trickster-*.mjs'
       - 'workers/intelligence-worker-hooks.mjs'
       - 'workers/migrations/0011_universe_trickster.sql'
       - 'docs/UNIVERSE-TRICKSTER-V1.md'
@@ -33,6 +34,7 @@ on:
       - 'js/evidence-state*.mjs'
       - 'js/config.js'
       - 'workers/intelligence-universe-*.mjs'
+      - 'workers/intelligence-trickster-*.mjs'
       - 'workers/intelligence-worker-hooks.mjs'
       - 'workers/migrations/0011_universe_trickster.sql'
       - 'docs/UNIVERSE-TRICKSTER-V1.md'
@@ -87,6 +89,7 @@ jobs:
             sw.js \
             workers/intelligence-universe-runtime.mjs \
             workers/intelligence-universe-router.mjs \
+            workers/intelligence-trickster-router.mjs \
             workers/intelligence-worker-hooks.mjs
           do
             node --check "$file"
@@ -105,7 +108,8 @@ jobs:
             js/product-shell.test.mjs \
             js/product-integration.test.mjs \
             js/evidence-state.test.mjs \
-            workers/intelligence-universe-runtime.test.mjs
+            workers/intelligence-universe-runtime.test.mjs \
+            workers/intelligence-trickster-router.test.mjs
       - name: Preservation guard
         shell: bash
         run: |
@@ -118,4 +122,5 @@ jobs:
           grep -q 'nextProductShellEnabled: false' js/config.js
           grep -q 'universeEnabled: false' js/config.js
           grep -q 'tricksterStudioEnabled: false' js/config.js
+          grep -q 'persisted:false' workers/intelligence-trickster-router.mjs
           ! grep -Eiq 'BBRLife|lifeView|js/life\.js|id:[[:space:]]*['"'"'"]life['"'"'"]' index.html js/main.js js/ui.js js/product-registry.mjs sw.js
