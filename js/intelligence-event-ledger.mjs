@@ -10,30 +10,50 @@ export function buildLedgerRows(events=[],{wallets=[],limit=200}={}){
     const timestamp=n(event.timestamp)??(n(event.blockTime)!=null?n(event.blockTime)*1000:null);
     const amount=Math.abs(n(event.tokenDelta)??n(event.amount)??0);
     const sources=uniq([...(event.sources||[]),event.source]);
+    const execution=event.execution&&typeof event.execution==='object'?Object.freeze({
+      baseAmount:n(event.execution.baseAmount),quoteAmount:n(event.execution.quoteAmount),venue:text(event.execution.venue)||null,pool:text(event.execution.pool)||null
+    }):null;
     return Object.freeze({
       id:text(event.id||event.signature||`${timestamp||0}-${index}`),signature:text(event.signature)||null,wallet:text(event.wallet)||null,
       walletLabel:labels.get(text(event.wallet))||null,token:text(event.token||event.mint)||null,side:text(event.side||event.kind||'event').toLowerCase(),
-      timestamp,amount,price:n(event.price),feeLamports:n(event.feeLamports),verification:text(event.verification||event.state||'observed')||'observed',
-      sources:Object.freeze(sources),sequence:index
+      timestamp,slot:n(event.slot),amount,tokenDelta:n(event.tokenDelta),solDelta:n(event.solDelta),price:n(event.price),feeLamports:n(event.feeLamports),
+      counterparty:text(event.counterparty)||null,programId:text(event.programId)||null,confidence:n(event.confidence),
+      verification:text(event.verification||event.state||'observed')||'observed',sources:Object.freeze(sources),execution,sequence:index
     });
   }).filter(row=>row.timestamp!=null).sort((a,b)=>a.timestamp-b.timestamp||a.sequence-b.sequence).slice(0,Math.max(1,Math.min(500,Math.trunc(Number(limit)||200)))));
 }
 
-function amountText(value){const number=Number(value);if(!Number.isFinite(number))return'—';if(number>=1e9)return`${(number/1e9).toFixed(2)}B`;if(number>=1e6)return`${(number/1e6).toFixed(2)}M`;if(number>=1e3)return`${(number/1e3).toFixed(2)}K`;return number.toLocaleString(undefined,{maximumSignificantDigits:5});}
+function amountText(value){const number=Number(value);if(!Number.isFinite(number))return'—';const abs=Math.abs(number);if(abs>=1e9)return`${(number/1e9).toFixed(2)}B`;if(abs>=1e6)return`${(number/1e6).toFixed(2)}M`;if(abs>=1e3)return`${(number/1e3).toFixed(2)}K`;return number.toLocaleString(undefined,{maximumSignificantDigits:6});}
 function sideLabel(side){return side==='buy'?'BUY':side==='sell'?'SELL':String(side||'EVENT').replaceAll('-',' ').toUpperCase();}
+function detail(label,value){const box=node('div','intelligence-event-detail');box.append(node('small','',label),node('strong','',value==null||value===''?'—':String(value)));return box;}
+
+function renderInspector(host,row){
+  host.replaceChildren();host.hidden=false;const head=node('div','intelligence-event-inspector__head'),copy=node('div');copy.append(node('small','','SELECTED INDEXED EVENT'),node('h3','',`${row.walletLabel||'Observed entity'} · ${sideLabel(row.side)}`),node('p','',new Date(row.timestamp).toLocaleString()));head.append(copy,node('span','status-pill',row.verification.toUpperCase()));
+  const grid=node('div','intelligence-event-inspector__grid');
+  grid.append(
+    detail('Token amount',amountText(row.amount)),detail('Token delta',amountText(row.tokenDelta)),detail('SOL delta',amountText(row.solDelta)),
+    detail('Execution price',row.price==null?'Not evidenced':amountText(row.price)),detail('Fee (lamports)',row.feeLamports==null?'—':Math.max(0,row.feeLamports).toLocaleString()),
+    detail('Confidence',row.confidence==null?'—':`${Math.round(Math.max(0,Math.min(1,row.confidence))*100)}%`),detail('Slot',row.slot??'—'),
+    detail('Program',row.programId?short(row.programId):'—'),detail('Counterparty',row.counterparty?short(row.counterparty):'—')
+  );
+  const refs=node('div','intelligence-event-inspector__refs');refs.append(detail('Signature / event ID',row.signature||row.id),detail('Wallet',row.wallet||'—'),detail('Token mint',row.token||'—'),detail('Sources',row.sources.length?row.sources.join(' · '):'Indexed store'));
+  host.append(head,grid,refs);
+  if(row.execution){const route=node('div','intelligence-event-execution');route.append(node('strong','','DIRECT EXECUTION EVIDENCE'),node('p','',`Base ${amountText(row.execution.baseAmount)} · Quote ${amountText(row.execution.quoteAmount)}${row.execution.venue?` · Venue ${row.execution.venue}`:''}${row.execution.pool?` · Pool ${short(row.execution.pool)}`:''}`),node('p','intelligence-context-disclosure','Execution context is shown only when indexed route evidence directly supports the selected base/quote pair.'));host.append(route);}
+  host.append(node('p','intelligence-context-disclosure','This inspector describes indexed public-chain evidence for the selected event. Program, counterparty, timing, and route observations do not establish identity, intent, causation, strategy, or profitability.'));
+}
 
 export function createEvidenceLedger({events=[],wallets=[],onFocus,limit=200}={}){
   const rows=buildLedgerRows(events,{wallets,limit}),section=node('section','intelligence-event-ledger'),header=node('div','intelligence-event-ledger__header');
-  const copy=node('div');copy.append(node('strong','','EVIDENCE LEDGER'),node('p','',`${rows.length} indexed replay events · select any row to focus the chart.`));header.append(copy);section.append(header);
+  const copy=node('div');copy.append(node('strong','','EVIDENCE LEDGER'),node('p','',`${rows.length} indexed replay events · select any row to focus the chart and inspect its evidence.`));header.append(copy);section.append(header);
   if(!rows.length){section.append(node('p','notice','No indexed replay events are available in this selection.'));return section;}
-  const list=node('div','intelligence-event-ledger__list');
+  const inspector=node('section','intelligence-event-inspector');inspector.hidden=true;const list=node('div','intelligence-event-ledger__list');
   for(const row of rows){const button=node('button','intelligence-event-row');button.type='button';button.dataset.side=row.side;button.setAttribute('aria-label',`Focus ${row.walletLabel||'wallet'} ${sideLabel(row.side)} event at ${new Date(row.timestamp).toLocaleString()}`);
     const identity=node('div','intelligence-event-row__identity');identity.append(node('span','intelligence-event-row__shape',row.walletLabel==='Wallet B'?'◆':row.walletLabel==='Wallet A'?'●':'■'),node('strong','',row.walletLabel||'Observed entity'),node('code','',short(row.wallet||row.signature||row.id)));
     const action=node('div','intelligence-event-row__action');action.append(node('strong','',sideLabel(row.side)),node('span','',amountText(row.amount)));
     const time=node('div','intelligence-event-row__time');time.append(node('strong','',new Date(row.timestamp).toLocaleString()),node('span','',row.signature?short(row.signature):'No signature label'));
     const truth=node('div','intelligence-event-row__truth');truth.append(node('strong','',row.verification.toUpperCase()),node('span','',row.sources.length?row.sources.join(' · '):'Indexed store'));
-    button.append(identity,action,time,truth);button.addEventListener('click',()=>onFocus?.(row.id||row.signature,row));list.append(button);
+    button.append(identity,action,time,truth);button.addEventListener('click',()=>{for(const item of list.querySelectorAll('.intelligence-event-row[aria-current="true"]'))item.removeAttribute('aria-current');button.setAttribute('aria-current','true');renderInspector(inspector,row);onFocus?.(row.id||row.signature,row);});list.append(button);
   }
-  section.append(list,node('p','intelligence-context-disclosure','Ledger rows reflect indexed public-chain observations in this replay only. Wallet labels distinguish the two supplied addresses and do not imply identity, ownership, intent, or coordination.'));
+  section.append(inspector,list,node('p','intelligence-context-disclosure','Ledger rows reflect indexed public-chain observations in this replay only. Wallet labels distinguish the two supplied addresses and do not imply identity, ownership, intent, or coordination.'));
   return section;
 }
