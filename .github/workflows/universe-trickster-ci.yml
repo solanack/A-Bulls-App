@@ -41,6 +41,7 @@ jobs:
             js/trickster-runtime.test.mjs \
             js/trickster-timeline.test.mjs \
             js/trickster-validation-client.test.mjs \
+            js/trickster-video-delivery.test.mjs \
             js/temporal-replay-engine.test.mjs \
             js/trade-comparison-replay.test.mjs \
             js/trade-replay-player.test.mjs \
@@ -52,6 +53,9 @@ jobs:
             js/event-story-scene-runtime.test.mjs \
             js/event-story-scene-slice.test.mjs \
             js/event-story-render-plan.test.mjs \
+            js/event-story-frame-model.test.mjs \
+            js/event-story-frame-renderer.test.mjs \
+            js/event-story-video-export.test.mjs \
             js/intelligence-event-ledger.test.mjs \
             js/universal-search.test.mjs \
             js/experience-feature-flags.test.mjs \
@@ -73,6 +77,8 @@ jobs:
           grep -q 'nextProductShellEnabled: true' js/config.js
           grep -q 'createBullInvadersHost' js/experience-entry.mjs
           grep -q 'applyExplicitEventStoryPriceSelection' js/experience-entry.mjs
+          grep -q 'renderEventStoryVideo' js/experience-entry.mjs
+          grep -q 'validateStoryForExport' js/experience-entry.mjs
           grep -q 'bull-invaders-vnext.css' index.html
           grep -q 'market-context-player-bridge.mjs' index.html
           grep -q '@media(max-width:760px)' css/product-shell-vnext.css
@@ -98,11 +104,17 @@ jobs:
           grep -q 'buildEventStorySceneRuntime' js/trickster-studio.mjs
           grep -q 'buildEventStorySceneSlice' js/trickster-studio.mjs
           grep -q 'buildEventStoryRenderPlan' js/trickster-studio.mjs
+          grep -q 'mountVideoDelivery' js/trickster-studio.mjs
           grep -q 'sceneRuntime' js/trickster-studio.mjs
           grep -q 'renderPlan' js/trickster-studio.mjs
           grep -q 'trickster-scene-evidence' js/trickster-studio.mjs
           grep -q 'TIME-ONLY · NO PRICE MARKET SELECTED' js/trickster-studio.mjs
           grep -q 'PRICE OVERLAY ·' js/trickster-studio.mjs
+          grep -q 'buildEventStoryFrameModel' js/event-story-frame-renderer.mjs
+          grep -q 'createEventStoryFrameDrawer' js/event-story-video-export.mjs
+          grep -q 'encodeStoryClip' js/event-story-video-export.mjs
+          grep -q 'SAVE VIDEO' js/trickster-video-delivery.mjs
+          grep -q 'SERVER RENDER REQUIRED' js/trickster-video-delivery.mjs
           grep -q 'createEvidenceLedger' js/intelligence-workspace-vnext.mjs
           grep -q 'focusReplayEvent' js/trade-replay-player.mjs
           grep -q 'TIME-ONLY EVENT LANE' js/trade-replay-player.mjs
@@ -117,6 +129,10 @@ jobs:
           grep -q 'event-story-scene-runtime' sw.js
           grep -q 'event-story-scene-slice' sw.js
           grep -q 'event-story-render-plan' sw.js
+          grep -q 'event-story-frame-model' sw.js
+          grep -q 'event-story-frame-renderer' sw.js
+          grep -q 'event-story-video-export' sw.js
+          grep -q 'trickster-video-delivery' sw.js
           grep -q 'market-context-player-bridge' sw.js
           grep -q 'event-market-context-client' sw.js
           grep -q 'Around transaction (12h)' js/intelligence-workspace-vnext.mjs
