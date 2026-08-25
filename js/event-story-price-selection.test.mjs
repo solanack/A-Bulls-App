@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyExplicitEventStoryPriceSelection } from './event-story-price-selection.mjs';
+import { summarizeEventStoryDirection } from './event-story-director.mjs';
 
 const quoteA='A'.repeat(32),quoteB='B'.repeat(32),token='T'.repeat(32);
-function baseBundle(){return{storyType:'transaction-replay',coverage:{from:900,to:1200},claims:[{id:'selected-event-observed',kind:'observed',evidenceIds:['sig']},{id:'price-after-300',kind:'calculated',evidenceIds:['old-pair']}],evidence:[{id:'sig',signature:'sig',source:'rpc'},{id:'old-pair',source:'candles',sourceReference:'price-pair:old'}],candles:[{timestamp:1}],marketContext:{subject:{mint:token,eventTime:1000000},selectedPricePair:null,pricePairs:[{quoteMint:quoteA,bucketSeconds:60,from:900,to:1200,sources:['candles-a'],candles:[{timestamp:960000,open:1,high:1,low:1,close:1}],after:[{requestedSeconds:300,actualSeconds:360,changePercent:25}]},{quoteMint:quoteB,bucketSeconds:300,from:900,to:1200,sources:['candles-b'],candles:[{timestamp:900000,open:2,high:2,low:2,close:2}],after:[{requestedSeconds:300,actualSeconds:300,changePercent:-10}]}]}};}
+function baseBundle(){return{storyType:'transaction-replay',coverage:{from:900,to:1200},claims:[{id:'selected-event-observed',kind:'observed',evidenceIds:['sig']},{id:'price-after-300',kind:'calculated',evidenceIds:['old-pair']}],evidence:[{id:'sig',signature:'sig',source:'rpc'},{id:'old-pair',source:'candles',sourceReference:'price-pair:old'}],candles:[{timestamp:1}],marketContext:{subject:{mint:token,eventTime:1000000},activity:{eventCount:2},routes:{routeRows:0},selectedPricePair:null,pricePairs:[{quoteMint:quoteA,bucketSeconds:60,from:900,to:1200,sources:['candles-a'],candles:[{timestamp:960000,open:1,high:1,low:1,close:1}],after:[{requestedSeconds:300,actualSeconds:360,changePercent:25}]},{quoteMint:quoteB,bucketSeconds:300,from:900,to:1200,sources:['candles-b'],candles:[{timestamp:900000,open:2,high:2,low:2,close:2}],after:[{requestedSeconds:300,actualSeconds:300,changePercent:-10}]}]}};}
 
 test('time-only selection strips automatic price claims and candles',()=>{
   const output=applyExplicitEventStoryPriceSelection(baseBundle());
@@ -25,4 +26,13 @@ test('explicit selected pair rebuilds price claims and candles from that exact p
   assert.match(claim.statement,/-10\.00%/);
   assert.ok(output.evidence.some(item=>String(item.sourceReference||'').includes(quoteB)));
   assert.ok(!output.evidence.some(item=>String(item.sourceReference||'').includes(quoteA)));
+});
+
+test('story direction cannot show price aftermath until a quote pair is explicitly selected',()=>{
+  const timeOnly=applyExplicitEventStoryPriceSelection(baseBundle());
+  assert.equal(summarizeEventStoryDirection(timeOnly).hasAftermath,false);
+  const selected=baseBundle();selected.marketContext.selectedPricePair=selected.marketContext.pricePairs[1];
+  const priced=applyExplicitEventStoryPriceSelection(selected);
+  assert.equal(summarizeEventStoryDirection(priced).hasAftermath,true);
+  assert.ok(summarizeEventStoryDirection(priced).beats.some(beat=>beat.id==='what-happened-next'));
 });
