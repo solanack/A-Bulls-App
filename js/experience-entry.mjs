@@ -2,6 +2,7 @@ import { bootstrapNextExperience } from './experience-bootstrap.mjs';
 import { ProductAdapterRegistry,domPortalAdapter } from './product-adapters.mjs';
 import { UniverseExperience } from './universe-experience.mjs';
 import { TricksterStudio } from './trickster-studio.mjs';
+import { validateStoryForExport } from './trickster-validation-client.mjs';
 
 function node(tag,className,text) {
   const item=document.createElement(tag);
@@ -89,9 +90,13 @@ function setup() {
       const studio=new TricksterStudio({
         host:mount,
         onOpenEvidence:()=>globalThis.dispatchEvent(new CustomEvent('abulls:open-intelligence')),
-        onExport:(detail)=>{
-          globalThis.dispatchEvent(new CustomEvent('abulls:trickster-export',{detail}));
-          return null;
+        onExport:async(detail)=>{
+          const validation=await validateStoryForExport(detail.manifest,{
+            apiBase:globalThis.BBRConfig?.apiBase||location.origin
+          });
+          const exportDetail=Object.freeze({...detail,validation});
+          globalThis.dispatchEvent(new CustomEvent('abulls:trickster-export',{detail:exportDetail}));
+          return validation;
         }
       });
       instances.set('trickster',studio);
