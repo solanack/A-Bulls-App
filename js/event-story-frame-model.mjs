@@ -20,6 +20,7 @@ export function buildEventStoryFrameModel({bundle={},manifest={},renderPlan=[]}=
   return Object.freeze({
     state,
     scene:Object.freeze({id:state.sceneId,type:state.type,mode:state.mode,progress:state.progress}),
+    window:Object.freeze({from:finite(runtime.chainTimeFrom),to:finite(runtime.chainTimeTo)}),
     claims,
     visibleEvents,
     visibleCandles,
