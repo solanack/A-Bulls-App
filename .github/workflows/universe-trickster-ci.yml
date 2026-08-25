@@ -9,8 +9,6 @@ on:
       - 'js/product-*.mjs'
       - 'js/experience-*.mjs'
       - 'js/evidence-state*.mjs'
-      - 'js/life.js'
-      - 'js/life-guardrails.test.mjs'
       - 'js/config.js'
       - 'workers/intelligence-universe-*.mjs'
       - 'workers/intelligence-worker-hooks.mjs'
@@ -30,8 +28,6 @@ on:
       - 'js/product-*.mjs'
       - 'js/experience-*.mjs'
       - 'js/evidence-state*.mjs'
-      - 'js/life.js'
-      - 'js/life-guardrails.test.mjs'
       - 'js/config.js'
       - 'workers/intelligence-universe-*.mjs'
       - 'workers/intelligence-worker-hooks.mjs'
@@ -82,7 +78,6 @@ jobs:
             js/experience-feature-flags.mjs \
             js/evidence-state.mjs \
             js/config.js \
-            js/life.js \
             sw.js \
             workers/intelligence-universe-runtime.mjs \
             workers/intelligence-universe-router.mjs \
@@ -104,7 +99,6 @@ jobs:
             js/product-shell.test.mjs \
             js/product-integration.test.mjs \
             js/evidence-state.test.mjs \
-            js/life-guardrails.test.mjs \
             workers/intelligence-universe-runtime.test.mjs
       - name: Preservation guard
         shell: bash
@@ -118,3 +112,4 @@ jobs:
           grep -q 'nextProductShellEnabled: false' js/config.js
           grep -q 'universeEnabled: false' js/config.js
           grep -q 'tricksterStudioEnabled: false' js/config.js
+          ! grep -Eiq 'BBRLife|lifeView|js/life\.js|id:[[:space:]]*['"'"'"]life['"'"'"]' index.html js/main.js js/ui.js js/product-registry.mjs sw.js
