@@ -7,11 +7,14 @@ import { runIntelligenceMeshScheduler } from './intelligence-mesh-scheduler.mjs'
 import { handleUniverseRequest } from './intelligence-universe-router.mjs';
 import { handleTricksterRequest } from './intelligence-trickster-router.mjs';
 import { handleReplayBundleRequest } from './intelligence-replay-bundle.mjs';
+import { handleWalletTokenIndexRequest } from './intelligence-wallet-token-index.mjs';
 import { pruneUniverseObservations } from './intelligence-universe-runtime.mjs';
 
 export async function handleIntelligenceFetch(request, env = {}) {
   const universe = await handleUniverseRequest(request, env);
   if (universe) return universe;
+  const walletTokens = await handleWalletTokenIndexRequest(request, env);
+  if (walletTokens) return walletTokens;
   const replay = await handleReplayBundleRequest(request, env);
   if (replay) return replay;
   const trickster = await handleTricksterRequest(request, env);
