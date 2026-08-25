@@ -10,3 +10,11 @@ const CONFIG = {
   // HELIUS_API_KEY never needs to be copied into Vercel or browser code.
   bullVisionBase: 'https://black-bull-run-sol.ckdsigns1.workers.dev'
 };
+
+
+globalThis.BBRConfig = CONFIG;
+globalThis.BBR_EXPERIENCE_FLAGS = Object.freeze({
+  nextProductShellEnabled: false,
+  universeEnabled: false,
+  tricksterStudioEnabled: false
+});
