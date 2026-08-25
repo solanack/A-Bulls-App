@@ -1,0 +1,15 @@
+{
+  "name": "a-bulls-app-experience-build",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build:experience-vendor": "node scripts/build-experience-vendor.mjs"
+  },
+  "dependencies": {
+    "mediabunny": "1.55.2",
+    "three": "0.185.0"
+  }
+}
