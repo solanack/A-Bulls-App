@@ -8,6 +8,9 @@ on:
       - 'js/trickster-*.mjs'
       - 'js/experience-feature-flags*.mjs'
       - 'docs/UNIVERSE-TRICKSTER-V1.md'
+      - 'docs/PRODUCT-SHELL-VNEXT.md'
+      - 'css/product-shell-vnext.css'
+      - 'js/product-*.mjs'
       - '.github/workflows/universe-trickster-ci.yml'
   pull_request:
     paths:
@@ -40,8 +43,10 @@ jobs:
           node --check js/universe-renderer.mjs
           node --check js/trickster-composer.mjs
           node --check js/trickster-export-capabilities.mjs
+          node --check js/product-registry.mjs
+          node --check js/product-shell-vnext.mjs
       - name: Contract tests
-        run: node --test js/universe-contracts.test.mjs js/universe-runtime.test.mjs js/trickster-story-manifest.test.mjs js/trickster-runtime.test.mjs js/experience-feature-flags.test.mjs
+        run: node --test js/universe-contracts.test.mjs js/universe-runtime.test.mjs js/trickster-story-manifest.test.mjs js/trickster-runtime.test.mjs js/experience-feature-flags.test.mjs js/product-shell.test.mjs
       - name: Preservation guard
         shell: bash
         run: |
