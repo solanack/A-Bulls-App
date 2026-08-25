@@ -1,0 +1,24 @@
+/* Neutral read-only routes for NFT Memory and Community Integrations. */
+
+import { nftMemory } from './intelligence-nft-layer.mjs';
+import { communityIntegrations } from './intelligence-operations.mjs';
+import { recordDemand } from './intelligence-mesh-runtime.mjs';
+
+const WALLET_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const s=v=>String(v==null?'':v).trim();
+const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
+async function body(request){try{return await request.json()}catch{return{}}}
+
+export async function handleIntelligenceAssetRequest(request,env={}){
+  const url=new URL(request.url);
+  if(url.pathname==='/api/intelligence/community-integrations'&&request.method==='GET'){
+    return json({ok:true,integrations:await communityIntegrations(env),note:'Legacy/community integrations are optional and separate from universal Intelligence.'});
+  }
+  if(url.pathname==='/api/intelligence/nft-memory'&&request.method==='POST'){
+    const payload=await body(request); const wallet=s(payload.wallet||payload.address);
+    if(!WALLET_RE.test(wallet)) return json({ok:false,error:'invalid_public_wallet'},400);
+    const started=Date.now(); const memory=await nftMemory(env,wallet,payload.limit); await recordDemand(env,'nft-memory','wallet',wallet,Date.now()-started);
+    return json({ok:true,memory});
+  }
+  return null;
+}
