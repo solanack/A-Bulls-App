@@ -20,6 +20,25 @@ test('composer produces a valid vertical evidence story', () => {
   assert.equal(result.scenes.some((scene) => scene.claimIds.includes('c-1')), true);
 });
 
+test('custom evidence scene plan controls scene order without dropping remaining claims',()=>{
+  const result=composeGuidedStory({
+    id:'story-directed',storyType:'transaction-replay',subject:{kind:'transaction',id:'sig-1'},
+    coverage:{from:1,to:2,verifiedPercent:100,statement:'Fully verified'},
+    evidence:[{id:'e-1',signature:'sig-1',source:'rpc'}],
+    claims:[
+      {id:'selected',kind:'observed',statement:'Selected event.',evidenceIds:['e-1']},
+      {id:'extra',kind:'calculated',statement:'Extra evidence.',evidenceIds:['e-1']}
+    ],
+    scenePlan:[
+      {id:'s1',type:'event-hook',durationFrames:75,claimIds:['selected']},
+      {id:'s2',type:'evidence-close',durationFrames:90,claimIds:[]}
+    ]
+  });
+  assert.deepEqual(result.scenes.map(scene=>scene.type),['event-hook','evidence-close']);
+  assert.deepEqual(result.scenes[0].claimIds,['selected']);
+  assert.deepEqual(result.scenes[1].claimIds,['extra']);
+});
+
 test('narration receives only manifest claims', () => {
   assert.deepEqual(narrationClaims(story()).flatMap((scene) => scene.claims).map((claim) => claim.statement), ['Observed on chain.']);
 });
