@@ -1,4 +1,4 @@
-const BUILD = '8.7.0-vnext-24';
+const BUILD = '8.7.0-vnext-25';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -21,11 +21,11 @@ const NEXT_EXPERIENCE = [
   './css/intelligence-workspace-vnext.css?v=2',
   './css/intelligence-event-inspector.css?v=5',
   './css/bull-invaders-vnext.css?v=1',
-  './js/experience-entry.mjs?v=4',
+  './js/experience-entry.mjs?v=5',
   './js/market-context-player-bridge.mjs?v=3',
   ...[
     'experience-bootstrap','experience-feature-flags','experience-dependencies','product-registry','product-shell-vnext',
-    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','event-story-scene-runtime','event-story-scene-slice','event-story-render-plan','event-story-scene-transition','event-story-frame-model','event-story-frame-renderer','event-story-frame-drawer','event-story-video-export','intelligence-event-ledger','universe-contracts','universe-quality',
+    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','event-story-scene-runtime','event-story-scene-slice','event-story-render-plan','event-story-scene-transition','event-story-frame-model','event-story-frame-renderer','event-story-frame-drawer','event-story-video-export','wallet-comparison-story-runtime','wallet-comparison-render-plan','wallet-comparison-frame-model','wallet-comparison-frame-renderer','wallet-comparison-frame-drawer','wallet-comparison-video-export','intelligence-event-ledger','universe-contracts','universe-quality',
     'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
     'universe-experience','trickster-story-manifest','trickster-composer',
     'trickster-export-capabilities','trickster-timeline','trickster-clip-export','trickster-validation-client','trickster-video-delivery','trickster-studio',
