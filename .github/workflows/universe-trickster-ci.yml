@@ -75,6 +75,9 @@ jobs:
           grep -q 'createEvidenceLedger' js/intelligence-workspace-vnext.mjs
           grep -q 'focusReplayEvent' js/trade-replay-player.mjs
           grep -q 'DIRECT EXECUTION EVIDENCE' js/intelligence-event-ledger.mjs
+          grep -q 'CREATE EVENT STORY' js/intelligence-event-ledger.mjs
+          grep -q "storyType:'transaction-replay'" js/intelligence-event-ledger.mjs
+          grep -q 'bundle?.replay?.events' js/trickster-studio.mjs
           grep -q 'intelligence-event-inspector.css' sw.js
           grep -q 'Around transaction (12h)' js/intelligence-workspace-vnext.mjs
           grep -q "adapters.activate('intelligence', { source: 'universal-search', request })" js/experience-bootstrap.mjs
