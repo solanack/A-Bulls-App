@@ -105,14 +105,6 @@ function setup() {
     }
   });
 
-  adapters.register('life',domPortalAdapter({
-    viewId:'lifeView',
-    activateView() {
-      globalThis.showView?.('life');
-      globalThis.BBRLife?.render?.();
-    }
-  }));
-
   let gameView=null;
   let gamePlaceholder=null;
   adapters.register('games',{
@@ -129,8 +121,9 @@ function setup() {
         await globalThis.BBRPlatform?.launch?.(gameId);
       });
     },
-    async deactivate() {
-      await globalThis.BBRPlatform?.leaveGame?.();
+    deactivate() {
+      const leaving=globalThis.BBRPlatform?.leaveGame?.();
+      leaving?.catch?.(()=>{});
       if(gameView&&gamePlaceholder?.parentNode) gamePlaceholder.parentNode.insertBefore(gameView,gamePlaceholder.nextSibling);
     }
   });
