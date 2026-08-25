@@ -96,7 +96,10 @@ export function createProductShell({
     grid.append(card);
   });
   home.append(intro, grid);
-  main.append(topbar, home);
+  const contentHost = element('section', 'product-content');
+  contentHost.hidden = true;
+  contentHost.setAttribute('aria-live', 'polite');
+  main.append(topbar, home, contentHost);
 
   const mobile = element('nav', 'product-mobile-nav');
   mobile.setAttribute('aria-label', 'Primary products');
@@ -125,6 +128,19 @@ export function createProductShell({
   return Object.freeze({
     shell,
     focusSearch: () => input.focus(),
+    mountProduct(content) {
+      home.hidden = true;
+      contentHost.hidden = false;
+      contentHost.replaceChildren();
+      if (content instanceof Element) contentHost.append(content);
+      return contentHost;
+    },
+    showHome() {
+      contentHost.replaceChildren();
+      contentHost.hidden = true;
+      home.hidden = false;
+    },
+    get contentHost() { return contentHost; },
     setActiveProduct: (productId) => selectProduct(productId, { notify: false }),
     destroy: () => shell.remove()
   });
