@@ -48,8 +48,9 @@ jobs:
           node --check js/product-adapters.mjs
           node --check js/universal-search.mjs
           node --check js/experience-bootstrap.mjs
+          node --check js/evidence-state.mjs
       - name: Contract tests
-        run: node --test js/universe-contracts.test.mjs js/universe-runtime.test.mjs js/trickster-story-manifest.test.mjs js/trickster-runtime.test.mjs js/experience-feature-flags.test.mjs js/product-shell.test.mjs js/product-integration.test.mjs
+        run: node --test js/universe-contracts.test.mjs js/universe-runtime.test.mjs js/trickster-story-manifest.test.mjs js/trickster-runtime.test.mjs js/experience-feature-flags.test.mjs js/product-shell.test.mjs js/product-integration.test.mjs js/evidence-state.test.mjs
       - name: Preservation guard
         shell: bash
         run: |
