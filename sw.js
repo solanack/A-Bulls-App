@@ -1,4 +1,4 @@
-const BUILD = '8.7.0-vnext-16';
+const BUILD = '8.7.0-vnext-17';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -25,7 +25,7 @@ const NEXT_EXPERIENCE = [
   './js/market-context-player-bridge.mjs?v=3',
   ...[
     'experience-bootstrap','experience-feature-flags','experience-dependencies','product-registry','product-shell-vnext',
-    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','intelligence-event-ledger','universe-contracts','universe-quality',
+    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','intelligence-event-ledger','universe-contracts','universe-quality',
     'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
     'universe-experience','trickster-story-manifest','trickster-composer',
     'trickster-export-capabilities','trickster-timeline','trickster-clip-export','trickster-validation-client','trickster-studio',
