@@ -4,6 +4,7 @@ import { UniverseExperience } from './universe-experience.mjs';
 import { IntelligenceWorkspace } from './intelligence-workspace-vnext.mjs';
 import { TricksterStudio } from './trickster-studio.mjs';
 import { validateStoryForExport } from './trickster-validation-client.mjs';
+import { applyExplicitEventStoryPriceSelection } from './event-story-price-selection.mjs';
 import { loadThree } from './experience-dependencies.mjs';
 import { createBullInvadersHost, installBullInvadersNavigationBridge } from './bull-invaders-host.mjs';
 
@@ -61,11 +62,12 @@ async function setup() {
   let removeGameBridge=null;
 
   function openStory(bundle) {
-    globalThis.BBR_TRICKSTER_EVIDENCE=bundle;
+    const sanitized=applyExplicitEventStoryPriceSelection(bundle);
+    globalThis.BBR_TRICKSTER_EVIDENCE=sanitized;
     const content=adapters.activate('trickster',{source:'create-story'});
     if(content instanceof Element) app?.shell.mountProduct(content);
     app?.shell.setActiveProduct('trickster');
-    instances.get('trickster')?.loadEvidence(bundle);
+    instances.get('trickster')?.loadEvidence(sanitized);
   }
 
   function showGamesLanding() {
@@ -199,8 +201,6 @@ async function setup() {
     return;
   }
 
-  // vNext is the application. The retired shell is physically removed from the DOM
-  // so desktop/mobile behavior cannot fall back to old phone-oriented markup.
   legacyApp?.remove();
 
   globalThis.BBRNextExperience=Object.freeze({
