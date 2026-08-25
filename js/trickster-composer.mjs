@@ -11,6 +11,12 @@ const TEMPLATES = Object.freeze({
     { type: 'timeline', frames: 180, claimKinds: ['observed'] },
     { type: 'pattern-summary', frames: 120, claimKinds: ['calculated','estimated','inferred'] }
   ]),
+  'wallet-comparison': Object.freeze([
+    { type: 'comparison-hook', frames: 75, claimKinds: [] },
+    { type: 'synchronized-trade-replay', frames: 240, claimKinds: ['observed'] },
+    { type: 'calculated-differences', frames: 150, claimKinds: ['calculated','estimated'] },
+    { type: 'what-if-replay', frames: 150, claimKinds: ['calculated','estimated','inferred'] }
+  ]),
   'trade-route': Object.freeze([
     { type: 'route-hook', frames: 60, claimKinds: [] },
     { type: 'hop-replay', frames: 180, claimKinds: ['observed'] },
