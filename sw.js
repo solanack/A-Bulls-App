@@ -1,4 +1,4 @@
-const BUILD = '8.7.0-vnext-19';
+const BUILD = '8.7.0-vnext-20';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -17,7 +17,7 @@ const SHIPS = numbered('./assets/ships', 'ship-', 'webp', 1, 10).map((path, inde
 const NEXT_EXPERIENCE = [
   './css/product-shell-vnext.css?v=2',
   './css/universe.css?v=2',
-  './css/trickster-studio.css?v=4',
+  './css/trickster-studio.css?v=5',
   './css/intelligence-workspace-vnext.css?v=2',
   './css/intelligence-event-inspector.css?v=5',
   './css/bull-invaders-vnext.css?v=1',
@@ -25,7 +25,7 @@ const NEXT_EXPERIENCE = [
   './js/market-context-player-bridge.mjs?v=3',
   ...[
     'experience-bootstrap','experience-feature-flags','experience-dependencies','product-registry','product-shell-vnext',
-    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','event-story-scene-runtime','intelligence-event-ledger','universe-contracts','universe-quality',
+    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','event-story-scene-runtime','event-story-scene-slice','intelligence-event-ledger','universe-contracts','universe-quality',
     'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
     'universe-experience','trickster-story-manifest','trickster-composer',
     'trickster-export-capabilities','trickster-timeline','trickster-clip-export','trickster-validation-client','trickster-studio',
