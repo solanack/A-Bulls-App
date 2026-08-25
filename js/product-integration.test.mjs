@@ -7,7 +7,7 @@ test('adapter registry requires every primary product', () => {
   const registry = new ProductAdapterRegistry();
   registry.register('intelligence', { activate() {} });
   assert.equal(registry.readiness().ready, false);
-  assert.deepEqual(registry.readiness().missingPrimary, ['universe','trickster','life','games']);
+  assert.deepEqual(registry.readiness().missingPrimary, ['universe','trickster','games']);
 });
 
 test('adapter activation deactivates the previous product', () => {
