@@ -21,15 +21,12 @@ function productPage(title,description) {
   return {page,body};
 }
 
-function gamesPage() {
+function gamesPage(onLaunch) {
   const {page,body}=productPage('Games','Arcade and interactive experiences remain a first-class product alongside Intelligence.');
   const invaders=node('button','product-card product-card--featured');
   invaders.type='button';
   invaders.append(node('span','product-card__index','01'),node('h2','','Bull Invaders'),node('p','','Ranked and campaign play with the existing deterministic scoring and replay rules.'),node('span','product-card__action','OPEN LOADOUT →'));
-  invaders.addEventListener('click',()=>{
-    globalThis.openArcadeDrawer?.();
-    document.getElementById('menuBtn')?.click();
-  });
+  invaders.addEventListener('click',()=>onLaunch?.('bull-invaders'));
   const bang=node('a','product-card');
   bang.href='games/claude-of-duty/index.html';
   bang.append(node('span','product-card__index','02'),node('h2','','Solana Bang Bang'),node('p','','Enter the existing maze experience.'),node('span','product-card__action','OPEN GAME →'));
@@ -42,6 +39,7 @@ function setup() {
   if(flags.nextProductShellEnabled!==true&&String(flags.NEXT_PRODUCT_SHELL_ENABLED||'').toLowerCase()!=='true') return;
 
   const existing=document.getElementById('app');
+  let app=null;
   const host=node('div');
   host.id='nextProductShell';
   document.body.append(host);
@@ -53,10 +51,13 @@ function setup() {
       const mount=node('div');
       const experience=new UniverseExperience({
         host:mount,
-        apiBase:globalThis.CONFIG?.apiBase||location.origin,
+        apiBase:globalThis.BBRConfig?.apiBase||location.origin,
         THREE:globalThis.THREE,
         onDestinationRequest:async(destination,entity)=>{
           globalThis.dispatchEvent(new CustomEvent('abulls:universe-selection',{detail:{destination,entity}}));
+          const content=adapters.activate('intelligence',{source:'universe',request:{...destination,query:destination.entityId}});
+          if(content instanceof Element) app?.shell.mountProduct(content);
+          app?.shell.setActiveProduct('intelligence');
         }
       });
       instances.set('universe',experience);
@@ -112,11 +113,29 @@ function setup() {
     }
   }));
 
+  let gameView=null;
+  let gamePlaceholder=null;
   adapters.register('games',{
-    activate:()=>gamesPage()
+    activate() {
+      return gamesPage(async(gameId)=>{
+        gameView=document.getElementById('invadersGameView');
+        if(!gameView) return;
+        if(!gamePlaceholder) {
+          gamePlaceholder=document.createComment('product-portal:invadersGameView');
+          gameView.parentNode?.insertBefore(gamePlaceholder,gameView);
+        }
+        globalThis.showView?.('invadersGame');
+        app?.shell.mountProduct(gameView);
+        await globalThis.BBRPlatform?.launch?.(gameId);
+      });
+    },
+    async deactivate() {
+      await globalThis.BBRPlatform?.leaveGame?.();
+      if(gameView&&gamePlaceholder?.parentNode) gamePlaceholder.parentNode.insertBefore(gameView,gamePlaceholder.nextSibling);
+    }
   });
 
-  const app=bootstrapNextExperience({
+  app=bootstrapNextExperience({
     flags,
     host,
     adapters,
