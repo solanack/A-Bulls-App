@@ -6,17 +6,21 @@ on:
     paths:
       - 'workers/intelligence-mesh-*.mjs'
       - 'workers/intelligence-adapter*.mjs'
+      - 'workers/intelligence-history-engine.mjs'
       - 'workers/migrations/0009_intelligence_mesh.sql'
       - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
       - 'docs/INTELLIGENCE-MESH.md'
+      - 'docs/INTELLIGENCE-MESH-BUILD-STATUS.md'
       - '.github/workflows/intelligence-mesh-ci.yml'
   pull_request:
     paths:
       - 'workers/intelligence-mesh-*.mjs'
       - 'workers/intelligence-adapter*.mjs'
+      - 'workers/intelligence-history-engine.mjs'
       - 'workers/migrations/0009_intelligence_mesh.sql'
       - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
       - 'docs/INTELLIGENCE-MESH.md'
+      - 'docs/INTELLIGENCE-MESH-BUILD-STATUS.md'
       - '.github/workflows/intelligence-mesh-ci.yml'
   workflow_dispatch:
 
@@ -38,13 +42,14 @@ jobs:
           node --check workers/intelligence-mesh-router.mjs
           node --check workers/intelligence-adapters.mjs
           node --check workers/intelligence-adapter-router.mjs
+          node --check workers/intelligence-history-engine.mjs
       - name: Unit tests
         run: node --test workers/intelligence-mesh-runtime.test.mjs
       - name: Neutral naming contract
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
+          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
       - name: Migration safety contract
         shell: bash
         run: |
@@ -53,8 +58,15 @@ jobs:
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_demand_patterns' workers/migrations/0010_intelligence_mesh_runtime.sql
           grep -q 'CREATE TABLE IF NOT EXISTS community_integrations' workers/migrations/0010_intelligence_mesh_runtime.sql
           ! grep -Eiq 'DROP[[:space:]]+TABLE|TRUNCATE|DELETE[[:space:]]+FROM' workers/migrations/0010_intelligence_mesh_runtime.sql
+      - name: Progressive history contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'getSignaturesForAddress' workers/intelligence-history-engine.mjs
+          grep -q 'getTransaction' workers/intelligence-history-engine.mjs
+          grep -q 'INTELLIGENCE_RPC_URL' workers/intelligence-history-engine.mjs
       - name: Read-only guardrails
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs
+          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs
