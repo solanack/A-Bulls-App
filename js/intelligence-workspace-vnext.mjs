@@ -1,5 +1,6 @@
 import { ReplayBundleClient } from './replay-bundle-client.mjs';
 import { EntityResolverClient } from './entity-resolver-client.mjs';
+import { WalletTokenIndexClient } from './wallet-token-index-client.mjs';
 import { TradeReplayPlayer } from './trade-replay-player.mjs';
 import { buildWalletTokenComparison, buildCounterfactualOverlay, comparisonObservations } from './trade-comparison-replay.mjs';
 
@@ -9,7 +10,7 @@ const trim=value=>String(value==null?'':value).trim();
 
 function ensureStyles(){
   if(document.querySelector('link[data-intelligence-vnext]'))return;
-  const link=document.createElement('link');link.rel='stylesheet';link.href='css/intelligence-workspace-vnext.css?v=5';link.dataset.intelligenceVnext='true';document.head.append(link);
+  const link=document.createElement('link');link.rel='stylesheet';link.href='css/intelligence-workspace-vnext.css?v=6';link.dataset.intelligenceVnext='true';document.head.append(link);
 }
 function field(labelText,input){const label=node('label','intelligence-field');label.append(node('span','',labelText),input);return label;}
 function metric(label,value){const card=node('article','intelligence-metric');card.append(node('small','',label),node('strong','',String(value)));return card;}
@@ -29,14 +30,15 @@ function storyBundle(bundle){
   return{id:`story-${Date.now()}`,storyType:bundle.subject.wallets.length===2?'wallet-comparison':'wallet-timeline',subject:{kind:bundle.subject.wallets.length===2?'wallet-comparison':'wallet',id:bundle.subject.wallets.join(':')},coverage:{from:bundle.window.from,to:bundle.window.to,verifiedPercent:coveragePercent(bundle),statement:bundle.coverage.statement},evidence:evidence.length?evidence:[{id:'coverage-only',blockTime:bundle.window.to,source:'intelligence-store'}],claims,replay:{events:bundle.events,candles:bundle.candles,startTime:bundle.window.startTime,endTime:bundle.window.endTime},output:{aspectRatio:'9:16',theme:'hyperspace',rendererVersion:'trickster-v1'}};
 }
 function short(value){const text=trim(value);return text.length>16?`${text.slice(0,7)}…${text.slice(-6)}`:text;}
+function dateText(seconds){return seconds?new Date(Number(seconds)*1000).toLocaleDateString():'—';}
 
 export class IntelligenceWorkspace {
-  #host;#root;#client;#resolver;#player=null;#abort=null;#resolveAbort=null;#onCreateStory;#status;#results;#walletA;#walletB;#mint;#quote;#range;#bundle=null;#requestNotice;#anchorTime=null;#transactionOption;
+  #host;#root;#client;#resolver;#tokenIndex;#player=null;#abort=null;#resolveAbort=null;#tokenAbort=null;#onCreateStory;#status;#results;#walletA;#walletB;#mint;#quote;#range;#bundle=null;#requestNotice;#anchorTime=null;#transactionOption;#tokenBrowser;#tokenList;
   constructor({host,apiBase,onCreateStory}={}){
     if(!(host instanceof Element))throw new TypeError('host element is required');
-    ensureStyles();this.#host=host;this.#client=new ReplayBundleClient({baseUrl:apiBase});this.#resolver=new EntityResolverClient({baseUrl:apiBase});this.#onCreateStory=onCreateStory;
+    ensureStyles();this.#host=host;this.#client=new ReplayBundleClient({baseUrl:apiBase});this.#resolver=new EntityResolverClient({baseUrl:apiBase});this.#tokenIndex=new WalletTokenIndexClient({baseUrl:apiBase});this.#onCreateStory=onCreateStory;
     this.#root=node('section','intelligence-workspace');
-    const intro=node('header','intelligence-workspace__header'),copy=node('div');copy.append(node('small','','FULL-CHAIN INTELLIGENCE'),node('h1','','Make Solana playable.'),node('p','','Enter any public wallet and token, or paste a transaction. Replay how it traded, compare another wallet on the same market, inspect evidence, run historical what-if overlays, then turn the sequence into a verifiable story.'));this.#status=node('span','status-pill','READY');intro.append(copy,this.#status);
+    const intro=node('header','intelligence-workspace__header'),copy=node('div');copy.append(node('small','','FULL-CHAIN INTELLIGENCE'),node('h1','','Make Solana playable.'),node('p','','Enter any public wallet and discover its indexed tokens, or paste a transaction. Replay how it traded, compare another wallet on the same market, inspect evidence, run historical what-if overlays, then turn the sequence into a verifiable story.'));this.#status=node('span','status-pill','READY');intro.append(copy,this.#status);
     const form=document.createElement('form');form.className='intelligence-query';
     this.#walletA=document.createElement('input');this.#walletA.required=true;this.#walletA.autocomplete='off';this.#walletA.placeholder='Public wallet A';this.#walletA.setAttribute('aria-label','Public wallet A');
     this.#walletB=document.createElement('input');this.#walletB.autocomplete='off';this.#walletB.placeholder='Optional comparison wallet';this.#walletB.setAttribute('aria-label','Comparison wallet');
@@ -46,9 +48,10 @@ export class IntelligenceWorkspace {
     this.#transactionOption=document.createElement('option');this.#transactionOption.value='transaction';this.#transactionOption.textContent='Around transaction (12h)';this.#transactionOption.disabled=true;this.#range.append(this.#transactionOption);
     for(const [value,label] of [['86400','24 hours'],['604800','7 days'],['2592000','30 days'],['7776000','90 days'],['31536000','1 year']]){const option=document.createElement('option');option.value=value;option.textContent=label;if(value==='2592000')option.selected=true;this.#range.append(option);}
     const submit=node('button','primary','BUILD REPLAY');submit.type='submit';form.append(field('Wallet',this.#walletA),field('Compare',this.#walletB),field('Token',this.#mint),field('Quote',this.#quote),field('Window',this.#range),submit);form.addEventListener('submit',event=>{event.preventDefault();this.load();});
+    this.#tokenBrowser=node('section','intelligence-wallet-tokens');const tokenHeader=node('div','intelligence-wallet-tokens__header');const tokenCopy=node('div');tokenCopy.append(node('strong','','INDEXED TOKENS'),node('p','','Load token activity already known by the Intelligence Store for Wallet A.'));const loadTokens=node('button','secondary','LOAD WALLET TOKENS');loadTokens.type='button';loadTokens.addEventListener('click',()=>this.loadWalletTokens());tokenHeader.append(tokenCopy,loadTokens);this.#tokenList=node('div','intelligence-wallet-tokens__list');this.#tokenList.hidden=true;this.#tokenBrowser.append(tokenHeader,this.#tokenList);
     this.#requestNotice=node('section','intelligence-request-notice');this.#requestNotice.hidden=true;this.#requestNotice.setAttribute('aria-live','polite');
     const explainer=node('div','intelligence-capabilities');for(const [title,body] of [['REPLAY','Play, pause, rewind, fast-forward and jump event-to-event.'],['COMPARE','Synchronize two public wallets against the same token timeline.'],['WHAT IF','Overlay historical counterfactuals without presenting them as predictions.'],['CREATE','Send any evidence-backed replay directly into Trickster for video/story creation.']]){const card=node('article');card.append(node('strong','',title),node('p','',body));explainer.append(card);}
-    this.#results=node('section','intelligence-results');this.#results.hidden=true;this.#root.append(intro,form,this.#requestNotice,explainer,this.#results);this.#host.replaceChildren(this.#root);
+    this.#results=node('section','intelligence-results');this.#results.hidden=true;this.#root.append(intro,form,this.#tokenBrowser,this.#requestNotice,explainer,this.#results);this.#host.replaceChildren(this.#root);
   }
 
   setRequest(request={}){
@@ -61,61 +64,42 @@ export class IntelligenceWorkspace {
     this.#resolveIncoming(query);
   }
 
-  #selectTransactionWallet(wallet){this.#walletA.value=wallet;this.#status.textContent='WALLET SELECTED';if(this.#mint.value)this.#status.textContent='INVESTIGATION READY';else this.#mint.focus();}
-  #selectTransactionMint(mint){this.#mint.value=mint;this.#status.textContent='TOKEN SELECTED';if(this.#walletA.value)this.#status.textContent='INVESTIGATION READY';else this.#walletA.focus();}
+  #selectTransactionWallet(wallet){this.#walletA.value=wallet;this.#status.textContent=this.#mint.value?'INVESTIGATION READY':'WALLET SELECTED';if(!this.#mint.value)this.#mint.focus();}
+  #selectTransactionMint(mint){this.#mint.value=mint;this.#status.textContent=this.#walletA.value?'INVESTIGATION READY':'TOKEN SELECTED';if(!this.#walletA.value)this.#walletA.focus();}
 
   #renderTransactionContext(result){
-    this.#anchorTime=Number(result.blockTime)||null;
-    if(this.#anchorTime){this.#transactionOption.disabled=false;this.#range.value='transaction';}
-    const summary=node('p','',resolverSummary(result));
-    const panel=node('div','intelligence-transaction-context');
-    panel.append(node('small','','TRANSACTION INVESTIGATION'));
-    const stats=node('div','intelligence-transaction-stats');
-    stats.append(metric('Signers',result.context?.signers?.length||0),metric('Token mints',result.context?.tokenMints?.length||0),metric('Accounts',result.context?.accountCount||0),metric('Instructions',result.context?.instructionCount||0));
-    panel.append(stats);
+    this.#anchorTime=Number(result.blockTime)||null;if(this.#anchorTime){this.#transactionOption.disabled=false;this.#range.value='transaction';}
+    const summary=node('p','',resolverSummary(result)),panel=node('div','intelligence-transaction-context');panel.append(node('small','','TRANSACTION INVESTIGATION'));
+    const stats=node('div','intelligence-transaction-stats');stats.append(metric('Signers',result.context?.signers?.length||0),metric('Token mints',result.context?.tokenMints?.length||0),metric('Accounts',result.context?.accountCount||0),metric('Instructions',result.context?.instructionCount||0));panel.append(stats);
     const selectors=node('div','intelligence-context-selectors');
-    const signerGroup=node('div','intelligence-context-group');signerGroup.append(node('strong','','OBSERVED SIGNERS'));
-    const signerButtons=node('div','intelligence-context-chips');
-    for(const signer of result.context?.signers||[]){const button=node('button','secondary',short(signer));button.type='button';button.title=signer;button.addEventListener('click',()=>this.#selectTransactionWallet(signer));signerButtons.append(button);}
-    if(!signerButtons.childElementCount)signerButtons.append(node('span','intelligence-context-empty','No parsed signer available.'));
-    signerGroup.append(signerButtons);
-    const tokenGroup=node('div','intelligence-context-group');tokenGroup.append(node('strong','','OBSERVED TOKEN MINTS'));
-    const tokenButtons=node('div','intelligence-context-chips');
-    for(const mint of result.context?.tokenMints||[]){const button=node('button','secondary',short(mint));button.type='button';button.title=mint;button.addEventListener('click',()=>this.#selectTransactionMint(mint));tokenButtons.append(button);}
-    if(!tokenButtons.childElementCount)tokenButtons.append(node('span','intelligence-context-empty','No parsed token mint available.'));
-    tokenGroup.append(tokenButtons);selectors.append(signerGroup,tokenGroup);panel.append(selectors);
-    const disclosure=node('p','intelligence-context-disclosure',result.disclosure||'Observed transaction context only.');panel.append(disclosure);
-    const actions=node('div','intelligence-context-actions');
-    const build=node('button','primary','BUILD REPLAY AROUND TRANSACTION');build.type='button';build.addEventListener('click',()=>this.load());actions.append(build);panel.append(actions);
-    this.#requestNotice.replaceChildren(node('strong','','TRANSACTION RESOLVED'),summary,panel);this.#requestNotice.hidden=false;
-    const signers=result.context?.signers||[],mints=result.context?.tokenMints||[];
-    if(signers.length===1)this.#selectTransactionWallet(signers[0]);
-    if(mints.length===1)this.#selectTransactionMint(mints[0]);
-    this.#status.textContent=this.#walletA.value&&this.#mint.value?'INVESTIGATION READY':'TRANSACTION RESOLVED';
+    const signerGroup=node('div','intelligence-context-group');signerGroup.append(node('strong','','OBSERVED SIGNERS'));const signerButtons=node('div','intelligence-context-chips');for(const signer of result.context?.signers||[]){const button=node('button','secondary',short(signer));button.type='button';button.title=signer;button.addEventListener('click',()=>this.#selectTransactionWallet(signer));signerButtons.append(button);}if(!signerButtons.childElementCount)signerButtons.append(node('span','intelligence-context-empty','No parsed signer available.'));signerGroup.append(signerButtons);
+    const tokenGroup=node('div','intelligence-context-group');tokenGroup.append(node('strong','','OBSERVED TOKEN MINTS'));const tokenButtons=node('div','intelligence-context-chips');for(const mint of result.context?.tokenMints||[]){const button=node('button','secondary',short(mint));button.type='button';button.title=mint;button.addEventListener('click',()=>this.#selectTransactionMint(mint));tokenButtons.append(button);}if(!tokenButtons.childElementCount)tokenButtons.append(node('span','intelligence-context-empty','No parsed token mint available.'));tokenGroup.append(tokenButtons);selectors.append(signerGroup,tokenGroup);panel.append(selectors);
+    panel.append(node('p','intelligence-context-disclosure',result.disclosure||'Observed transaction context only.'));const actions=node('div','intelligence-context-actions'),build=node('button','primary','BUILD REPLAY AROUND TRANSACTION');build.type='button';build.addEventListener('click',()=>this.load());actions.append(build);panel.append(actions);
+    this.#requestNotice.replaceChildren(node('strong','','TRANSACTION RESOLVED'),summary,panel);this.#requestNotice.hidden=false;const signers=result.context?.signers||[],mints=result.context?.tokenMints||[];if(signers.length===1)this.#selectTransactionWallet(signers[0]);if(mints.length===1)this.#selectTransactionMint(mints[0]);this.#status.textContent=this.#walletA.value&&this.#mint.value?'INVESTIGATION READY':'TRANSACTION RESOLVED';
   }
 
   async #resolveIncoming(query){
     this.#resolveAbort?.abort();this.#resolveAbort=new AbortController();
-    try{
-      const result=await this.#resolver.resolve(query,{signal:this.#resolveAbort.signal});
-      if(result.label==='transaction'&&result.state==='resolved'){this.#renderTransactionContext(result);return;}
-      const title=String(result.label||result.kind||'resolved').replaceAll('-',' ').toUpperCase();this.#requestNotice.replaceChildren(node('strong','',title),node('p','',resolverSummary(result)));this.#requestNotice.hidden=false;this.#status.textContent=result.state==='resolved'?'ENTITY RESOLVED':'NOT FOUND';
-      if(result.label==='token-mint'){this.#mint.value=query;this.#walletA.focus();}
-      else if(result.label==='system-account'){
-        const action=node('button','secondary','USE AS WALLET CANDIDATE');action.type='button';action.addEventListener('click',()=>{this.#walletA.value=query;this.#status.textContent='WALLET CANDIDATE SELECTED';this.#mint.focus();});this.#requestNotice.append(action);
-      }
-    }catch(error){if(error.name==='AbortError')return;this.#requestNotice.replaceChildren(node('strong','','RESOLVER UNAVAILABLE'),node('p','','The app could not verify this identifier right now. No label was guessed. Replay can still be built manually with a public wallet and token mint.'));this.#requestNotice.hidden=false;this.#status.textContent='PARTIAL SERVICE';}
+    try{const result=await this.#resolver.resolve(query,{signal:this.#resolveAbort.signal});if(result.label==='transaction'&&result.state==='resolved'){this.#renderTransactionContext(result);return;}const title=String(result.label||result.kind||'resolved').replaceAll('-',' ').toUpperCase();this.#requestNotice.replaceChildren(node('strong','',title),node('p','',resolverSummary(result)));this.#requestNotice.hidden=false;this.#status.textContent=result.state==='resolved'?'ENTITY RESOLVED':'NOT FOUND';if(result.label==='token-mint'){this.#mint.value=query;this.#walletA.focus();}else if(result.label==='system-account'){const action=node('button','secondary','USE AS WALLET CANDIDATE');action.type='button';action.addEventListener('click',()=>{this.#walletA.value=query;this.#status.textContent='WALLET CANDIDATE SELECTED';this.#mint.focus();});this.#requestNotice.append(action);}}
+    catch(error){if(error.name==='AbortError')return;this.#requestNotice.replaceChildren(node('strong','','RESOLVER UNAVAILABLE'),node('p','','The app could not verify this identifier right now. No label was guessed. Replay can still be built manually with a public wallet and token mint.'));this.#requestNotice.hidden=false;this.#status.textContent='PARTIAL SERVICE';}
   }
 
-  #window(){
-    const now=Math.floor(Date.now()/1000);
-    if(this.#range.value==='transaction'&&this.#anchorTime){return{from:Math.max(0,this.#anchorTime-21600),to:Math.max(this.#anchorTime,Math.min(now,this.#anchorTime+21600)),anchored:true};}
-    const seconds=Number(this.#range.value||2592000);return{from:now-seconds,to:now,anchored:false};
+  async loadWalletTokens(){
+    const wallet=trim(this.#walletA.value);if(!WALLET_RE.test(wallet)){this.#status.textContent='SELECT A WALLET';this.#walletA.focus();return;}
+    this.#tokenAbort?.abort();this.#tokenAbort=new AbortController();this.#tokenList.hidden=false;this.#tokenList.replaceChildren(node('p','notice','Reading indexed token activity…'));this.#status.textContent='LOADING TOKENS';
+    try{
+      const index=await this.#tokenIndex.load(wallet,{limit:100,signal:this.#tokenAbort.signal});this.#tokenList.replaceChildren();
+      if(!index.tokens?.length){this.#tokenList.append(node('p','notice','No token activity is currently indexed for this wallet. The Intelligence Mesh may still be backfilling history.'));this.#status.textContent='NO INDEXED TOKENS';return;}
+      const grid=node('div','intelligence-wallet-token-grid');
+      for(const item of index.tokens){const button=node('button','intelligence-wallet-token-card');button.type='button';button.title=item.mint;const top=node('div');top.append(node('strong','',short(item.mint)),node('span','',`${item.tradeCount} trades · ${item.eventCount} events`));const bottom=node('div');bottom.append(node('span','',`${dateText(item.firstEvent)} → ${dateText(item.lastEvent)}`),node('span','',`confidence ${Math.round(item.maxConfidence*100)}%`));button.append(top,bottom);button.addEventListener('click',()=>{this.#mint.value=item.mint;this.#anchorTime=null;this.#transactionOption.disabled=true;if(this.#range.value==='transaction')this.#range.value='2592000';this.#status.textContent='TOKEN SELECTED · READY TO REPLAY';this.#mint.scrollIntoView({behavior:'smooth',block:'center'});});grid.append(button);}
+      this.#tokenList.append(grid,node('p','intelligence-context-disclosure',index.disclosure));this.#status.textContent=`${index.tokenCount} TOKENS INDEXED`;
+    }catch(error){if(error.name==='AbortError')return;const message=error.message==='feature_disabled'?'Playable Data is built but disabled at the Worker until enabled.':`Token index unavailable: ${error.message}`;this.#tokenList.replaceChildren(node('p','notice',message));this.#status.textContent='TOKEN INDEX UNAVAILABLE';}
   }
+
+  #window(){const now=Math.floor(Date.now()/1000);if(this.#range.value==='transaction'&&this.#anchorTime)return{from:Math.max(0,this.#anchorTime-21600),to:Math.max(this.#anchorTime,Math.min(now,this.#anchorTime+21600)),anchored:true};const seconds=Number(this.#range.value||2592000);return{from:now-seconds,to:now,anchored:false};}
 
   async load(){
-    const wallet=trim(this.#walletA.value),compareWallet=trim(this.#walletB.value),mint=trim(this.#mint.value),quoteMint=trim(this.#quote.value);
-    if(!WALLET_RE.test(wallet)){this.#status.textContent='SELECT A WALLET';this.#walletA.focus();return;}if(compareWallet&&!WALLET_RE.test(compareWallet)){this.#status.textContent='INVALID COMPARISON';this.#walletB.focus();return;}if(!WALLET_RE.test(mint)){this.#status.textContent='SELECT A TOKEN';this.#mint.focus();return;}if(quoteMint&&!WALLET_RE.test(quoteMint)){this.#status.textContent='INVALID QUOTE';this.#quote.focus();return;}
+    const wallet=trim(this.#walletA.value),compareWallet=trim(this.#walletB.value),mint=trim(this.#mint.value),quoteMint=trim(this.#quote.value);if(!WALLET_RE.test(wallet)){this.#status.textContent='SELECT A WALLET';this.#walletA.focus();return;}if(compareWallet&&!WALLET_RE.test(compareWallet)){this.#status.textContent='INVALID COMPARISON';this.#walletB.focus();return;}if(!WALLET_RE.test(mint)){this.#status.textContent='SELECT A TOKEN';this.#mint.focus();return;}if(quoteMint&&!WALLET_RE.test(quoteMint)){this.#status.textContent='INVALID QUOTE';this.#quote.focus();return;}
     this.#abort?.abort();this.#abort=new AbortController();this.#player?.destroy();this.#player=null;this.#bundle=null;this.#status.textContent='BUILDING REPLAY';this.#results.hidden=false;const window=this.#window();this.#results.replaceChildren(node('p','notice',window.anchored?'Reading indexed evidence around the resolved transaction…':'Reading normalized indexed evidence…'));
     try{const bundle=await this.#client.load({wallet,compareWallet:compareWallet||undefined,mint,quoteMint:quoteMint||undefined,from:window.from,to:window.to,bucketSeconds:60,limit:750},{signal:this.#abort.signal});this.#bundle=bundle;this.#render(bundle);this.#status.textContent=bundle.coverage.complete?'INDEXED · READY':'PARTIAL · PLAYABLE';}
     catch(error){if(error.name==='AbortError')return;this.#status.textContent='REPLAY UNAVAILABLE';const message=error.message==='feature_disabled'?'Playable Data is built but disabled at the Worker until the new backend is enabled.':`Replay could not be built: ${error.message}`;this.#results.replaceChildren(node('p','notice',message));}
@@ -127,5 +111,5 @@ export class IntelligenceWorkspace {
     if(bundle.subject.wallets.length===2){const [walletA,walletB]=bundle.subject.wallets;const comparison=buildWalletTokenComparison({events:replayEventsForComparison(bundle),walletA,walletB,token:bundle.subject.mint,startTime:bundle.window.startTime,endTime:bundle.window.endTime});const observations=comparisonObservations(comparison);if(observations.length){const observed=node('div','intelligence-observations');observed.append(node('strong','','CALCULATED COMPARISON'));for(const item of observations)observed.append(node('p','',item.statement));this.#results.append(summary,truth,stage,observed,caveats,actions);}else this.#results.append(summary,truth,stage,caveats,actions);const whatIf=node('button','secondary','WHAT IF: A MIRRORS B');whatIf.type='button';const reset=node('button','secondary','RESET TO OBSERVED');reset.type='button';reset.hidden=true;const disclosure=node('p','intelligence-whatif-disclosure');disclosure.hidden=true;whatIf.addEventListener('click',()=>{const overlay=buildCounterfactualOverlay({comparison,sourceWallet:walletB,targetWallet:walletA});this.#mountPlayer([...comparison.timeline.events,...overlay.events],'Observed trades plus hypothetical mirrored timing');disclosure.textContent=overlay.disclosure;disclosure.hidden=false;reset.hidden=false;whatIf.hidden=true;this.#status.textContent='WHAT IF · PLAYABLE';});reset.addEventListener('click',()=>{this.#mountPlayer(bundle.events,'Indexed Solana trade replay');disclosure.hidden=true;reset.hidden=true;whatIf.hidden=false;this.#status.textContent=bundle.coverage.complete?'INDEXED · READY':'PARTIAL · PLAYABLE';});actions.append(whatIf,reset);actions.after(disclosure);}else this.#results.append(summary,truth,stage,caveats,actions);
     const story=node('button','primary','CREATE STORY / VIDEO');story.type='button';story.addEventListener('click',()=>this.#onCreateStory?.(storyBundle(bundle)));actions.append(story);this.#mountPlayer(bundle.events,'Indexed Solana trade replay');
   }
-  destroy(){this.#abort?.abort();this.#resolveAbort?.abort();this.#player?.destroy();this.#root.remove();}
+  destroy(){this.#abort?.abort();this.#resolveAbort?.abort();this.#tokenAbort?.abort();this.#player?.destroy();this.#root.remove();}
 }
