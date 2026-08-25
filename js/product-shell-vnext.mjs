@@ -107,7 +107,7 @@ export function createProductShell({
     }));
   }
 
-  function selectProduct(productId) {
+  function selectProduct(productId, { notify = true } = {}) {
     const product = productById(productId);
     if (!product) return;
     shell.dataset.activeProduct = productId;
@@ -117,7 +117,7 @@ export function createProductShell({
       if (node.dataset.product === productId) node.setAttribute('aria-current', 'page');
       else node.removeAttribute('aria-current');
     });
-    onNavigate?.(productId);
+    if (notify) onNavigate?.(productId);
   }
 
   shell.append(rail, main, mobile);
@@ -125,7 +125,7 @@ export function createProductShell({
   return Object.freeze({
     shell,
     focusSearch: () => input.focus(),
-    setActiveProduct: selectProduct,
+    setActiveProduct: (productId) => selectProduct(productId, { notify: false }),
     destroy: () => shell.remove()
   });
 }
