@@ -1,6 +1,7 @@
 import { bootstrapNextExperience } from './experience-bootstrap.mjs';
-import { ProductAdapterRegistry,domPortalAdapter } from './product-adapters.mjs';
+import { ProductAdapterRegistry } from './product-adapters.mjs';
 import { UniverseExperience } from './universe-experience.mjs';
+import { IntelligenceWorkspace } from './intelligence-workspace-vnext.mjs';
 import { TricksterStudio } from './trickster-studio.mjs';
 import { validateStoryForExport } from './trickster-validation-client.mjs';
 import { loadThree } from './experience-dependencies.mjs';
@@ -23,6 +24,13 @@ function productPage(title,description) {
   return {page,body};
 }
 
+function unavailablePage(title,description) {
+  const {page,body}=productPage(title,description);
+  const card=node('article','product-card product-card--featured');
+  card.append(node('span','product-card__index','FOUNDATION READY'),node('h2','','Disabled until its data gate is enabled'),node('p','','The product remains visible in the architecture but does not silently fall back to legacy or unverified data.'));
+  body.append(card);return page;
+}
+
 function gamesPage(onLaunch) {
   const {page,body}=productPage('Games','Bull Invaders is the arcade experience, preserved alongside the Solana intelligence platform.');
   const invaders=node('button','product-card product-card--featured');
@@ -38,6 +46,7 @@ async function setup() {
   if(flags.nextProductShellEnabled!==true&&String(flags.NEXT_PRODUCT_SHELL_ENABLED||'').toLowerCase()!=='true') return;
 
   const universeRequested=flags.universeEnabled===true||String(flags.UNIVERSE_ENABLED||'').toLowerCase()==='true';
+  const tricksterRequested=flags.tricksterStudioEnabled===true||String(flags.TRICKSTER_STUDIO_ENABLED||'').toLowerCase()==='true';
   const THREE=globalThis.THREE||(universeRequested?await loadThree():null);
   const existing=document.getElementById('app');
   let app=null;
@@ -47,8 +56,17 @@ async function setup() {
   const instances=new Map();
   const adapters=new ProductAdapterRegistry();
 
+  function openStory(bundle) {
+    globalThis.BBR_TRICKSTER_EVIDENCE=bundle;
+    const content=adapters.activate('trickster',{source:'create-story'});
+    if(content instanceof Element) app?.shell.mountProduct(content);
+    app?.shell.setActiveProduct('trickster');
+    instances.get('trickster')?.loadEvidence(bundle);
+  }
+
   adapters.register('universe',{
     activate() {
+      if(!universeRequested)return unavailablePage('Universe','The cinematic full-chain discovery layer is feature-gated until its verified live data path is enabled.');
       const mount=node('div');
       const experience=new UniverseExperience({
         host:mount,
@@ -71,25 +89,37 @@ async function setup() {
     }
   });
 
-  adapters.register('intelligence',domPortalAdapter({
-    viewId:'trackView',
-    activateView(context) {
-      globalThis.showView?.('intelligence');
-      const request=context?.request;
-      if(request?.kind==='solana-address') {
-        const input=document.getElementById('walletInput');
-        if(input) input.value=request.query;
-      }
-      globalThis.dispatchEvent(new CustomEvent('abulls:intelligence-request',{detail:request||null}));
+  adapters.register('intelligence',{
+    activate(context={}) {
+      instances.get('intelligence')?.destroy();
+      const mount=node('div');
+      const workspace=new IntelligenceWorkspace({
+        host:mount,
+        apiBase:globalThis.BBRConfig?.apiBase||location.origin,
+        onCreateStory:openStory
+      });
+      if(context.request)workspace.setRequest(context.request);
+      instances.set('intelligence',workspace);
+      return mount;
+    },
+    deactivate() {
+      instances.get('intelligence')?.destroy();
+      instances.delete('intelligence');
     }
-  }));
+  });
 
   adapters.register('trickster',{
     activate() {
+      if(!tricksterRequested)return unavailablePage('Trickster','The evidence-backed creator is feature-gated until its validation/export path is enabled.');
+      instances.get('trickster')?.destroy();
       const mount=node('div');
       const studio=new TricksterStudio({
         host:mount,
-        onOpenEvidence:()=>globalThis.dispatchEvent(new CustomEvent('abulls:open-intelligence')),
+        onOpenEvidence:()=>{
+          const content=adapters.activate('intelligence',{source:'trickster'});
+          if(content instanceof Element) app?.shell.mountProduct(content);
+          app?.shell.setActiveProduct('intelligence');
+        },
         onExport:async(detail)=>{
           const validation=await validateStoryForExport(detail.manifest,{
             apiBase:globalThis.BBRConfig?.apiBase||location.origin
@@ -138,7 +168,7 @@ async function setup() {
     host,
     adapters,
     serviceState:navigator.onLine===false?'degraded':'ready',
-    initialProduct:'universe',
+    initialProduct:universeRequested?'universe':'intelligence',
     onSearchRequest:(request)=>globalThis.dispatchEvent(new CustomEvent('abulls:universal-search',{detail:request}))
   });
 
@@ -149,13 +179,7 @@ async function setup() {
   if(existing) existing.hidden=true;
   globalThis.BBRNextExperience=Object.freeze({
     ...app,
-    loadStory(bundle) {
-      globalThis.BBR_TRICKSTER_EVIDENCE=bundle;
-      app.shell.setActiveProduct('trickster');
-      const content=adapters.activate('trickster',{source:'create-story'});
-      if(content instanceof Element) app.shell.mountProduct(content);
-      instances.get('trickster')?.loadEvidence(bundle);
-    }
+    loadStory:openStory
   });
 }
 
