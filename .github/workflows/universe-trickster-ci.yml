@@ -73,6 +73,7 @@ jobs:
             js/trickster-export-capabilities.mjs \
             js/trickster-timeline.mjs \
             js/trickster-clip-export.mjs \
+            js/trickster-validation-client.mjs \
             js/trickster-studio.mjs \
             js/product-registry.mjs \
             js/product-shell-vnext.mjs \
@@ -103,6 +104,7 @@ jobs:
             js/trickster-story-manifest.test.mjs \
             js/trickster-runtime.test.mjs \
             js/trickster-timeline.test.mjs \
+            js/trickster-validation-client.test.mjs \
             js/experience-feature-flags.test.mjs \
             js/experience-integration.test.mjs \
             js/product-shell.test.mjs \
@@ -123,4 +125,5 @@ jobs:
           grep -q 'universeEnabled: false' js/config.js
           grep -q 'tricksterStudioEnabled: false' js/config.js
           grep -q 'persisted:false' workers/intelligence-trickster-router.mjs
+          grep -q 'validateStoryForExport' js/experience-entry.mjs
           ! grep -Eiq 'BBRLife|lifeView|js/life\.js|id:[[:space:]]*['"'"'"]life['"'"'"]' index.html js/main.js js/ui.js js/product-registry.mjs sw.js
