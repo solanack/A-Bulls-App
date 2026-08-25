@@ -2,10 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { primaryProducts, productById, productRegistry } from './product-registry.mjs';
 
-test('all five primary products are visible in locked order', () => {
+test('all four primary products are visible in locked order', () => {
   assert.deepEqual(primaryProducts().map(({ id }) => id), [
-    'universe','intelligence','trickster','life','games'
+    'universe','intelligence','trickster','games'
   ]);
+});
+
+test('removed LIFE product is unavailable', () => {
+  assert.equal(productById('life'), null);
 });
 
 test('legacy communities do not occupy primary navigation', () => {
