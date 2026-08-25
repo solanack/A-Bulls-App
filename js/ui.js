@@ -1,6 +1,6 @@
 const labels = {
   home: 'Home', profile: 'Profile', settings: 'Profile', imageSettings: 'Image', youtubeSettings: 'YouTube', twitchSettings: 'Twitch', audioSettings: 'Audio', help: 'Help',
-  invaderStats: 'Mission Statistics', invaderLeaderboard: 'Leaderboard', invadersGame: 'Bull Invaders', intelligence: 'Analytics', life: 'LIFE'
+  invaderStats: 'Mission Statistics', invaderLeaderboard: 'Leaderboard', invadersGame: 'Bull Invaders', intelligence: 'Analytics'
 };
 let currentView = 'home';
 const viewHistory = [];
@@ -48,7 +48,7 @@ function toast(msg) {
   const t = document.getElementById('toast');
   if (!t) return;
   const fullMessage = String(msg || '');
-  const dataUtilityActive = document.getElementById('trackView')?.classList.contains('active') || document.getElementById('lifeView')?.classList.contains('active');
+  const dataUtilityActive = document.getElementById('trackView')?.classList.contains('active');
   // v7 playful surfaces communicate with a compact icon and sound. Preserve
   // the full message for screen readers; adult analytics keeps necessary text.
   t.textContent = globalThis.BBRV7 && !dataUtilityActive
@@ -88,7 +88,7 @@ function showView(name, options = {}) {
     try { if (window.BackgroundManager) BackgroundManager.onRunPause(); } catch (_) {}
   }
   const views = document.getElementById('views');
-  const controlCenterViews = ['settings', 'imageSettings', 'youtubeSettings', 'twitchSettings', 'audioSettings', 'intelligence', 'life'];
+  const controlCenterViews = ['settings', 'imageSettings', 'youtubeSettings', 'twitchSettings', 'audioSettings', 'intelligence'];
   views?.classList.toggle('control-center-mode', controlCenterViews.includes(name));
   document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
   if (name === 'intelligence') {
@@ -123,13 +123,12 @@ function showView(name, options = {}) {
   const label = document.getElementById('viewLabel');
   if (label) {
     const map = {
-      home: 'HOME', profile: 'PROFILE', intelligence: 'ANALYTICS', life: 'LIFE', imageSettings: 'IMAGE', youtubeSettings: 'YOUTUBE', twitchSettings: 'TWITCH', audioSettings: 'AUDIO', help: 'HELP',
+      home: 'HOME', profile: 'PROFILE', intelligence: 'ANALYTICS', imageSettings: 'IMAGE', youtubeSettings: 'YOUTUBE', twitchSettings: 'TWITCH', audioSettings: 'AUDIO', help: 'HELP',
       invaderStats: 'MISSIONS', invaderLeaderboard: 'RANKS', invadersGame: 'INVADERS'
     };
     label.textContent = map[name] || name.toUpperCase();
   }
   if (name === 'intelligence') loadAnsemData();
-  if (name === 'life') globalThis.BBRLife?.render?.();
   if (name === 'profile') ProfileManager?.render?.();
   if (name === 'invaderLeaderboard') BBRLeaderboard?.load('bull-invaders', document.getElementById('invaderRankList'));
   document.querySelectorAll('#mobileCommunityTabs [data-mobile-view]').forEach(button => button.classList.toggle('active', button.dataset.mobileView === name));
@@ -342,7 +341,6 @@ function initUI() {
       showView('profile');
       requestAnimationFrame(() => document.getElementById('startJourneyPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     } else if (action === 'analytics') showView('intelligence');
-    else if (action === 'life') showView('life');
   }));
   document.querySelectorAll('#mobileCommunityTabs [data-mobile-view]').forEach(button => button.addEventListener('click', () => {
     showView(button.dataset.mobileView);
