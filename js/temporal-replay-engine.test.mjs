@@ -14,6 +14,15 @@ test('timeline sorts and bounds events',()=>{
   assert.equal(timeline.durationMs,2000);
 });
 
+test('missing numeric evidence remains missing instead of becoming zero',()=>{
+  const timeline=createReplayTimeline({events:[{id:'missing',timestamp:1500,side:'buy',price:null,amount:null,valueUsd:null,slot:null}],startTime:1000,endTime:2000});
+  const event=timeline.events[0];
+  assert.equal(event.price,null);
+  assert.equal(event.amount,null);
+  assert.equal(event.valueUsd,null);
+  assert.equal(event.slot,null);
+});
+
 test('controller plays, changes speed, seeks and steps events deterministically',()=>{
   const timeline=createReplayTimeline({events,startTime:1000,endTime:3000});
   const controller=new TemporalReplayController(timeline,{rate:2});
