@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createEventStoryFrameDrawer, drawEventStoryFrame } from './event-story-frame-renderer.mjs';
+import { createEventStoryFrameDrawer, drawEventStoryFrame, eventLightningState, EventStoryFrameColors, EventStoryImpactDurationMs } from './event-story-frame-renderer.mjs';
 
-function fakeContext(){const texts=[];return{canvas:{width:1080,height:1920},texts,save(){},restore(){},fillRect(){},beginPath(){},arc(){},stroke(){},fill(){},moveTo(){},lineTo(){},rect(){},roundRect(){},measureText(value){return{width:String(value).length*12};},fillText(value){texts.push(String(value));},set fillStyle(v){this._fillStyle=v;},get fillStyle(){return this._fillStyle;},set strokeStyle(v){this._strokeStyle=v;},set lineWidth(v){this._lineWidth=v;},set font(v){this._font=v;},set textAlign(v){this._textAlign=v;},set textBaseline(v){this._textBaseline=v;}};}
+function fakeContext(){const texts=[];return{canvas:{width:1080,height:1920},texts,save(){},restore(){},fillRect(){},beginPath(){},arc(){},stroke(){},fill(){},moveTo(){},lineTo(){},rect(){},roundRect(){},measureText(value){return{width:String(value).length*12};},fillText(value){texts.push(String(value));},set fillStyle(v){this._fillStyle=v;},get fillStyle(){return this._fillStyle;},set strokeStyle(v){this._strokeStyle=v;},set lineWidth(v){this._lineWidth=v;},set globalAlpha(v){this._globalAlpha=v;},get globalAlpha(){return this._globalAlpha;},set font(v){this._font=v;},set textAlign(v){this._textAlign=v;},set textBaseline(v){this._textBaseline=v;}};}
 
 const manifest={coverage:{statement:'Indexed evidence coverage.',verifiedPercent:100},evidence:[{id:'e1',source:'rpc'}],claims:[{id:'c1',statement:'Observed trade on chain.',kind:'observed'}],scenes:[{id:'s1',type:'event-hook',claimIds:['c1']},{id:'s2',type:'execution-context',claimIds:[]},{id:'s3',type:'evidence-close',claimIds:[]}]};
 const renderPlan=[
@@ -18,6 +18,17 @@ test('draws selected-event frame from deterministic frame model',async()=>{
   assert.equal(model.scene.mode,'focus-event');
   assert.ok(ctx.texts.some(text=>text.includes('BUY')));
   assert.ok(ctx.texts.some(text=>text.includes('sig-a')));
+  assert.ok(ctx.texts.some(text=>text.includes('INDEXED BUY IMPACT')));
+});
+
+test('buy and sell lightning is evidence-timed, directional, and deterministic',()=>{
+  const buy={id:'trade-1',timestamp:1000,side:'buy'},sell={id:'trade-2',timestamp:1000,side:'sell'};
+  const buyNow=eventLightningState({state:{chainTime:1000}},buy),buyAgain=eventLightningState({state:{chainTime:1000}},buy),sellNow=eventLightningState({state:{chainTime:1000}},sell);
+  assert.equal(buyNow.active,true);assert.equal(buyNow.color,EventStoryFrameColors.buy);assert.equal(buyNow.seed,buyAgain.seed);
+  assert.equal(sellNow.active,true);assert.equal(sellNow.color,EventStoryFrameColors.sell);assert.notEqual(buyNow.seed,sellNow.seed);
+  assert.equal(eventLightningState({state:{chainTime:1000+EventStoryImpactDurationMs+1}},buy).active,false);
+  assert.equal(eventLightningState({state:{chainTime:999}},buy).active,false);
+  assert.equal(eventLightningState({state:{chainTime:1000}},{id:'x',timestamp:1000,side:'transfer'}).active,false);
 });
 
 test('draws route and evidence summaries without requiring replay motion',async()=>{
