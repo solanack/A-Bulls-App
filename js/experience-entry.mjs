@@ -6,6 +6,7 @@ import { TricksterStudio } from './trickster-studio.mjs';
 import { validateStoryForExport } from './trickster-validation-client.mjs';
 import { renderEventStoryVideo } from './event-story-video-export.mjs';
 import { renderWalletComparisonVideo } from './wallet-comparison-video-export.mjs';
+import { buildTricksterNarrationPlan } from './trickster-narration-plan.mjs';
 import { applyExplicitEventStoryPriceSelection } from './event-story-price-selection.mjs';
 import { loadThree } from './experience-dependencies.mjs';
 import { createBullInvadersHost, installBullInvadersNavigationBridge } from './bull-invaders-host.mjs';
@@ -27,12 +28,13 @@ async function setup() {
   adapters.register('intelligence',{activate(context={}){instances.get('intelligence')?.destroy();const mount=node('div'),workspace=new IntelligenceWorkspace({host:mount,apiBase:globalThis.BBRConfig?.apiBase||location.origin,onCreateStory:openStory});if(context.request)workspace.setRequest(context.request);instances.set('intelligence',workspace);return mount;},deactivate(){instances.get('intelligence')?.destroy();instances.delete('intelligence');}});
   adapters.register('trickster',{activate(){if(!tricksterRequested)return unavailablePage('Trickster','The evidence-backed creator is feature-gated until its validation/export path is enabled.');instances.get('trickster')?.destroy();const mount=node('div'),studio=new TricksterStudio({host:mount,onOpenEvidence:()=>{const content=adapters.activate('intelligence',{source:'trickster'});if(content instanceof Element)app?.shell.mountProduct(content);app?.shell.setActiveProduct('intelligence');},onExport:async(detail)=>{
     const validation=await validateStoryForExport(detail.manifest,{apiBase:globalThis.BBRConfig?.apiBase||location.origin});let rendering=null;
+    const narration=validation.validated===true?buildTricksterNarrationPlan(validation.manifest,detail.timeline):null;
     const progress={onProgress:item=>globalThis.dispatchEvent(new CustomEvent('abulls:trickster-render-progress',{detail:item}))};
     if(validation.validated===true&&detail.renderPlan?.length){
       if(detail.manifest?.storyType==='transaction-replay')rendering=await renderEventStoryVideo({...detail,manifest:validation.manifest},progress);
       else if(detail.manifest?.storyType==='wallet-comparison')rendering=await renderWalletComparisonVideo({...detail,manifest:validation.manifest},progress);
     }
-    const result=rendering?Object.freeze({...validation,...rendering,manifest:validation.manifest}):validation,exportDetail=Object.freeze({...detail,manifest:validation.manifest,validation,rendering,result});globalThis.dispatchEvent(new CustomEvent('abulls:trickster-export',{detail:exportDetail}));return result;
+    const result=rendering?Object.freeze({...validation,...rendering,manifest:validation.manifest,narration}):Object.freeze({...validation,narration}),exportDetail=Object.freeze({...detail,manifest:validation.manifest,validation,narration,rendering,result});globalThis.dispatchEvent(new CustomEvent('abulls:trickster-export',{detail:exportDetail}));return result;
   }});instances.set('trickster',studio);const pending=globalThis.BBR_TRICKSTER_EVIDENCE;if(pending)studio.loadEvidence(pending);return mount;},deactivate(){instances.get('trickster')?.destroy();instances.delete('trickster');}});
   adapters.register('games',{activate(){return gamesPage(openBullInvaders);},deactivate(){const leaving=globalThis.BBRPlatform?.leaveGame?.();leaving?.catch?.(()=>{});}});
   app=bootstrapNextExperience({flags,host,adapters,serviceState:navigator.onLine===false?'degraded':'ready',initialProduct:universeRequested?'universe':'intelligence',onSearchRequest:request=>globalThis.dispatchEvent(new CustomEvent('abulls:universal-search',{detail:request}))});
