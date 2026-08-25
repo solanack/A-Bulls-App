@@ -3,6 +3,7 @@ import { createReplayTimeline, TemporalReplayController, replayEffectForEvent } 
 function node(tag,className,text){const el=document.createElement(tag);if(className)el.className=className;if(text!=null)el.textContent=text;return el;}
 function finite(value,fallback=null){const n=Number(value);return Number.isFinite(n)?n:fallback;}
 function clamp(value,min,max){return Math.min(max,Math.max(min,value));}
+function deterministicUnit(seed){let h=2166136261;for(const ch of String(seed)){h^=ch.charCodeAt(0);h=Math.imul(h,16777619);}return (h>>>0)/4294967295;}
 
 function normalizeCandles(candles=[]){
   return candles.map((candle,index)=>Object.freeze({
@@ -115,7 +116,7 @@ export class TradeReplayPlayer {
     const state=this.#controller.snapshot();const playX=pad+state.progress*(width-pad*2);ctx.strokeStyle='rgba(215,208,197,.72)';ctx.beginPath();ctx.moveTo(playX,pad);ctx.lineTo(playX,height-pad);ctx.stroke();
     const seen=this.#timeline.events.filter((event)=>event.timestamp<=state.chainTime);
     for(const event of seen){if(!bounds||event.price==null)continue;const p=this.#xy(event.timestamp,event.price,bounds,width,height,pad);ctx.fillStyle=event.side==='buy'?'#59efa6':event.side==='sell'?'#ff7a83':'#d7d0c5';ctx.beginPath();ctx.arc(p.x,p.y,3.5,0,Math.PI*2);ctx.fill();}
-    for(const item of this.#effects){if(!bounds||item.event.price==null)continue;const p=this.#xy(item.event.timestamp,item.event.price,bounds,width,height,pad);const age=clamp((now-item.born)/520,0,1),alpha=1-age,intensity=item.effect.intensity;ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=item.effect.hue==='green'?'#59efa6':item.effect.hue==='red'?'#ff5f6d':'#d7d0c5';ctx.lineWidth=1+3*intensity;ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=10+26*intensity;ctx.beginPath();let x=p.x,y=8;ctx.moveTo(x,y);const segments=6;for(let i=1;i<=segments;i++){y=8+(p.y-8)*(i/segments);x=p.x+(i===segments?0:(Math.random()-.5)*18*intensity);ctx.lineTo(x,y);}ctx.stroke();ctx.beginPath();ctx.arc(p.x,p.y,7+18*intensity*(1-age),0,Math.PI*2);ctx.stroke();ctx.restore();}
+    for(const item of this.#effects){if(!bounds||item.event.price==null)continue;const p=this.#xy(item.event.timestamp,item.event.price,bounds,width,height,pad);const age=clamp((now-item.born)/520,0,1),alpha=1-age,intensity=item.effect.intensity;ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=item.effect.hue==='green'?'#59efa6':item.effect.hue==='red'?'#ff5f6d':'#d7d0c5';ctx.lineWidth=1+3*intensity;ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=10+26*intensity;ctx.beginPath();let x=p.x,y=8;ctx.moveTo(x,y);const segments=6;for(let i=1;i<=segments;i++){y=8+(p.y-8)*(i/segments);const jitter=deterministicUnit(`${item.event.id}:${i}`)-0.5;x=p.x+(i===segments?0:jitter*18*intensity);ctx.lineTo(x,y);}ctx.stroke();ctx.beginPath();ctx.arc(p.x,p.y,7+18*intensity*(1-age),0,Math.PI*2);ctx.stroke();ctx.restore();}
   }
 
   destroy(){this.pause();this.resizeObserver?.disconnect();this.#root.remove();}
