@@ -58,6 +58,7 @@ export class UniverseRenderer {
   #onSelect;
   #removeFallback = null;
   #destroyed = false;
+  #destinationReady = false;
 
   constructor({ host, snapshot, THREE, onSelect, capabilities = capabilitiesFromBrowser() }) {
     if (!(host instanceof Element)) throw new TypeError('host element is required');
@@ -186,7 +187,7 @@ export class UniverseRenderer {
       return;
     }
 
-    const transition = this.#transition.update(now, false);
+    const transition = this.#transition.update(now, this.#destinationReady);
     const warp = transition.state === 'accelerating'
       ? Math.min(1, Math.max(0, (transition.elapsed - 350) / 900))
       : transition.state === 'whiteout' ? 1 : 0;
@@ -197,6 +198,7 @@ export class UniverseRenderer {
   };
 
   markDestinationReady() {
+    this.#destinationReady = true;
     return this.#transition.update(performance.now(), true);
   }
 
