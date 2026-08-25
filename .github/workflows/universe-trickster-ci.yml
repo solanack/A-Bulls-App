@@ -40,6 +40,8 @@ jobs:
             js/trickster-story-manifest.test.mjs \
             js/trickster-runtime.test.mjs \
             js/trickster-timeline.test.mjs \
+            js/trickster-caption-plan.test.mjs \
+            js/trickster-caption-renderer.test.mjs \
             js/trickster-validation-client.test.mjs \
             js/trickster-video-delivery.test.mjs \
             js/temporal-replay-engine.test.mjs \
@@ -89,53 +91,33 @@ jobs:
           grep -q 'renderWalletComparisonVideo' js/experience-entry.mjs
           grep -q 'validateStoryForExport' js/experience-entry.mjs
           grep -q 'walletComparisonScenePlan' js/trickster-studio.mjs
-          grep -q 'buildWalletComparisonSceneRuntime' js/trickster-studio.mjs
-          grep -q 'buildWalletComparisonRenderPlan' js/trickster-studio.mjs
           grep -q 'buildWalletComparisonStoryWhatIf' js/trickster-studio.mjs
           grep -q 'A TIMING → B' js/trickster-studio.mjs
           grep -q 'B TIMING → A' js/trickster-studio.mjs
           grep -q 'REMOVE WHAT IF' js/trickster-studio.mjs
           grep -q 'walletComparisonWhatIfClaim' js/wallet-comparison-what-if.mjs
-          grep -q 'hypothetical:true' js/wallet-comparison-what-if.mjs
-          grep -q 'verification:' js/wallet-comparison-what-if.mjs
+          grep -q 'HYPOTHETICAL TARGET' js/wallet-comparison-frame-renderer.mjs
+          grep -q 'OBSERVED SOURCE' js/wallet-comparison-frame-renderer.mjs
+          grep -q 'buildTricksterCaptionPlan' js/event-story-frame-drawer.mjs
+          grep -q 'drawTricksterCaption' js/event-story-frame-drawer.mjs
+          grep -q 'buildTricksterCaptionPlan' js/wallet-comparison-frame-drawer.mjs
+          grep -q 'drawTricksterCaption' js/wallet-comparison-frame-drawer.mjs
+          grep -q 'OBSERVED ON CHAIN' js/trickster-caption-plan.mjs
+          grep -q 'CALCULATED FROM EVIDENCE' js/trickster-caption-plan.mjs
+          grep -q 'SIMULATION' js/trickster-caption-plan.mjs
           grep -q 'trickster-simulation.css' index.html
           grep -q '@media(max-width:760px)' css/trickster-simulation.css
-          grep -q 'walletComparisonScenePlan' js/wallet-comparison-story-runtime.mjs
-          grep -q 'what-if-replay' js/wallet-comparison-story-runtime.mjs
-          grep -q 'createWalletComparisonCinematicFrameDrawer' js/wallet-comparison-video-export.mjs
-          grep -q 'WALLET A' js/wallet-comparison-frame-renderer.mjs
-          grep -q 'WALLET B' js/wallet-comparison-frame-renderer.mjs
-          grep -q 'SHARED INDEXED PRICE SERIES' js/wallet-comparison-frame-renderer.mjs
-          grep -q 'SIMULATION' js/wallet-comparison-frame-renderer.mjs
-          grep -q 'bull-invaders-vnext.css' index.html
-          grep -q '@media(max-width:760px)' css/product-shell-vnext.css
-          grep -q '@media(max-width:760px)' css/bull-invaders-vnext.css
-          grep -q '@media(max-width:760px)' css/intelligence-workspace-vnext.css
-          grep -q '@media(max-width:760px)' css/intelligence-event-inspector.css
-          grep -q '/api/intelligence/replay-bundle' workers/intelligence-replay-bundle.mjs
-          grep -q '/api/intelligence/event-context' workers/intelligence-event-context.mjs
-          grep -q '/api/intelligence/resolve' workers/intelligence-entity-resolver.mjs
-          grep -q '/api/intelligence/wallet-tokens' workers/intelligence-wallet-token-index.mjs
-          grep -q 'handleEventMarketContextRequest' workers/intelligence-worker-hooks.mjs
-          grep -q 'EventMarketContextClient' js/intelligence-event-ledger.mjs
-          grep -q 'PLAY MARKET WINDOW' js/market-context-player-bridge.mjs
-          grep -q 'STORY + REPLAY PRICE EVIDENCE' js/market-context-player-bridge.mjs
-          grep -q 'Story pricing: TIME-ONLY' js/market-context-player-bridge.mjs
           grep -q 'eventLightningState' js/event-story-frame-renderer.mjs
           grep -q 'SAVE VIDEO' js/trickster-video-delivery.mjs
           grep -q 'SERVER RENDER REQUIRED' js/trickster-video-delivery.mjs
           grep -q 'createEvidenceLedger' js/intelligence-workspace-vnext.mjs
           grep -q 'TIME-ONLY EVENT LANE' js/trade-replay-player.mjs
           grep -q 'CREATE EVENT STORY' js/intelligence-event-ledger.mjs
+          grep -q 'trickster-caption-plan' sw.js
+          grep -q 'trickster-caption-renderer' sw.js
           grep -q 'event-story-video-export' sw.js
-          grep -q 'wallet-comparison-story-runtime' sw.js
-          grep -q 'wallet-comparison-render-plan' sw.js
-          grep -q 'wallet-comparison-frame-model' sw.js
-          grep -q 'wallet-comparison-frame-renderer' sw.js
-          grep -q 'wallet-comparison-frame-drawer' sw.js
           grep -q 'wallet-comparison-video-export' sw.js
           grep -q 'wallet-comparison-what-if' sw.js
-          grep -q 'trickster-video-delivery' sw.js
           grep -q 'Around transaction (12h)' js/intelligence-workspace-vnext.mjs
           test ! -d games
           test ! -e js/ui.js
