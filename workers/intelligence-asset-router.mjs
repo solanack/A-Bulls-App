@@ -1,7 +1,8 @@
-/* Neutral read-only routes for NFT Memory and Community Integrations. */
+/* Neutral read-only routes for Timeline, NFT Memory and Community Integrations. */
 
 import { nftMemory } from './intelligence-nft-layer.mjs';
 import { communityIntegrations } from './intelligence-operations.mjs';
+import { timeMachine } from './intelligence-product-layer.mjs';
 import { recordDemand } from './intelligence-mesh-runtime.mjs';
 
 const WALLET_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
@@ -13,6 +14,12 @@ export async function handleIntelligenceAssetRequest(request,env={}){
   const url=new URL(request.url);
   if(url.pathname==='/api/intelligence/community-integrations'&&request.method==='GET'){
     return json({ok:true,integrations:await communityIntegrations(env),note:'Legacy/community integrations are optional and separate from universal Intelligence.'});
+  }
+  if(url.pathname==='/api/intelligence/timeline'&&request.method==='POST'){
+    const payload=await body(request);const wallet=s(payload.wallet||payload.address);
+    if(!WALLET_RE.test(wallet))return json({ok:false,error:'invalid_public_wallet'},400);
+    const started=Date.now();const result=await timeMachine(env,wallet,payload.limit);await recordDemand(env,'timeline','wallet',wallet,Date.now()-started);
+    return json({ok:true,...result,disclaimer:'Timeline reflects indexed public observations and may be partial until history coverage is complete.'});
   }
   if(url.pathname==='/api/intelligence/nft-memory'&&request.method==='POST'){
     const payload=await body(request); const wallet=s(payload.wallet||payload.address);
