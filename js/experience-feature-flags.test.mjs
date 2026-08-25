@@ -4,6 +4,7 @@ import { mountAllowed, resolveExperienceFlags } from './experience-feature-flags
 
 test('missing flags are disabled', () => {
   assert.deepEqual(resolveExperienceFlags(), {
+    nextProductShellEnabled: false,
     universeEnabled: false,
     tricksterStudioEnabled: false
   });
@@ -11,9 +12,11 @@ test('missing flags are disabled', () => {
 
 test('explicit flags enable independently', () => {
   assert.deepEqual(resolveExperienceFlags({
+    NEXT_PRODUCT_SHELL_ENABLED: 'true',
     UNIVERSE_ENABLED: 'true',
     TRICKSTER_STUDIO_ENABLED: 'off'
   }), {
+    nextProductShellEnabled: true,
     universeEnabled: true,
     tricksterStudioEnabled: false
   });
