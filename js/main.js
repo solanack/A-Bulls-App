@@ -4,7 +4,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (stamp && window.BBRPlatform?.buildStamp) stamp.textContent = BBRPlatform.buildStamp();
   initUI();
   BullInvaders?.init();
-  window.BBRLife?.init?.();
   window.BBRSThemeCustomizer?.init?.();
 
   const bullVisionScript = document.createElement('script');
