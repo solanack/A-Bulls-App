@@ -26,10 +26,23 @@ test('system-owned accounts remain conservatively labeled',async()=>{
   assert.match(result.disclosure,/may be wallets or other account forms/);
 });
 
-test('resolves transaction signatures through getTransaction',async()=>{
+test('resolves transaction signatures with investigation context',async()=>{
   const signature='5'.repeat(72);
-  const result=await resolvePublicChainEntity(signature,{env,fetchImpl:response({slot:42,blockTime:123,meta:{err:null,fee:5000}})});
+  const signer='7'.repeat(32);
+  const mintA='8'.repeat(32);
+  const mintB='9'.repeat(32);
+  const tx={
+    slot:42,
+    blockTime:123,
+    meta:{err:null,fee:5000,preTokenBalances:[{mint:mintA,owner:signer}],postTokenBalances:[{mint:mintB,owner:signer}]},
+    transaction:{message:{accountKeys:[{pubkey:signer,signer:true,writable:true},{pubkey:'6'.repeat(32),signer:false,writable:true}],instructions:[{},{}]}}
+  };
+  const result=await resolvePublicChainEntity(signature,{env,fetchImpl:response(tx)});
   assert.equal(result.label,'transaction');
   assert.equal(result.slot,42);
   assert.equal(result.failed,false);
+  assert.deepEqual(result.context.signers,[signer]);
+  assert.deepEqual(result.context.tokenMints,[mintA,mintB]);
+  assert.equal(result.context.instructionCount,2);
+  assert.match(result.disclosure,/not claims of identity/);
 });
