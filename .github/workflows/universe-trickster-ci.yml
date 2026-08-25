@@ -3,31 +3,28 @@ name: Universe and Trickster CI
 on:
   push:
     branches: [ feature/universe-trickster-v1 ]
-    paths:
+    paths: &experience_paths
       - 'js/universe-*.mjs'
       - 'js/trickster-*.mjs'
-      - 'js/experience-feature-flags*.mjs'
+      - 'js/product-*.mjs'
+      - 'js/experience-*.mjs'
+      - 'js/evidence-state*.mjs'
       - 'js/life.js'
-      - 'js/life-guardrails.test.mjs js/experience-integration.test.mjs'
-      - 'js/experience-entry.mjs'
-      - 'js/experience-integration.test.mjs'
+      - 'js/life-guardrails.test.mjs'
       - 'js/config.js'
-      - 'index.html'
-      - 'sw.js'
       - 'workers/intelligence-universe-*.mjs'
+      - 'workers/intelligence-worker-hooks.mjs'
       - 'workers/migrations/0011_universe_trickster.sql'
       - 'docs/UNIVERSE-TRICKSTER-V1.md'
       - 'docs/PRODUCT-SHELL-VNEXT.md'
       - 'css/product-shell-vnext.css'
-      - 'js/product-*.mjs'
+      - 'css/universe.css'
+      - 'css/trickster-studio.css'
+      - 'index.html'
+      - 'sw.js'
       - '.github/workflows/universe-trickster-ci.yml'
   pull_request:
-    paths:
-      - 'js/universe-*.mjs'
-      - 'js/trickster-*.mjs'
-      - 'js/experience-feature-flags*.mjs'
-      - 'docs/UNIVERSE-TRICKSTER-V1.md'
-      - '.github/workflows/universe-trickster-ci.yml'
+    paths: *experience_paths
   workflow_dispatch:
 
 permissions:
@@ -43,35 +40,53 @@ jobs:
           node-version: '22'
       - name: Syntax
         run: |
-          node --check js/universe-contracts.mjs
-          node --check js/trickster-story-manifest.mjs
-          node --check js/experience-feature-flags.mjs
-          node --check js/universe-quality.mjs
-          node --check js/universe-synthetic-data.mjs
-          node --check js/universe-transition.mjs
-          node --check js/universe-renderer.mjs
-          node --check js/trickster-composer.mjs
-          node --check js/trickster-export-capabilities.mjs
-          node --check js/product-registry.mjs
-          node --check js/product-shell-vnext.mjs
-          node --check js/product-adapters.mjs
-          node --check js/universal-search.mjs
-          node --check js/experience-bootstrap.mjs
-          node --check js/evidence-state.mjs
-          node --check js/universe-client.mjs
-          node --check js/universe-experience.mjs
-          node --check js/trickster-timeline.mjs
-          node --check js/trickster-clip-export.mjs
-          node --check js/trickster-studio.mjs
-          node --check js/life.js
-          node --check js/experience-entry.mjs
-          node --check js/config.js
-          node --check sw.js
-          node --check workers/intelligence-universe-runtime.mjs
-          node --check workers/intelligence-universe-router.mjs
-          node --check workers/intelligence-worker-hooks.mjs
+          for file in \
+            js/universe-contracts.mjs \
+            js/universe-quality.mjs \
+            js/universe-synthetic-data.mjs \
+            js/universe-transition.mjs \
+            js/universe-renderer.mjs \
+            js/universe-client.mjs \
+            js/universe-experience.mjs \
+            js/trickster-story-manifest.mjs \
+            js/trickster-composer.mjs \
+            js/trickster-export-capabilities.mjs \
+            js/trickster-timeline.mjs \
+            js/trickster-clip-export.mjs \
+            js/trickster-studio.mjs \
+            js/product-registry.mjs \
+            js/product-shell-vnext.mjs \
+            js/product-adapters.mjs \
+            js/universal-search.mjs \
+            js/experience-bootstrap.mjs \
+            js/experience-entry.mjs \
+            js/experience-feature-flags.mjs \
+            js/evidence-state.mjs \
+            js/config.js \
+            js/life.js \
+            sw.js \
+            workers/intelligence-universe-runtime.mjs \
+            workers/intelligence-universe-router.mjs \
+            workers/intelligence-worker-hooks.mjs
+          do
+            node --check "$file"
+          done
       - name: Contract tests
-        run: node --test js/universe-contracts.test.mjs js/universe-runtime.test.mjs js/trickster-story-manifest.test.mjs js/trickster-runtime.test.mjs js/experience-feature-flags.test.mjs js/product-shell.test.mjs js/product-integration.test.mjs js/evidence-state.test.mjs js/universe-client.test.mjs js/trickster-timeline.test.mjs workers/intelligence-universe-runtime.test.mjs js/life-guardrails.test.mjs
+        run: |
+          node --test \
+            js/universe-contracts.test.mjs \
+            js/universe-runtime.test.mjs \
+            js/universe-client.test.mjs \
+            js/trickster-story-manifest.test.mjs \
+            js/trickster-runtime.test.mjs \
+            js/trickster-timeline.test.mjs \
+            js/experience-feature-flags.test.mjs \
+            js/experience-integration.test.mjs \
+            js/product-shell.test.mjs \
+            js/product-integration.test.mjs \
+            js/evidence-state.test.mjs \
+            js/life-guardrails.test.mjs \
+            workers/intelligence-universe-runtime.test.mjs
       - name: Preservation guard
         shell: bash
         run: |
@@ -81,3 +96,6 @@ jobs:
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_live_observations' workers/migrations/0011_universe_trickster.sql
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_story_manifests' workers/migrations/0011_universe_trickster.sql
           ! grep -Eiq 'DROP[[:space:]]+TABLE|TRUNCATE' workers/migrations/0011_universe_trickster.sql
+          grep -q 'nextProductShellEnabled: false' js/config.js
+          grep -q 'universeEnabled: false' js/config.js
+          grep -q 'tricksterStudioEnabled: false' js/config.js
