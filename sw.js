@@ -14,8 +14,24 @@ const SHIPS = numbered('./assets/ships', 'ship-', 'webp', 1, 10).map((path, inde
   return `./assets/ships/ship-${String(index + 1).padStart(2, '0')}-${names[index]}.webp`;
 });
 
+const NEXT_EXPERIENCE = [
+  './css/product-shell-vnext.css?v=universe1',
+  './css/universe.css?v=universe1',
+  './css/trickster-studio.css?v=universe1',
+  './js/experience-entry.mjs?v=universe1',
+  ...[
+    'experience-bootstrap','experience-feature-flags','product-registry','product-shell-vnext',
+    'product-adapters','universal-search','universe-contracts','universe-quality',
+    'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
+    'universe-experience','trickster-story-manifest','trickster-composer',
+    'trickster-export-capabilities','trickster-timeline','trickster-clip-export','trickster-studio',
+    'evidence-state'
+  ].map(name => `./js/${name}.mjs`)
+];
+
 const CORE = [
   './', './index.html', './privacy.html', './terms.html', './favicon.svg',
+  ...NEXT_EXPERIENCE,
   ...versioned(['./manifest.webmanifest', './css/styles.css', './css/track.css', './css/dusk-atelier.css']),
   ...versioned([
     './js/opening-sequence.js', './js/config.js', './js/api-client.js', './js/storage.js', './js/core.js',
