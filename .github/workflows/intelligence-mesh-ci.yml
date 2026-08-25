@@ -5,7 +5,7 @@ on:
     branches: [ feature/intelligence-mesh-v1 ]
     paths:
       - 'workers/intelligence-*.mjs'
-      - 'js/intelligence-mesh-*.js'
+      - 'js/intelligence-*.js'
       - 'workers/migrations/0009_intelligence_mesh.sql'
       - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
       - 'docs/INTELLIGENCE-MESH.md'
@@ -14,7 +14,7 @@ on:
   pull_request:
     paths:
       - 'workers/intelligence-*.mjs'
-      - 'js/intelligence-mesh-*.js'
+      - 'js/intelligence-*.js'
       - 'workers/migrations/0009_intelligence_mesh.sql'
       - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
       - 'docs/INTELLIGENCE-MESH.md'
@@ -36,15 +36,14 @@ jobs:
       - name: Syntax
         run: |
           for f in workers/intelligence-*.mjs; do node --check "$f"; done
-          node --check js/intelligence-mesh-client.js
-          node --check js/intelligence-mesh-ui.js
+          for f in js/intelligence-*.js; do node --check "$f"; done
       - name: Unit tests
         run: node --test workers/intelligence-*.test.mjs
       - name: Neutral naming contract
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
+          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/intelligence-nft-layer.mjs workers/intelligence-operations.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
       - name: Migration safety contract
         shell: bash
         run: |
@@ -72,8 +71,10 @@ jobs:
           grep -q '/api/intelligence/parallel-universe' workers/intelligence-mesh-router.mjs
           grep -q '/api/intelligence/chain-radar' workers/intelligence-mesh-router.mjs
           grep -q '/api/intelligence/chain-weather' workers/intelligence-mesh-router.mjs
+          grep -q '/api/intelligence/nft-memory' workers/intelligence-asset-router.mjs
+          grep -q '/api/intelligence/community-integrations' workers/intelligence-asset-router.mjs
       - name: Read-only guardrails
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-*.mjs js/intelligence-mesh-*.js
+          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-*.mjs js/intelligence-*.js
