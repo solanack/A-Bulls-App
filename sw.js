@@ -1,4 +1,4 @@
-const BUILD = '8.6.1';
+const BUILD = '8.7.0-vnext';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -18,6 +18,7 @@ const NEXT_EXPERIENCE = [
   './css/product-shell-vnext.css?v=universe1',
   './css/universe.css?v=universe1',
   './css/trickster-studio.css?v=universe1',
+  './css/intelligence-workspace-vnext.css?v=1',
   './js/experience-entry.mjs?v=universe1',
   ...[
     'experience-bootstrap','experience-feature-flags','experience-dependencies','product-registry','product-shell-vnext',
@@ -25,6 +26,7 @@ const NEXT_EXPERIENCE = [
     'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
     'universe-experience','trickster-story-manifest','trickster-composer',
     'trickster-export-capabilities','trickster-timeline','trickster-clip-export','trickster-validation-client','trickster-studio',
+    'temporal-replay-engine','trade-comparison-replay','trade-replay-player','replay-bundle-client','intelligence-workspace-vnext',
     'evidence-state'
   ].map(name => `./js/${name}.mjs`)
 ];
@@ -37,7 +39,7 @@ const CORE = [
     './js/opening-sequence.js', './js/config.js', './js/api-client.js', './js/storage.js', './js/core.js',
     './js/background-manager.js', './js/audio-manager.js', './js/v7-art-system.js', './js/dusk-interactions.js', './js/run-recorder.js', './js/share-card.js',
     './js/leaderboard.js', './js/run-mode.js', './js/bull-invaders-renderer-v2.js', './js/bull-invaders.js', './js/profile-manager.js', './js/ui.js',
-    './js/track-formatters.js', './js/track.js', './js/theme-customizer.js', './js/bull-vision.js', './js/bull-intelligence.js', './js/intelligence-core.js', './js/intelligence-lab.js', './js/intelligence-time-machine.js', './js/intelligence-radar-weather.js', './js/intelligence-where-were-you.js', './js/intelligence-constellation.js', './js/intelligence-nft-memory.js', './js/intelligence-ghost-portfolio.js', './js/intelligence-game-weather.js', './js/main.js'
+    './js/theme-customizer.js', './js/main.js'
   ]),
   './vendor/pixi-8.19.0.min.js',
   './assets/v7/player-ship.webp', './assets/v7/enemies/bear-fighter.webp',
@@ -46,7 +48,7 @@ const CORE = [
   './assets/opening/opening-fade-1-title.jpg',
   './assets/opening/opening-fade-2-studio.png', './assets/opening/menu-bull-solana.webp',
   './assets/icons/icon-192.png', './assets/icons/icon-512.png', './assets/icons/icon-maskable-192.png', './assets/icons/icon-maskable-512.png',
-  './assets/sol-incinerator.png', './assets/profile-fallback.svg',
+  './assets/profile-fallback.svg',
   ...['rapid','spread','shield','overdrive','magnet','nova','double-trinity','triangle','twin','trinity','railgun','plasma','homing','bomb','bomb2']
     .map(name => `./assets/powerups/ecosystem/${name}.svg`),
 ];
