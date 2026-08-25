@@ -1,6 +1,7 @@
 import { composeGuidedStory } from './trickster-composer.mjs';
 import { buildStoryTimeline } from './trickster-timeline.mjs';
 import { chooseExportPlan,detectExportCapabilities } from './trickster-export-capabilities.mjs';
+import { TradeReplayPlayer } from './trade-replay-player.mjs';
 
 function node(tag,className,text) {
   const item=document.createElement(tag);
@@ -15,6 +16,7 @@ export class TricksterStudio {
   #bundle=null;
   #manifest=null;
   #timeline=null;
+  #player=null;
   #onExport;
   #onOpenEvidence;
   #status;
@@ -43,6 +45,8 @@ export class TricksterStudio {
   }
 
   #renderEmpty() {
+    this.#player?.destroy();
+    this.#player=null;
     this.#root.replaceChildren(this.#header());
     const empty=node('div','trickster-empty');
     empty.append(
@@ -74,13 +78,31 @@ export class TricksterStudio {
   }
 
   #renderReady() {
+    this.#player?.destroy();
+    this.#player=null;
     this.#root.replaceChildren(this.#header());
     this.#status.textContent=this.#manifest.coverage.verifiedPercent===100?'VERIFIED EVIDENCE':'PARTIAL COVERAGE';
     const layout=node('div','trickster-layout');
     const preview=node('section','trickster-preview');
     preview.setAttribute('aria-label','Story preview');
-    preview.append(node('div','trickster-preview__frame',this.#manifest.storyType.replaceAll('-',' ').toUpperCase()));
-    preview.append(node('p','',`${this.#timeline.durationSeconds.toFixed(1)} seconds · ${this.#manifest.output.aspectRatio} · ${this.#timeline.scenes.length} scenes`));
+
+    const replayEvents=Array.isArray(this.#bundle?.replayEvents)?this.#bundle.replayEvents:[];
+    if(replayEvents.length) {
+      const replayHost=node('div','trickster-preview__replay');
+      preview.append(replayHost);
+      this.#player=new TradeReplayPlayer({
+        host:replayHost,
+        events:replayEvents,
+        candles:Array.isArray(this.#bundle?.candles)?this.#bundle.candles:[],
+        startTime:this.#bundle?.replay?.startTime,
+        endTime:this.#bundle?.replay?.endTime,
+        rate:this.#bundle?.replay?.rate||1,
+        label:`${this.#manifest.storyType.replaceAll('-',' ')} playable evidence replay`
+      });
+    } else {
+      preview.append(node('div','trickster-preview__frame',this.#manifest.storyType.replaceAll('-',' ').toUpperCase()));
+    }
+    preview.append(node('p','',`${this.#timeline.durationSeconds.toFixed(1)} seconds · ${this.#manifest.output.aspectRatio} · ${this.#timeline.scenes.length} scenes${replayEvents.length?` · ${replayEvents.length} replay events`:''}`));
 
     const scenes=node('ol','trickster-scenes');
     for(const scene of this.#timeline.scenes) {
@@ -119,6 +141,8 @@ export class TricksterStudio {
       const result=await this.#onExport?.({
         manifest:this.#manifest,
         timeline:this.#timeline,
+        replayEvents:Array.isArray(this.#bundle?.replayEvents)?structuredClone(this.#bundle.replayEvents):[],
+        candles:Array.isArray(this.#bundle?.candles)?structuredClone(this.#bundle.candles):[],
         plan:chooseExportPlan(detectExportCapabilities(),{aspectRatio:this.#manifest.output.aspectRatio})
       });
       this.#status.textContent=result?.videoReady===true
@@ -134,6 +158,8 @@ export class TricksterStudio {
   }
 
   destroy() {
+    this.#player?.destroy();
+    this.#player=null;
     this.#root.remove();
   }
 }
