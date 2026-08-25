@@ -187,16 +187,7 @@
       replay.href = `${base}/bull-vision/replay?mint=${encodeURIComponent(body.mint)}&wallet=${encodeURIComponent(body.wallet)}`;
       replay.textContent = 'CINEMATIC REPLAY / TRADE MOVIE ↗'; actions.append(replay);
     }
-    const life = el('button', 'secondary', 'USE SIGNALS IN LIFE');
-    life.type = 'button';
-    life.addEventListener('click', () => {
-      try {
-        sessionStorage.setItem('abulls_bull_vision_life', JSON.stringify({ wallet: body.wallet, mint: body.mint, observed: { ...vision.metrics, signals: vision.signals || [] } }));
-        global.dispatchEvent(new CustomEvent('abulls:bull-vision-life'));
-        global.toast?.('Bull Vision signals available to LIFE');
-      } catch (_) {}
-    });
-    actions.append(life); root.append(actions);
+    root.append(actions);
   }
 
   function renderScenarios(body) {
