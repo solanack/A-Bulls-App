@@ -8,7 +8,7 @@ const trim=value=>String(value==null?'':value).trim();
 
 function ensureStyles(){
   if(document.querySelector('link[data-intelligence-vnext]'))return;
-  const link=document.createElement('link');link.rel='stylesheet';link.href='css/intelligence-workspace-vnext.css?v=2';link.dataset.intelligenceVnext='true';document.head.append(link);
+  const link=document.createElement('link');link.rel='stylesheet';link.href='css/intelligence-workspace-vnext.css?v=3';link.dataset.intelligenceVnext='true';document.head.append(link);
 }
 
 function field(labelText,input){
@@ -77,7 +77,7 @@ function storyBundle(bundle){
 }
 
 export class IntelligenceWorkspace {
-  #host;#root;#client;#player=null;#abort=null;#onCreateStory;#status;#results;#walletA;#walletB;#mint;#quote;#range;#bundle=null;
+  #host;#root;#client;#player=null;#abort=null;#onCreateStory;#status;#results;#walletA;#walletB;#mint;#quote;#range;#bundle=null;#requestNotice;
   constructor({host,apiBase,onCreateStory}={}){
     if(!(host instanceof Element))throw new TypeError('host element is required');
     ensureStyles();
@@ -98,6 +98,7 @@ export class IntelligenceWorkspace {
     form.append(field('Wallet',this.#walletA),field('Compare',this.#walletB),field('Token',this.#mint),field('Quote',this.#quote),field('Window',this.#range),submit);
     form.addEventListener('submit',event=>{event.preventDefault();this.load();});
 
+    this.#requestNotice=node('div','intelligence-request-notice');this.#requestNotice.hidden=true;this.#requestNotice.setAttribute('role','status');
     const explainer=node('div','intelligence-capabilities');
     for(const [title,body] of [
       ['REPLAY','Play, pause, rewind, fast-forward and jump event-to-event.'],
@@ -106,12 +107,25 @@ export class IntelligenceWorkspace {
       ['CREATE','Send any evidence-backed replay directly into Trickster for video/story creation.']
     ]){const card=node('article');card.append(node('strong','',title),node('p','',body));explainer.append(card);}
     this.#results=node('section','intelligence-results');this.#results.hidden=true;
-    this.#root.append(intro,form,explainer,this.#results);this.#host.replaceChildren(this.#root);
+    this.#root.append(intro,form,this.#requestNotice,explainer,this.#results);this.#host.replaceChildren(this.#root);
   }
 
   setRequest(request={}){
     const query=trim(request.query||request.wallet||request.address);
-    if(WALLET_RE.test(query))this.#walletA.value=query;
+    this.#requestNotice.hidden=true;this.#requestNotice.replaceChildren();
+    if(!query)return;
+    const kind=trim(request.kind||'solana-address');
+    if(kind==='solana-address'&&WALLET_RE.test(query)){
+      this.#walletA.value=query;
+      this.#requestNotice.append(node('strong','','ADDRESS RECEIVED'),node('p','',request.explanation||'The identifier is loaded as Wallet A for replay. Because a Solana address can represent multiple account types, the app does not claim a wallet label until evidence resolves it.'));
+      this.#requestNotice.hidden=false;this.#status.textContent='ADDRESS READY';this.#mint.focus();return;
+    }
+    if(kind==='transaction-signature'){
+      this.#requestNotice.append(node('strong','','TRANSACTION SIGNATURE RECEIVED'),node('p','','The signature was routed into Intelligence. Transaction-detail replay is not enabled in this workspace yet, so no unsupported claim or fake lookup is shown. Wallet + token replay remains available below.'));
+      this.#requestNotice.hidden=false;this.#status.textContent='TRANSACTION ROUTED';return;
+    }
+    this.#requestNotice.append(node('strong','','SEARCH RECEIVED'),node('p','',`“${query.slice(0,120)}” was routed into Intelligence. Free-text entity resolution is not enabled yet, so the app will not guess which wallet, token, NFT, or program you meant.`));
+    this.#requestNotice.hidden=false;this.#status.textContent='SEARCH ROUTED';
   }
 
   async load(){
