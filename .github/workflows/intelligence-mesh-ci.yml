@@ -2,7 +2,7 @@ name: Intelligence Mesh CI
 
 on:
   push:
-    branches: [ feature/intelligence-mesh-v1 ]
+    branches: [ feature/intelligence-mesh-v1, feature/universe-trickster-v1 ]
     paths:
       - 'workers/intelligence-*.mjs'
       - 'js/intelligence-*.js'
@@ -43,14 +43,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/intelligence-nft-layer.mjs workers/intelligence-operations.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
+          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/intelligence-nft-layer.mjs workers/intelligence-operations.mjs workers/intelligence-replay-bundle.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
       - name: Migration safety contract
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_index_coverage' workers/migrations/0010_intelligence_mesh_runtime.sql
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_demand_patterns' workers/migrations/0010_intelligence_mesh_runtime.sql
-          grep -q 'CREATE TABLE IF NOT EXISTS community_integrations' workers/migrations/0010_intelligence_mesh_runtime.sql
+          ! grep -Eiq 'community_integrations|ansem|bullpen' workers/migrations/0010_intelligence_mesh_runtime.sql
           ! grep -Eiq 'DROP[[:space:]]+TABLE|TRUNCATE|DELETE[[:space:]]+FROM' workers/migrations/0010_intelligence_mesh_runtime.sql
       - name: Progressive history contract
         shell: bash
@@ -72,7 +72,9 @@ jobs:
           grep -q '/api/intelligence/chain-radar' workers/intelligence-mesh-router.mjs
           grep -q '/api/intelligence/chain-weather' workers/intelligence-mesh-router.mjs
           grep -q '/api/intelligence/nft-memory' workers/intelligence-asset-router.mjs
-          grep -q '/api/intelligence/community-integrations' workers/intelligence-asset-router.mjs
+          grep -q '/api/intelligence/replay-bundle' workers/intelligence-replay-bundle.mjs
+          grep -q 'PLAYABLE_DATA_ENABLED' workers/intelligence-replay-bundle.mjs
+          ! grep -Eiq 'community-integrations|ansem|bullpen' workers/intelligence-asset-router.mjs workers/intelligence-operations.mjs
       - name: Read-only guardrails
         shell: bash
         run: |
