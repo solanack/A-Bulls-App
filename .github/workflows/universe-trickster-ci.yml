@@ -1,0 +1,44 @@
+name: Universe and Trickster CI
+
+on:
+  push:
+    branches: [ feature/universe-trickster-v1 ]
+    paths:
+      - 'js/universe-*.mjs'
+      - 'js/trickster-*.mjs'
+      - 'js/experience-feature-flags*.mjs'
+      - 'docs/UNIVERSE-TRICKSTER-V1.md'
+      - '.github/workflows/universe-trickster-ci.yml'
+  pull_request:
+    paths:
+      - 'js/universe-*.mjs'
+      - 'js/trickster-*.mjs'
+      - 'js/experience-feature-flags*.mjs'
+      - 'docs/UNIVERSE-TRICKSTER-V1.md'
+      - '.github/workflows/universe-trickster-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check js/universe-contracts.mjs
+          node --check js/trickster-story-manifest.mjs
+          node --check js/experience-feature-flags.mjs
+      - name: Contract tests
+        run: node --test js/universe-contracts.test.mjs js/trickster-story-manifest.test.mjs js/experience-feature-flags.test.mjs
+      - name: Preservation guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' js/universe-*.mjs js/trickster-*.mjs
+          grep -q 'Disabled by default' docs/UNIVERSE-TRICKSTER-V1.md
