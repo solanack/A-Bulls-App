@@ -34,8 +34,14 @@ jobs:
           node --check js/universe-contracts.mjs
           node --check js/trickster-story-manifest.mjs
           node --check js/experience-feature-flags.mjs
+          node --check js/universe-quality.mjs
+          node --check js/universe-synthetic-data.mjs
+          node --check js/universe-transition.mjs
+          node --check js/universe-renderer.mjs
+          node --check js/trickster-composer.mjs
+          node --check js/trickster-export-capabilities.mjs
       - name: Contract tests
-        run: node --test js/universe-contracts.test.mjs js/trickster-story-manifest.test.mjs js/experience-feature-flags.test.mjs
+        run: node --test js/universe-contracts.test.mjs js/universe-runtime.test.mjs js/trickster-story-manifest.test.mjs js/trickster-runtime.test.mjs js/experience-feature-flags.test.mjs
       - name: Preservation guard
         shell: bash
         run: |
