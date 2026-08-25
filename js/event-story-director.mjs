@@ -1,5 +1,12 @@
 const text=value=>String(value==null?'':value).trim();
-const pct=value=>Number.isFinite(Number(value))?Number(value):null;
+
+const SCENE_FRAMES=Object.freeze({
+  'event-hook':75,
+  'market-window-replay':180,
+  'execution-context':105,
+  'market-aftermath':150,
+  'evidence-close':90
+});
 
 export function directEventStoryBeats(bundle={}){
   const context=bundle.marketContext||null;
@@ -17,6 +24,15 @@ export function directEventStoryBeats(bundle={}){
   if(aftermath.length){beats.push(Object.freeze({id:'what-happened-next',type:'market-aftermath',title:'What happened next',claimIds:Object.freeze(aftermath.map(claim=>claim.id)),purpose:'Compare deterministic indexed post-event price windows while preserving actual sample timing.'}));}
   beats.push(Object.freeze({id:'evidence-close',type:'evidence-close',title:'Verify the evidence',claimIds:Object.freeze([]),purpose:'Close with coverage, sources, and the frozen evidence receipt.'}));
   return Object.freeze(beats);
+}
+
+export function eventStoryScenePlan(bundle={}){
+  return Object.freeze(directEventStoryBeats(bundle).map((beat,index)=>Object.freeze({
+    id:`event-scene-${String(index+1).padStart(2,'0')}`,
+    type:beat.type,
+    durationFrames:SCENE_FRAMES[beat.type]||90,
+    claimIds:Object.freeze([...beat.claimIds])
+  })));
 }
 
 export function summarizeEventStoryDirection(bundle={}){
