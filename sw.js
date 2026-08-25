@@ -20,7 +20,7 @@ const NEXT_EXPERIENCE = [
   './css/trickster-studio.css?v=universe1',
   './js/experience-entry.mjs?v=universe1',
   ...[
-    'experience-bootstrap','experience-feature-flags','product-registry','product-shell-vnext',
+    'experience-bootstrap','experience-feature-flags','experience-dependencies','product-registry','product-shell-vnext',
     'product-adapters','universal-search','universe-contracts','universe-quality',
     'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
     'universe-experience','trickster-story-manifest','trickster-composer',
