@@ -1,6 +1,6 @@
 import { loadMediabunny } from './experience-dependencies.mjs';
 import { encodeStoryClip, negotiateClipEncoding, TricksterFormats } from './trickster-clip-export.mjs';
-import { createEventStoryFrameDrawer } from './event-story-frame-renderer.mjs';
+import { createEventStoryCinematicFrameDrawer } from './event-story-frame-drawer.mjs';
 
 function fallback(reason){return Object.freeze({videoReady:false,renderRequired:'server',reason:String(reason||'on_device_render_unavailable')});}
 
@@ -8,7 +8,7 @@ export async function renderEventStoryVideo(detail={}, {
   mediaLoader=loadMediabunny,
   negotiate=negotiateClipEncoding,
   encode=encodeStoryClip,
-  drawerFactory=createEventStoryFrameDrawer,
+  drawerFactory=createEventStoryCinematicFrameDrawer,
   cancelled=()=>false,
   onProgress=()=>{}
 }={}){
