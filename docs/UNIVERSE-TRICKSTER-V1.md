@@ -6,8 +6,8 @@ Status: implementation foundation on `feature/universe-trickster-v1`. Disabled b
 
 This branch starts at Intelligence Mesh head `f8625dff51552968b301ce8559e00f0d4a370979`.
 It is additive. Pages 8.7.0 / Worker 8.2.0 behavior, Bull Invaders Ranked invariants,
-Intelligence routes, LIFE guardrails, media workspace, profiles, and Community
-Integrations must remain unchanged unless a parity-tested migration is approved.
+Intelligence routes, media workspace, profiles, and Community Integrations must
+remain unchanged unless a parity-tested migration is approved.
 
 ## Feature flags
 
@@ -82,3 +82,8 @@ claims but may not introduce claims absent from the manifest.
 7. Optional deterministic server renderer.
 
 No merge, database migration, or deployment is authorized by this document.
+
+## Product scope update — 2026-08-25
+
+LIFE was removed completely by owner decision after this branch began. Universe and
+Trickster must not route into, depend on, or cache any LIFE surface.
