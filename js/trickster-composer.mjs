@@ -46,6 +46,25 @@ export function availableStoryTemplates(storyType) {
   ]);
 }
 
+function scenesFromPlan(scenePlan,normalizedClaims){
+  const knownClaims=new Set(normalizedClaims.map(claim=>claim.id));
+  const usedClaims=new Set();
+  const scenes=(scenePlan||[]).map((scene,index)=>{
+    const claimIds=[...new Set(scene?.claimIds||[])].map(String).filter(id=>knownClaims.has(id));
+    claimIds.forEach(id=>usedClaims.add(id));
+    return{
+      id:scene?.id||safeId('scene',index+1),
+      type:String(scene?.type||'evidence-summary'),
+      durationFrames:Math.max(1,Math.trunc(Number(scene?.durationFrames??scene?.frames??90)||90)),
+      claimIds
+    };
+  });
+  if(!scenes.length)return null;
+  const remaining=normalizedClaims.filter(claim=>!usedClaims.has(claim.id));
+  if(remaining.length)scenes.at(-1).claimIds.push(...remaining.map(claim=>claim.id));
+  return scenes;
+}
+
 export function composeGuidedStory({
   id,
   storyType,
@@ -53,28 +72,33 @@ export function composeGuidedStory({
   coverage,
   evidence,
   claims,
+  scenePlan,
   output = {}
 }) {
   const normalizedClaims = (claims ?? []).map((claim, index) => ({
     ...claim,
     id: claim.id || safeId('claim', index + 1)
   }));
-  const usedClaims = new Set();
-  const scenes = availableStoryTemplates(storyType).map((template, index) => {
-    const claimIds = normalizedClaims
-      .filter((claim) => template.claimKinds.includes(claim.kind) && !usedClaims.has(claim.id))
-      .map((claim) => claim.id);
-    claimIds.forEach((claimId) => usedClaims.add(claimId));
-    return {
-      id: safeId('scene', index + 1),
-      type: template.type,
-      durationFrames: template.frames,
-      claimIds
-    };
-  });
 
-  const remaining = normalizedClaims.filter((claim) => !usedClaims.has(claim.id));
-  if (remaining.length) scenes.at(-1).claimIds.push(...remaining.map((claim) => claim.id));
+  let scenes=scenesFromPlan(scenePlan,normalizedClaims);
+  if(!scenes){
+    const usedClaims = new Set();
+    scenes = availableStoryTemplates(storyType).map((template, index) => {
+      const claimIds = normalizedClaims
+        .filter((claim) => template.claimKinds.includes(claim.kind) && !usedClaims.has(claim.id))
+        .map((claim) => claim.id);
+      claimIds.forEach((claimId) => usedClaims.add(claimId));
+      return {
+        id: safeId('scene', index + 1),
+        type: template.type,
+        durationFrames: template.frames,
+        claimIds
+      };
+    });
+
+    const remaining = normalizedClaims.filter((claim) => !usedClaims.has(claim.id));
+    if (remaining.length) scenes.at(-1).claimIds.push(...remaining.map((claim) => claim.id));
+  }
 
   return validateStoryManifest({
     id,
