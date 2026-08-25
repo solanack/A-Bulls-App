@@ -19,7 +19,7 @@
   const chainWeather = () => get('/api/intelligence/chain-weather');
   const coverage = wallet => post('/api/intelligence/index-coverage', { wallet:needWallet(wallet) });
   const walletDna = wallet => post('/api/intelligence/wallet-dna', { wallet:needWallet(wallet) });
-  const timeMachine = (wallet,limit=250) => post('/api/intelligence/time-machine', { wallet:needWallet(wallet),limit });
+  const timeMachine = (wallet,limit=250) => post('/api/intelligence/timeline', { wallet:needWallet(wallet),limit });
   const constellation = (wallet,limit=100) => post('/api/intelligence/constellation', { wallet:needWallet(wallet),limit });
   const museum = wallet => post('/api/intelligence/museum', { wallet:needWallet(wallet) });
   const nftMemory = (wallet,limit=250) => post('/api/intelligence/nft-memory', { wallet:needWallet(wallet),limit });
