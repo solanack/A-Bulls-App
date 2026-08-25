@@ -24,7 +24,7 @@ const NEXT_EXPERIENCE = [
     'product-adapters','universal-search','universe-contracts','universe-quality',
     'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
     'universe-experience','trickster-story-manifest','trickster-composer',
-    'trickster-export-capabilities','trickster-timeline','trickster-clip-export','trickster-studio',
+    'trickster-export-capabilities','trickster-timeline','trickster-clip-export','trickster-validation-client','trickster-studio',
     'evidence-state'
   ].map(name => `./js/${name}.mjs`)
 ];
