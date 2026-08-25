@@ -7,6 +7,8 @@ on:
       - 'js/universe-*.mjs'
       - 'js/trickster-*.mjs'
       - 'js/experience-feature-flags*.mjs'
+      - 'workers/intelligence-universe-*.mjs'
+      - 'workers/migrations/0011_universe_trickster.sql'
       - 'docs/UNIVERSE-TRICKSTER-V1.md'
       - 'docs/PRODUCT-SHELL-VNEXT.md'
       - 'css/product-shell-vnext.css'
@@ -49,11 +51,22 @@ jobs:
           node --check js/universal-search.mjs
           node --check js/experience-bootstrap.mjs
           node --check js/evidence-state.mjs
+          node --check js/universe-client.mjs
+          node --check js/universe-experience.mjs
+          node --check js/trickster-timeline.mjs
+          node --check js/trickster-clip-export.mjs
+          node --check js/trickster-studio.mjs
+          node --check workers/intelligence-universe-runtime.mjs
+          node --check workers/intelligence-universe-router.mjs
+          node --check workers/intelligence-worker-hooks.mjs
       - name: Contract tests
-        run: node --test js/universe-contracts.test.mjs js/universe-runtime.test.mjs js/trickster-story-manifest.test.mjs js/trickster-runtime.test.mjs js/experience-feature-flags.test.mjs js/product-shell.test.mjs js/product-integration.test.mjs js/evidence-state.test.mjs
+        run: node --test js/universe-contracts.test.mjs js/universe-runtime.test.mjs js/trickster-story-manifest.test.mjs js/trickster-runtime.test.mjs js/experience-feature-flags.test.mjs js/product-shell.test.mjs js/product-integration.test.mjs js/evidence-state.test.mjs js/universe-client.test.mjs js/trickster-timeline.test.mjs workers/intelligence-universe-runtime.test.mjs
       - name: Preservation guard
         shell: bash
         run: |
           set -euo pipefail
           ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' js/universe-*.mjs js/trickster-*.mjs
           grep -q 'Disabled by default' docs/UNIVERSE-TRICKSTER-V1.md
+          grep -q 'CREATE TABLE IF NOT EXISTS intelligence_live_observations' workers/migrations/0011_universe_trickster.sql
+          grep -q 'CREATE TABLE IF NOT EXISTS intelligence_story_manifests' workers/migrations/0011_universe_trickster.sql
+          ! grep -Eiq 'DROP[[:space:]]+TABLE|TRUNCATE' workers/migrations/0011_universe_trickster.sql
