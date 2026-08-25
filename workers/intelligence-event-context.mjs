@@ -50,7 +50,7 @@ export async function buildEventMarketContext(env={},input={}){
   const db=intelligenceDb(env);if(!db)throw new Error('intelligence_db_unavailable');
   const mint=s(input.mint||input.token);if(!ADDRESS_RE.test(mint))throw new TypeError('invalid_token_mint');
   const timestampMs=Number(input.timestamp??input.blockTimeMs??(Number(input.blockTime)*1000));if(!Number.isFinite(timestampMs)||timestampMs<=0)throw new TypeError('invalid_event_timestamp');
-  const center=Math.trunc(timestampMs/1000);const windowSeconds=Math.max(60,Math.min(21600,Math.trunc(num(input.windowSeconds)||1800));const from=Math.max(0,center-windowSeconds),to=center+windowSeconds;
+  const center=Math.trunc(timestampMs/1000);const windowSeconds=Math.max(60,Math.min(21600,Math.trunc(num(input.windowSeconds)||1800)));const from=Math.max(0,center-windowSeconds),to=center+windowSeconds;
   const subjectWallet=s(input.subjectWallet||input.wallet);if(subjectWallet&&!ADDRESS_RE.test(subjectWallet))throw new TypeError('invalid_subject_wallet');
   const signature=s(input.signature);
 
