@@ -24,15 +24,12 @@ function productPage(title,description) {
 }
 
 function gamesPage(onLaunch) {
-  const {page,body}=productPage('Games','Arcade and interactive experiences remain a first-class product alongside Intelligence.');
+  const {page,body}=productPage('Games','Bull Invaders is the arcade experience, preserved alongside the Solana intelligence platform.');
   const invaders=node('button','product-card product-card--featured');
   invaders.type='button';
   invaders.append(node('span','product-card__index','01'),node('h2','','Bull Invaders'),node('p','','Ranked and campaign play with the existing deterministic scoring and replay rules.'),node('span','product-card__action','OPEN LOADOUT →'));
   invaders.addEventListener('click',()=>onLaunch?.('bull-invaders'));
-  const bang=node('a','product-card');
-  bang.href='games/claude-of-duty/index.html';
-  bang.append(node('span','product-card__index','02'),node('h2','','Solana Bang Bang'),node('p','','Enter the existing maze experience.'),node('span','product-card__action','OPEN GAME →'));
-  body.append(invaders,bang);
+  body.append(invaders);
   return page;
 }
 
