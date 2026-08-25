@@ -121,7 +121,11 @@ export class TricksterStudio {
         timeline:this.#timeline,
         plan:chooseExportPlan(detectExportCapabilities(),{aspectRatio:this.#manifest.output.aspectRatio})
       });
-      this.#status.textContent=result?'VIDEO READY':'EXPORT AVAILABLE';
+      this.#status.textContent=result?.videoReady===true
+        ? 'VIDEO READY'
+        : result?.validated===true
+          ? 'EVIDENCE VALIDATED'
+          : 'EXPORT AVAILABLE';
       return result;
     } catch(error) {
       this.#status.textContent='RETRY AVAILABLE';
