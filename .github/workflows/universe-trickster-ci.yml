@@ -25,7 +25,7 @@ jobs:
       - name: vNext syntax
         run: |
           set -euo pipefail
-          for file in js/universe-*.mjs js/trickster-*.mjs js/temporal-*.mjs js/trade-*.mjs js/replay-*.mjs js/product-*.mjs js/experience-*.mjs js/intelligence-workspace-*.mjs js/entity-resolver-client.mjs js/wallet-token-index-client.mjs js/bull-invaders-host.mjs js/evidence-state.mjs js/universal-search.mjs workers/intelligence-universe-*.mjs workers/intelligence-trickster-*.mjs workers/intelligence-replay-*.mjs workers/intelligence-entity-resolver.mjs workers/intelligence-wallet-token-index.mjs workers/intelligence-worker-hooks.mjs; do
+          for file in js/universe-*.mjs js/trickster-*.mjs js/temporal-*.mjs js/trade-*.mjs js/replay-*.mjs js/product-*.mjs js/experience-*.mjs js/intelligence-workspace-*.mjs js/intelligence-event-ledger.mjs js/entity-resolver-client.mjs js/wallet-token-index-client.mjs js/bull-invaders-host.mjs js/evidence-state.mjs js/universal-search.mjs workers/intelligence-universe-*.mjs workers/intelligence-trickster-*.mjs workers/intelligence-replay-*.mjs workers/intelligence-entity-resolver.mjs workers/intelligence-wallet-token-index.mjs workers/intelligence-worker-hooks.mjs; do
             [ -e "$file" ] && node --check "$file"
           done
           node --check js/config.js
@@ -43,6 +43,7 @@ jobs:
             js/trickster-validation-client.test.mjs \
             js/temporal-replay-engine.test.mjs \
             js/trade-comparison-replay.test.mjs \
+            js/intelligence-event-ledger.test.mjs \
             js/universal-search.test.mjs \
             js/experience-feature-flags.test.mjs \
             js/experience-dependencies.test.mjs \
@@ -70,6 +71,8 @@ jobs:
           grep -q '/api/intelligence/wallet-tokens' workers/intelligence-wallet-token-index.mjs
           grep -q 'handleWalletTokenIndexRequest' workers/intelligence-worker-hooks.mjs
           grep -q 'WalletTokenIndexClient' js/intelligence-workspace-vnext.mjs
+          grep -q 'createEvidenceLedger' js/intelligence-workspace-vnext.mjs
+          grep -q 'focusReplayEvent' js/trade-replay-player.mjs
           grep -q 'Around transaction (12h)' js/intelligence-workspace-vnext.mjs
           grep -q "adapters.activate('intelligence', { source: 'universal-search', request })" js/experience-bootstrap.mjs
           test ! -d games
