@@ -11,8 +11,9 @@ function sameWallet(event,wallet){return text(event?.wallet)===text(wallet);}
 export function buildWalletComparisonFrameModel({bundle={},manifest={},renderPlan=[]}={},frame=0){
   const state=walletComparisonRenderStateAtFrame(renderPlan,frame);if(!state)return null;
   const events=replayEvents(bundle),candles=replayCandles(bundle),walletA=state.walletA||bundle?.comparison?.walletA?.wallet||'',walletB=state.walletB||bundle?.comparison?.walletB?.wallet||'';
-  const allVisible=state.mode==='comparison-replay'?through(events,state.chainTime):Object.freeze([]);
-  const visibleCandles=state.mode==='comparison-replay'?through(candles,state.chainTime):Object.freeze([]);
+  const timedMode=state.mode==='comparison-replay'||state.mode==='comparison-simulation';
+  const allVisible=timedMode?through(events,state.chainTime):Object.freeze([]);
+  const visibleCandles=timedMode?through(candles,state.chainTime):Object.freeze([]);
   const simulationEvents=state.mode==='comparison-simulation'?through(bundle?.whatIf?.events||[],state.chainTime):Object.freeze([]);
   return Object.freeze({
     state,
@@ -23,7 +24,10 @@ export function buildWalletComparisonFrameModel({bundle={},manifest={},renderPla
     visibleCandles,
     timing:bundle?.comparison?.timing||null,
     disclosure:text(bundle?.comparison?.disclosure),
-    simulation:Object.freeze({events:simulationEvents,disclosure:text(bundle?.whatIf?.disclosure||state.simulationDisclosure),active:state.mode==='comparison-simulation'}),
+    simulation:Object.freeze({
+      events:simulationEvents,disclosure:text(bundle?.whatIf?.disclosure||state.simulationDisclosure),active:state.mode==='comparison-simulation',
+      sourceWallet:text(bundle?.whatIf?.sourceWallet),targetWallet:text(bundle?.whatIf?.targetWallet),scenario:text(bundle?.whatIf?.scenario)
+    }),
     evidence:Object.freeze({verifiedPercent:finite(manifest?.coverage?.verifiedPercent),coverage:text(manifest?.coverage?.statement),count:(manifest.evidence||[]).length})
   });
 }
