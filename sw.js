@@ -1,4 +1,4 @@
-const BUILD = '8.7.0-vnext-2';
+const BUILD = '8.7.0-vnext-3';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -18,12 +18,12 @@ const NEXT_EXPERIENCE = [
   './css/product-shell-vnext.css?v=universe1',
   './css/universe.css?v=universe1',
   './css/trickster-studio.css?v=universe1',
-  './css/intelligence-workspace-vnext.css?v=5',
+  './css/intelligence-workspace-vnext.css?v=6',
   './css/bull-invaders-vnext.css?v=1',
   './js/experience-entry.mjs?v=universe1',
   ...[
     'experience-bootstrap','experience-feature-flags','experience-dependencies','product-registry','product-shell-vnext',
-    'product-adapters','universal-search','entity-resolver-client','universe-contracts','universe-quality',
+    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','universe-contracts','universe-quality',
     'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
     'universe-experience','trickster-story-manifest','trickster-composer',
     'trickster-export-capabilities','trickster-timeline','trickster-clip-export','trickster-validation-client','trickster-studio',
