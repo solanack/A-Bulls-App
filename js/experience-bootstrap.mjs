@@ -38,19 +38,22 @@ export function bootstrapNextExperience({
     activeProduct: initialProduct,
     serviceState,
     onNavigate(productId) {
-      adapters.activate(productId, { source: 'product-shell' });
+      const content = adapters.activate(productId, { source: 'product-shell' });
+      if (content instanceof Element) shell.mountProduct(content);
     },
     onSearch(value) {
       const request = searchRequest(value);
       onSearchRequest?.(request);
       if (request.destination === 'transaction' || request.destination === 'resolve-address') {
-        adapters.activate('intelligence', { source: 'universal-search', request });
+        const content = adapters.activate('intelligence', { source: 'universal-search', request });
+        if (content instanceof Element) shell.mountProduct(content);
         shell.setActiveProduct('intelligence');
       }
     }
   });
 
-  adapters.activate(initialProduct, { source: 'product-shell-bootstrap' });
+  const initialContent = adapters.activate(initialProduct, { source: 'product-shell-bootstrap' });
+  if (initialContent instanceof Element) shell.mountProduct(initialContent);
 
   return Object.freeze({
     mounted: true,
