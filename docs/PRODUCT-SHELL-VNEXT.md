@@ -1,34 +1,61 @@
 # Product Shell vNext — Dusk Atelier 2.0
 
-Status: locked product rule and implementation contract. Feature-flagged; not deployed.
+Status: canonical replacement-shell implementation contract on `feature/universe-trickster-v1`. Not deployed.
 
 ## Non-negotiable product rule
 
-The application must make every primary product easy to discover and understand.
-It must feel composed by a coordinated expert team: precise hierarchy, consistent
-language, predictable interaction, excellent empty/loading/error states, responsive
-performance, accessibility, and restrained luxury. Visual spectacle never obscures
-meaning or delays a primary task.
+The application must make every primary product easy to discover and understand. It must feel composed by a coordinated expert team: precise hierarchy, consistent language, predictable interaction, excellent empty/loading/error states, responsive performance, accessibility, and restrained luxury. Visual spectacle never obscures meaning or delays a primary task.
 
 ## Product hierarchy
 
 Primary products, always visible from the global shell:
 
-1. Universe — cinematic live Solana discovery.
-2. Intelligence — evidence-backed wallet, transaction, token, NFT, and market investigation.
-3. Trickster — turn verified data into shareable stories and video.
-4. LIFE — private reflective questions based only on entered-wallet trading evidence.
-5. Games — Bull Invaders and other interactive experiences.
+1. **Universe** — cinematic full-chain Solana discovery.
+2. **Intelligence** — evidence-backed wallet, transaction, token, NFT, market, replay, and comparison investigation.
+3. **Trickster** — turn verified data and playable events into shareable stories and video.
+4. **Games** — Bull Invaders only.
 
-Secondary products:
+Secondary/utility surfaces:
 
 - Media Workspace
-- Community Integrations
 - Profile
 - Help, provenance, settings, and service status
 
-Ansem, Bullpen, and Ansem.io remain available only within Community Integrations.
-They do not define the home screen, global navigation, infrastructure, or product language.
+**Removed completely from the product direction:**
+
+- LIFE
+- Ansem integration and $ANSEM-specific analytics
+- Bullpen NFT/community integration
+- Ansem.io integration
+- Community Integrations product
+- Solana Bang Bang / Claude of Duty maze game
+
+Generic Solana NFT intelligence and NFT Memory remain because they apply to the entire blockchain rather than a specific community.
+
+## Desktop experience
+
+Desktop is a first-class full-screen workstation, not a stretched phone layout.
+
+- Use the full browser width and available vertical workspace.
+- Keep a persistent desktop product rail and full-width command/search region.
+- Do not center the entire application inside a phone-sized or narrow max-width shell.
+- Intelligence, replay charts, evidence, comparison, and creator surfaces should expand to use large monitors meaningfully.
+- Wide screens should gain information density and simultaneous context rather than simply enlarging mobile cards.
+- Tablet can condense columns while retaining desktop navigation until the true phone breakpoint.
+
+The canonical phone breakpoint is **760 CSS px and below** unless testing proves a device-specific adjustment is required.
+
+## Phone experience
+
+Phone remains purpose-built and touch-first:
+
+- bottom navigation for Universe, Intelligence, Trickster, and Games;
+- minimum 44px touch targets;
+- single-column reflow where needed;
+- no hover-only actions;
+- safe-area-aware bottom controls;
+- back behavior preserves investigation/replay context;
+- charts and replay controls remain fully usable by touch.
 
 ## First viewport
 
@@ -38,31 +65,20 @@ The home screen is a working surface, not a marketing hero. It contains:
 - clear read-only reassurance;
 - current network observation/coverage state;
 - immediate entry into Universe and Intelligence;
-- visible launch points for Trickster and Games;
+- visible launch points for Trickster and Bull Invaders;
 - recent local work only when it exists.
 
-No carousel, hidden product drawer, autoplaying promotional copy, or mandatory 3D intro
-may stand between the user and a core product. The cinematic Universe may be the
-background/live preview but must not compromise text contrast or interaction.
+No carousel, hidden product drawer, autoplaying promotional copy, or mandatory 3D intro may stand between the user and a core product. Universe may be cinematic, but it cannot block Intelligence or Games.
 
-## Navigation
+## Intelligence replacement rule
 
-Desktop/tablet:
+vNext Intelligence does **not** portal into the legacy Ansem/Bullpen analytics center. It is a clean full-Solana workspace driven by Intelligence Mesh evidence.
 
-- compact permanent product rail;
-- contextual secondary navigation inside each product;
-- command/search region in the top bar;
-- evidence/status area separate from product navigation.
+The first canonical workflow is:
 
-Phone:
+`public wallet → token → optional comparison wallet → time window → indexed Replay Bundle → playable chart → compare/what-if → Create Story`
 
-- bottom navigation for Universe, Intelligence, Trickster, and Games;
-- More sheet for Media, Communities, Profile, Help, and Settings;
-- minimum 44px touch targets;
-- no hover-only actions;
-- back behavior preserves product and investigation context.
-
-Every product has a plain-language one-line description. Labels remain stable.
+Every replay must expose coverage, provenance/verification state, and missing-data caveats. Missing execution prices or candles are never fabricated.
 
 ## Visual direction: Dusk Atelier 2.0
 
@@ -72,33 +88,20 @@ A restrained observatory/editorial-luxury system:
 - warm graphite and aubergine layered surfaces;
 - bone-white primary text;
 - champagne/platinum interactive emphasis;
-- Solana cyan/violet/green used only for live data, selection, and evidence states;
+- Solana cyan/violet/green used for live data, selection, and evidence states;
 - fine hairline borders;
-- small radius variation (10–18px), not pill-shaped everything;
+- restrained radius variation;
 - deep but quiet shadows;
 - dense information with generous internal spacing;
 - Sora for display/product labels and Manrope for interface/data;
 - tabular numerals for metrics;
 - purposeful motion with reduced-motion parity.
 
-Luxury means precision and restraint, not gold decoration, glass on every panel,
-excessive gradients, oversized headings, or ornamental animations.
+Luxury means precision and restraint, not ornamental clutter.
 
 ## System states
 
-Every data product provides:
-
-- initial explanation;
-- empty state;
-- indexing/progress state;
-- partial-history state;
-- live/confirmed/finalized/verified state;
-- degraded-source state;
-- recoverable error;
-- unavailable evidence;
-- last-updated time and provenance access.
-
-Loading never replaces the whole screen when useful cached or partial results exist.
+Every data product provides initial, empty, indexing/progress, partial-history, live/confirmed/finalized/verified, degraded-source, recoverable-error, unavailable-evidence, and last-updated/provenance states. Loading never replaces the whole screen when useful cached or partial results exist.
 
 ## Accessibility and performance
 
@@ -109,17 +112,10 @@ Loading never replaces the whole screen when useful cached or partial results ex
 - WebGL context loss returns to list/dashboard mode.
 - Core navigation and Intelligence remain functional without 3D.
 - Mobile first meaningful interaction target: under 2.5 seconds on representative mid-range Android.
-- Product shell JavaScript remains independent from game and visualization render loops.
+- Product shell JavaScript remains independent from Bull Invaders and visualization render loops.
 
 ## Compatibility
 
-This shell wraps existing products; it does not rewrite their business logic.
-Existing feature modules mount through product adapters. Ranked game invariants and
-Intelligence evidence contracts remain unchanged. Legacy/community functionality is
-moved only after route and behavior parity tests pass.
+Bull Invaders remains the preserved game compatibility surface. Ranked scoring, hitboxes, replay validation, physics invariants, and campaign behavior must not change accidentally while the surrounding app is replaced.
 
-## Product removal decision — 2026-08-25
-
-LIFE has been removed from the product direction at the owner's request. It is not a
-navigation item, route, adapter, cached asset, or compatibility surface. Reflective-wallet
-features must not be reintroduced implicitly through Intelligence or another product.
+The legacy application DOM may remain temporarily as an internal Bull Invaders compatibility host while its game surface is extracted cleanly. It is hidden when vNext mounts and is not an allowed route or navigation surface. Retired Ansem/Bullpen/Ansem.io products must never be surfaced from that compatibility host.
