@@ -6,6 +6,8 @@ on:
     paths:
       - 'js/universe-*.mjs'
       - 'js/trickster-*.mjs'
+      - 'js/temporal-*.mjs'
+      - 'js/trade-*.mjs'
       - 'js/product-*.mjs'
       - 'js/experience-*.mjs'
       - 'package.json'
@@ -32,6 +34,8 @@ on:
     paths:
       - 'js/universe-*.mjs'
       - 'js/trickster-*.mjs'
+      - 'js/temporal-*.mjs'
+      - 'js/trade-*.mjs'
       - 'js/product-*.mjs'
       - 'js/experience-*.mjs'
       - 'package.json'
@@ -88,6 +92,9 @@ jobs:
             js/trickster-clip-export.mjs \
             js/trickster-validation-client.mjs \
             js/trickster-studio.mjs \
+            js/temporal-replay-engine.mjs \
+            js/trade-comparison-replay.mjs \
+            js/trade-replay-player.mjs \
             js/product-registry.mjs \
             js/product-shell-vnext.mjs \
             js/product-adapters.mjs \
@@ -119,6 +126,8 @@ jobs:
             js/trickster-runtime.test.mjs \
             js/trickster-timeline.test.mjs \
             js/trickster-validation-client.test.mjs \
+            js/temporal-replay-engine.test.mjs \
+            js/trade-comparison-replay.test.mjs \
             js/experience-feature-flags.test.mjs \
             js/experience-dependencies.test.mjs \
             js/experience-integration.test.mjs \
@@ -131,7 +140,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' js/universe-*.mjs js/trickster-*.mjs
+          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' js/universe-*.mjs js/trickster-*.mjs js/temporal-*.mjs js/trade-*.mjs
           grep -q 'Disabled by default' docs/UNIVERSE-TRICKSTER-V1.md
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_live_observations' workers/migrations/0011_universe_trickster.sql
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_story_manifests' workers/migrations/0011_universe_trickster.sql
