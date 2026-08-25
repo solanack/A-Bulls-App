@@ -110,6 +110,7 @@ export class UniverseExperience {
       await this.#onDestinationRequest?.(destination,entity);
       this.#renderer.markDestinationReady();
       this.#root.dataset.transition='revealing';
+      globalThis.setTimeout(()=>{ if(this.#root) this.#root.dataset.transition='idle'; },500);
     } catch(error) {
       this.#renderer.cancelTransition();
       this.#root.dataset.transition='idle';
