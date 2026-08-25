@@ -24,19 +24,11 @@ const PRODUCTS = Object.freeze([
     icon: 'story'
   }),
   Object.freeze({
-    id: 'life',
-    label: 'LIFE',
-    description: 'Ask private reflective questions grounded only in observed trading data.',
-    tier: 'primary',
-    order: 4,
-    icon: 'life'
-  }),
-  Object.freeze({
     id: 'games',
     label: 'Games',
     description: 'Enter Bull Invaders and other interactive experiences.',
     tier: 'primary',
-    order: 5,
+    order: 4,
     icon: 'games'
   }),
   Object.freeze({
@@ -44,7 +36,7 @@ const PRODUCTS = Object.freeze([
     label: 'Media Workspace',
     description: 'Arrange and control simultaneous media panels.',
     tier: 'secondary',
-    order: 6,
+    order: 5,
     icon: 'media'
   }),
   Object.freeze({
@@ -52,7 +44,7 @@ const PRODUCTS = Object.freeze([
     label: 'Community Integrations',
     description: 'Open optional Bullpen, Ansem, Ansem.io, and future community tools.',
     tier: 'secondary',
-    order: 7,
+    order: 6,
     icon: 'community'
   }),
   Object.freeze({
@@ -60,7 +52,7 @@ const PRODUCTS = Object.freeze([
     label: 'Profile',
     description: 'Manage local presentation and preferences.',
     tier: 'utility',
-    order: 8,
+    order: 7,
     icon: 'profile'
   })
 ]);
