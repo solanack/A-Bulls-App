@@ -1,5 +1,6 @@
 import { ReplayBundleClient } from './replay-bundle-client.mjs';
 import { TradeReplayPlayer } from './trade-replay-player.mjs';
+import { buildWalletTokenComparison, buildCounterfactualOverlay, comparisonObservations } from './trade-comparison-replay.mjs';
 
 const WALLET_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const node=(tag,className,text)=>{const el=document.createElement(tag);if(className)el.className=className;if(text!=null)el.textContent=text;return el;};
@@ -7,7 +8,7 @@ const trim=value=>String(value==null?'':value).trim();
 
 function ensureStyles(){
   if(document.querySelector('link[data-intelligence-vnext]'))return;
-  const link=document.createElement('link');link.rel='stylesheet';link.href='css/intelligence-workspace-vnext.css?v=1';link.dataset.intelligenceVnext='true';document.head.append(link);
+  const link=document.createElement('link');link.rel='stylesheet';link.href='css/intelligence-workspace-vnext.css?v=2';link.dataset.intelligenceVnext='true';document.head.append(link);
 }
 
 function field(labelText,input){
@@ -26,6 +27,19 @@ function coveragePercent(bundle){
   const total=bundle?.eventCount||0;
   const verified=bundle?.verification?.verified||0;
   return total?Math.round((verified/total)*1000)/10:0;
+}
+
+function replayEventsForComparison(bundle){
+  return (bundle.events||[]).map(event=>({
+    ...event,
+    amount:Math.abs(Number(event.tokenDelta)||0),
+    valueUsd:null,
+    metadata:{
+      ...(event.metadata||{}),
+      sourceSet:event.sources||[],
+      execution:event.execution||null
+    }
+  }));
 }
 
 function storyBundle(bundle){
@@ -63,14 +77,14 @@ function storyBundle(bundle){
 }
 
 export class IntelligenceWorkspace {
-  #host;#root;#client;#player=null;#abort=null;#onCreateStory;#status;#results;#walletA;#walletB;#mint;#quote;#range;
+  #host;#root;#client;#player=null;#abort=null;#onCreateStory;#status;#results;#walletA;#walletB;#mint;#quote;#range;#bundle=null;
   constructor({host,apiBase,onCreateStory}={}){
     if(!(host instanceof Element))throw new TypeError('host element is required');
     ensureStyles();
     this.#host=host;this.#client=new ReplayBundleClient({baseUrl:apiBase});this.#onCreateStory=onCreateStory;
     this.#root=node('section','intelligence-workspace');
     const intro=node('header','intelligence-workspace__header');
-    const copy=node('div');copy.append(node('small','','FULL-CHAIN INTELLIGENCE'),node('h1','','Make Solana playable.'),node('p','','Enter any public wallet and token. Replay how it traded, compare another wallet on the same market, inspect evidence, then turn the sequence into a verifiable story.'));
+    const copy=node('div');copy.append(node('small','','FULL-CHAIN INTELLIGENCE'),node('h1','','Make Solana playable.'),node('p','','Enter any public wallet and token. Replay how it traded, compare another wallet on the same market, inspect evidence, run historical what-if overlays, then turn the sequence into a verifiable story.'));
     this.#status=node('span','status-pill','READY');intro.append(copy,this.#status);
 
     const form=document.createElement('form');form.className='intelligence-query';
@@ -106,12 +120,12 @@ export class IntelligenceWorkspace {
     if(compareWallet&&!WALLET_RE.test(compareWallet)){this.#status.textContent='INVALID COMPARISON';this.#walletB.focus();return;}
     if(!WALLET_RE.test(mint)){this.#status.textContent='INVALID TOKEN';this.#mint.focus();return;}
     if(quoteMint&&!WALLET_RE.test(quoteMint)){this.#status.textContent='INVALID QUOTE';this.#quote.focus();return;}
-    this.#abort?.abort();this.#abort=new AbortController();this.#player?.destroy();this.#player=null;
+    this.#abort?.abort();this.#abort=new AbortController();this.#player?.destroy();this.#player=null;this.#bundle=null;
     this.#status.textContent='BUILDING REPLAY';this.#results.hidden=false;this.#results.replaceChildren(node('p','notice','Reading normalized indexed evidence…'));
     const to=Math.floor(Date.now()/1000),from=to-Number(this.#range.value||2592000);
     try{
       const bundle=await this.#client.load({wallet,compareWallet:compareWallet||undefined,mint,quoteMint:quoteMint||undefined,from,to,bucketSeconds:60,limit:750},{signal:this.#abort.signal});
-      this.#render(bundle);this.#status.textContent=bundle.coverage.complete?'INDEXED · READY':'PARTIAL · PLAYABLE';
+      this.#bundle=bundle;this.#render(bundle);this.#status.textContent=bundle.coverage.complete?'INDEXED · READY':'PARTIAL · PLAYABLE';
     }catch(error){
       if(error.name==='AbortError')return;
       this.#status.textContent='REPLAY UNAVAILABLE';
@@ -120,18 +134,54 @@ export class IntelligenceWorkspace {
     }
   }
 
+  #mountPlayer(events,label){
+    this.#player?.destroy();
+    const stage=this.#results.querySelector('.intelligence-replay-stage');
+    if(!stage||!this.#bundle)return;
+    this.#player=new TradeReplayPlayer({host:stage,events,candles:this.#bundle.candles,startTime:this.#bundle.window.startTime,endTime:this.#bundle.window.endTime,label});
+  }
+
   #render(bundle){
     this.#results.replaceChildren();
     const summary=node('div','intelligence-summary');
     summary.append(metric('Observed events',bundle.eventCount),metric('Indexed candles',bundle.candles.length),metric('Verified events',bundle.verification.verified||0),metric('Sources',bundle.sources.length));
     const truth=node('div','intelligence-truth');truth.append(node('strong','',bundle.subject.wallets.length===2?'WALLET VS WALLET':'WALLET REPLAY'),node('p','',bundle.coverage.statement));
     const stage=node('div','intelligence-replay-stage');
-    this.#player=new TradeReplayPlayer({host:stage,events:bundle.events,candles:bundle.candles,startTime:bundle.window.startTime,endTime:bundle.window.endTime,label:'Indexed Solana trade replay'});
     const caveats=node('ul','intelligence-caveats');for(const caveat of bundle.caveats)caveats.append(node('li','',caveat));
     const actions=node('div','intelligence-result-actions');
+
+    if(bundle.subject.wallets.length===2){
+      const [walletA,walletB]=bundle.subject.wallets;
+      const comparison=buildWalletTokenComparison({events:replayEventsForComparison(bundle),walletA,walletB,token:bundle.subject.mint,startTime:bundle.window.startTime,endTime:bundle.window.endTime});
+      const observations=comparisonObservations(comparison);
+      if(observations.length){
+        const observed=node('div','intelligence-observations');
+        observed.append(node('strong','','CALCULATED COMPARISON'));
+        for(const item of observations)observed.append(node('p','',item.statement));
+        this.#results.append(summary,truth,stage,observed,caveats,actions);
+      }else this.#results.append(summary,truth,stage,caveats,actions);
+
+      const whatIf=node('button','secondary','WHAT IF: A MIRRORS B');whatIf.type='button';
+      const reset=node('button','secondary','RESET TO OBSERVED');reset.type='button';reset.hidden=true;
+      const disclosure=node('p','intelligence-whatif-disclosure');disclosure.hidden=true;
+      whatIf.addEventListener('click',()=>{
+        const overlay=buildCounterfactualOverlay({comparison,sourceWallet:walletB,targetWallet:walletA});
+        this.#mountPlayer([...comparison.timeline.events,...overlay.events],'Observed trades plus hypothetical mirrored timing');
+        disclosure.textContent=overlay.disclosure;disclosure.hidden=false;reset.hidden=false;whatIf.hidden=true;this.#status.textContent='WHAT IF · PLAYABLE';
+      });
+      reset.addEventListener('click',()=>{
+        this.#mountPlayer(bundle.events,'Indexed Solana trade replay');
+        disclosure.hidden=true;reset.hidden=true;whatIf.hidden=false;this.#status.textContent=bundle.coverage.complete?'INDEXED · READY':'PARTIAL · PLAYABLE';
+      });
+      actions.append(whatIf,reset);
+      actions.after(disclosure);
+    }else{
+      this.#results.append(summary,truth,stage,caveats,actions);
+    }
+
     const story=node('button','primary','CREATE STORY / VIDEO');story.type='button';story.addEventListener('click',()=>this.#onCreateStory?.(storyBundle(bundle)));
     actions.append(story);
-    this.#results.append(summary,truth,stage,caveats,actions);
+    this.#mountPlayer(bundle.events,'Indexed Solana trade replay');
   }
 
   destroy(){this.#abort?.abort();this.#player?.destroy();this.#root.remove();}
