@@ -39,13 +39,42 @@ function accountResolution(address,account,source){
   });
 }
 
+function transactionContext(tx={}){
+  const keys=Array.isArray(tx?.transaction?.message?.accountKeys)?tx.transaction.message.accountKeys:[];
+  const signers=[];
+  for(const key of keys){
+    if(typeof key==='string')continue;
+    if(key?.signer===true&&BASE58.test(s(key.pubkey)))signers.push(s(key.pubkey));
+  }
+  const balances=[...(tx?.meta?.preTokenBalances||[]),...(tx?.meta?.postTokenBalances||[])];
+  const tokenMints=[];
+  const tokenOwners=[];
+  for(const row of balances){
+    const mint=s(row?.mint),owner=s(row?.owner);
+    if(BASE58.test(mint)&&!tokenMints.includes(mint))tokenMints.push(mint);
+    if(BASE58.test(owner)&&!tokenOwners.includes(owner))tokenOwners.push(owner);
+  }
+  return Object.freeze({
+    signers:Object.freeze(signers.slice(0,12)),
+    tokenMints:Object.freeze(tokenMints.slice(0,24)),
+    tokenOwners:Object.freeze(tokenOwners.slice(0,24)),
+    accountCount:keys.length,
+    instructionCount:Array.isArray(tx?.transaction?.message?.instructions)?tx.transaction.message.instructions.length:0
+  });
+}
+
 export async function resolvePublicChainEntity(query,{env={},fetchImpl=fetch}={}){
   const value=s(query),kind=classify(value),source=resolveHistoryRpc(env);
   if(kind==='search-text')return Object.freeze({ok:false,kind,error:'free_text_resolution_unavailable',query:value,readOnly:true});
   if(kind==='transaction-signature'){
     const tx=await rpc(source,'getTransaction',[value,{commitment:'confirmed',maxSupportedTransactionVersion:0,encoding:'jsonParsed'}],fetchImpl);
     if(!tx)return Object.freeze({ok:true,kind,signature:value,state:'not-found',label:'transaction',source:source.name,readOnly:true});
-    return Object.freeze({ok:true,kind,signature:value,state:'resolved',label:'transaction',slot:Number(tx.slot||0)||null,blockTime:Number(tx.blockTime||0)||null,failed:Boolean(tx.meta?.err),feeLamports:Number(tx.meta?.fee||0),source:source.name,readOnly:true});
+    return Object.freeze({
+      ok:true,kind,signature:value,state:'resolved',label:'transaction',slot:Number(tx.slot||0)||null,blockTime:Number(tx.blockTime||0)||null,
+      failed:Boolean(tx.meta?.err),feeLamports:Number(tx.meta?.fee||0),source:source.name,readOnly:true,
+      context:transactionContext(tx),
+      disclosure:'Detected signers and token mints are observed transaction context. They are not claims of identity, intent, ownership, or trade direction.'
+    });
   }
   const account=await rpc(source,'getAccountInfo',[value,{commitment:'confirmed',encoding:'jsonParsed'}],fetchImpl);
   return accountResolution(value,account?.value??account,source);
