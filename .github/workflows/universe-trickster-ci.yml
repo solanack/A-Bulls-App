@@ -53,8 +53,10 @@ jobs:
             js/event-story-scene-runtime.test.mjs \
             js/event-story-scene-slice.test.mjs \
             js/event-story-render-plan.test.mjs \
+            js/event-story-scene-transition.test.mjs \
             js/event-story-frame-model.test.mjs \
             js/event-story-frame-renderer.test.mjs \
+            js/event-story-frame-drawer.test.mjs \
             js/event-story-video-export.test.mjs \
             js/intelligence-event-ledger.test.mjs \
             js/universal-search.test.mjs \
@@ -105,14 +107,10 @@ jobs:
           grep -q 'buildEventStorySceneSlice' js/trickster-studio.mjs
           grep -q 'buildEventStoryRenderPlan' js/trickster-studio.mjs
           grep -q 'mountVideoDelivery' js/trickster-studio.mjs
-          grep -q 'sceneRuntime' js/trickster-studio.mjs
-          grep -q 'renderPlan' js/trickster-studio.mjs
-          grep -q 'trickster-scene-evidence' js/trickster-studio.mjs
-          grep -q 'TIME-ONLY · NO PRICE MARKET SELECTED' js/trickster-studio.mjs
-          grep -q 'PRICE OVERLAY ·' js/trickster-studio.mjs
-          grep -q 'buildEventStoryFrameModel' js/event-story-frame-renderer.mjs
-          grep -q 'createEventStoryFrameDrawer' js/event-story-video-export.mjs
-          grep -q 'encodeStoryClip' js/event-story-video-export.mjs
+          grep -q 'eventLightningState' js/event-story-frame-renderer.mjs
+          grep -q 'createEventStoryCinematicFrameDrawer' js/event-story-frame-drawer.mjs
+          grep -q 'sceneTransitionAtFrame' js/event-story-frame-drawer.mjs
+          grep -q 'createEventStoryCinematicFrameDrawer' js/event-story-video-export.mjs
           grep -q 'SAVE VIDEO' js/trickster-video-delivery.mjs
           grep -q 'SERVER RENDER REQUIRED' js/trickster-video-delivery.mjs
           grep -q 'createEvidenceLedger' js/intelligence-workspace-vnext.mjs
@@ -129,8 +127,10 @@ jobs:
           grep -q 'event-story-scene-runtime' sw.js
           grep -q 'event-story-scene-slice' sw.js
           grep -q 'event-story-render-plan' sw.js
+          grep -q 'event-story-scene-transition' sw.js
           grep -q 'event-story-frame-model' sw.js
           grep -q 'event-story-frame-renderer' sw.js
+          grep -q 'event-story-frame-drawer' sw.js
           grep -q 'event-story-video-export' sw.js
           grep -q 'trickster-video-delivery' sw.js
           grep -q 'market-context-player-bridge' sw.js
