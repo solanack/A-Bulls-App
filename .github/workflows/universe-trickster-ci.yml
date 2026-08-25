@@ -25,7 +25,7 @@ jobs:
       - name: vNext syntax
         run: |
           set -euo pipefail
-          for file in js/universe-*.mjs js/trickster-*.mjs js/temporal-*.mjs js/trade-*.mjs js/replay-*.mjs js/market-context-*.mjs js/event-story-director.mjs js/product-*.mjs js/experience-*.mjs js/intelligence-workspace-*.mjs js/intelligence-event-ledger.mjs js/event-market-context-client.mjs js/entity-resolver-client.mjs js/wallet-token-index-client.mjs js/bull-invaders-host.mjs js/evidence-state.mjs js/universal-search.mjs workers/intelligence-universe-*.mjs workers/intelligence-trickster-*.mjs workers/intelligence-replay-*.mjs workers/intelligence-event-context.mjs workers/intelligence-entity-resolver.mjs workers/intelligence-wallet-token-index.mjs workers/intelligence-worker-hooks.mjs; do
+          for file in js/universe-*.mjs js/trickster-*.mjs js/temporal-*.mjs js/trade-*.mjs js/replay-*.mjs js/market-context-*.mjs js/event-story-*.mjs js/product-*.mjs js/experience-*.mjs js/intelligence-workspace-*.mjs js/intelligence-event-ledger.mjs js/event-market-context-client.mjs js/entity-resolver-client.mjs js/wallet-token-index-client.mjs js/bull-invaders-host.mjs js/evidence-state.mjs js/universal-search.mjs workers/intelligence-universe-*.mjs workers/intelligence-trickster-*.mjs workers/intelligence-replay-*.mjs workers/intelligence-event-context.mjs workers/intelligence-entity-resolver.mjs workers/intelligence-wallet-token-index.mjs workers/intelligence-worker-hooks.mjs; do
             [ -e "$file" ] && node --check "$file"
           done
           node --check js/config.js
@@ -46,6 +46,7 @@ jobs:
             js/trade-replay-player.test.mjs \
             js/market-context-replay.test.mjs \
             js/event-story-director.test.mjs \
+            js/event-story-price-selection.test.mjs \
             js/intelligence-event-ledger.test.mjs \
             js/universal-search.test.mjs \
             js/experience-feature-flags.test.mjs \
@@ -66,6 +67,7 @@ jobs:
           set -euo pipefail
           grep -q 'nextProductShellEnabled: true' js/config.js
           grep -q 'createBullInvadersHost' js/experience-entry.mjs
+          grep -q 'applyExplicitEventStoryPriceSelection' js/experience-entry.mjs
           grep -q 'bull-invaders-vnext.css' index.html
           grep -q 'market-context-player-bridge.mjs' index.html
           grep -q '@media(max-width:760px)' css/product-shell-vnext.css
@@ -81,8 +83,11 @@ jobs:
           grep -q 'EventMarketContextClient' js/intelligence-event-ledger.mjs
           grep -q 'abulls:event-market-context' js/event-market-context-client.mjs
           grep -q 'PLAY MARKET WINDOW' js/market-context-player-bridge.mjs
+          grep -q 'Time-only · no price overlay' js/market-context-player-bridge.mjs
+          grep -q 'selectedPricePair' js/market-context-player-bridge.mjs
           grep -q 'buildMarketContextReplay' js/market-context-player-bridge.mjs
           grep -q 'what-happened-next' js/event-story-director.mjs
+          grep -q 'priceSelection' js/event-story-price-selection.mjs
           grep -q 'createEvidenceLedger' js/intelligence-workspace-vnext.mjs
           grep -q 'focusReplayEvent' js/trade-replay-player.mjs
           grep -q 'TIME-ONLY EVENT LANE' js/trade-replay-player.mjs
@@ -92,6 +97,7 @@ jobs:
           grep -q "storyType:'transaction-replay'" js/intelligence-event-ledger.mjs
           grep -q 'bundle?.replay?.events' js/trickster-studio.mjs
           grep -q 'event-story-director' sw.js
+          grep -q 'event-story-price-selection' sw.js
           grep -q 'market-context-player-bridge' sw.js
           grep -q 'event-market-context-client' sw.js
           grep -q 'Around transaction (12h)' js/intelligence-workspace-vnext.mjs
