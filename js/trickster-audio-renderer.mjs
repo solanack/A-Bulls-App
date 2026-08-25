@@ -1,5 +1,3 @@
-const clamp=value=>Math.max(0,Math.min(1,Number(value)||0));
-
 export function cueToneSpec(cue={}){
   switch(cue.kind){
     case 'buy-impact':return Object.freeze({wave:'triangle',frequency:880,endFrequency:1320,duration:.16,gain:.18});
@@ -19,7 +17,10 @@ function scheduleTone(context,destination,cue){
   gain.gain.setValueAtTime(0,start);
   gain.gain.linearRampToValueAtTime(spec.gain,start+Math.min(.018,spec.duration*.2));
   gain.gain.exponentialRampToValueAtTime(.0001,end);
-  oscillator.connect(gain);gain.connect(destination);
+  oscillator.connect(gain);
+  if(typeof context.createStereoPanner==='function'){
+    const panner=context.createStereoPanner();panner.pan.setValueAtTime(Math.max(-1,Math.min(1,Number(cue.pan)||0)),start);gain.connect(panner);panner.connect(destination);
+  }else gain.connect(destination);
   oscillator.start(start);oscillator.stop(end+.01);
 }
 
