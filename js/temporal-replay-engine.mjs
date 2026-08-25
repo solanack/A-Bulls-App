@@ -2,6 +2,7 @@ const DEFAULT_RATES = Object.freeze([0.25,0.5,1,2,4,8,16]);
 const SIDES = new Set(['buy','sell','transfer-in','transfer-out','swap','event']);
 
 function finiteNumber(value, fallback = null) {
+  if(value==null||value==='') return fallback;
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }
