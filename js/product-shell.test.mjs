@@ -12,9 +12,8 @@ test('removed LIFE product is unavailable', () => {
   assert.equal(productById('life'), null);
 });
 
-test('legacy communities do not occupy primary navigation', () => {
-  assert.equal(productById('communities').tier, 'secondary');
-  assert.equal(primaryProducts().some(({ id }) => id === 'communities'), false);
+test('legacy community product is fully unavailable', () => {
+  assert.equal(productById('communities'), null);
 });
 
 test('every product explains itself in plain language', () => {
