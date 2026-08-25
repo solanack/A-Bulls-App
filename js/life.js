@@ -10,7 +10,7 @@
     return global.BBRWalletAnalytics?.getState?.() || {};
   }
 
-  function adviceSet(overview, activity) {
+  function reflectiveQuestions(overview, activity) {
     const trading = activity?.trading || {};
     const flow = activity?.flow || {};
     const txs = Number(activity?.signaturesAnalyzed || 0);
@@ -21,52 +21,37 @@
     const busiestDay = String(trading.busiestWeekday || '');
     const uniqueMints = Number(trading.uniqueMints || 0);
     const solNet = Number(flow.solNet || 0);
-    const ansemNet = Number(activity?.ansem?.net || 0);
-    const pieces = [];
+    const questions = [];
 
     if (txs && activeDays) {
       const density = txs / Math.max(1, activeDays);
-      pieces.push(density >= 8
-        ? 'Your history contains periods of concentrated action. Urgency and importance are different things; give the next consequential choice enough silence to become deliberate.'
-        : 'Your activity leaves room between decisions. Keep protecting that space. A measured pace is often where conviction becomes easier to distinguish from impulse.');
+      questions.push(density >= 8
+        ? 'During the periods with the most transactions, what information would you want available before making another choice?'
+        : 'What conditions were present during the quieter gaps between the transactions shown here?');
     }
-
     if (swaps >= 8) {
-      pieces.push('Frequent rotation can make motion feel like progress. Let a decision earn its place before replacing it; consistency is a form of intelligence when it is chosen rather than automatic.');
+      questions.push('Looking only at the frequent swaps in this period, which decisions would you want to examine more slowly?');
     } else if (swaps > 0) {
-      pieces.push('You have changed positions without turning every moment into a reaction. Carry that same selectivity beyond markets: not every opportunity deserves a response.');
+      questions.push('What was different about the moments when this wallet swapped compared with the moments when it did not?');
     }
-
     if (Number.isFinite(topHolding) && topHolding >= 45) {
-      pieces.push('A concentrated position reflects commitment, but commitment is strongest when it remains revisable. Confidence and flexibility can occupy the same room.');
+      questions.push('What evidence originally supported the largest observed holding, and what evidence would cause that reasoning to be reconsidered?');
     } else if (uniqueMints >= 8) {
-      pieces.push('Your attention has been distributed across many assets. Breadth can reveal possibility, but a smaller number of priorities often creates a deeper life.');
+      questions.push('Across the many observed assets, which ones received repeated attention and which appeared only briefly?');
     }
-
     if (solNet < 0) {
-      pieces.push('This period shows more SOL leaving than entering. Treat expenditure of capital, time, and attention the same way: spend them where the return is meaning, learning, or genuine joy.');
+      questions.push('What explains the observed period in which more SOL left than entered, based on the transactions you recognize?');
     } else if (solNet > 0) {
-      pieces.push('This period shows more SOL entering than leaving. Accumulation is useful when it creates optionality, not pressure. Resources are most valuable when they widen your choices.');
+      questions.push('What explains the observed period in which more SOL entered than left, based on the transactions you recognize?');
     }
-
-    if (ansemNet > 0) {
-      pieces.push('Your $ANSEM flow leaned inward. The useful lesson is not to cling harder, but to know why you chose to accumulate and to keep that reason separate from the noise around it.');
-    } else if (ansemNet < 0) {
-      pieces.push('Your $ANSEM flow leaned outward. Let exits be clean when the reason for staying has changed. Releasing a position, plan, or expectation can be an act of clarity.');
-    }
-
     if (failureRate > 0.04) {
-      pieces.push('A few transactions did not land as intended. Friction is information. Refine the process rather than judging the person using it.');
+      questions.push('What can the failed transactions reveal about timing, process, fees, or the tools used during this period?');
     }
-
     if (busiestDay) {
-      pieces.push(`${busiestDay} carried the most activity in this window. Notice the conditions around your most active periods and design your environment so your best decisions are easier to repeat.`);
+      questions.push(`What was happening on ${busiestDay}, the busiest observed weekday in this range?`);
     }
-
-    pieces.push('A good life, like a good strategy, does not require predicting every turn. It asks for clear principles, enough patience to hear them, and the courage to adjust when reality changes.');
-    pieces.push('Keep some part of your day unoptimized. Not everything valuable needs to compound.');
-
-    return [...new Set(pieces)].slice(0, 6);
+    questions.push('Which part of this public trading history would be most useful to inspect with more context?');
+    return [...new Set(questions)].filter(question => question.endsWith('?')).slice(0, 6);
   }
 
   function bullVisionAdvice(address) {
@@ -144,13 +129,9 @@
       ['Range', range], ['Transactions', txs.toLocaleString()], ['Active days', days.toLocaleString()], ['Swaps', swaps.toLocaleString()]
     ].map(([label, value]) => `<div><small>${safe(label)}</small><b>${safe(value)}</b></div>`).join('');
 
-    const advice = [
-      ...bullVisionAdvice(address),
-      ...bullIntelligenceAdvice(address, state.overview, state.activity, state.range),
-      ...adviceSet(state.overview, state.activity)
-    ];
+    const questions = reflectiveQuestions(state.overview, state.activity);
     phase.textContent = '';
-    root.innerHTML = `<div class="life-advice-list">${[...new Set(advice)].slice(0, 6).map(piece => `<article>${safe(piece)}</article>`).join('')}</div>`;
+    root.innerHTML = `<div class="life-advice-list">${questions.map(question => `<article>${safe(question)}</article>`).join('')}</div>`;
   }
 
   async function analyze() {
