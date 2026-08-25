@@ -87,3 +87,12 @@ No merge, database migration, or deployment is authorized by this document.
 
 LIFE was removed completely by owner decision after this branch began. Universe and
 Trickster must not route into, depend on, or cache any LIFE surface.
+
+## Reproducible browser dependencies
+
+The feature branch pins Three.js 0.185.0 (MIT) and Mediabunny 1.55.2 (MPL-2.0)
+with npm lockfile integrity. `npm run build:experience-vendor` creates local,
+versioned browser modules, copies both license files, and records SHA-256 hashes.
+CI independently verifies the expected module hashes. The generated assets must be
+included in a release package before either feature is enabled; no floating CDN import
+is permitted.
