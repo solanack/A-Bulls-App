@@ -30,22 +30,6 @@ const PRODUCTS = Object.freeze([
     tier: 'primary',
     order: 4,
     icon: 'games'
-  }),
-  Object.freeze({
-    id: 'media',
-    label: 'Media Workspace',
-    description: 'Arrange and control simultaneous media panels.',
-    tier: 'secondary',
-    order: 5,
-    icon: 'media'
-  }),
-  Object.freeze({
-    id: 'profile',
-    label: 'Profile',
-    description: 'Manage local presentation and preferences.',
-    tier: 'utility',
-    order: 6,
-    icon: 'profile'
   })
 ]);
 
