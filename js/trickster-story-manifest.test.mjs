@@ -37,6 +37,17 @@ test('accepts an evidence-backed vertical story', () => {
   assert.deepEqual(manifestDisclosures(result), ['80% verified']);
 });
 
+test('accepts wallet-comparison as the guided comparison story contract',()=>{
+  const input=validManifest();
+  input.storyType='wallet-comparison';
+  input.subject={kind:'wallet-comparison',id:'wallet-a:wallet-b'};
+  input.claims.push({id:'claim-2',kind:'calculated',statement:'Wallet A appears earlier in the indexed replay.',evidenceIds:['receipt-1']});
+  input.scenes=[{id:'scene-1',type:'synchronized-trade-replay',durationFrames:120,claimIds:['claim-1','claim-2']}];
+  const result=validateStoryManifest(input);
+  assert.equal(result.storyType,'wallet-comparison');
+  assert.equal(result.claims[1].kind,'calculated');
+});
+
 test('rejects claims without evidence', () => {
   const input = validManifest();
   input.claims[0].evidenceIds = [];
