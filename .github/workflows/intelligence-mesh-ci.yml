@@ -5,6 +5,7 @@ on:
     branches: [ feature/intelligence-mesh-v1 ]
     paths:
       - 'workers/intelligence-mesh-*.mjs'
+      - 'workers/intelligence-adapter*.mjs'
       - 'workers/migrations/0009_intelligence_mesh.sql'
       - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
       - 'docs/INTELLIGENCE-MESH.md'
@@ -12,6 +13,7 @@ on:
   pull_request:
     paths:
       - 'workers/intelligence-mesh-*.mjs'
+      - 'workers/intelligence-adapter*.mjs'
       - 'workers/migrations/0009_intelligence_mesh.sql'
       - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
       - 'docs/INTELLIGENCE-MESH.md'
@@ -34,13 +36,15 @@ jobs:
           node --check workers/intelligence-mesh-ingest.mjs
           node --check workers/intelligence-mesh-runtime.mjs
           node --check workers/intelligence-mesh-router.mjs
+          node --check workers/intelligence-adapters.mjs
+          node --check workers/intelligence-adapter-router.mjs
       - name: Unit tests
         run: node --test workers/intelligence-mesh-runtime.test.mjs
       - name: Neutral naming contract
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
+          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
       - name: Migration safety contract
         shell: bash
         run: |
@@ -53,4 +57,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-mesh-*.mjs
+          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs
