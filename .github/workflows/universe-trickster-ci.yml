@@ -49,6 +49,7 @@ jobs:
             js/event-story-director.test.mjs \
             js/event-story-price-selection.test.mjs \
             js/event-story-focus.test.mjs \
+            js/event-story-scene-runtime.test.mjs \
             js/intelligence-event-ledger.test.mjs \
             js/universal-search.test.mjs \
             js/experience-feature-flags.test.mjs \
@@ -92,6 +93,8 @@ jobs:
           grep -q 'what-happened-next' js/event-story-director.mjs
           grep -q 'priceSelection' js/event-story-price-selection.mjs
           grep -q 'resolveEventStoryFocus' js/trickster-studio.mjs
+          grep -q 'buildEventStorySceneRuntime' js/trickster-studio.mjs
+          grep -q 'sceneRuntime' js/trickster-studio.mjs
           grep -q 'TIME-ONLY · NO PRICE MARKET SELECTED' js/trickster-studio.mjs
           grep -q 'PRICE OVERLAY ·' js/trickster-studio.mjs
           grep -q 'createEvidenceLedger' js/intelligence-workspace-vnext.mjs
@@ -105,6 +108,7 @@ jobs:
           grep -q 'event-story-director' sw.js
           grep -q 'event-story-price-selection' sw.js
           grep -q 'event-story-focus' sw.js
+          grep -q 'event-story-scene-runtime' sw.js
           grep -q 'market-context-player-bridge' sw.js
           grep -q 'event-market-context-client' sw.js
           grep -q 'Around transaction (12h)' js/intelligence-workspace-vnext.mjs
