@@ -4,6 +4,7 @@ import { UniverseExperience } from './universe-experience.mjs';
 import { IntelligenceWorkspace } from './intelligence-workspace-vnext.mjs';
 import { TricksterStudio } from './trickster-studio.mjs';
 import { validateStoryForExport } from './trickster-validation-client.mjs';
+import { renderEventStoryVideo } from './event-story-video-export.mjs';
 import { applyExplicitEventStoryPriceSelection } from './event-story-price-selection.mjs';
 import { loadThree } from './experience-dependencies.mjs';
 import { createBullInvadersHost, installBullInvadersNavigationBridge } from './bull-invaders-host.mjs';
@@ -163,9 +164,14 @@ async function setup() {
         },
         onExport:async(detail)=>{
           const validation=await validateStoryForExport(detail.manifest,{apiBase:globalThis.BBRConfig?.apiBase||location.origin});
-          const exportDetail=Object.freeze({...detail,validation});
+          let rendering=null;
+          if(validation.validated===true&&detail.manifest?.storyType==='transaction-replay'&&detail.renderPlan?.length){
+            rendering=await renderEventStoryVideo({...detail,manifest:validation.manifest},{onProgress:progress=>globalThis.dispatchEvent(new CustomEvent('abulls:trickster-render-progress',{detail:progress}))});
+          }
+          const result=rendering?Object.freeze({...validation,...rendering,manifest:validation.manifest}):validation;
+          const exportDetail=Object.freeze({...detail,manifest:validation.manifest,validation,rendering,result});
           globalThis.dispatchEvent(new CustomEvent('abulls:trickster-export',{detail:exportDetail}));
-          return validation;
+          return result;
         }
       });
       instances.set('trickster',studio);
