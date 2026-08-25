@@ -4,9 +4,8 @@ on:
   push:
     branches: [ feature/intelligence-mesh-v1 ]
     paths:
-      - 'workers/intelligence-mesh-*.mjs'
-      - 'workers/intelligence-adapter*.mjs'
-      - 'workers/intelligence-history-engine.mjs'
+      - 'workers/intelligence-*.mjs'
+      - 'js/intelligence-mesh-*.js'
       - 'workers/migrations/0009_intelligence_mesh.sql'
       - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
       - 'docs/INTELLIGENCE-MESH.md'
@@ -14,9 +13,8 @@ on:
       - '.github/workflows/intelligence-mesh-ci.yml'
   pull_request:
     paths:
-      - 'workers/intelligence-mesh-*.mjs'
-      - 'workers/intelligence-adapter*.mjs'
-      - 'workers/intelligence-history-engine.mjs'
+      - 'workers/intelligence-*.mjs'
+      - 'js/intelligence-mesh-*.js'
       - 'workers/migrations/0009_intelligence_mesh.sql'
       - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
       - 'docs/INTELLIGENCE-MESH.md'
@@ -37,19 +35,16 @@ jobs:
           node-version: '22'
       - name: Syntax
         run: |
-          node --check workers/intelligence-mesh-ingest.mjs
-          node --check workers/intelligence-mesh-runtime.mjs
-          node --check workers/intelligence-mesh-router.mjs
-          node --check workers/intelligence-adapters.mjs
-          node --check workers/intelligence-adapter-router.mjs
-          node --check workers/intelligence-history-engine.mjs
+          for f in workers/intelligence-*.mjs; do node --check "$f"; done
+          node --check js/intelligence-mesh-client.js
+          node --check js/intelligence-mesh-ui.js
       - name: Unit tests
-        run: node --test workers/intelligence-mesh-runtime.test.mjs
+        run: node --test workers/intelligence-*.test.mjs
       - name: Neutral naming contract
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
+          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
       - name: Migration safety contract
         shell: bash
         run: |
@@ -65,8 +60,20 @@ jobs:
           grep -q 'getSignaturesForAddress' workers/intelligence-history-engine.mjs
           grep -q 'getTransaction' workers/intelligence-history-engine.mjs
           grep -q 'INTELLIGENCE_RPC_URL' workers/intelligence-history-engine.mjs
+          grep -q 'intelligence_index_jobs' workers/intelligence-mesh-scheduler.mjs
+      - name: Product feature contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '/api/intelligence/wallet-dna' workers/intelligence-mesh-router.mjs
+          grep -q '/api/intelligence/time-machine' workers/intelligence-mesh-router.mjs
+          grep -q '/api/intelligence/chain-lens' workers/intelligence-mesh-router.mjs
+          grep -q '/api/intelligence/ghost-portfolio' workers/intelligence-mesh-router.mjs
+          grep -q '/api/intelligence/parallel-universe' workers/intelligence-mesh-router.mjs
+          grep -q '/api/intelligence/chain-radar' workers/intelligence-mesh-router.mjs
+          grep -q '/api/intelligence/chain-weather' workers/intelligence-mesh-router.mjs
       - name: Read-only guardrails
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs
+          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-*.mjs js/intelligence-mesh-*.js
