@@ -216,6 +216,11 @@ export class UniverseRenderer {
     this.#raf = requestAnimationFrame(this.#frame);
   };
 
+  cancelTransition() {
+    this.#destinationReady = false;
+    return this.#transition.cancel(performance.now());
+  }
+
   markDestinationReady() {
     this.#destinationReady = true;
     return this.#transition.update(performance.now(), true);
