@@ -25,3 +25,15 @@ test('PWA precaches the entire experience graph',async()=>{
     assert.match(sw,new RegExp(asset));
   }
 });
+
+test('LIFE is absent from the active runtime graph',async()=>{
+  const sources=await Promise.all([
+    read('../index.html'),
+    read('./main.js'),
+    read('./ui.js'),
+    read('./product-registry.mjs'),
+    read('../sw.js')
+  ]);
+  const active=sources.join('\n');
+  assert.doesNotMatch(active,/BBRLife|lifeView|js\/life\.js|id:\s*['"]life['"]/);
+});
