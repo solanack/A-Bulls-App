@@ -8,6 +8,9 @@ on:
       - 'js/trickster-*.mjs'
       - 'js/product-*.mjs'
       - 'js/experience-*.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/build-experience-vendor.mjs'
       - 'js/evidence-state*.mjs'
       - 'js/config.js'
       - 'js/main.js'
@@ -31,6 +34,9 @@ on:
       - 'js/trickster-*.mjs'
       - 'js/product-*.mjs'
       - 'js/experience-*.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/build-experience-vendor.mjs'
       - 'js/evidence-state*.mjs'
       - 'js/config.js'
       - 'workers/intelligence-universe-*.mjs'
@@ -58,6 +64,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
+      - name: Build pinned browser dependencies
+        run: |
+          npm ci --ignore-scripts
+          npm run build:experience-vendor
+          echo '86bcee248b64f44bcfc23c331ae74619061957d59cab040171dcb6fb5900beb6  vendor/experience/three-0.185.0.module.min.js' | sha256sum --check -
+          echo '0ffdb882fab437f402a9a4d95a1aa854bedfa061c6d08684c1a702ddd6ad8029  vendor/experience/mediabunny-1.55.2.min.mjs' | sha256sum --check -
       - name: Syntax
         run: |
           for file in \
@@ -82,6 +95,7 @@ jobs:
             js/experience-bootstrap.mjs \
             js/experience-entry.mjs \
             js/experience-feature-flags.mjs \
+            js/experience-dependencies.mjs \
             js/evidence-state.mjs \
             js/config.js \
             js/main.js \
@@ -106,6 +120,7 @@ jobs:
             js/trickster-timeline.test.mjs \
             js/trickster-validation-client.test.mjs \
             js/experience-feature-flags.test.mjs \
+            js/experience-dependencies.test.mjs \
             js/experience-integration.test.mjs \
             js/product-shell.test.mjs \
             js/product-integration.test.mjs \
