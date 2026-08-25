@@ -73,7 +73,7 @@ claims but may not introduce claims absent from the manifest.
 
 ## Delivery stages
 
-1. Pure contracts and validation.
+1. Pure contracts and validation. Implemented, including a fail-closed, non-persisting Worker validator.
 2. Synthetic-data Universe renderer benchmark.
 3. Feature-flagged live snapshot endpoint.
 4. Intelligence destination integration.
