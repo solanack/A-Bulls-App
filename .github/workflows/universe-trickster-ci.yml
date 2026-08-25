@@ -8,7 +8,12 @@ on:
       - 'js/trickster-*.mjs'
       - 'js/experience-feature-flags*.mjs'
       - 'js/life.js'
-      - 'js/life-guardrails.test.mjs'
+      - 'js/life-guardrails.test.mjs js/experience-integration.test.mjs'
+      - 'js/experience-entry.mjs'
+      - 'js/experience-integration.test.mjs'
+      - 'js/config.js'
+      - 'index.html'
+      - 'sw.js'
       - 'workers/intelligence-universe-*.mjs'
       - 'workers/migrations/0011_universe_trickster.sql'
       - 'docs/UNIVERSE-TRICKSTER-V1.md'
@@ -59,6 +64,9 @@ jobs:
           node --check js/trickster-clip-export.mjs
           node --check js/trickster-studio.mjs
           node --check js/life.js
+          node --check js/experience-entry.mjs
+          node --check js/config.js
+          node --check sw.js
           node --check workers/intelligence-universe-runtime.mjs
           node --check workers/intelligence-universe-router.mjs
           node --check workers/intelligence-worker-hooks.mjs
