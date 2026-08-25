@@ -1,6 +1,6 @@
 const STORY_TYPES = new Set([
   'wallet-timeline','transaction-replay','trade-route','token-sequence',
-  'nft-memory','wallet-rivalry','network-recap','anomaly-explainer'
+  'nft-memory','wallet-rivalry','wallet-comparison','network-recap','anomaly-explainer'
 ]);
 const CLAIM_KINDS = new Set(['observed','calculated','estimated','inferred']);
 const RATIOS = new Set(['9:16','16:9','1:1']);
