@@ -15,8 +15,8 @@ export async function handleIntelligenceFetch(request, env = {}) {
 
 export async function handleIntelligenceScheduled(env = {}) {
   const mesh = await runIntelligenceMeshScheduler(env, { limit: 2 });
-  const universePruned = String(env.UNIVERSE_ENABLED || '').toLowerCase() === 'true'
-    ? await pruneUniverseObservations(env)
-    : 0;
-  return { mesh, universePruned };
+  if (String(env.UNIVERSE_ENABLED || '').toLowerCase() === 'true') {
+    await pruneUniverseObservations(env);
+  }
+  return mesh;
 }
