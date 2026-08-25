@@ -45,6 +45,7 @@ jobs:
             js/trade-comparison-replay.test.mjs \
             js/trade-replay-player.test.mjs \
             js/market-context-replay.test.mjs \
+            js/market-context-player-bridge.test.mjs \
             js/event-story-director.test.mjs \
             js/event-story-price-selection.test.mjs \
             js/intelligence-event-ledger.test.mjs \
@@ -83,11 +84,14 @@ jobs:
           grep -q 'EventMarketContextClient' js/intelligence-event-ledger.mjs
           grep -q 'abulls:event-market-context' js/event-market-context-client.mjs
           grep -q 'PLAY MARKET WINDOW' js/market-context-player-bridge.mjs
-          grep -q 'Time-only · no price overlay' js/market-context-player-bridge.mjs
+          grep -q 'STORY + REPLAY PRICE EVIDENCE' js/market-context-player-bridge.mjs
+          grep -q 'Story pricing: TIME-ONLY' js/market-context-player-bridge.mjs
           grep -q 'selectedPricePair' js/market-context-player-bridge.mjs
           grep -q 'buildMarketContextReplay' js/market-context-player-bridge.mjs
           grep -q 'what-happened-next' js/event-story-director.mjs
           grep -q 'priceSelection' js/event-story-price-selection.mjs
+          grep -q 'TIME-ONLY · NO PRICE MARKET SELECTED' js/trickster-studio.mjs
+          grep -q 'PRICE OVERLAY ·' js/trickster-studio.mjs
           grep -q 'createEvidenceLedger' js/intelligence-workspace-vnext.mjs
           grep -q 'focusReplayEvent' js/trade-replay-player.mjs
           grep -q 'TIME-ONLY EVENT LANE' js/trade-replay-player.mjs
