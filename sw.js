@@ -1,4 +1,4 @@
-const BUILD = '8.7.0-vnext-10';
+const BUILD = '8.7.0-vnext-11';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
