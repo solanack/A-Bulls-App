@@ -3,6 +3,7 @@ import { ProductAdapterRegistry,domPortalAdapter } from './product-adapters.mjs'
 import { UniverseExperience } from './universe-experience.mjs';
 import { TricksterStudio } from './trickster-studio.mjs';
 import { validateStoryForExport } from './trickster-validation-client.mjs';
+import { loadThree } from './experience-dependencies.mjs';
 
 function node(tag,className,text) {
   const item=document.createElement(tag);
@@ -35,10 +36,12 @@ function gamesPage(onLaunch) {
   return page;
 }
 
-function setup() {
+async function setup() {
   const flags=globalThis.BBR_EXPERIENCE_FLAGS||{};
   if(flags.nextProductShellEnabled!==true&&String(flags.NEXT_PRODUCT_SHELL_ENABLED||'').toLowerCase()!=='true') return;
 
+  const universeRequested=flags.universeEnabled===true||String(flags.UNIVERSE_ENABLED||'').toLowerCase()==='true';
+  const THREE=globalThis.THREE||(universeRequested?await loadThree():null);
   const existing=document.getElementById('app');
   let app=null;
   const host=node('div');
@@ -53,7 +56,7 @@ function setup() {
       const experience=new UniverseExperience({
         host:mount,
         apiBase:globalThis.BBRConfig?.apiBase||location.origin,
-        THREE:globalThis.THREE,
+        THREE,
         onDestinationRequest:async(destination,entity)=>{
           globalThis.dispatchEvent(new CustomEvent('abulls:universe-selection',{detail:{destination,entity}}));
           const content=adapters.activate('intelligence',{source:'universe',request:{...destination,query:destination.entityId}});
