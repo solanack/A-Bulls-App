@@ -1,4 +1,4 @@
-const BUILD = '8.7.0-vnext-15';
+const BUILD = '8.7.0-vnext-16';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -19,10 +19,10 @@ const NEXT_EXPERIENCE = [
   './css/universe.css?v=2',
   './css/trickster-studio.css?v=4',
   './css/intelligence-workspace-vnext.css?v=2',
-  './css/intelligence-event-inspector.css?v=4',
+  './css/intelligence-event-inspector.css?v=5',
   './css/bull-invaders-vnext.css?v=1',
   './js/experience-entry.mjs?v=3',
-  './js/market-context-player-bridge.mjs?v=2',
+  './js/market-context-player-bridge.mjs?v=3',
   ...[
     'experience-bootstrap','experience-feature-flags','experience-dependencies','product-registry','product-shell-vnext',
     'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','intelligence-event-ledger','universe-contracts','universe-quality',
