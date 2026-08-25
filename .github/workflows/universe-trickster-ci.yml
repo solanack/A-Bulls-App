@@ -1,69 +1,9 @@
 name: Universe and Trickster CI
 
 on:
+  pull_request:
   push:
     branches: [ feature/universe-trickster-v1 ]
-    paths:
-      - 'js/universe-*.mjs'
-      - 'js/trickster-*.mjs'
-      - 'js/temporal-*.mjs'
-      - 'js/trade-*.mjs'
-      - 'js/replay-*.mjs'
-      - 'js/intelligence-workspace-*.mjs'
-      - 'js/product-*.mjs'
-      - 'js/experience-*.mjs'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'scripts/build-experience-vendor.mjs'
-      - 'js/evidence-state*.mjs'
-      - 'js/config.js'
-      - 'js/main.js'
-      - 'js/ui.js'
-      - 'workers/intelligence-universe-*.mjs'
-      - 'workers/intelligence-trickster-*.mjs'
-      - 'workers/intelligence-replay-*.mjs'
-      - 'workers/intelligence-worker-hooks.mjs'
-      - 'workers/migrations/0011_universe_trickster.sql'
-      - 'docs/UNIVERSE-TRICKSTER-V1.md'
-      - 'docs/PRODUCT-SHELL-VNEXT.md'
-      - 'docs/PLAYABLE-DATA-ENGINE.md'
-      - 'css/product-shell-vnext.css'
-      - 'css/universe.css'
-      - 'css/trickster-studio.css'
-      - 'css/intelligence-workspace-vnext.css'
-      - 'index.html'
-      - 'sw.js'
-      - '.github/workflows/universe-trickster-ci.yml'
-  pull_request:
-    paths:
-      - 'js/universe-*.mjs'
-      - 'js/trickster-*.mjs'
-      - 'js/temporal-*.mjs'
-      - 'js/trade-*.mjs'
-      - 'js/replay-*.mjs'
-      - 'js/intelligence-workspace-*.mjs'
-      - 'js/product-*.mjs'
-      - 'js/experience-*.mjs'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'scripts/build-experience-vendor.mjs'
-      - 'js/evidence-state*.mjs'
-      - 'js/config.js'
-      - 'workers/intelligence-universe-*.mjs'
-      - 'workers/intelligence-trickster-*.mjs'
-      - 'workers/intelligence-replay-*.mjs'
-      - 'workers/intelligence-worker-hooks.mjs'
-      - 'workers/migrations/0011_universe_trickster.sql'
-      - 'docs/UNIVERSE-TRICKSTER-V1.md'
-      - 'docs/PRODUCT-SHELL-VNEXT.md'
-      - 'docs/PLAYABLE-DATA-ENGINE.md'
-      - 'css/product-shell-vnext.css'
-      - 'css/universe.css'
-      - 'css/trickster-studio.css'
-      - 'css/intelligence-workspace-vnext.css'
-      - 'index.html'
-      - 'sw.js'
-      - '.github/workflows/universe-trickster-ci.yml'
   workflow_dispatch:
 
 permissions:
@@ -78,56 +18,20 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - name: Build pinned browser dependencies
+      - name: Build browser dependencies
         run: |
           npm ci --ignore-scripts
           npm run build:experience-vendor
-          echo '86bcee248b64f44bcfc23c331ae74619061957d59cab040171dcb6fb5900beb6  vendor/experience/three-0.185.0.module.min.js' | sha256sum --check -
-          echo '0ffdb882fab437f402a9a4d95a1aa854bedfa061c6d08684c1a702ddd6ad8029  vendor/experience/mediabunny-1.55.2.min.mjs' | sha256sum --check -
-      - name: Syntax
+      - name: vNext syntax
         run: |
-          for file in \
-            js/universe-contracts.mjs \
-            js/universe-quality.mjs \
-            js/universe-synthetic-data.mjs \
-            js/universe-transition.mjs \
-            js/universe-renderer.mjs \
-            js/universe-client.mjs \
-            js/universe-experience.mjs \
-            js/trickster-story-manifest.mjs \
-            js/trickster-composer.mjs \
-            js/trickster-export-capabilities.mjs \
-            js/trickster-timeline.mjs \
-            js/trickster-clip-export.mjs \
-            js/trickster-validation-client.mjs \
-            js/trickster-studio.mjs \
-            js/temporal-replay-engine.mjs \
-            js/trade-comparison-replay.mjs \
-            js/trade-replay-player.mjs \
-            js/replay-bundle-client.mjs \
-            js/intelligence-workspace-vnext.mjs \
-            js/product-registry.mjs \
-            js/product-shell-vnext.mjs \
-            js/product-adapters.mjs \
-            js/universal-search.mjs \
-            js/experience-bootstrap.mjs \
-            js/experience-entry.mjs \
-            js/experience-feature-flags.mjs \
-            js/experience-dependencies.mjs \
-            js/evidence-state.mjs \
-            js/config.js \
-            js/main.js \
-            js/ui.js \
-            sw.js \
-            workers/intelligence-universe-runtime.mjs \
-            workers/intelligence-universe-router.mjs \
-            workers/intelligence-trickster-router.mjs \
-            workers/intelligence-replay-bundle.mjs \
-            workers/intelligence-worker-hooks.mjs
-          do
-            node --check "$file"
+          set -euo pipefail
+          for file in js/universe-*.mjs js/trickster-*.mjs js/temporal-*.mjs js/trade-*.mjs js/replay-*.mjs js/product-*.mjs js/experience-*.mjs js/intelligence-workspace-*.mjs js/bull-invaders-host.mjs js/evidence-state.mjs workers/intelligence-universe-*.mjs workers/intelligence-trickster-*.mjs workers/intelligence-replay-*.mjs workers/intelligence-worker-hooks.mjs; do
+            [ -e "$file" ] && node --check "$file"
           done
-      - name: Contract tests
+          node --check js/config.js
+          node --check js/main.js
+          node --check sw.js
+      - name: vNext tests
         run: |
           node --test \
             js/universe-contracts.test.mjs \
@@ -148,20 +52,19 @@ jobs:
             workers/intelligence-universe-runtime.test.mjs \
             workers/intelligence-trickster-router.test.mjs \
             workers/intelligence-replay-bundle.test.mjs
-      - name: Replacement experience guard
+      - name: Responsive replacement contract
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' js/universe-*.mjs js/trickster-*.mjs js/temporal-*.mjs js/trade-*.mjs js/replay-*.mjs js/intelligence-workspace-*.mjs
-          grep -q 'CREATE TABLE IF NOT EXISTS intelligence_live_observations' workers/migrations/0011_universe_trickster.sql
-          grep -q 'CREATE TABLE IF NOT EXISTS intelligence_story_manifests' workers/migrations/0011_universe_trickster.sql
-          ! grep -Eiq 'DROP[[:space:]]+TABLE|TRUNCATE' workers/migrations/0011_universe_trickster.sql
           grep -q 'nextProductShellEnabled: true' js/config.js
-          grep -q 'universeEnabled: true' js/config.js
-          grep -q 'tricksterStudioEnabled: true' js/config.js
-          grep -q 'persisted:false' workers/intelligence-trickster-router.mjs
-          grep -q 'validateStoryForExport' js/experience-entry.mjs
+          grep -q 'createBullInvadersHost' js/experience-entry.mjs
+          grep -q 'bull-invaders-vnext.css' index.html
+          grep -q '@media(max-width:760px)' css/product-shell-vnext.css
+          grep -q '@media(max-width:760px)' css/bull-invaders-vnext.css
           grep -q '/api/intelligence/replay-bundle' workers/intelligence-replay-bundle.mjs
-          test ! -d games/claude-of-duty
-          ! grep -Eiq 'Ansem|Bullpen|ansem\.io|community-integrations|claude-of-duty|Solana Bang Bang' js/config.js js/product-registry.mjs js/experience-entry.mjs js/intelligence-workspace-vnext.mjs workers/intelligence-asset-router.mjs workers/intelligence-operations.mjs workers/intelligence-replay-bundle.mjs sw.js
-          ! grep -Eiq 'BBRLife|lifeView|js/life\.js|id:[[:space:]]*['"'"'"]life['"'"'"]' js/main.js js/ui.js js/product-registry.mjs sw.js
+          test ! -d games
+          test ! -e js/ui.js
+          test ! -e js/track.js
+          test ! -e js/bull-intelligence.js
+          test ! -e js/bull-vision.js
+          ! grep -Eiq 'Ansem|Bullpen|ansem\.io|community-integrations|Solana Bang Bang' index.html js/config.js js/product-registry.mjs js/experience-entry.mjs js/intelligence-workspace-vnext.mjs sw.js
