@@ -17,7 +17,6 @@ on:
       - 'js/intelligence-nft-memory.js'
       - 'js/intelligence-ghost-portfolio.js'
       - 'js/intelligence-game-weather.js'
-      - 'js/life.js'
       - 'js/main.js'
       - 'js/core.js'
       - 'workers/bull-intelligence-extension.mjs'
@@ -66,7 +65,6 @@ jobs:
           node --check js/intelligence-nft-memory.js
           node --check js/intelligence-ghost-portfolio.js
           node --check js/intelligence-game-weather.js
-          node --check js/life.js
           node --check js/main.js
           node --check workers/bull-intelligence-extension.mjs
           node --check workers/intelligence-indexer.mjs
@@ -132,6 +130,12 @@ jobs:
             echo 'NFT indexing must remain disabled until migration 0008 and a normalized NFT ingest source are ready.'
             exit 1
           fi
+      - name: Removed product guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e js/life.js
+          ! grep -Eiq 'BBRLife|lifeView|js/life\.js' index.html js/main.js js/ui.js sw.js
       - name: Read-only product guardrails
         shell: bash
         run: |
