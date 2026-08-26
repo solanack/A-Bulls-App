@@ -8,7 +8,7 @@ import { handleIntelligenceMeshIngestRequest } from './intelligence-mesh-ingest.
 import { handleIntelligenceAdapterRequest } from './intelligence-adapter-router.mjs';
 import { handleExternalRetrievalTaskRequest } from './intelligence-retrieval-tasks.mjs';
 import { handleUniverseRequest } from './intelligence-universe-router.mjs';
-import { handleTricksterRequest } from './intelligence-trickster-router.mjs';
+import { handleTricksterRequest, pruneTricksterShareManifests } from './intelligence-trickster-router.mjs';
 import { handleReplayBundleRequest } from './intelligence-replay-bundle.mjs';
 import { handleMarketReplayRequest } from './intelligence-market-replay.mjs';
 import { handleMarketBackfillPlanRequest } from './intelligence-market-backfill-router.mjs';
@@ -48,8 +48,9 @@ export async function handleIntelligenceFetch(request, env = {}) {
 
 export async function handleIntelligenceScheduled(env = {}) {
   const mesh = await runIntelligenceMeshScheduler(env, { limit: 2 });
-  if (String(env.UNIVERSE_ENABLED || '').toLowerCase() === 'true') {
-    await pruneUniverseObservations(env);
-  }
+  const maintenance=[];
+  if (String(env.UNIVERSE_ENABLED || '').toLowerCase() === 'true') maintenance.push(pruneUniverseObservations(env));
+  if (String(env.TRICKSTER_SHARE_ENABLED || '').toLowerCase() === 'true') maintenance.push(pruneTricksterShareManifests(env));
+  if(maintenance.length)await Promise.allSettled(maintenance);
   return mesh;
 }
