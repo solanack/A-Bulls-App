@@ -51,6 +51,7 @@ jobs:
             js/trade-replay-player.test.mjs \
             js/intelligence-event-ledger.test.mjs \
             js/market-replay-empty-state.test.mjs \
+            js/market-index-depth-panel.test.mjs \
             js/market-sequence-discovery.test.mjs \
             js/market-sequence-participants.test.mjs \
             js/market-sequence-phases.test.mjs \
@@ -104,9 +105,11 @@ jobs:
           grep -q 'marketBackfillQueueEnabled' workers/intelligence-mesh-scheduler.mjs
           grep -q 'queueMarketBackfillCandidates' workers/intelligence-mesh-scheduler.mjs
           grep -q 'REQUEST DEEPER INDEX' js/market-index-depth-panel.mjs
+          grep -q 'RETRY SCHEDULED' js/market-index-depth-panel.mjs
           grep -q 'INDEX ADVANCED' js/market-index-depth-panel.mjs
           grep -q 'attachMarketIndexDepthPanel' js/market-replay-client.mjs
           grep -q 'index-job-status' js/market-index-depth-client.mjs
+          grep -q 'next_attempt_at' workers/intelligence-index-job-status.mjs
           grep -q 'SKIP INACTIVITY' js/trade-replay-player.mjs
           grep -q 'timestampForActiveTime' js/temporal-active-time.mjs
           grep -q 'NOTABLE SEQUENCES' js/token-market-workspace.mjs
@@ -139,7 +142,7 @@ jobs:
           grep -q 'market-sequence-discovery.css' index.html
           grep -q 'token-sequence-story-runtime' sw.js
           grep -q 'token-market-workspace' sw.js
-          grep -q "const BUILD = '8.7.0-vnext-47'" sw.js
+          grep -q "const BUILD = '8.7.0-vnext-48'" sw.js
           grep -q 'worker-vnext-entry.mjs' workers/wrangler.toml
           grep -q 'reconstruct-worker-8.2.0.mjs' workers/wrangler.toml
           grep -q 'worker-baseline-retained.mjs' workers/worker-vnext-entry.mjs
