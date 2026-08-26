@@ -1,31 +1,8 @@
 name: Intelligence Mesh CI
 
 on:
-  push:
-    branches: [ feature/intelligence-mesh-v1, feature/universe-trickster-v1 ]
-    paths:
-      - 'workers/intelligence-*.mjs'
-      - 'js/intelligence-workspace-*.mjs'
-      - 'js/replay-*.mjs'
-      - 'js/trade-*.mjs'
-      - 'js/temporal-*.mjs'
-      - 'workers/migrations/0009_intelligence_mesh.sql'
-      - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
-      - 'docs/INTELLIGENCE-MESH.md'
-      - 'docs/INTELLIGENCE-MESH-BUILD-STATUS.md'
-      - '.github/workflows/intelligence-mesh-ci.yml'
   pull_request:
-    paths:
-      - 'workers/intelligence-*.mjs'
-      - 'js/intelligence-workspace-*.mjs'
-      - 'js/replay-*.mjs'
-      - 'js/trade-*.mjs'
-      - 'js/temporal-*.mjs'
-      - 'workers/migrations/0009_intelligence_mesh.sql'
-      - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
-      - 'docs/INTELLIGENCE-MESH.md'
-      - 'docs/INTELLIGENCE-MESH-BUILD-STATUS.md'
-      - '.github/workflows/intelligence-mesh-ci.yml'
+    types: [ready_for_review]
   workflow_dispatch:
 
 permissions:
