@@ -72,7 +72,16 @@ export async function handleIntelligenceAdapterRequest(request, env = {}) {
     let taskCompletion = null;
     if (taskId) {
       try {
-        taskCompletion = await finishExternalRetrievalTask(env, { taskId, state:'complete', wallet, sourceKind:kind });
+        taskCompletion = await finishExternalRetrievalTask(env, {
+          taskId,
+          state:'complete',
+          wallet,
+          sourceKind:kind,
+          searchedFrom:payload.searchedFrom ?? payload.searched_from,
+          searchedTo:payload.searchedTo ?? payload.searched_to,
+          rangeVerified:payload.rangeVerified === true || Number(payload.range_verified) === 1,
+          observedRows:payload.observedRows ?? payload.observed_rows ?? rows.length
+        });
       } catch (error) {
         taskCompletion = { ok:false, taskId, error:s(error?.message || error) };
       }
