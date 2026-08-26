@@ -10,7 +10,7 @@ const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:
 function bearer(request){const header=s(request.headers.get('authorization'));return header.toLowerCase().startsWith('bearer ')?header.slice(7).trim():'';}
 function authorized(request,env={}){const expected=s(env.INTELLIGENCE_MESH_INGEST_TOKEN),supplied=bearer(request);return Boolean(expected)&&expected.length===supplied.length&&expected===supplied;}
 export function externalRetrievalEnabled(env={}){return s(env.INTELLIGENCE_MESH_ENABLED).toLowerCase()==='true'&&s(env.INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED).toLowerCase()==='true';}
-export function externalRetrievalMaxAttempts(env={}){return Math.max(1,Math.min(10,Math.trunc(Number(env.INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS)||4)));}
+export function externalRetrievalMaxAttempts(env={}){return Math.max(1,Math.min(10,Math.trunc(Number(env.INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS)||4));}
 
 export function normalizeRetrievalTaskInput(input={}){
   const wallet=s(input.wallet),source=s(input.source),sourceKind=s(input.sourceKind||input.source_kind).toLowerCase(),from=finite(input.requestedFrom??input.from),to=finite(input.requestedTo??input.to),indexJobId=finite(input.indexJobId??input.index_job_id);
@@ -44,9 +44,15 @@ export async function claimExternalRetrievalTasks(env={},input={}){
   const allowedKinds=(Array.isArray(input.sourceKinds)?input.sourceKinds:[]).map(x=>s(x).toLowerCase()).filter(x=>SOURCE_KINDS.has(x));
   const limit=Math.max(1,Math.min(5,Math.trunc(Number(input.limit)||1))),leaseSeconds=Math.max(30,Math.min(300,Math.trunc(Number(input.leaseSeconds)||120))),ts=now(),maxAttempts=externalRetrievalMaxAttempts(env);
   const rows=await db.prepare(`SELECT id,index_job_id,wallet,source,source_kind,requested_from,requested_to,state,lease_until,attempts FROM intelligence_retrieval_tasks WHERE attempts<? AND ((state='queued' AND (next_attempt_at IS NULL OR next_attempt_at<=?)) OR (state='leased' AND lease_until IS NOT NULL AND lease_until<=?)) ORDER BY updated_at ASC LIMIT 25`).bind(maxAttempts,ts,ts).all();
-  const selected=(rows?.results||[]).filter(row=>!allowedKinds.length||allowedKinds.includes(s(row.source_kind).toLowerCase())).slice(0,limit),tasks=[];
-  for(const row of selected){const leaseUntil=ts+leaseSeconds;await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='leased',lease_until=?,attempts=attempts+1,updated_at=unixepoch() WHERE id=?`).bind(leaseUntil,row.id).run();tasks.push(Object.freeze({taskId:Number(row.id),indexJobId:finite(row.index_job_id),wallet:s(row.wallet),source:s(row.source),sourceKind:s(row.source_kind),requestedFrom:finite(row.requested_from),requestedTo:finite(row.requested_to),leaseUntil,attempt:Number(row.attempts||0)+1,maxAttempts}));}
-  return Object.freeze({ok:true,enabled:true,tasks:Object.freeze(tasks),maxAttempts,disclosure:'Tasks contain only bounded public-wallet retrieval coordinates. Claiming a task does not assert that the requested interval contains transactions or that the selected source has complete coverage.'});
+  const selected=(rows?.results||[]).filter(row=>!allowedKinds.length||allowedKinds.includes(s(row.source_kind).toLowerCase())),tasks=[];
+  for(const row of selected){
+    if(tasks.length>=limit)break;
+    const leaseUntil=ts+leaseSeconds;
+    const claimed=await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='leased',lease_until=?,attempts=attempts+1,updated_at=unixepoch() WHERE id=? AND attempts<? AND ((state='queued' AND (next_attempt_at IS NULL OR next_attempt_at<=?)) OR (state='leased' AND lease_until IS NOT NULL AND lease_until<=?))`).bind(leaseUntil,row.id,maxAttempts,ts,ts).run();
+    if(Number(claimed?.meta?.changes)!==1)continue;
+    tasks.push(Object.freeze({taskId:Number(row.id),indexJobId:finite(row.index_job_id),wallet:s(row.wallet),source:s(row.source),sourceKind:s(row.source_kind),requestedFrom:finite(row.requested_from),requestedTo:finite(row.requested_to),leaseUntil,attempt:Number(row.attempts||0)+1,maxAttempts}));
+  }
+  return Object.freeze({ok:true,enabled:true,tasks:Object.freeze(tasks),maxAttempts,disclosure:'Tasks contain only bounded public-wallet retrieval coordinates. Leasing uses a conditional state transition so concurrent bridge workers cannot successfully claim the same live lease. Claiming a task does not assert that the requested interval contains transactions or that the selected source has complete coverage.'});
 }
 
 export async function finishExternalRetrievalTask(env={},input={}){
