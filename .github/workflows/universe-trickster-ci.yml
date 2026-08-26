@@ -46,6 +46,7 @@ jobs:
           set -euo pipefail
           node --test \
             js/temporal-replay-engine.test.mjs \
+            js/temporal-active-time.test.mjs \
             js/trade-comparison-replay.test.mjs \
             js/trade-replay-player.test.mjs \
             js/intelligence-event-ledger.test.mjs \
