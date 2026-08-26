@@ -1,6 +1,6 @@
 /* A Bulls App — provider-neutral evidence source selection.
- * This module ranks configured read-only sources from observed health and requested depth.
- * It never invents coverage and never treats provider preference as evidence completeness.
+ * Ranks configured read-only sources from observed health and requested depth.
+ * Selection is retrieval strategy, never a claim of blockchain completeness.
  */
 const s=v=>String(v==null?'':v).trim();
 const n=v=>Number.isFinite(Number(v))?Number(v):null;
@@ -34,4 +34,17 @@ export function rankEvidenceSources(sources=[],request={}){
 export function chooseEvidenceSource(sources=[],request={}){
   const ranked=rankEvidenceSources(sources,request),selected=ranked.find(source=>s(source.state).toLowerCase()!=='error')||null;
   return Object.freeze({selected,ranked,depthClass:sourceDepthClass(request),disclosure:'Source selection ranks configured read-only sources using observed health, latency and requested historical depth. Ranking is a retrieval strategy only; it does not prove that a source has complete blockchain coverage.'});
+}
+
+export async function loadObservedSourceHealth(db){
+  if(!db)return[];
+  const result=await db.prepare(`SELECT source AS name,source_kind AS kind,state,last_ok_at AS lastOkAt,last_error_at AS lastErrorAt,latency_ms AS latencyMs,details_json AS detailsJson FROM intelligence_source_health ORDER BY updated_at DESC`).all();
+  return (result?.results||[]).map(row=>({name:s(row.name),kind:s(row.kind||'rpc'),state:s(row.state||'unknown'),lastOkAt:n(row.lastOkAt),lastErrorAt:n(row.lastErrorAt),latencyMs:n(row.latencyMs),detailsJson:s(row.detailsJson)}));
+}
+
+export function buildRetrievalPlan(sources=[],request={}){
+  const choice=chooseEvidenceSource(sources,request),ranked=choice.ranked.filter(x=>s(x.state).toLowerCase()!=='error');
+  const primary=choice.selected;
+  const fallbacks=ranked.filter(x=>!primary||x.name!==primary.name).slice(0,3);
+  return Object.freeze({depthClass:choice.depthClass,primary,fallbacks:Object.freeze(fallbacks),attemptOrder:Object.freeze([primary,...fallbacks].filter(Boolean)),coverageClaim:'unknown-until-measured',disclosure:choice.disclosure});
 }
