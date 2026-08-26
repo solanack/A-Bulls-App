@@ -4,7 +4,7 @@ const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 
 function median(values=[]){const sorted=values.filter(Number.isFinite).slice().sort((a,b)=>a-b);if(!sorted.length)return 0;const mid=Math.floor(sorted.length/2);return sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2;}
 function percentile(values=[],p=.9){const sorted=values.filter(Number.isFinite).slice().sort((a,b)=>a-b);if(!sorted.length)return null;const index=Math.min(sorted.length-1,Math.max(0,Math.ceil(sorted.length*p)-1));return sorted[index];}
-function eventId(event={}){return text(event.signature||event.id)||null;}
+function eventId(event={}){return event&&typeof event==='object'?(text(event.signature||event.id)||null):null;}
 function windowBucketSeconds(windowSeconds){if(windowSeconds<=3600)return 300;if(windowSeconds<=21600)return 900;if(windowSeconds<=86400)return 3600;return 21600;}
 function pctChange(a,b){const from=finite(a),to=finite(b);return from!=null&&to!=null&&from!==0?((to-from)/Math.abs(from))*100:null;}
 
@@ -25,13 +25,14 @@ export function discoverMarketSequences(bundle={}, {limit=6}={}){
   const explicitPrice=Boolean(bundle?.subject?.quoteMint)&&Array.isArray(bundle.candles)&&bundle.candles.length>1;
   const candidates=[];
   for(const item of nonEmpty){
-    const activityRatio=item.eventCount/eventMedian,walletRatio=item.walletCount/walletMedian;
+    const peers=nonEmpty.filter(candidate=>candidate!==item),activityBaseline=peers.length?Math.max(1,median(peers.map(candidate=>candidate.eventCount))):eventMedian,walletBaseline=peers.length?Math.max(1,median(peers.map(candidate=>candidate.walletCount))):walletMedian;
+    const activityRatio=item.eventCount/activityBaseline,walletRatio=item.walletCount/walletBaseline;
     if(item.eventCount>=3&&activityRatio>=2)candidates.push({kind:'activity-surge',label:'ACTIVITY SURGE',score:activityRatio,statement:`${item.eventCount} indexed events occurred in this ${Math.round(bucketSeconds/60)} minute segment, ${activityRatio.toFixed(1)}× the median non-empty segment in this loaded window.`,...item});
     if(item.walletCount>=3&&walletRatio>=1.5)candidates.push({kind:'wallet-concentration',label:'WALLET CONCENTRATION',score:walletRatio,statement:`${item.walletCount} observed wallets appear in this ${Math.round(bucketSeconds/60)} minute segment, ${walletRatio.toFixed(1)}× the median non-empty segment in this loaded window.`,...item});
     if(largeThreshold!=null&&item.largestAbsTokenDelta!=null&&item.largestAbsTokenDelta>=largeThreshold)candidates.push({kind:'large-observed-trade',label:'LARGE OBSERVED TOKEN DELTA',score:item.largestAbsTokenDelta/Math.max(largeThreshold,Number.EPSILON),statement:`This segment contains an observed absolute token delta at or above the 90th percentile of numeric token deltas in this loaded window.`,...item});
     if(explicitPrice){const movement=priceMovement(bundle.candles,item.from,item.to);if(movement&&Math.abs(movement.changePercent)>=1)candidates.push({kind:'indexed-price-move',label:'INDEXED PRICE MOVE',score:Math.abs(movement.changePercent),statement:`The explicitly selected quote-market candles changed ${movement.changePercent>=0?'+':''}${movement.changePercent.toFixed(2)}% across this segment (${movement.candleCount} indexed candles).`,price:movement,...item});}
   }
-  const priority={activity-surge:4,'wallet-concentration':3,'large-observed-trade':2,'indexed-price-move':1};
+  const priority={'activity-surge':4,'wallet-concentration':3,'large-observed-trade':2,'indexed-price-move':1};
   candidates.sort((a,b)=>b.score-a.score||(priority[b.kind]||0)-(priority[a.kind]||0)||a.from-b.from);
   const used=new Set(),selected=[];for(const candidate of candidates){const key=`${candidate.kind}:${candidate.from}`;if(used.has(key))continue;used.add(key);selected.push(Object.freeze({id:`sequence-${candidate.kind}-${Math.trunc(candidate.from)}`,kind:candidate.kind,label:candidate.label,from:candidate.from,to:candidate.to,bucketSeconds,eventCount:candidate.eventCount,walletCount:candidate.walletCount,buyCount:candidate.buyCount,sellCount:candidate.sellCount,largestAbsTokenDelta:candidate.largestAbsTokenDelta,focusEventId:candidate.focusEventId,evidenceIds:Object.freeze(candidate.evidenceIds.slice()),score:clamp(candidate.score,0,1e9),statement:candidate.statement,price:candidate.price?Object.freeze(candidate.price):null,disclosure:'Calculated only from the currently loaded bounded token-market evidence. This does not establish coordination, ownership, strategy, intent, causation, or future behavior.'}));if(selected.length>=Math.max(1,Math.min(12,Math.trunc(limit)||6)))break;}
   return Object.freeze(selected);

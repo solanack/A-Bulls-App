@@ -37,7 +37,7 @@ expect('field evidence scope cached',/field-evidence-scope/.test(sw));
 expect('production request guard wired',/intelligence-request-guard/.test(await text('workers/worker-vnext-entry.mjs')));
 expect('Trickster project store cached',/trickster-project-store/.test(sw));
 expect('Trickster share client cached',/trickster-share-client/.test(sw));
-expect('vNext-70 PWA checkpoint',/8\.7\.0-vnext-70/.test(sw));
+expect('vNext-71 PWA checkpoint',/8\.7\.0-vnext-71/.test(sw));
 expect('NO INDEXED EVIDENCE truth state',/NO INDEXED EVIDENCE/.test(market)||/NO INDEXED EVIDENCE/.test(workspace));
 expect('Worker 8.2.0 reconstruction configured',/reconstruct-worker-8\.2\.0\.mjs/.test(wrangler));
 expect('Trickster shares fail closed by default',/TRICKSTER_SHARE_ENABLED\s*=\s*"false"/.test(wrangler));

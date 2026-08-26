@@ -4,12 +4,16 @@ This document is the handoff boundary between repository work and production Clo
 
 ## Release scope
 
-- Frontend baseline: Pages 8.7.0, built forward as the vNext full-screen field experience. Current PWA checkpoint: `8.7.0-vnext-70`.
+- Frontend baseline: Pages 8.7.0, built forward as the vNext full-screen field experience. Current PWA checkpoint: `8.7.0-vnext-71`.
 - Worker baseline: verified Worker 8.2.0 reconstructed at build time, extended through `workers/worker-vnext-entry.mjs`.
 - Bull Invaders is the only game.
 - LIFE, Ansem/$ANSEM, Bullpen NFT/community integration, Ansem.io, Community Integrations and removed games stay removed.
 - Public-chain intelligence remains read-only: no wallet signing, custody, transaction submission or trading.
 - Exact focused entities can expand into field-native investigation hubs, but visual edges are allowed only when a normalized evidence receipt explicitly connects both loaded endpoints.
+
+## Validated checkpoint
+
+On 2026-08-26, the exact owner handoff command `npm run validate:release-candidate` passed locally after `npm ci --ignore-scripts`: browser dependency build, verified Worker 8.2.0 reconstruction, syntax checks, 326/326 tests across 100 files, architecture guards, retired-product guards, wallet-safety guards, and Cloudflare release checks. Hosted GitHub Actions remains a separate infrastructure check.
 
 ## Production deployment order
 
@@ -53,7 +57,7 @@ The app can still use the standard/progressive RPC path while those optional acc
 - `ALLOWED_ORIGINS` contains `https://abullsapp.com` and `https://www.abullsapp.com`.
 - `privacy.html`, `terms.html`, and `share.html` return 200.
 - `_headers` is served as Cloudflare Pages policy configuration, with no stale HTML content.
-- PWA manifest and service worker update successfully to `8.7.0-vnext-70`.
+- PWA manifest and service worker update successfully to `8.7.0-vnext-71`.
 - Desktop opens as a true full-viewport experience; mobile uses the dedicated compact presentation.
 - Search accepts public Solana addresses/mints/signatures without requesting a wallet signature.
 - Exact field focus opens a spatial investigation hub; every rendered relationship has an evidence receipt and both endpoints are loaded in the bounded snapshot.

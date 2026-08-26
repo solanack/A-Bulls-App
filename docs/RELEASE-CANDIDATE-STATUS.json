@@ -1,11 +1,20 @@
 {
   "product": "A Bulls App",
-  "pwaCheckpoint": "8.7.0-vnext-70",
+  "pwaCheckpoint": "8.7.0-vnext-71",
   "workerBaseline": "8.2.0",
   "branch": "feature/universe-trickster-v1",
   "pullRequest": 15,
   "productionState": "unmerged-undeployed",
-  "requiredMigrations": ["0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014"],
+  "requiredMigrations": [
+    "0007",
+    "0008",
+    "0009",
+    "0010",
+    "0011",
+    "0012",
+    "0013",
+    "0014"
+  ],
   "firstReleaseFlags": {
     "UNIVERSE_ENABLED": true,
     "TRICKSTER_STUDIO_ENABLED": true,
@@ -25,5 +34,17 @@
     "A-Bulls-App-release.keystore and existing alias/passwords",
     "Google Play developer account",
     "Solana dApp Store publisher account and durable publisher wallet"
-  ]
+  ],
+  "validation": {
+    "date": "2026-08-26",
+    "command": "npm run validate:release-candidate",
+    "nodeTests": {
+      "files": 100,
+      "passed": 326,
+      "failed": 0
+    },
+    "browserVendorBuilt": true,
+    "workerBaselineReconstructedAndVerified": true,
+    "result": "passed-local"
+  }
 }

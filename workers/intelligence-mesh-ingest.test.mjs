@@ -4,7 +4,7 @@ import { universeObservationsForEvents } from './intelligence-mesh-ingest.mjs';
 
 test('live normalized events become explicit receipt-backed field entities',()=>{
   const observations=universeObservationsForEvents([{
-    signature:'sig-1',wallet:'wallet-1',mint:'mint-1',programId:'program-1',
+    signature:'sig-1',wallet:'11111111111111111111111111111111',mint:'22222222222222222222222222222222',programId:'33333333333333333333333333333333',
     blockTime:100,slot:9,eventClass:'swap-like',tokenDelta:42,source:'yellowstone'
   }]);
   assert.deepEqual(new Set(observations.map(item=>item.entityKind)),new Set(['transaction','wallet','token','program']));
@@ -19,8 +19,7 @@ test('events without chain time or receipt do not enter the live field',()=>{
 });
 
 test('verified ingest preserves verified relation presentation state',()=>{
-  const [observation]=universeObservationsForEvents([{signature:'sig-2',wallet:'wallet-2',blockTime:101,source:'old-faithful'}],{verified:true});
+  const [observation]=universeObservationsForEvents([{signature:'sig-2',wallet:'11111111111111111111111111111111',blockTime:101,source:'old-faithful'}],{verified:true});
   assert.equal(observation.commitment,'verified');
   assert.equal(observation.evidence.relations[0].verificationState,'verified');
 });
-

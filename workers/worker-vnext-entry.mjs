@@ -66,6 +66,9 @@ async function cleanupLeaderboard(env = {}) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+    }
     const guarded = await guardIntelligenceRequest(request, env);
     if (guarded) return withCors(guarded, request, env);
     const vnext = await handleIntelligenceFetch(request, env);

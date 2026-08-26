@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { normalizeBridgeConfig, normalizeExecutorResult, receiptSatisfiesTask, processRetrievalTask, runBridgeOnce } from './runner.mjs';
 
 const task={taskId:7,wallet:'11111111111111111111111111111111',source:'archive-a',sourceKind:'old-faithful',requestedFrom:100,requestedTo:200};
-const config=normalizeBridgeConfig({apiBase:'https://api.example/','token':'secret','sourceKinds:['old-faithful'],limit:2,leaseSeconds:90});
+const config=normalizeBridgeConfig({apiBase:'https://api.example/',token:'secret',sourceKinds:['old-faithful'],limit:2,leaseSeconds:90});
 
 test('normalizes fail-closed bridge configuration',()=>{
   assert.equal(config.apiBase,'https://api.example');

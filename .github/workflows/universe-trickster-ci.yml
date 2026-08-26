@@ -69,7 +69,7 @@ jobs:
           grep -q 'guardIntelligenceRequest' workers/worker-vnext-entry.mjs
           grep -q 'fieldCommandRequest' js/experience-bootstrap.mjs
           grep -q 'universeObservationsForEvents' workers/intelligence-mesh-ingest.mjs
-          grep -q "const BUILD='8.7.0-vnext-70'" sw.js
+          grep -q "const BUILD='8.7.0-vnext-71'" sw.js
           grep -q 'worker-vnext-entry.mjs' workers/wrangler.toml
           grep -q 'reconstruct-worker-8.2.0.mjs' workers/wrangler.toml
           test ! -d games
@@ -103,6 +103,9 @@ jobs:
           test -f docs/ANDROID-STORE-HANDOFF.md
           test -f docs/RELEASE-CANDIDATE-STATUS.json
           test -f workers/wrangler.production.example.toml
-          node scripts/verify-production-config.mjs workers/wrangler.production.example.toml && exit 1 || true
+          if node scripts/verify-production-config.mjs workers/wrangler.production.example.toml; then
+            echo 'Placeholder production configuration unexpectedly passed.'
+            exit 1
+          fi
           ! grep -Eiq '<html|<!doctype' _headers
           grep -q 'X-Content-Type-Options: nosniff' _headers

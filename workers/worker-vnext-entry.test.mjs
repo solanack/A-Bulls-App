@@ -21,6 +21,14 @@ const env = {
 
 async function jsonOf(response) { return JSON.parse(await response.text()); }
 
+const preflight = await worker.fetch(new Request('https://api.example/api/intelligence/mesh-status', {
+  method: 'OPTIONS',
+  headers: { Origin: 'https://abullsapp.com', 'Access-Control-Request-Method': 'GET' }
+}), env, {});
+assert.equal(preflight.status, 204);
+assert.equal(preflight.headers.get('access-control-allow-origin'), 'https://abullsapp.com');
+assert.match(preflight.headers.get('access-control-allow-methods') || '', /GET/);
+
 // Retired/replaced product APIs can never reach the retained 8.2.0 baseline runtime.
 for (const path of [
   '/api/ansem/analytics',
