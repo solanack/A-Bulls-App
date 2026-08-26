@@ -72,7 +72,7 @@ export async function finishExternalRetrievalTask(env={},input={}){
   const maxAttempts=externalRetrievalMaxAttempts(env),attempts=Math.max(0,Math.trunc(Number(task.attempts)||0)),message=error||'external_retrieval_retry';
   if(attempts>=maxAttempts){
     await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='failed',lease_until=NULL,last_error=?,next_attempt_at=NULL,updated_at=unixepoch() WHERE id=?`).bind(message,taskId).run();
-    if(task.index_job_id!=null)await db.prepare(`UPDATE intelligence_index_jobs SET state='queued',last_error='external_retrieval_exhausted',next_attempt_at=unixepoch(),updated_at=unixepoch() WHERE id=? AND state='waiting-external'`).bind(task.index_job_id).run();
+    if(task.index_job_id!=null)await db.prepare(`UPDATE intelligence_index_jobs SET state='queued',source=NULL,last_error='external_retrieval_exhausted',next_attempt_at=unixepoch(),updated_at=unixepoch() WHERE id=? AND state='waiting-external'`).bind(task.index_job_id).run();
     return Object.freeze({ok:true,enabled:true,taskId,indexJobId:finite(task.index_job_id),wallet:s(task.wallet),sourceKind:s(task.source_kind),state:'failed',attempts,maxAttempts,error:message});
   }
   await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='queued',lease_until=NULL,last_error=?,next_attempt_at=?,updated_at=unixepoch() WHERE id=?`).bind(message,now()+120,taskId).run();
