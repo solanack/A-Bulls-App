@@ -12,12 +12,13 @@ export function describeMarketIndexDepth(result={}){
 }
 
 export function describeIndexJobProgress(result={}){
-  const found=Math.max(0,Number(result.found)||0),complete=Math.max(0,Number(result.complete)||0),running=Math.max(0,Number(result.running)||0),queued=Math.max(0,Number(result.queued)||0),waitingExternal=Math.max(0,Number(result.waitingExternal)||0),retrying=Math.max(0,Number(result.retrying)||0),pages=Math.max(0,Number(result.pagesCompleted)||0),signatures=Math.max(0,Number(result.signaturesSeen)||0),transactions=Math.max(0,Number(result.transactionsIngested)||0),sources=[...new Set((Array.isArray(result.sources)?result.sources:[]).map(trim).filter(Boolean))];
+  const found=Math.max(0,Number(result.found)||0),complete=Math.max(0,Number(result.complete)||0),running=Math.max(0,Number(result.running)||0),queued=Math.max(0,Number(result.queued)||0),waitingExternal=Math.max(0,Number(result.waitingExternal)||0),externalFallbackQueued=Math.max(0,Number(result.externalFallbackQueued)||0),retrying=Math.max(0,Number(result.retrying)||0),pages=Math.max(0,Number(result.pagesCompleted)||0),signatures=Math.max(0,Number(result.signaturesSeen)||0),transactions=Math.max(0,Number(result.transactionsIngested)||0),sources=[...new Set((Array.isArray(result.sources)?result.sources:[]).map(trim).filter(Boolean))];
   const sourceText=sources.length?` · ${waitingExternal?'SOURCE PLANNED':'SOURCE USED'} ${sources.join(' + ')}`:'';
   const work=`${pages} PAGES · ${signatures} SIGNATURES · ${transactions} TX INGESTED${sourceText}`;
   if(!result.schedulerEnabled)return Object.freeze({terminal:true,reload:false,text:`QUEUED · SCHEDULER PAUSED · ${work}`});
   if(found>0&&complete===found)return Object.freeze({terminal:true,reload:true,text:`INDEX ADVANCED · ${complete}/${found} COMPLETE · ${work}`});
   if(waitingExternal)return Object.freeze({terminal:false,reload:false,text:`EXTERNAL RETRIEVAL · ${waitingExternal} WAITING · ${complete} COMPLETE · ${running} RUNNING · ${queued} QUEUED · ${work}`});
+  if(externalFallbackQueued)return Object.freeze({terminal:false,reload:false,text:`EXTERNAL SOURCE EXHAUSTED · FALLBACK QUEUED · ${externalFallbackQueued} JOB${externalFallbackQueued===1?'':'S'} · ${work}`});
   if(retrying)return Object.freeze({terminal:false,reload:false,text:`RETRY SCHEDULED · ${retrying} RETRYING · ${complete} COMPLETE · ${running} RUNNING · ${work}`});
   return Object.freeze({terminal:false,reload:false,text:`INDEXING · ${complete} COMPLETE · ${running} RUNNING · ${queued} QUEUED · ${work}`});
 }
@@ -34,7 +35,7 @@ async function watchJobs({client,jobIds,root,status,reloadButton}){
     }catch(error){status.textContent='STATUS TEMPORARILY UNAVAILABLE';}
     await wait(5000);
   }
-  if(root.isConnected&&reloadButton.hidden&&(status.textContent.startsWith('INDEXING')||status.textContent.startsWith('RETRY SCHEDULED')||status.textContent.startsWith('EXTERNAL RETRIEVAL')))status.textContent+=' · CHECK AGAIN BY RELOADING';
+  if(root.isConnected&&reloadButton.hidden&&(status.textContent.startsWith('INDEXING')||status.textContent.startsWith('RETRY SCHEDULED')||status.textContent.startsWith('EXTERNAL RETRIEVAL')||status.textContent.startsWith('EXTERNAL SOURCE EXHAUSTED')))status.textContent+=' · CHECK AGAIN BY RELOADING';
 }
 
 export function createMarketIndexDepthPanel({apiBase,mint,from,to}={}){
@@ -53,7 +54,7 @@ export function createMarketIndexDepthPanel({apiBase,mint,from,to}={}){
         try{
           const queued=await client.request(input),queue=queued?.queue||{},jobIds=jobIdsFromQueue(queue);
           status.textContent=queue.queued?`${queue.queued} QUEUED${queue.reused?` · ${queue.reused} REUSED`:''}`:queue.reused?`${queue.reused} ALREADY QUEUED/RUNNING`:'NO NEW JOBS QUEUED';
-          copy.querySelector('p').textContent='A bounded read-only history request was accepted for server-recomputed candidates. External retrieval may be delegated to an approved bridge when appropriate. SOURCE PLANNED means work is waiting on that bridge; SOURCE USED is shown only after a retrieval path actually performs job work. Neither is a completeness rating.';
+          copy.querySelector('p').textContent='A bounded read-only history request was accepted for server-recomputed candidates. External retrieval may be delegated to an approved bridge when appropriate. If an external source exhausts its bounded retry budget, the parent job is released to progressive RPC repair. SOURCE PLANNED and SOURCE USED remain audit facts, not completeness ratings.';
           if(jobIds.length)watchJobs({client,jobIds,root,status,reloadButton});
         }catch(error){status.textContent=error?.message==='backfill_queue_disabled'?'QUEUE DISABLED':'REQUEST UNAVAILABLE';button.disabled=false;}
       });
