@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createReplayTimeline, TemporalReplayController, replayEffectForEvent, eventsBetween } from './temporal-replay-engine.mjs';
+import { createReplayTimeline, TemporalReplayController, replayEffectForEvent, eventsBetween, dispatchTemporalReplayEvents } from './temporal-replay-engine.mjs';
 
 const events=[
   {id:'a',timestamp:1000,side:'buy',wallet:'A',token:'T',valueUsd:500,signature:'sig-a'},
@@ -55,4 +55,17 @@ test('buy and sell effects are semantic and intensity is bounded',()=>{
   assert.equal(sell.hue,'red');
   assert.ok(buy.intensity>=0.2&&buy.intensity<=1);
   assert.ok(sell.intensity>=buy.intensity);
+});
+
+test('replay broadcast preserves emitted evidence order and does not mutate events',()=>{
+  const previous=globalThis.CustomEvent;
+  class TestCustomEvent{constructor(type,init){this.type=type;this.detail=init?.detail;}}
+  globalThis.CustomEvent=TestCustomEvent;
+  let received=null;
+  const target={dispatchEvent(event){received=event;return true;}};
+  const emitted=dispatchTemporalReplayEvents([events[1],events[2]],target);
+  assert.deepEqual(emitted.map(event=>event.id),['b','c']);
+  assert.equal(received.type,'abulls:temporal-replay-events');
+  assert.deepEqual(received.detail.events.map(event=>event.id),['b','c']);
+  if(previous===undefined)delete globalThis.CustomEvent;else globalThis.CustomEvent=previous;
 });
