@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildActiveTimeMap, activeTimeForTimestamp } from './temporal-active-time.mjs';
+import { buildActiveTimeMap, activeTimeForTimestamp, timestampForActiveTime } from './temporal-active-time.mjs';
 
 test('compresses only long inactive gaps while preserving order and original timestamps',()=>{
   const map=buildActiveTimeMap([
@@ -17,7 +17,13 @@ test('compresses only long inactive gaps while preserving order and original tim
 test('interpolates timestamps inside compressed gaps without rewriting source time',()=>{
   const map=buildActiveTimeMap([{id:'a',timestamp:0},{id:'b',timestamp:60000}],{gapThresholdMs:30000,compressedGapMs:3000});
   assert.equal(activeTimeForTimestamp(map,30000),1500);
+  assert.equal(timestampForActiveTime(map,1500),30000);
   assert.equal(map.points[1].timestamp,60000);
+});
+
+test('active-time mapping round trips event timestamps',()=>{
+  const map=buildActiveTimeMap([{id:'a',timestamp:1000},{id:'b',timestamp:2000},{id:'c',timestamp:62000},{id:'d',timestamp:63000}],{gapThresholdMs:30000,compressedGapMs:3000});
+  for(const point of map.points)assert.equal(timestampForActiveTime(map,activeTimeForTimestamp(map,point.timestamp)),point.timestamp);
 });
 
 test('short gaps remain uncompressed',()=>{
