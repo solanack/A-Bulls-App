@@ -23,10 +23,12 @@ jobs:
           for f in js/intelligence-workspace-*.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs; do
             [ -e "$f" ] && node --check "$f"
           done
+          node --check services/intelligence-bridge/runner.mjs
       - name: Unit tests
         run: |
           node --test workers/intelligence-*.test.mjs
           node --test js/temporal-replay-engine.test.mjs js/trade-comparison-replay.test.mjs
+          node --test services/intelligence-bridge/runner.test.mjs
       - name: Neutral data contract
         shell: bash
         run: |
@@ -73,6 +75,15 @@ jobs:
           grep -q 'finishExternalRetrievalTask' workers/intelligence-adapter-router.mjs
           grep -q 'rangeVerified' workers/intelligence-adapter-router.mjs
           grep -q 'unknown-until-measured' workers/intelligence-source-selection.mjs
+      - name: External bridge contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'retrieval-tasks/claim' services/intelligence-bridge/runner.mjs
+          grep -q 'retrieval-tasks/finish' services/intelligence-bridge/runner.mjs
+          grep -q 'rangeVerified' services/intelligence-bridge/runner.mjs
+          grep -q 'bridge_executor_unavailable' services/intelligence-bridge/runner.mjs
+          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' services/intelligence-bridge/*.mjs
       - name: Product feature contract
         shell: bash
         run: |
@@ -92,4 +103,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-*.mjs js/intelligence-workspace-*.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs
+          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-*.mjs js/intelligence-workspace-*.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs services/intelligence-bridge/*.mjs
