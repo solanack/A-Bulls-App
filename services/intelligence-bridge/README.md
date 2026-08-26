@@ -16,9 +16,12 @@ This service is the provider-neutral execution boundary for bounded historical r
 
 - `INTELLIGENCE_API_BASE`: base URL of the vNext Worker.
 - `INTELLIGENCE_MESH_INGEST_TOKEN`: protected internal bearer token. Keep it in the bridge runtime secret store; never commit it.
-- `INTELLIGENCE_BRIDGE_SOURCE_KINDS`: comma-separated source kinds this bridge instance is allowed to claim, for example `substreams` or `old-faithful`.
+- `INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED=true`: enables the Substreams historical executor only when a real injected Substreams transport is also supplied.
+- `INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED=true`: enables the Old Faithful historical executor only when a real injected Old Faithful transport is also supplied.
+- `INTELLIGENCE_BRIDGE_CLAIM_LIMIT`: optional bounded claim count, 1–5.
+- `INTELLIGENCE_BRIDGE_LEASE_SECONDS`: optional lease duration, 30–300 seconds.
 
-The Worker must separately enable the Intelligence Mesh, external retrieval, and the specific historical source. The bridge configuration cannot turn Worker features on.
+The Worker must separately enable the Intelligence Mesh, external retrieval, and the specific historical source. Bridge configuration cannot turn Worker features on.
 
 ## Runtime contract
 
@@ -26,24 +29,28 @@ The Worker must separately enable the Intelligence Mesh, external retrieval, and
 
 1. Claim bounded leased tasks from `/api/internal/intelligence/retrieval-tasks/claim`.
 2. Dispatch each task to an explicitly injected executor matching `task.sourceKind` or `task.source`.
-3. Normalize the executor result without inventing missing range verification.
+3. Require a verified searched range that spans the entire requested task interval.
 4. For non-empty results, submit normalized evidence to `/api/internal/intelligence/adapters/<sourceKind>` with the exact `taskId`.
-5. For verified or unverified empty results, finish the exact task through `/api/internal/intelligence/retrieval-tasks/finish`; the Worker decides whether the receipt satisfies the requested interval.
-6. On retrieval/ingest failure, return the leased task to retry state. The bridge does not mark failed work complete.
+5. For verified empty results, finish the exact task through `/api/internal/intelligence/retrieval-tasks/finish` with the searched-range receipt.
+6. On retrieval, range-verification, or ingest failure, return the leased task to retry state. The bridge never marks failed or partial work complete.
 
-## Provider executors
+## Executor layers
 
-Provider-specific transports are intentionally **not** implemented in `runner.mjs`. Each executor must be built from a verified provider contract and return normalized evidence plus an explicit searched-range receipt only when the provider response proves that range was searched.
+- `executor-contract.mjs` defines the provider-neutral historical task/result contract.
+- `substreams-executor.mjs` is a fail-closed Substreams shell. A transport must explicitly prove the complete searched interval.
+- `old-faithful-executor.mjs` is a fail-closed Old Faithful shell and preserves archive references when returned.
+- `bootstrap.mjs` enables only executors whose Worker-style feature flags are on **and** whose real transports are injected.
+- `service.mjs` creates the long-running bridge service and refuses startup when no historical executor is safely configured.
 
-Yellowstone/Richat remain live-ingest transports and are not arbitrary historical executors. Historical bridge execution is currently intended for separately enabled Substreams and Old Faithful/archive-style sources.
+Provider-specific network transports are intentionally not hard-coded here. They must be implemented from verified provider contracts and injected into the executor shells. Yellowstone/Richat remain live-ingest transports and are not arbitrary historical executors.
 
 ## Validation
 
 Run locally from the repository root:
 
 ```sh
-node --check services/intelligence-bridge/runner.mjs
-node --test services/intelligence-bridge/runner.test.mjs
+for f in services/intelligence-bridge/*.mjs; do node --check "$f"; done
+node --test services/intelligence-bridge/*.test.mjs
 ```
 
 Hosted CI remains deliberate; the draft branch does not require every commit to trigger a hosted run.
