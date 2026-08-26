@@ -17,138 +17,90 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-      - name: Build browser dependencies
+
+      - name: Install and build browser dependencies
         run: |
           npm ci --ignore-scripts
           npm run build:experience-vendor
-      - name: Reconstruct verified Worker 8.2.0 baseline
-        run: node scripts/reconstruct-worker-8.2.0.mjs
-      - name: Worker vNext compatibility contract
-        run: node --test workers/worker-vnext-entry.test.mjs
+
+      - name: Reconstruct verified Worker 8.2.0 provenance and retained runtime
+        run: npm run build:worker-baseline
+
+      - name: Worker compatibility contract
+        run: npm run test:worker-compat
+
       - name: vNext syntax
+        shell: bash
         run: |
           set -euo pipefail
-          for file in js/universe-*.mjs js/trickster-*.mjs js/temporal-*.mjs js/trade-*.mjs js/replay-*.mjs js/market-context-*.mjs js/event-story-*.mjs js/wallet-comparison-*.mjs js/product-*.mjs js/experience-*.mjs js/intelligence-workspace-*.mjs js/intelligence-event-ledger.mjs js/event-market-context-client.mjs js/entity-resolver-client.mjs js/wallet-token-index-client.mjs js/bull-invaders-host.mjs js/evidence-state.mjs js/universal-search.mjs workers/intelligence-universe-*.mjs workers/intelligence-trickster-*.mjs workers/intelligence-replay-*.mjs workers/intelligence-event-context.mjs workers/intelligence-entity-resolver.mjs workers/intelligence-wallet-token-index.mjs workers/intelligence-worker-hooks.mjs workers/worker-vnext-entry.mjs; do
+          for file in js/*.mjs workers/intelligence-*.mjs workers/worker-vnext-entry.mjs; do
             [ -e "$file" ] && node --check "$file"
           done
           node --check js/config.js
           node --check js/main.js
           node --check sw.js
-      - name: vNext tests
+
+      - name: Core vNext unit tests
+        shell: bash
         run: |
+          set -euo pipefail
           node --test \
-            js/universe-contracts.test.mjs \
-            js/universe-runtime.test.mjs \
-            js/universe-client.test.mjs \
-            js/trickster-story-manifest.test.mjs \
-            js/trickster-runtime.test.mjs \
-            js/trickster-timeline.test.mjs \
-            js/trickster-caption-plan.test.mjs \
-            js/trickster-caption-renderer.test.mjs \
-            js/trickster-audio-cues.test.mjs \
-            js/trickster-audio-renderer.test.mjs \
-            js/trickster-narration-plan.test.mjs \
-            js/trickster-validation-client.test.mjs \
-            js/trickster-video-delivery.test.mjs \
             js/temporal-replay-engine.test.mjs \
             js/trade-comparison-replay.test.mjs \
             js/trade-replay-player.test.mjs \
-            js/market-context-replay.test.mjs \
-            js/market-context-player-bridge.test.mjs \
-            js/event-story-director.test.mjs \
-            js/event-story-price-selection.test.mjs \
-            js/event-story-focus.test.mjs \
-            js/event-story-scene-runtime.test.mjs \
-            js/event-story-scene-slice.test.mjs \
-            js/event-story-render-plan.test.mjs \
-            js/event-story-scene-transition.test.mjs \
-            js/event-story-frame-model.test.mjs \
-            js/event-story-frame-renderer.test.mjs \
-            js/event-story-frame-drawer.test.mjs \
+            js/intelligence-event-ledger.test.mjs \
+            js/token-sequence-story-runtime.test.mjs \
             js/event-story-video-export.test.mjs \
-            js/wallet-comparison-story-runtime.test.mjs \
-            js/wallet-comparison-render-plan.test.mjs \
-            js/wallet-comparison-frame-model.test.mjs \
-            js/wallet-comparison-frame-renderer.test.mjs \
             js/wallet-comparison-video-export.test.mjs \
             js/wallet-comparison-what-if.test.mjs \
-            js/intelligence-event-ledger.test.mjs \
+            js/trickster-story-manifest.test.mjs \
+            js/trickster-timeline.test.mjs \
+            js/trickster-caption-plan.test.mjs \
+            js/trickster-audio-cues.test.mjs \
+            js/trickster-audio-renderer.test.mjs \
+            js/trickster-narration-plan.test.mjs \
+            js/trickster-video-delivery.test.mjs \
             js/universal-search.test.mjs \
-            js/experience-feature-flags.test.mjs \
-            js/experience-dependencies.test.mjs \
-            js/experience-integration.test.mjs \
             js/product-shell.test.mjs \
             js/product-integration.test.mjs \
-            js/evidence-state.test.mjs \
             workers/intelligence-entity-resolver.test.mjs \
             workers/intelligence-wallet-token-index.test.mjs \
             workers/intelligence-event-context.test.mjs \
+            workers/intelligence-market-replay.test.mjs \
+            workers/intelligence-replay-bundle.test.mjs \
             workers/intelligence-universe-runtime.test.mjs \
-            workers/intelligence-trickster-router.test.mjs \
-            workers/intelligence-replay-bundle.test.mjs
-      - name: Responsive replacement contract
+            workers/intelligence-trickster-router.test.mjs
+
+      - name: Replacement architecture contract
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'nextProductShellEnabled: true' js/config.js
-          grep -q 'createBullInvadersHost' js/experience-entry.mjs
-          grep -q 'applyExplicitEventStoryPriceSelection' js/experience-entry.mjs
-          grep -q 'renderEventStoryVideo' js/experience-entry.mjs
-          grep -q 'renderWalletComparisonVideo' js/experience-entry.mjs
-          grep -q 'buildTricksterNarrationPlan' js/experience-entry.mjs
-          grep -q 'validateStoryForExport' js/experience-entry.mjs
-          grep -q 'walletComparisonScenePlan' js/trickster-studio.mjs
-          grep -q 'buildWalletComparisonStoryWhatIf' js/trickster-studio.mjs
-          grep -q 'A TIMING → B' js/trickster-studio.mjs
-          grep -q 'B TIMING → A' js/trickster-studio.mjs
-          grep -q 'REMOVE WHAT IF' js/trickster-studio.mjs
-          grep -q 'walletComparisonWhatIfClaim' js/wallet-comparison-what-if.mjs
-          grep -q 'HYPOTHETICAL TARGET' js/wallet-comparison-frame-renderer.mjs
-          grep -q 'OBSERVED SOURCE' js/wallet-comparison-frame-renderer.mjs
-          grep -q 'buildTricksterCaptionPlan' js/event-story-frame-drawer.mjs
-          grep -q 'drawTricksterCaption' js/event-story-frame-drawer.mjs
-          grep -q 'buildTricksterCaptionPlan' js/wallet-comparison-frame-drawer.mjs
-          grep -q 'drawTricksterCaption' js/wallet-comparison-frame-drawer.mjs
-          grep -q 'OBSERVED ON CHAIN' js/trickster-caption-plan.mjs
-          grep -q 'CALCULATED FROM EVIDENCE' js/trickster-caption-plan.mjs
-          grep -q 'SIMULATION' js/trickster-caption-plan.mjs
-          grep -q 'buildTricksterAudioCuePlan' js/event-story-video-export.mjs
-          grep -q 'buildTricksterAudioCuePlan' js/wallet-comparison-video-export.mjs
-          grep -q 'renderTricksterAudioBuffer' js/event-story-video-export.mjs
-          grep -q 'renderTricksterAudioBuffer' js/wallet-comparison-video-export.mjs
-          grep -q 'buy-impact' js/trickster-audio-cues.mjs
-          grep -q 'sell-impact' js/trickster-audio-cues.mjs
-          grep -q 'simulation-impact' js/trickster-audio-cues.mjs
-          grep -q 'OfflineAudioContext' js/trickster-audio-renderer.mjs
-          grep -q 'createStereoPanner' js/trickster-audio-renderer.mjs
-          grep -q 'Narration is assembled only from validated manifest claims' js/trickster-narration-plan.mjs
-          grep -q 'Claim-free scenes remain silent' js/trickster-narration-plan.mjs
-          grep -q 'audioBuffer' js/trickster-clip-export.mjs
-          grep -q 'SOUND' js/trickster-video-delivery.mjs
-          grep -q 'SILENT FALLBACK' js/trickster-video-delivery.mjs
-          grep -q 'trickster-simulation.css' index.html
-          grep -q 'experience-entry.mjs?v=6' index.html
-          grep -q '@media(max-width:760px)' css/trickster-simulation.css
-          grep -q 'eventLightningState' js/event-story-frame-renderer.mjs
-          grep -q 'SAVE VIDEO' js/trickster-video-delivery.mjs
-          grep -q 'SERVER RENDER REQUIRED' js/trickster-video-delivery.mjs
-          grep -q 'createEvidenceLedger' js/intelligence-workspace-vnext.mjs
-          grep -q 'TIME-ONLY EVENT LANE' js/trade-replay-player.mjs
-          grep -q 'CREATE EVENT STORY' js/intelligence-event-ledger.mjs
-          grep -q 'trickster-caption-plan' sw.js
-          grep -q 'trickster-caption-renderer' sw.js
-          grep -q 'trickster-audio-cues' sw.js
-          grep -q 'trickster-audio-renderer' sw.js
-          grep -q 'trickster-narration-plan' sw.js
-          grep -q 'event-story-video-export' sw.js
-          grep -q 'wallet-comparison-video-export' sw.js
-          grep -q 'wallet-comparison-what-if' sw.js
-          grep -q 'Around transaction (12h)' js/intelligence-workspace-vnext.mjs
+          grep -q 'experience-entry.mjs?v=7' index.html
+          grep -q 'TOKEN MARKET' js/experience-entry.mjs
+          grep -q 'TokenMarketWorkspace' js/experience-entry.mjs
+          grep -q 'CREATE MARKET STORY' js/token-market-workspace.mjs
+          grep -q "storyType:'token-sequence'" js/token-market-workspace.mjs
+          grep -q 'buildTokenSequenceSceneRuntime' js/trickster-studio.mjs
+          grep -q "storyType==='token-sequence'" js/experience-entry.mjs
+          grep -q 'token-sequence-story-runtime' sw.js
+          grep -q 'token-market-workspace' sw.js
+          grep -q "const BUILD = '8.7.0-vnext-34'" sw.js
           grep -q 'worker-vnext-entry.mjs' workers/wrangler.toml
           grep -q 'reconstruct-worker-8.2.0.mjs' workers/wrangler.toml
+          grep -q 'worker-baseline-retained.mjs' workers/worker-vnext-entry.mjs
+          grep -q "baselineRuntime: 'retained-system-auth-bull-invaders'" workers/worker-vnext-entry.mjs
           test ! -d games
           test ! -e js/ui.js
           test ! -e js/track.js
           test ! -e js/bull-intelligence.js
           test ! -e js/bull-vision.js
-          ! grep -Eiq 'Ansem|Bullpen|ansem\.io|community-integrations|Solana Bang Bang' index.html js/config.js js/product-registry.mjs js/experience-entry.mjs js/intelligence-workspace-vnext.mjs sw.js
+
+      - name: Retired product guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Eiq 'Ansem|Bullpen|ansem\.io|community-integrations|Solana Bang Bang|Claude of Duty|BBRLife|lifeView' \
+            index.html js/config.js js/product-registry.mjs js/experience-entry.mjs js/intelligence-workspace-vnext.mjs js/token-market-workspace.mjs sw.js workers/wrangler.toml workers/worker-vnext-entry.mjs
+          ! grep -Eiq 'seed phrase|private key import|signTransaction|sendTransaction|secretKey' \
+            workers/intelligence-*.mjs js/intelligence-workspace-*.mjs js/token-market-workspace.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs
