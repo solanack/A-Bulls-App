@@ -4,7 +4,7 @@ This document is the handoff boundary between repository work and production Clo
 
 ## Release scope
 
-- Frontend baseline: Pages 8.7.0, built forward as the vNext full-screen field experience. Current PWA checkpoint: `8.7.0-vnext-69`.
+- Frontend baseline: Pages 8.7.0, built forward as the vNext full-screen field experience. Current PWA checkpoint: `8.7.0-vnext-70`.
 - Worker baseline: verified Worker 8.2.0 reconstructed at build time, extended through `workers/worker-vnext-entry.mjs`.
 - Bull Invaders is the only game.
 - LIFE, Ansem/$ANSEM, Bullpen NFT/community integration, Ansem.io, Community Integrations and removed games stay removed.
@@ -53,10 +53,11 @@ The app can still use the standard/progressive RPC path while those optional acc
 - `ALLOWED_ORIGINS` contains `https://abullsapp.com` and `https://www.abullsapp.com`.
 - `privacy.html`, `terms.html`, and `share.html` return 200.
 - `_headers` is served as Cloudflare Pages policy configuration, with no stale HTML content.
-- PWA manifest and service worker update successfully to `8.7.0-vnext-69`.
+- PWA manifest and service worker update successfully to `8.7.0-vnext-70`.
 - Desktop opens as a true full-viewport experience; mobile uses the dedicated compact presentation.
 - Search accepts public Solana addresses/mints/signatures without requesting a wallet signature.
 - Exact field focus opens a spatial investigation hub; every rendered relationship has an evidence receipt and both endpoints are loaded in the bounded snapshot.
+- Evidence-backed hub navigation supports bounded back/forward traversal without fuzzy entity matching or inferred relationships.
 - Focused Replay, Compare, What If, Evidence, and Create actions carry the exact selected entity into the next investigation action. Focused Create gathers a valid evidence bundle before Trickster rather than manufacturing a story from visual focus alone.
 - Universe truth panel shows observation window, coverage/source and live/degraded state.
 - Live adapter/mesh events reach the Universe only through the normalized explicit projection path; malformed wallet/token/program identifiers are not promoted into typed field entities.

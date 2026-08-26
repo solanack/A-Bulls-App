@@ -64,11 +64,12 @@ jobs:
           grep -q 'field-story-scene' sw.js
           grep -q 'trickster-field-playback' sw.js
           grep -q 'field-investigation-hub' sw.js
+          grep -q 'field-investigation-trail' sw.js
           grep -q 'field-evidence-scope' sw.js
           grep -q 'guardIntelligenceRequest' workers/worker-vnext-entry.mjs
           grep -q 'fieldCommandRequest' js/experience-bootstrap.mjs
           grep -q 'universeObservationsForEvents' workers/intelligence-mesh-ingest.mjs
-          grep -q "const BUILD='8.7.0-vnext-69'" sw.js
+          grep -q "const BUILD='8.7.0-vnext-70'" sw.js
           grep -q 'worker-vnext-entry.mjs' workers/wrangler.toml
           grep -q 'reconstruct-worker-8.2.0.mjs' workers/wrangler.toml
           test ! -d games
