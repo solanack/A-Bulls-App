@@ -21,4 +21,6 @@ test('service derives claim source kinds from enabled configured executors',()=>
   assert.deepEqual(service.config.sourceKinds,['substreams']);
   assert.equal(service.config.limit,3);
   assert.equal(service.config.leaseSeconds,180);
+  assert.deepEqual(service.readiness,{ready:true,sourceKinds:['substreams'],readOnly:true,providerTransportsInjected:true});
+  assert.equal(Object.isFrozen(service.readiness),true);
 });
