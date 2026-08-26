@@ -1,4 +1,4 @@
-const finite=value=>Number.isFinite(Number(value))?Number(value):null;
+const finite=value=>value===null||value===undefined||value===''?null:Number.isFinite(Number(value))?Number(value):null;
 const text=value=>String(value==null?'':value).trim();
 
 function replayBounds(bundle={}){
@@ -21,7 +21,7 @@ export function buildTokenSequenceSceneRuntime(bundle={},manifest={}){
     if(type==='market-hook'||type==='market-sequence')return Object.freeze({...base,mode:'market-window',from:bounds.from,to:bounds.to,eventIds:type==='market-hook'?Object.freeze(allEventIds.slice(0,Math.min(40,allEventIds.length))):allEventIds,candleCount:(bundle.candles||[]).length});
     if(type==='sequence-opening'){const eventIds=idsFromBeat(beat);return Object.freeze({...base,mode:'focus-event',from:bounds.from,to:bounds.to,focusId:eventIds[0]||null,eventIds,candleCount:0});}
     if(type==='selected-price-movement')return Object.freeze({...base,mode:quoteMint?'price-aftermath':'evidence-close',from:bounds.from,to:bounds.to,eventIds:Object.freeze([]),candleCount:quoteMint?(bundle.candles||[]).length:0});
-    if(['participation-expansion','largest-observed-trade','program-context-change','direction-mix'].includes(type)){const eventIds=idsFromBeat(beat);return Object.freeze({...base,mode:'market-window',from:bounds.from,to:beat?.timestamp??bounds.to,eventIds:eventIds.length?eventIds:allEventIds,candleCount:quoteMint?(bundle.candles||[]).length:0});}
+    if(['participant-chronology','participation-expansion','largest-observed-trade','program-context-change','direction-mix'].includes(type)){const eventIds=idsFromBeat(beat);return Object.freeze({...base,mode:'market-window',from:bounds.from,to:beat?.timestamp??bounds.to,eventIds:eventIds.length?eventIds:allEventIds,candleCount:quoteMint?(bundle.candles||[]).length:0});}
     return Object.freeze({...base,mode:'evidence-close',from:null,to:null,eventIds:Object.freeze([]),candleCount:0});
   }));
 }
