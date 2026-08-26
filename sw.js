@@ -1,4 +1,4 @@
-const BUILD = '8.7.0-vnext-45';
+const BUILD = '8.7.0-vnext-46';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -28,11 +28,11 @@ const NEXT_EXPERIENCE = [
   './js/market-context-player-bridge.mjs?v=3',
   ...[
     'experience-bootstrap','experience-feature-flags','experience-dependencies','product-registry','product-shell-vnext',
-    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','market-replay-client','market-coverage-panel','market-replay-empty-state','market-backfill-plan-client','market-backfill-plan-panel','market-sequence-discovery','market-sequence-participants','market-sequence-phases','market-sequence-phase-slice','market-sequence-phase-controls','market-sequence-phase-comparison','market-sequence-reconstruction','token-market-workspace','token-sequence-director','token-sequence-story-runtime','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','event-story-scene-runtime','event-story-scene-slice','event-story-render-plan','event-story-scene-transition','event-story-frame-model','event-story-frame-renderer','event-story-frame-drawer','event-story-video-export','wallet-comparison-story-runtime','wallet-comparison-render-plan','wallet-comparison-frame-model','wallet-comparison-frame-renderer','wallet-comparison-frame-drawer','wallet-comparison-video-export','wallet-comparison-what-if','intelligence-event-ledger','universe-contracts','universe-quality',
+    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','market-replay-client','market-coverage-panel','market-replay-empty-state','market-backfill-plan-client','market-backfill-plan-panel','market-index-depth-client','market-index-depth-panel','market-sequence-discovery','market-sequence-participants','market-sequence-phases','market-sequence-phase-slice','market-sequence-phase-controls','market-sequence-phase-comparison','market-sequence-reconstruction','token-market-workspace','token-sequence-director','token-sequence-story-runtime','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','event-story-scene-runtime','event-story-scene-slice','event-story-render-plan','event-story-scene-transition','event-story-frame-model','event-story-frame-renderer','event-story-frame-drawer','event-story-video-export','wallet-comparison-story-runtime','wallet-comparison-render-plan','wallet-comparison-frame-model','wallet-comparison-frame-renderer','wallet-comparison-frame-drawer','wallet-comparison-video-export','wallet-comparison-what-if','intelligence-event-ledger','universe-contracts','universe-quality',
     'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
     'universe-experience','trickster-story-manifest','trickster-composer',
     'trickster-export-capabilities','trickster-timeline','trickster-caption-plan','trickster-caption-renderer','trickster-audio-cues','trickster-audio-renderer','trickster-narration-plan','trickster-clip-export','trickster-validation-client','trickster-video-delivery','trickster-studio',
-    'temporal-replay-engine','trade-comparison-replay','trade-replay-player','replay-bundle-client','intelligence-workspace-vnext',
+    'temporal-replay-engine','temporal-active-time','trade-comparison-replay','trade-replay-player','replay-bundle-client','intelligence-workspace-vnext',
     'bull-invaders-host','evidence-state'
   ].map(name => `./js/${name}.mjs`)
 ];
