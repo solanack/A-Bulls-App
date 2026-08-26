@@ -12,11 +12,12 @@ export function describeMarketIndexDepth(result={}){
 }
 
 export function describeIndexJobProgress(result={}){
-  const found=Math.max(0,Number(result.found)||0),complete=Math.max(0,Number(result.complete)||0),running=Math.max(0,Number(result.running)||0),queued=Math.max(0,Number(result.queued)||0),retrying=Math.max(0,Number(result.retrying)||0);
-  if(!result.schedulerEnabled)return Object.freeze({terminal:true,reload:false,text:'QUEUED · SCHEDULER PAUSED'});
-  if(found>0&&complete===found)return Object.freeze({terminal:true,reload:true,text:`INDEX ADVANCED · ${complete}/${found} COMPLETE`});
-  if(retrying)return Object.freeze({terminal:false,reload:false,text:`RETRY SCHEDULED · ${retrying} RETRYING · ${complete} COMPLETE · ${running} RUNNING`});
-  return Object.freeze({terminal:false,reload:false,text:`INDEXING · ${complete} COMPLETE · ${running} RUNNING · ${queued} QUEUED`});
+  const found=Math.max(0,Number(result.found)||0),complete=Math.max(0,Number(result.complete)||0),running=Math.max(0,Number(result.running)||0),queued=Math.max(0,Number(result.queued)||0),retrying=Math.max(0,Number(result.retrying)||0),pages=Math.max(0,Number(result.pagesCompleted)||0),signatures=Math.max(0,Number(result.signaturesSeen)||0),transactions=Math.max(0,Number(result.transactionsIngested)||0);
+  const work=`${pages} PAGES · ${signatures} SIGNATURES · ${transactions} TX INGESTED`;
+  if(!result.schedulerEnabled)return Object.freeze({terminal:true,reload:false,text:`QUEUED · SCHEDULER PAUSED · ${work}`});
+  if(found>0&&complete===found)return Object.freeze({terminal:true,reload:true,text:`INDEX ADVANCED · ${complete}/${found} COMPLETE · ${work}`});
+  if(retrying)return Object.freeze({terminal:false,reload:false,text:`RETRY SCHEDULED · ${retrying} RETRYING · ${complete} COMPLETE · ${running} RUNNING · ${work}`});
+  return Object.freeze({terminal:false,reload:false,text:`INDEXING · ${complete} COMPLETE · ${running} RUNNING · ${queued} QUEUED · ${work}`});
 }
 
 function jobIdsFromQueue(queue={}){return [...new Set((queue.jobs||[]).map(job=>Number(job.jobId)).filter(id=>Number.isInteger(id)&&id>0))].slice(0,10);}
@@ -50,7 +51,7 @@ export function createMarketIndexDepthPanel({apiBase,mint,from,to}={}){
         try{
           const queued=await client.request(input),queue=queued?.queue||{},jobIds=jobIdsFromQueue(queue);
           status.textContent=queue.queued?`${queue.queued} QUEUED${queue.reused?` · ${queue.reused} REUSED`:''}`:queue.reused?`${queue.reused} ALREADY QUEUED/RUNNING`:'NO NEW JOBS QUEUED';
-          copy.querySelector('p').textContent='A bounded read-only history request was accepted for server-recomputed candidates. Progress below reflects index jobs only; retries are labeled explicitly and the replay changes only after the market is reloaded.';
+          copy.querySelector('p').textContent='A bounded read-only history request was accepted for server-recomputed candidates. Progress below reports only work performed by those returned jobs; it is not a market-wide transaction count. The replay changes only after the market is reloaded.';
           if(jobIds.length)watchJobs({client,jobIds,root,status,reloadButton});
         }catch(error){status.textContent=error?.message==='backfill_queue_disabled'?'QUEUE DISABLED':'REQUEST UNAVAILABLE';button.disabled=false;}
       });
