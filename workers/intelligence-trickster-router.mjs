@@ -13,12 +13,8 @@ const json = (body,status=200,cache='no-store') => new Response(JSON.stringify(b
   }
 });
 
-function enabled(env={}) {
-  return String(env.TRICKSTER_STUDIO_ENABLED||'').trim().toLowerCase()==='true';
-}
-function shareEnabled(env={}) {
-  return enabled(env)&&String(env.TRICKSTER_SHARE_ENABLED||'').trim().toLowerCase()==='true';
-}
+function enabled(env={}) { return String(env.TRICKSTER_STUDIO_ENABLED||'').trim().toLowerCase()==='true'; }
+function shareEnabled(env={}) { return enabled(env)&&String(env.TRICKSTER_SHARE_ENABLED||'').trim().toLowerCase()==='true'; }
 
 async function readBoundedJson(request) {
   const declared=Number(request.headers.get('content-length')||0);
@@ -50,19 +46,24 @@ async function readShareManifest(env,id){
   return Object.freeze({id:String(row.id),manifest:validateStoryManifest(manifest),disclosures:Array.isArray(disclosures)?disclosures:[],createdAt:Number(row.created_at)||0,expiresAt:Number(row.expires_at)||0});
 }
 
+export async function pruneTricksterShareManifests(env={}){
+  if(!shareEnabled(env))return Object.freeze({enabled:false,deleted:0});
+  const db=intelligenceDb(env);if(!db)return Object.freeze({enabled:true,deleted:0,unavailable:true});
+  const result=await db.prepare(`DELETE FROM trickster_share_manifests WHERE expires_at<=unixepoch()`).run();
+  return Object.freeze({enabled:true,deleted:Math.max(0,Number(result?.meta?.changes)||0)});
+}
+
 export async function handleTricksterRequest(request,env={}) {
   const url=new URL(request.url),validatePath='/api/intelligence/trickster/validate',sharePath='/api/intelligence/trickster/share';
   const shareMatch=url.pathname.match(/^\/api\/intelligence\/trickster\/share\/([a-f0-9]{24})$/);
   if(url.pathname!==validatePath&&url.pathname!==sharePath&&!shareMatch) return null;
   if(!enabled(env)) return json({ok:false,error:'feature_disabled'},404);
-
   if(shareMatch){
     if(request.method!=='GET')return json({ok:false,error:'method_not_allowed'},405);
     if(!shareEnabled(env))return json({ok:false,error:'feature_disabled'},404);
     try{const record=await readShareManifest(env,shareMatch[1]);if(!record)return json({ok:false,error:'share_not_found'},404,'public, max-age=60');return json({ok:true,persisted:true,frozen:true,...record},200,'public, max-age=300, stale-while-revalidate=3600');}
     catch(error){const code=String(error?.message||error),status=code==='intelligence_db_unavailable'?503:500;return json({ok:false,error:code},status);}
   }
-
   if(request.method!=='POST') return json({ok:false,error:'method_not_allowed'},405);
   try {
     const input=await readBoundedJson(request);
