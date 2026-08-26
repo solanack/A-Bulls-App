@@ -19,6 +19,14 @@ export function normalizeRetrievalTaskInput(input={}){
   return Object.freeze({wallet,source:source||sourceKind,sourceKind,requestedFrom:Math.trunc(from),requestedTo:Math.trunc(to),indexJobId:indexJobId==null?null:Math.trunc(indexJobId)});
 }
 
+export function normalizeRetrievalReceipt(input={},task={}){
+  const searchedFrom=finite(input.searchedFrom??input.searched_from),searchedTo=finite(input.searchedTo??input.searched_to),observedRows=Math.max(0,Math.trunc(finite(input.observedRows??input.observed_rows)??0)),rangeVerified=input.rangeVerified===true||Number(input.range_verified)===1;
+  const requestedFrom=finite(task.requested_from??task.requestedFrom),requestedTo=finite(task.requested_to??task.requestedTo);
+  const validRange=searchedFrom!=null&&searchedTo!=null&&searchedTo>=searchedFrom;
+  const requestedWindowSatisfied=Boolean(rangeVerified&&validRange&&requestedFrom!=null&&requestedTo!=null&&searchedFrom<=requestedFrom&&searchedTo>=requestedTo);
+  return Object.freeze({searchedFrom:validRange?Math.trunc(searchedFrom):null,searchedTo:validRange?Math.trunc(searchedTo):null,rangeVerified:Boolean(rangeVerified&&validRange),observedRows,requestedWindowSatisfied});
+}
+
 export async function queueExternalRetrievalTask(env={},input={}){
   if(!externalRetrievalEnabled(env))return Object.freeze({ok:true,enabled:false,queued:false,task:null});
   const db=intelligenceDb(env);if(!db)throw new Error('intelligence_db_unavailable');
@@ -46,17 +54,21 @@ export async function finishExternalRetrievalTask(env={},input={}){
   const taskId=finite(input.taskId??input.id);if(taskId==null||taskId<1||!Number.isInteger(taskId))throw new Error('task_id_required');
   const state=s(input.state||'complete').toLowerCase(),error=s(input.error),expectedWallet=s(input.wallet),expectedKind=s(input.sourceKind||input.source_kind).toLowerCase();
   if(state!=='complete'&&state!=='retry')throw new Error('invalid_task_state');
-  const task=await db.prepare(`SELECT id,index_job_id,wallet,source_kind,state FROM intelligence_retrieval_tasks WHERE id=? LIMIT 1`).bind(taskId).first();
+  const task=await db.prepare(`SELECT id,index_job_id,wallet,source,source_kind,requested_from,requested_to,state FROM intelligence_retrieval_tasks WHERE id=? LIMIT 1`).bind(taskId).first();
   if(!task?.id)throw new Error('task_not_found');
   if(s(task.state)!=='leased')throw new Error('task_not_leased');
   if(expectedWallet&&s(task.wallet)!==expectedWallet)throw new Error('task_wallet_mismatch');
   if(expectedKind&&s(task.source_kind).toLowerCase()!==expectedKind)throw new Error('task_source_kind_mismatch');
   if(state==='complete'){
-    await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='complete',lease_until=NULL,last_error=NULL,next_attempt_at=NULL,updated_at=unixepoch() WHERE id=?`).bind(taskId).run();
-    if(task.index_job_id!=null)await db.prepare(`UPDATE intelligence_index_jobs SET state='queued',last_error=NULL,next_attempt_at=unixepoch(),updated_at=unixepoch() WHERE id=? AND state='waiting-external'`).bind(task.index_job_id).run();
-  }else{
-    await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='queued',lease_until=NULL,last_error=?,next_attempt_at=?,updated_at=unixepoch() WHERE id=?`).bind(error||'external_retrieval_retry',now()+120,taskId).run();
+    const receipt=normalizeRetrievalReceipt(input,task),resultJson=JSON.stringify({requestedWindowSatisfied:receipt.requestedWindowSatisfied,disclosure:'Range verification confirms only that the external bridge reports searching the stated public-wallet interval. It does not establish complete token-market coverage or prove that intervals with zero returned rows had market inactivity.'});
+    await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='complete',lease_until=NULL,last_error=NULL,next_attempt_at=NULL,searched_from=?,searched_to=?,range_verified=?,observed_rows=?,result_json=?,updated_at=unixepoch() WHERE id=?`).bind(receipt.searchedFrom,receipt.searchedTo,receipt.rangeVerified?1:0,receipt.observedRows,resultJson,taskId).run();
+    if(task.index_job_id!=null){
+      const parentState=receipt.requestedWindowSatisfied?'complete':'queued';
+      await db.prepare(`UPDATE intelligence_index_jobs SET state=?,source=?,last_error=NULL,next_attempt_at=?,updated_at=unixepoch() WHERE id=? AND state='waiting-external'`).bind(parentState,s(task.source)||s(task.source_kind),receipt.requestedWindowSatisfied?null:now(),task.index_job_id).run();
+    }
+    return Object.freeze({ok:true,enabled:true,taskId,indexJobId:finite(task.index_job_id),wallet:s(task.wallet),sourceKind:s(task.source_kind),state,receipt});
   }
+  await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='queued',lease_until=NULL,last_error=?,next_attempt_at=?,updated_at=unixepoch() WHERE id=?`).bind(error||'external_retrieval_retry',now()+120,taskId).run();
   return Object.freeze({ok:true,enabled:true,taskId,indexJobId:finite(task.index_job_id),wallet:s(task.wallet),sourceKind:s(task.source_kind),state});
 }
 
