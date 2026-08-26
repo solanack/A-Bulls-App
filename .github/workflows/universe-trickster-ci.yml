@@ -2,8 +2,7 @@ name: Universe and Trickster CI
 
 on:
   pull_request:
-  push:
-    branches: [ feature/universe-trickster-v1 ]
+    types: [ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -22,10 +21,14 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npm run build:experience-vendor
+      - name: Reconstruct verified Worker 8.2.0 baseline
+        run: node scripts/reconstruct-worker-8.2.0.mjs
+      - name: Worker vNext compatibility contract
+        run: node --test workers/worker-vnext-entry.test.mjs
       - name: vNext syntax
         run: |
           set -euo pipefail
-          for file in js/universe-*.mjs js/trickster-*.mjs js/temporal-*.mjs js/trade-*.mjs js/replay-*.mjs js/market-context-*.mjs js/event-story-*.mjs js/wallet-comparison-*.mjs js/product-*.mjs js/experience-*.mjs js/intelligence-workspace-*.mjs js/intelligence-event-ledger.mjs js/event-market-context-client.mjs js/entity-resolver-client.mjs js/wallet-token-index-client.mjs js/bull-invaders-host.mjs js/evidence-state.mjs js/universal-search.mjs workers/intelligence-universe-*.mjs workers/intelligence-trickster-*.mjs workers/intelligence-replay-*.mjs workers/intelligence-event-context.mjs workers/intelligence-entity-resolver.mjs workers/intelligence-wallet-token-index.mjs workers/intelligence-worker-hooks.mjs; do
+          for file in js/universe-*.mjs js/trickster-*.mjs js/temporal-*.mjs js/trade-*.mjs js/replay-*.mjs js/market-context-*.mjs js/event-story-*.mjs js/wallet-comparison-*.mjs js/product-*.mjs js/experience-*.mjs js/intelligence-workspace-*.mjs js/intelligence-event-ledger.mjs js/event-market-context-client.mjs js/entity-resolver-client.mjs js/wallet-token-index-client.mjs js/bull-invaders-host.mjs js/evidence-state.mjs js/universal-search.mjs workers/intelligence-universe-*.mjs workers/intelligence-trickster-*.mjs workers/intelligence-replay-*.mjs workers/intelligence-event-context.mjs workers/intelligence-entity-resolver.mjs workers/intelligence-wallet-token-index.mjs workers/intelligence-worker-hooks.mjs workers/worker-vnext-entry.mjs; do
             [ -e "$file" ] && node --check "$file"
           done
           node --check js/config.js
@@ -141,6 +144,8 @@ jobs:
           grep -q 'wallet-comparison-video-export' sw.js
           grep -q 'wallet-comparison-what-if' sw.js
           grep -q 'Around transaction (12h)' js/intelligence-workspace-vnext.mjs
+          grep -q 'worker-vnext-entry.mjs' workers/wrangler.toml
+          grep -q 'reconstruct-worker-8.2.0.mjs' workers/wrangler.toml
           test ! -d games
           test ! -e js/ui.js
           test ! -e js/track.js
