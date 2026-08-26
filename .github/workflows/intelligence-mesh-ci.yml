@@ -20,14 +20,14 @@ jobs:
         run: |
           set -euo pipefail
           for f in workers/intelligence-*.mjs; do node --check "$f"; done
-          for f in js/intelligence-workspace-*.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs; do
+          for f in js/intelligence-workspace-*.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs js/field-*.mjs; do
             [ -e "$f" ] && node --check "$f"
           done
           for f in services/intelligence-bridge/*.mjs; do node --check "$f"; done
       - name: Unit tests
         run: |
           node --test workers/intelligence-*.test.mjs
-          node --test js/temporal-replay-engine.test.mjs js/trade-comparison-replay.test.mjs
+          node --test js/temporal-replay-engine.test.mjs js/trade-comparison-replay.test.mjs js/field-replay-effects.test.mjs
           node --test services/intelligence-bridge/*.test.mjs
       - name: Neutral data contract
         shell: bash
@@ -108,9 +108,12 @@ jobs:
           grep -q '/api/intelligence/nft-memory' workers/intelligence-asset-router.mjs
           grep -q '/api/intelligence/replay-bundle' workers/intelligence-replay-bundle.mjs
           grep -q 'PLAYABLE_DATA_ENABLED' workers/intelligence-replay-bundle.mjs
+          grep -q 'abulls:temporal-replay-events' js/temporal-replay-engine.mjs js/universe-renderer.mjs
+          grep -q 'resolveFieldEffectAnchor' js/field-replay-effects.mjs js/universe-renderer.mjs
+          grep -q 'field-replay-effects' sw.js
           ! grep -Eiq 'community-integrations|ansem|bullpen' workers/intelligence-asset-router.mjs workers/intelligence-operations.mjs
       - name: Read-only guardrails
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-*.mjs js/intelligence-workspace-*.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs services/intelligence-bridge/*.mjs
+          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-*.mjs js/intelligence-workspace-*.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs js/field-*.mjs services/intelligence-bridge/*.mjs
