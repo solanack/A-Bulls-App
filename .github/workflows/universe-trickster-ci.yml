@@ -49,6 +49,7 @@ jobs:
             js/trade-comparison-replay.test.mjs \
             js/trade-replay-player.test.mjs \
             js/intelligence-event-ledger.test.mjs \
+            js/market-sequence-discovery.test.mjs \
             js/token-sequence-story-runtime.test.mjs \
             js/event-story-video-export.test.mjs \
             js/wallet-comparison-video-export.test.mjs \
@@ -79,13 +80,18 @@ jobs:
           grep -q 'experience-entry.mjs?v=7' index.html
           grep -q 'TOKEN MARKET' js/experience-entry.mjs
           grep -q 'TokenMarketWorkspace' js/experience-entry.mjs
-          grep -q 'CREATE MARKET STORY' js/token-market-workspace.mjs
+          grep -q 'NOTABLE SEQUENCES' js/token-market-workspace.mjs
+          grep -q 'PLAY MOMENT' js/token-market-workspace.mjs
+          grep -q 'CREATE FULL MARKET STORY' js/token-market-workspace.mjs
+          grep -q 'discoverMarketSequences' js/token-market-workspace.mjs
           grep -q "storyType:'token-sequence'" js/token-market-workspace.mjs
           grep -q 'buildTokenSequenceSceneRuntime' js/trickster-studio.mjs
           grep -q "storyType==='token-sequence'" js/experience-entry.mjs
+          grep -q 'market-sequence-discovery' sw.js
+          grep -q 'market-sequence-discovery.css' index.html
           grep -q 'token-sequence-story-runtime' sw.js
           grep -q 'token-market-workspace' sw.js
-          grep -q "const BUILD = '8.7.0-vnext-34'" sw.js
+          grep -q "const BUILD = '8.7.0-vnext-35'" sw.js
           grep -q 'worker-vnext-entry.mjs' workers/wrangler.toml
           grep -q 'reconstruct-worker-8.2.0.mjs' workers/wrangler.toml
           grep -q 'worker-baseline-retained.mjs' workers/worker-vnext-entry.mjs
