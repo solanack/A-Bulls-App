@@ -31,7 +31,7 @@ async function setup() {
     const setActive=mode=>{walletButton.classList.toggle('active',mode==='wallet');marketButton.classList.toggle('active',mode==='market');walletButton.setAttribute('aria-pressed',String(mode==='wallet'));marketButton.setAttribute('aria-pressed',String(mode==='market'));};
     const destroyActive=()=>{active?.destroy?.();active=null;surface.replaceChildren();};
     const showWallet=()=>{destroyActive();setActive('wallet');active=new IntelligenceWorkspace({host:surface,apiBase:globalThis.BBRConfig?.apiBase||location.origin,onCreateStory:openStory});if(context.request)active.setRequest(context.request);};
-    const showMarket=()=>{const prefill=context.request?.token||context.request?.mint||context.request?.entityId||'';destroyActive();setActive('market');active=new TokenMarketWorkspace({host:surface,apiBase:globalThis.BBRConfig?.apiBase||location.origin,prefillMint:prefill});};
+    const showMarket=()=>{const prefill=context.request?.token||context.request?.mint||context.request?.entityId||'';destroyActive();setActive('market');active=new TokenMarketWorkspace({host:surface,apiBase:globalThis.BBRConfig?.apiBase||location.origin,prefillMint:prefill,onCreateStory:openStory});};
     walletButton.addEventListener('click',showWallet);marketButton.addEventListener('click',showMarket);showWallet();
     return{element:mount,destroy(){destroyActive();mount.remove();}};
   }
@@ -42,7 +42,7 @@ async function setup() {
     const narration=validation.validated===true?buildTricksterNarrationPlan(validation.manifest,detail.timeline):null;
     const progress={onProgress:item=>globalThis.dispatchEvent(new CustomEvent('abulls:trickster-render-progress',{detail:item}))};
     if(validation.validated===true&&detail.renderPlan?.length){
-      if(detail.manifest?.storyType==='transaction-replay')rendering=await renderEventStoryVideo({...detail,manifest:validation.manifest},progress);
+      if(detail.manifest?.storyType==='transaction-replay'||detail.manifest?.storyType==='token-sequence')rendering=await renderEventStoryVideo({...detail,manifest:validation.manifest},progress);
       else if(detail.manifest?.storyType==='wallet-comparison')rendering=await renderWalletComparisonVideo({...detail,manifest:validation.manifest},progress);
     }
     const result=rendering?Object.freeze({...validation,...rendering,manifest:validation.manifest,narration}):Object.freeze({...validation,narration}),exportDetail=Object.freeze({...detail,manifest:validation.manifest,validation,narration,rendering,result});globalThis.dispatchEvent(new CustomEvent('abulls:trickster-export',{detail:exportDetail}));return result;
