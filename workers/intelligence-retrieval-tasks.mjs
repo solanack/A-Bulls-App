@@ -44,18 +44,20 @@ export async function finishExternalRetrievalTask(env={},input={}){
   if(!externalRetrievalEnabled(env))return Object.freeze({ok:true,enabled:false});
   const db=intelligenceDb(env);if(!db)throw new Error('intelligence_db_unavailable');
   const taskId=finite(input.taskId??input.id);if(taskId==null||taskId<1||!Number.isInteger(taskId))throw new Error('task_id_required');
-  const state=s(input.state||'complete').toLowerCase(),error=s(input.error);
+  const state=s(input.state||'complete').toLowerCase(),error=s(input.error),expectedWallet=s(input.wallet),expectedKind=s(input.sourceKind||input.source_kind).toLowerCase();
   if(state!=='complete'&&state!=='retry')throw new Error('invalid_task_state');
-  const task=await db.prepare(`SELECT id,index_job_id,state FROM intelligence_retrieval_tasks WHERE id=? LIMIT 1`).bind(taskId).first();
+  const task=await db.prepare(`SELECT id,index_job_id,wallet,source_kind,state FROM intelligence_retrieval_tasks WHERE id=? LIMIT 1`).bind(taskId).first();
   if(!task?.id)throw new Error('task_not_found');
   if(s(task.state)!=='leased')throw new Error('task_not_leased');
+  if(expectedWallet&&s(task.wallet)!==expectedWallet)throw new Error('task_wallet_mismatch');
+  if(expectedKind&&s(task.source_kind).toLowerCase()!==expectedKind)throw new Error('task_source_kind_mismatch');
   if(state==='complete'){
     await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='complete',lease_until=NULL,last_error=NULL,next_attempt_at=NULL,updated_at=unixepoch() WHERE id=?`).bind(taskId).run();
     if(task.index_job_id!=null)await db.prepare(`UPDATE intelligence_index_jobs SET state='queued',last_error=NULL,next_attempt_at=unixepoch(),updated_at=unixepoch() WHERE id=? AND state='waiting-external'`).bind(task.index_job_id).run();
   }else{
     await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='queued',lease_until=NULL,last_error=?,next_attempt_at=?,updated_at=unixepoch() WHERE id=?`).bind(error||'external_retrieval_retry',now()+120,taskId).run();
   }
-  return Object.freeze({ok:true,enabled:true,taskId,indexJobId:finite(task.index_job_id),state});
+  return Object.freeze({ok:true,enabled:true,taskId,indexJobId:finite(task.index_job_id),wallet:s(task.wallet),sourceKind:s(task.source_kind),state});
 }
 
 export async function handleExternalRetrievalTaskRequest(request,env={}){
