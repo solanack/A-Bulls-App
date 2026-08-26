@@ -50,6 +50,7 @@ jobs:
             js/trade-comparison-replay.test.mjs \
             js/trade-replay-player.test.mjs \
             js/intelligence-event-ledger.test.mjs \
+            js/market-replay-empty-state.test.mjs \
             js/market-sequence-discovery.test.mjs \
             js/market-sequence-participants.test.mjs \
             js/market-sequence-phases.test.mjs \
@@ -87,6 +88,10 @@ jobs:
           grep -q 'experience-entry.mjs?v=7' index.html
           grep -q 'TOKEN MARKET' js/experience-entry.mjs
           grep -q 'TokenMarketWorkspace' js/experience-entry.mjs
+          grep -q 'NO INDEXED EVIDENCE' js/token-market-workspace.mjs
+          grep -q 'createMarketCoveragePanel' js/token-market-workspace.mjs
+          grep -q 'createMarketReplayEmptyState' js/token-market-workspace.mjs
+          grep -q 'summarizeMarketCoverage' workers/intelligence-market-replay.mjs
           grep -q 'NOTABLE SEQUENCES' js/token-market-workspace.mjs
           grep -q 'PLAY MOMENT' js/token-market-workspace.mjs
           grep -q 'PLAY PHASE' js/market-sequence-phase-controls.mjs
@@ -101,6 +106,8 @@ jobs:
           grep -q 'summarizeTokenSequenceDirection' js/trickster-studio.mjs
           grep -q 'buildTokenSequenceSceneRuntime' js/trickster-studio.mjs
           grep -q "storyType==='token-sequence'" js/experience-entry.mjs
+          grep -q 'market-coverage-panel' sw.js
+          grep -q 'market-replay-empty-state' sw.js
           grep -q 'market-sequence-discovery' sw.js
           grep -q 'market-sequence-participants' sw.js
           grep -q 'market-sequence-phases' sw.js
@@ -112,7 +119,7 @@ jobs:
           grep -q 'market-sequence-discovery.css' index.html
           grep -q 'token-sequence-story-runtime' sw.js
           grep -q 'token-market-workspace' sw.js
-          grep -q "const BUILD = '8.7.0-vnext-41'" sw.js
+          grep -q "const BUILD = '8.7.0-vnext-43'" sw.js
           grep -q 'worker-vnext-entry.mjs' workers/wrangler.toml
           grep -q 'reconstruct-worker-8.2.0.mjs' workers/wrangler.toml
           grep -q 'worker-baseline-retained.mjs' workers/worker-vnext-entry.mjs
