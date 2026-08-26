@@ -23,8 +23,8 @@ export async function queueExternalRetrievalTask(env={},input={}){
   if(!externalRetrievalEnabled(env))return Object.freeze({ok:true,enabled:false,queued:false,task:null});
   const db=intelligenceDb(env);if(!db)throw new Error('intelligence_db_unavailable');
   const task=normalizeRetrievalTaskInput(input);
-  const existing=await db.prepare(`SELECT id,state,lease_until FROM intelligence_retrieval_tasks WHERE wallet=? AND source_kind=? AND requested_from=? AND requested_to=? AND state IN ('queued','leased') ORDER BY updated_at DESC LIMIT 1`).bind(task.wallet,task.sourceKind,task.requestedFrom,task.requestedTo).first();
-  if(existing?.id)return Object.freeze({ok:true,enabled:true,queued:false,reused:true,task:Object.freeze({taskId:Number(existing.id),state:s(existing.state),leaseUntil:finite(existing.lease_until)})});
+  const existing=await db.prepare(`SELECT id,state,lease_until,index_job_id FROM intelligence_retrieval_tasks WHERE wallet=? AND source_kind=? AND requested_from=? AND requested_to=? AND state IN ('queued','leased') ORDER BY updated_at DESC LIMIT 1`).bind(task.wallet,task.sourceKind,task.requestedFrom,task.requestedTo).first();
+  if(existing?.id)return Object.freeze({ok:true,enabled:true,queued:false,reused:true,task:Object.freeze({taskId:Number(existing.id),state:s(existing.state),leaseUntil:finite(existing.lease_until),indexJobId:finite(existing.index_job_id)})});
   const result=await db.prepare(`INSERT INTO intelligence_retrieval_tasks(index_job_id,wallet,source,source_kind,requested_from,requested_to,state,next_attempt_at,created_at,updated_at) VALUES(?,?,?,?,?,?,'queued',unixepoch(),unixepoch(),unixepoch())`).bind(task.indexJobId,task.wallet,task.source,task.sourceKind,task.requestedFrom,task.requestedTo).run();
   return Object.freeze({ok:true,enabled:true,queued:true,reused:false,task:Object.freeze({taskId:Number(result?.meta?.last_row_id)||null,state:'queued',...task})});
 }
@@ -46,9 +46,16 @@ export async function finishExternalRetrievalTask(env={},input={}){
   const taskId=finite(input.taskId??input.id);if(taskId==null||taskId<1||!Number.isInteger(taskId))throw new Error('task_id_required');
   const state=s(input.state||'complete').toLowerCase(),error=s(input.error);
   if(state!=='complete'&&state!=='retry')throw new Error('invalid_task_state');
-  if(state==='complete')await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='complete',lease_until=NULL,last_error=NULL,next_attempt_at=NULL,updated_at=unixepoch() WHERE id=? AND state='leased'`).bind(taskId).run();
-  else await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='queued',lease_until=NULL,last_error=?,next_attempt_at=?,updated_at=unixepoch() WHERE id=? AND state='leased'`).bind(error||'external_retrieval_retry',now()+120,taskId).run();
-  return Object.freeze({ok:true,enabled:true,taskId,state});
+  const task=await db.prepare(`SELECT id,index_job_id,state FROM intelligence_retrieval_tasks WHERE id=? LIMIT 1`).bind(taskId).first();
+  if(!task?.id)throw new Error('task_not_found');
+  if(s(task.state)!=='leased')throw new Error('task_not_leased');
+  if(state==='complete'){
+    await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='complete',lease_until=NULL,last_error=NULL,next_attempt_at=NULL,updated_at=unixepoch() WHERE id=?`).bind(taskId).run();
+    if(task.index_job_id!=null)await db.prepare(`UPDATE intelligence_index_jobs SET state='queued',last_error=NULL,next_attempt_at=unixepoch(),updated_at=unixepoch() WHERE id=? AND state='waiting-external'`).bind(task.index_job_id).run();
+  }else{
+    await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='queued',lease_until=NULL,last_error=?,next_attempt_at=?,updated_at=unixepoch() WHERE id=?`).bind(error||'external_retrieval_retry',now()+120,taskId).run();
+  }
+  return Object.freeze({ok:true,enabled:true,taskId,indexJobId:finite(task.index_job_id),state});
 }
 
 export async function handleExternalRetrievalTaskRequest(request,env={}){
