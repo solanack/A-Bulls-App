@@ -30,4 +30,5 @@ test('short gaps remain uncompressed',()=>{
   const map=buildActiveTimeMap([{id:'a',timestamp:0},{id:'b',timestamp:10000}],{gapThresholdMs:30000,compressedGapMs:3000});
   assert.equal(map.compressedGapCount,0);
   assert.equal(map.activeDurationMs,10000);
+  assert.match(map.disclosure,/no inactive gaps exceeded/i);
 });
