@@ -7,7 +7,7 @@
   "scope": "/",
   "lang": "en-US",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "any",
   "background_color": "#171820",
   "theme_color": "#292a34",
   "categories": ["games", "entertainment", "finance"],

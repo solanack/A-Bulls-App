@@ -36,7 +36,7 @@ expect('field evidence scope cached',/field-evidence-scope/.test(sw));
 expect('production request guard wired',/intelligence-request-guard/.test(await text('workers/worker-vnext-entry.mjs')));
 expect('Trickster project store cached',/trickster-project-store/.test(sw));
 expect('Trickster share client cached',/trickster-share-client/.test(sw));
-expect('vNext-68 PWA checkpoint',/8\.7\.0-vnext-68/.test(sw));
+expect('vNext-69 PWA checkpoint',/8\.7\.0-vnext-69/.test(sw));
 expect('NO INDEXED EVIDENCE truth state',/NO INDEXED EVIDENCE/.test(market)||/NO INDEXED EVIDENCE/.test(workspace));
 expect('Worker 8.2.0 reconstruction configured',/reconstruct-worker-8\.2\.0\.mjs/.test(wrangler));
 expect('Trickster shares fail closed by default',/TRICKSTER_SHARE_ENABLED\s*=\s*"false"/.test(wrangler));
@@ -44,6 +44,7 @@ expect('external retrieval fails closed by default',/INTELLIGENCE_EXTERNAL_RETRI
 expect('migration 0014 exists',await exists('workers/migrations/0014_trickster_share_manifests.sql'));
 expect('share page exists',await exists('share.html'));
 expect('privacy page exists',await exists('privacy.html'));
+expect('Cloudflare Pages headers are policy syntax',!/<html|<!doctype/i.test(await text('_headers'))&&/X-Content-Type-Options:\s*nosniff/.test(await text('_headers')));
 expect('terms page exists',await exists('terms.html'));
 expect('release runbook tracks 0014',/0014/.test(runbook)&&/TRICKSTER_SHARE_ENABLED/.test(runbook));
 

@@ -68,7 +68,7 @@ jobs:
           grep -q 'guardIntelligenceRequest' workers/worker-vnext-entry.mjs
           grep -q 'fieldCommandRequest' js/experience-bootstrap.mjs
           grep -q 'universeObservationsForEvents' workers/intelligence-mesh-ingest.mjs
-          grep -q "const BUILD='8.7.0-vnext-68'" sw.js
+          grep -q "const BUILD='8.7.0-vnext-69'" sw.js
           grep -q 'worker-vnext-entry.mjs' workers/wrangler.toml
           grep -q 'reconstruct-worker-8.2.0.mjs' workers/wrangler.toml
           test ! -d games
@@ -98,3 +98,5 @@ jobs:
           test -f terms.html
           test -f manifest.webmanifest
           test -f _headers
+          ! grep -Eiq '<html|<!doctype' _headers
+          grep -q 'X-Content-Type-Options: nosniff' _headers
