@@ -5,6 +5,8 @@ import { ingestIntelligenceBatch } from './intelligence-mesh-ingest.mjs';
 import { buildOhlc, persistCandles, persistTradeRoute } from './intelligence-mesh-runtime.mjs';
 import { ingestNftObservations } from './intelligence-nft-layer.mjs';
 import { finishExternalRetrievalTask } from './intelligence-retrieval-tasks.mjs';
+import { persistUniverseObservations } from './intelligence-universe-runtime.mjs';
+import { projectIndexedEventsToUniverse } from './intelligence-universe-projection.mjs';
 
 const s = v => String(v == null ? '' : v).trim();
 const n = v => Number.isFinite(Number(v)) ? Number(v) : 0;
@@ -57,6 +59,12 @@ export async function handleIntelligenceAdapterRequest(request, env = {}) {
       });
     }
 
+    let liveObservationsWritten = 0;
+    if (normalized.events.length && String(env.UNIVERSE_ENABLED || '').toLowerCase() === 'true') {
+      const projected = projectIndexedEventsToUniverse(normalized.events, { verified: normalized.verified, sourceKind: kind });
+      if (projected.length) liveObservationsWritten = await persistUniverseObservations(env, projected);
+    }
+
     let routeHops = 0;
     for (const route of normalized.routes) routeHops += await persistTradeRoute(env, route);
 
@@ -86,7 +94,7 @@ export async function handleIntelligenceAdapterRequest(request, env = {}) {
         taskCompletion = { ok:false, taskId, error:s(error?.message || error) };
       }
     }
-    return json({ ok:true, adapter:kind, source, accepted:ingest.accepted, nftAccepted:nftIngest.accepted, routeHops, candlesWritten, verified:normalized.verified, taskCompletion });
+    return json({ ok:true, adapter:kind, source, accepted:ingest.accepted, nftAccepted:nftIngest.accepted, routeHops, candlesWritten, liveObservationsWritten, verified:normalized.verified, taskCompletion });
   } catch (error) {
     return json({ ok:false, error:s(error?.message || error) }, 400);
   }
