@@ -1,11 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { externalRetrievalEnabled, normalizeRetrievalTaskInput, normalizeRetrievalReceipt } from './intelligence-retrieval-tasks.mjs';
+import { externalRetrievalEnabled, externalRetrievalMaxAttempts, normalizeRetrievalTaskInput, normalizeRetrievalReceipt } from './intelligence-retrieval-tasks.mjs';
 
 test('external retrieval requires both mesh and external retrieval flags',()=>{
   assert.equal(externalRetrievalEnabled({INTELLIGENCE_MESH_ENABLED:'true',INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED:'true'}),true);
   assert.equal(externalRetrievalEnabled({INTELLIGENCE_MESH_ENABLED:'true'}),false);
   assert.equal(externalRetrievalEnabled({INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED:'true'}),false);
+});
+
+test('external retry budget is bounded and defaults conservatively',()=>{
+  assert.equal(externalRetrievalMaxAttempts({}),4);
+  assert.equal(externalRetrievalMaxAttempts({INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS:'2'}),2);
+  assert.equal(externalRetrievalMaxAttempts({INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS:'99'}),10);
+  assert.equal(externalRetrievalMaxAttempts({INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS:'0'}),4);
 });
 
 test('normalizes bounded public-wallet retrieval coordinates',()=>{
