@@ -27,7 +27,7 @@ jobs:
       - name: Unit tests
         run: |
           node --test workers/intelligence-*.test.mjs
-          node --test js/temporal-replay-engine.test.mjs js/trade-comparison-replay.test.mjs js/field-replay-effects.test.mjs
+          node --test js/temporal-replay-engine.test.mjs js/trade-comparison-replay.test.mjs js/field-replay-effects.test.mjs js/field-sequence-effects.test.mjs
           node --test services/intelligence-bridge/*.test.mjs
       - name: Neutral data contract
         shell: bash
@@ -109,8 +109,12 @@ jobs:
           grep -q '/api/intelligence/replay-bundle' workers/intelligence-replay-bundle.mjs
           grep -q 'PLAYABLE_DATA_ENABLED' workers/intelligence-replay-bundle.mjs
           grep -q 'abulls:temporal-replay-events' js/temporal-replay-engine.mjs js/universe-renderer.mjs
-          grep -q 'resolveFieldEffectAnchor' js/field-replay-effects.mjs js/universe-renderer.mjs
+          grep -q 'resolveFieldEffectPosition' js/field-replay-effects.mjs js/universe-renderer.mjs
+          grep -q 'walletFieldLane' js/field-replay-effects.mjs
+          grep -q 'abulls:field-market-phase' js/field-sequence-effects.mjs js/universe-renderer.mjs
+          grep -q 'dispatchMarketPhaseFieldEffect' js/market-sequence-phase-controls.mjs
           grep -q 'field-replay-effects' sw.js
+          grep -q 'field-sequence-effects' sw.js
           ! grep -Eiq 'community-integrations|ansem|bullpen' workers/intelligence-asset-router.mjs workers/intelligence-operations.mjs
       - name: Read-only guardrails
         shell: bash
