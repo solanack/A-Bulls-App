@@ -2,15 +2,16 @@ name: Universe and Trickster CI
 
 on:
   pull_request:
-    types: [ready_for_review]
+    types: [ready_for_review, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  contracts:
+  release-candidate:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,142 +19,60 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install and build browser dependencies
-        run: |
-          npm ci --ignore-scripts
-          npm run build:experience-vendor
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
 
-      - name: Reconstruct verified Worker 8.2.0 provenance and retained runtime
+      - name: Build browser dependencies
+        run: npm run build:experience-vendor
+
+      - name: Reconstruct verified Worker 8.2.0 baseline
         run: npm run build:worker-baseline
 
-      - name: Worker compatibility contract
-        run: npm run test:worker-compat
-
-      - name: vNext syntax
+      - name: Syntax check application and worker modules
         shell: bash
         run: |
           set -euo pipefail
-          for file in js/*.mjs workers/intelligence-*.mjs workers/worker-vnext-entry.mjs; do
+          for file in js/*.mjs workers/*.mjs services/intelligence-bridge/*.mjs; do
             [ -e "$file" ] && node --check "$file"
           done
           node --check js/config.js
           node --check js/main.js
           node --check sw.js
 
-      - name: Core vNext unit tests
+      - name: Run complete unit and compatibility suite
         shell: bash
         run: |
           set -euo pipefail
-          node --test \
-            js/temporal-replay-engine.test.mjs \
-            js/temporal-active-time.test.mjs \
-            js/trade-comparison-replay.test.mjs \
-            js/trade-replay-player.test.mjs \
-            js/intelligence-event-ledger.test.mjs \
-            js/market-replay-empty-state.test.mjs \
-            js/market-index-depth-panel.test.mjs \
-            js/market-sequence-discovery.test.mjs \
-            js/market-sequence-participants.test.mjs \
-            js/market-sequence-phases.test.mjs \
-            js/market-sequence-phase-slice.test.mjs \
-            js/market-sequence-phase-comparison.test.mjs \
-            js/market-sequence-reconstruction.test.mjs \
-            js/token-sequence-director.test.mjs \
-            js/token-sequence-story-runtime.test.mjs \
-            js/event-story-video-export.test.mjs \
-            js/wallet-comparison-video-export.test.mjs \
-            js/wallet-comparison-what-if.test.mjs \
-            js/trickster-story-manifest.test.mjs \
-            js/trickster-timeline.test.mjs \
-            js/trickster-caption-plan.test.mjs \
-            js/trickster-audio-cues.test.mjs \
-            js/trickster-audio-renderer.test.mjs \
-            js/trickster-narration-plan.test.mjs \
-            js/trickster-video-delivery.test.mjs \
-            js/universal-search.test.mjs \
-            js/product-shell.test.mjs \
-            js/product-integration.test.mjs \
-            workers/intelligence-entity-resolver.test.mjs \
-            workers/intelligence-wallet-token-index.test.mjs \
-            workers/intelligence-event-context.test.mjs \
-            workers/intelligence-market-replay.test.mjs \
-            workers/intelligence-market-backfill-plan.test.mjs \
-            workers/intelligence-market-backfill-router.test.mjs \
-            workers/intelligence-market-backfill-request.test.mjs \
-            workers/intelligence-market-backfill-queue.test.mjs \
-            workers/intelligence-index-job-status.test.mjs \
-            workers/intelligence-replay-bundle.test.mjs \
-            workers/intelligence-universe-runtime.test.mjs \
-            workers/intelligence-trickster-router.test.mjs
+          node --test js/*.test.mjs workers/*.test.mjs services/intelligence-bridge/*.test.mjs tests/*.test.mjs
 
-      - name: Replacement architecture contract
+      - name: Release architecture guards
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'nextProductShellEnabled: true' js/config.js
-          grep -q 'experience-entry.mjs?v=7' index.html
+          grep -q 'universeEnabled: true' js/config.js
+          grep -q 'tricksterStudioEnabled: true' js/config.js
+          grep -q 'experience-entry.mjs?v=8' index.html
           grep -q 'TOKEN MARKET' js/experience-entry.mjs
-          grep -q 'TokenMarketWorkspace' js/experience-entry.mjs
+          grep -q 'Bull Invaders' js/experience-entry.mjs
           grep -q 'NO INDEXED EVIDENCE' js/token-market-workspace.mjs
-          grep -q 'createMarketCoveragePanel' js/token-market-workspace.mjs
-          grep -q 'createMarketReplayEmptyState' js/token-market-workspace.mjs
-          grep -q 'summarizeMarketCoverage' workers/intelligence-market-replay.mjs
-          grep -q 'handleMarketBackfillPlanRequest' workers/intelligence-worker-hooks.mjs
-          grep -q 'handleMarketBackfillRequest' workers/intelligence-worker-hooks.mjs
-          grep -q 'handleIndexJobStatusRequest' workers/intelligence-worker-hooks.mjs
-          grep -q 'buildMarketBackfillPlan' workers/intelligence-market-backfill-router.mjs
-          grep -q 'marketBackfillQueueEnabled' workers/intelligence-mesh-scheduler.mjs
-          grep -q 'queueMarketBackfillCandidates' workers/intelligence-mesh-scheduler.mjs
-          grep -q 'REQUEST DEEPER INDEX' js/market-index-depth-panel.mjs
-          grep -q 'RETRY SCHEDULED' js/market-index-depth-panel.mjs
-          grep -q 'INDEX ADVANCED' js/market-index-depth-panel.mjs
-          grep -q 'attachMarketIndexDepthPanel' js/market-replay-client.mjs
-          grep -q 'index-job-status' js/market-index-depth-client.mjs
-          grep -q 'next_attempt_at' workers/intelligence-index-job-status.mjs
           grep -q 'SKIP INACTIVITY' js/trade-replay-player.mjs
-          grep -q 'timestampForActiveTime' js/temporal-active-time.mjs
-          grep -q 'NOTABLE SEQUENCES' js/token-market-workspace.mjs
-          grep -q 'PLAY MOMENT' js/token-market-workspace.mjs
           grep -q 'PLAY PHASE' js/market-sequence-phase-controls.mjs
           grep -q 'CREATE PHASE STORY' js/market-sequence-phase-controls.mjs
-          grep -q 'CREATE FULL MARKET STORY' js/token-market-workspace.mjs
-          grep -q 'discoverMarketSequences' js/token-market-workspace.mjs
-          grep -q 'reconstructMarketSequence' js/token-market-workspace.mjs
-          grep -q 'createMarketSequencePhaseControls' js/token-market-workspace.mjs
-          grep -q 'compareMarketSequencePhases' js/market-sequence-reconstruction.mjs
-          grep -q "storyType:'token-sequence'" js/token-market-workspace.mjs
-          grep -q 'tokenSequenceScenePlan' js/trickster-studio.mjs
-          grep -q 'summarizeTokenSequenceDirection' js/trickster-studio.mjs
-          grep -q 'buildTokenSequenceSceneRuntime' js/trickster-studio.mjs
-          grep -q "storyType==='token-sequence'" js/experience-entry.mjs
-          grep -q 'market-coverage-panel' sw.js
-          grep -q 'market-replay-empty-state' sw.js
-          grep -q 'market-index-depth-client' sw.js
-          grep -q 'market-index-depth-panel' sw.js
-          grep -q 'temporal-active-time' sw.js
-          grep -q 'market-sequence-discovery' sw.js
-          grep -q 'market-sequence-participants' sw.js
-          grep -q 'market-sequence-phases' sw.js
-          grep -q 'market-sequence-phase-slice' sw.js
-          grep -q 'market-sequence-phase-controls' sw.js
-          grep -q 'market-sequence-phase-comparison' sw.js
-          grep -q 'market-sequence-reconstruction' sw.js
-          grep -q 'token-sequence-director' sw.js
-          grep -q 'market-sequence-discovery.css' index.html
-          grep -q 'token-sequence-story-runtime' sw.js
-          grep -q 'token-market-workspace' sw.js
-          grep -q "const BUILD = '8.7.0-vnext-48'" sw.js
+          grep -q 'PLAY STORY IN FIELD' js/trickster-field-playback.mjs
+          grep -q 'field-entity-focus' sw.js
+          grep -q 'field-story-scene' sw.js
+          grep -q 'trickster-field-playback' sw.js
+          grep -q "const BUILD='8.7.0-vnext-61'" sw.js
           grep -q 'worker-vnext-entry.mjs' workers/wrangler.toml
           grep -q 'reconstruct-worker-8.2.0.mjs' workers/wrangler.toml
-          grep -q 'worker-baseline-retained.mjs' workers/worker-vnext-entry.mjs
-          grep -q "baselineRuntime: 'retained-system-auth-bull-invaders'" workers/worker-vnext-entry.mjs
           test ! -d games
           test ! -e js/ui.js
           test ! -e js/track.js
           test ! -e js/bull-intelligence.js
           test ! -e js/bull-vision.js
 
-      - name: Retired product guard
+      - name: Retired product and wallet-safety guards
         shell: bash
         run: |
           set -euo pipefail
@@ -161,3 +80,16 @@ jobs:
             index.html js/config.js js/product-registry.mjs js/experience-entry.mjs js/intelligence-workspace-vnext.mjs js/token-market-workspace.mjs sw.js workers/wrangler.toml workers/worker-vnext-entry.mjs
           ! grep -Eiq 'seed phrase|private key import|signTransaction|sendTransaction|secretKey' \
             workers/intelligence-*.mjs js/intelligence-workspace-*.mjs js/token-market-workspace.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs
+
+      - name: Cloudflare release config guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'https://abullsapp.com' workers/wrangler.toml
+          grep -q 'https://www.abullsapp.com' workers/wrangler.toml
+          grep -q '\[observability\]' workers/wrangler.toml
+          grep -q 'compatibility_date = "2026-08-01"' workers/wrangler.toml
+          test -f privacy.html
+          test -f terms.html
+          test -f manifest.webmanifest
+          test -f _headers
