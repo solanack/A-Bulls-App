@@ -1,5 +1,6 @@
 const CLAIM_BY_BEAT=Object.freeze({
   'opening-event':'sequence-first-event',
+  'participant-chronology':'sequence-participant-chronology',
   'participation-expansion':'sequence-participation-expansion',
   'largest-token-delta':'sequence-largest-token-delta',
   'program-context-change':'sequence-program-context-change',
@@ -8,6 +9,7 @@ const CLAIM_BY_BEAT=Object.freeze({
 });
 const TYPE_BY_BEAT=Object.freeze({
   'opening-event':'sequence-opening',
+  'participant-chronology':'participant-chronology',
   'participation-expansion':'participation-expansion',
   'largest-token-delta':'largest-observed-trade',
   'program-context-change':'program-context-change',
@@ -17,6 +19,7 @@ const TYPE_BY_BEAT=Object.freeze({
 });
 const FRAMES=Object.freeze({
   'opening-event':75,
+  'participant-chronology':105,
   'participation-expansion':105,
   'largest-token-delta':105,
   'program-context-change':105,
