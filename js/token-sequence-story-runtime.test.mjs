@@ -25,12 +25,14 @@ test('price overlay is present only after an explicit quote-pair selection',()=>
 test('reconstructed scenes focus only the evidence assigned to each beat',()=>{
   const reconstructed={...bundle,marketReplay:{reconstruction:{beats:[
     {id:'opening-event',timestamp:1000,evidenceIds:['a']},
+    {id:'phase-1',title:'PHASE 1',from:1000,to:3000,evidenceIds:['a','b']},
     {id:'participation-expansion',timestamp:3000,evidenceIds:['a','b']},
     {id:'largest-token-delta',timestamp:5000,evidenceIds:['c']},
     {id:'evidence-close',timestamp:5000,evidenceIds:['a','b','c']}
   ]}}};
   const reconstructedManifest={storyType:'token-sequence',evidence:[{id:'e1'}],scenes:[
     {id:'sequence-opening-event',type:'sequence-opening'},
+    {id:'sequence-phase-1',type:'market-phase'},
     {id:'sequence-participation-expansion',type:'participation-expansion'},
     {id:'sequence-largest-token-delta',type:'largest-observed-trade'},
     {id:'sequence-evidence-close',type:'evidence-summary'}
@@ -38,10 +40,15 @@ test('reconstructed scenes focus only the evidence assigned to each beat',()=>{
   const runtime=buildTokenSequenceSceneRuntime(reconstructed,reconstructedManifest);
   assert.equal(runtime[0].mode,'focus-event');
   assert.equal(runtime[0].focusId,'a');
-  assert.deepEqual(runtime[1].eventIds,['a','b']);
+  assert.equal(runtime[1].phaseId,'phase-1');
+  assert.equal(runtime[1].phaseLabel,'PHASE 1');
+  assert.equal(runtime[1].from,1000);
   assert.equal(runtime[1].to,3000);
-  assert.deepEqual(runtime[2].eventIds,['c']);
-  assert.equal(runtime[3].mode,'evidence-close');
+  assert.deepEqual(runtime[1].eventIds,['a','b']);
+  assert.deepEqual(runtime[2].eventIds,['a','b']);
+  assert.equal(runtime[2].to,3000);
+  assert.deepEqual(runtime[3].eventIds,['c']);
+  assert.equal(runtime[4].mode,'evidence-close');
 });
 
 test('selected price-movement scene fails closed without explicit quote selection',()=>{
