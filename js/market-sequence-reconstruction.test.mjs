@@ -16,6 +16,8 @@ const base={
 test('reconstructs ordered evidence beats without inventing route or price context',()=>{
   const result=reconstructMarketSequence(base);
   assert.equal(result.beats[0].id,'opening-event');
+  assert.ok(result.beats.some(beat=>beat.id==='participant-chronology'));
+  assert.ok(result.beats.some(beat=>beat.id==='phase-1'));
   assert.ok(result.beats.some(beat=>beat.id==='participation-expansion'));
   assert.ok(result.beats.some(beat=>beat.id==='largest-token-delta'));
   const shift=result.beats.find(beat=>beat.id==='program-context-change');
@@ -25,6 +27,21 @@ test('reconstructs ordered evidence beats without inventing route or price conte
   assert.equal(result.beats.some(beat=>beat.id==='explicit-price-aftermath'),false);
   assert.equal(result.priceEvidence,null);
   assert.ok(result.claims.every(claim=>claim.evidenceIds.length>0));
+});
+
+test('phase beats preserve exact bounded windows and evidence claims',()=>{
+  const result=reconstructMarketSequence(base);
+  assert.equal(result.phases.phases.length,3);
+  for(const phase of result.phases.phases){
+    const beat=result.beats.find(item=>item.id===phase.id);
+    const claim=result.claims.find(item=>item.id===`sequence-${phase.id}`);
+    assert.ok(beat);
+    assert.equal(beat.from,phase.from);
+    assert.equal(beat.to,phase.to);
+    assert.deepEqual(beat.evidenceIds,phase.evidenceIds);
+    assert.deepEqual(claim.evidenceIds,phase.evidenceIds.slice(0,40));
+    assert.match(beat.title,/PHASE/);
+  }
 });
 
 test('adds selected quote-market movement only when explicit quote candles exist',()=>{
@@ -45,4 +62,5 @@ test('adds selected quote-market movement only when explicit quote candles exist
 test('missing numeric token deltas remain absent from largest-delta reconstruction',()=>{
   const result=reconstructMarketSequence({...base,events:[{id:'a',timestamp:1000,wallet:'W1',side:'buy',tokenDelta:null},{id:'b',timestamp:2000,wallet:'W2',side:'sell',tokenDelta:undefined}]});
   assert.equal(result.beats.some(beat=>beat.id==='largest-token-delta'),false);
+  assert.ok(result.phases.phases.every(phase=>phase.largestAbsTokenDelta===null));
 });
