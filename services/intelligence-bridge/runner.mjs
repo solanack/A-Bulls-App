@@ -28,6 +28,11 @@ export function normalizeExecutorResult(result={},task={}){
   return Object.freeze({rows:Object.freeze(rows),nftRows:Object.freeze(nftRows),mint:s(result.mint),quoteMint:s(result.quoteMint),bucketSeconds:finite(result.bucketSeconds),searchedFrom:validRange?Math.trunc(searchedFrom):null,searchedTo:validRange?Math.trunc(searchedTo):null,rangeVerified:Boolean(rangeVerified&&validRange),observedRows:Math.max(0,Math.trunc(finite(result.observedRows)??rows.length+nftRows.length)),source:s(result.source||task.source||task.sourceKind)});
 }
 
+export function receiptSatisfiesTask(result={},task={}){
+  const requestedFrom=finite(task.requestedFrom??task.requested_from),requestedTo=finite(task.requestedTo??task.requested_to),searchedFrom=finite(result.searchedFrom),searchedTo=finite(result.searchedTo);
+  return result.rangeVerified===true&&requestedFrom!=null&&requestedTo!=null&&searchedFrom!=null&&searchedTo!=null&&searchedFrom<=requestedFrom&&searchedTo>=requestedTo;
+}
+
 async function finish(fetchImpl,config,task,state,error='',receipt={}){
   return postJson(fetchImpl,`${config.apiBase}/api/internal/intelligence/retrieval-tasks/finish`,config.token,{taskId:task.taskId,state,error,wallet:task.wallet,sourceKind:task.sourceKind,...receipt});
 }
@@ -40,12 +45,13 @@ export async function processRetrievalTask(task={}, {config,executors,fetchImpl=
   }
   try{
     const result=normalizeExecutorResult(await executor(Object.freeze({...task})),task);
+    if(!receiptSatisfiesTask(result,task))throw new Error('bridge_verified_range_required');
     if(!result.rows.length&&!result.nftRows.length){
-      const completion=await finish(fetchImpl,config,task,'complete','',{searchedFrom:result.searchedFrom,searchedTo:result.searchedTo,rangeVerified:result.rangeVerified,observedRows:0});
+      const completion=await finish(fetchImpl,config,task,'complete','',{searchedFrom:result.searchedFrom,searchedTo:result.searchedTo,rangeVerified:true,observedRows:0});
       return Object.freeze({ok:true,taskId:task.taskId,state:'complete-empty',receipt:completion?.receipt||null});
     }
     const adapterKind=task.sourceKind;
-    const payload={taskId:task.taskId,wallet:task.wallet,source:result.source,rows:result.rows,nftRows:result.nftRows,searchedFrom:result.searchedFrom,searchedTo:result.searchedTo,rangeVerified:result.rangeVerified,observedRows:result.observedRows};
+    const payload={taskId:task.taskId,wallet:task.wallet,source:result.source,rows:result.rows,nftRows:result.nftRows,searchedFrom:result.searchedFrom,searchedTo:result.searchedTo,rangeVerified:true,observedRows:result.observedRows};
     if(result.mint)payload.mint=result.mint;
     if(result.quoteMint)payload.quoteMint=result.quoteMint;
     if(result.bucketSeconds!=null)payload.bucketSeconds=result.bucketSeconds;
