@@ -22,7 +22,8 @@ export function summarizeIndexJobs(jobs=[],nowSeconds=Math.floor(Date.now()/1000
   const pagesCompleted=jobs.reduce((sum,job)=>sum+(Number(job.pagesCompleted)||0),0);
   const signaturesSeen=jobs.reduce((sum,job)=>sum+(Number(job.signaturesSeen)||0),0);
   const transactionsIngested=jobs.reduce((sum,job)=>sum+(Number(job.transactionsIngested)||0),0);
-  return Object.freeze({complete,running,queued,retrying,nextRetryAt,pagesCompleted,signaturesSeen,transactionsIngested});
+  const sources=Object.freeze([...new Set(jobs.map(job=>text(job.source)).filter(Boolean))]);
+  return Object.freeze({complete,running,queued,retrying,nextRetryAt,pagesCompleted,signaturesSeen,transactionsIngested,sources});
 }
 
 export async function readIndexJobStatus(env={},input={}){
@@ -31,12 +32,12 @@ export async function readIndexJobStatus(env={},input={}){
   const db=intelligenceDb(env);if(!db)throw new Error('intelligence_db_unavailable');
   const jobs=[];
   for(const id of ids){
-    const row=await db.prepare(`SELECT id,state,pages_completed,signatures_seen,transactions_ingested,last_error,next_attempt_at,updated_at FROM intelligence_index_jobs WHERE id=? LIMIT 1`).bind(id).first();
+    const row=await db.prepare(`SELECT id,state,pages_completed,signatures_seen,transactions_ingested,source,last_error,next_attempt_at,updated_at FROM intelligence_index_jobs WHERE id=? LIMIT 1`).bind(id).first();
     if(!row)continue;
-    jobs.push(Object.freeze({jobId:Number(row.id),state:text(row.state)||'unknown',pagesCompleted:Number(row.pages_completed)||0,signaturesSeen:Number(row.signatures_seen)||0,transactionsIngested:Number(row.transactions_ingested)||0,lastError:text(row.last_error)||null,nextAttemptAt:Number(row.next_attempt_at)||null,updatedAt:Number(row.updated_at)||null}));
+    jobs.push(Object.freeze({jobId:Number(row.id),state:text(row.state)||'unknown',pagesCompleted:Number(row.pages_completed)||0,signaturesSeen:Number(row.signatures_seen)||0,transactionsIngested:Number(row.transactions_ingested)||0,source:text(row.source)||null,lastError:text(row.last_error)||null,nextAttemptAt:Number(row.next_attempt_at)||null,updatedAt:Number(row.updated_at)||null}));
   }
   const summary=summarizeIndexJobs(jobs);
-  return Object.freeze({ok:true,schedulerEnabled:schedulerEnabled(env),requested:ids.length,found:jobs.length,...summary,jobs:Object.freeze(jobs),disclosure:'Job status reports bounded read-only index progress only. Page, signature and transaction counts describe work performed by these returned jobs; they are not token-market totals. A retry means a bounded history pass failed and was scheduled to try again; it does not imply missing market activity. A complete job means that queued wallet-history work finished, not that token-market coverage is complete.'});
+  return Object.freeze({ok:true,schedulerEnabled:schedulerEnabled(env),requested:ids.length,found:jobs.length,...summary,jobs:Object.freeze(jobs),disclosure:'Job status reports bounded read-only index progress only. Source names identify which configured retrieval path actually performed returned job work; they are not provider endorsements or completeness claims. Page, signature and transaction counts describe work performed by these jobs, not token-market totals. A complete job means queued wallet-history work finished, not that token-market coverage is complete.'});
 }
 
 export async function handleIndexJobStatusRequest(request,env={}){
