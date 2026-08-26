@@ -49,3 +49,10 @@ test('reads supported snapshot relation containers without inventing one',()=>{
   assert.equal(relationsFromSnapshot({relationships:relations}),relations);
   assert.deepEqual(relationsFromSnapshot({particles:[]}),[]);
 });
+
+test('preserves the normalized relation kind without interpreting it',()=>{
+  const hub=buildFieldInvestigationHub({focusEntity:wallet,entities:[wallet,tx],relations:[
+    {sourceId:'wallet-a',targetId:'tx-b',evidenceId:'e-2',relationKind:'program-invocation'}
+  ]});
+  assert.equal(hub.edges[0].relationKind,'program-invocation');
+});

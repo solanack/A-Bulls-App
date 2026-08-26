@@ -4,6 +4,7 @@
  */
 
 import { ingestDecodedObservations, intelligenceDb, normalizeIndexedEvents } from './intelligence-indexer.mjs';
+import { persistUniverseObservations } from './intelligence-universe-runtime.mjs';
 
 const SOURCE_KINDS = new Set(['yellowstone', 'richat', 'substreams', 'old-faithful', 'rpc', 'repair', 'snapshot', 'test']);
 const s = value => String(value == null ? '' : value).trim();
@@ -44,6 +45,36 @@ async function persistProvenance(db, wallet, source, sourceKind, rows, verified 
   }
 }
 
+export function universeObservationsForEvents(rows = [], { verified = false } = {}) {
+  const observations = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const signature=s(row.signature), source=s(row.source), observedAt=n(row.blockTime);
+    if (!signature || !source || !observedAt) continue;
+    const entities=[
+      {kind:'transaction',id:signature},
+      {kind:'wallet',id:s(row.wallet)},
+      {kind:'token',id:s(row.mint)},
+      {kind:'program',id:s(row.programId)}
+    ].filter(entity=>entity.id);
+    const unique=[];const entityKeys=new Set();
+    for(const entity of entities){const key=`${entity.kind}:${entity.id}`;if(!entityKeys.has(key)){entityKeys.add(key);unique.push(entity);}}
+    const transaction=unique.find(entity=>entity.kind==='transaction');
+    const relations=transaction?unique.filter(entity=>entity!==transaction).map((entity,index)=>Object.freeze({
+      id:`relation:${signature}:${index}`,sourceId:transaction.id,targetId:entity.id,
+      kind:entity.kind,evidenceId:signature,observedAt,
+      verificationState:verified?'verified':'confirmed'
+    })):[];
+    const magnitude=Math.min(1,Math.log10(Math.abs(n(row.tokenDelta))+Math.abs(n(row.solDelta))+1)/6);
+    for(const entity of unique)observations.push(Object.freeze({
+      eventId:`${signature}:${entity.kind}:${entity.id}`,entityKind:entity.kind,entityId:entity.id,
+      category:s(row.eventClass)||'unknown',observedAt,slot:n(row.slot)||null,
+      commitment:verified?'verified':'confirmed',magnitudeBand:magnitude,source,
+      evidence:Object.freeze({signature,relations})
+    }));
+  }
+  return Object.freeze(observations);
+}
+
 async function persistSourceHealth(db, source, sourceKind, state, details = {}) {
   await db.prepare(`
     INSERT INTO intelligence_source_health
@@ -80,8 +111,12 @@ export async function ingestIntelligenceBatch(env = {}, payload = {}) {
       bucketSeconds: n(payload.bucketSeconds || 3600)
     });
     await persistProvenance(db, wallet, source, sourceKind, normalized, Boolean(payload.verified), s(payload.archiveRef));
-    await persistSourceHealth(db, source, sourceKind, 'ok', { accepted: result.accepted });
-    return { ok: true, wallet, source, sourceKind, accepted: result.accepted, verified: Boolean(payload.verified) };
+    let universeWritten=0;
+    if(String(env.UNIVERSE_ENABLED||'').toLowerCase()==='true'){
+      universeWritten=await persistUniverseObservations(env,universeObservationsForEvents(normalized,{verified:Boolean(payload.verified)}));
+    }
+    await persistSourceHealth(db, source, sourceKind, 'ok', { accepted: result.accepted, universeWritten });
+    return { ok: true, wallet, source, sourceKind, accepted: result.accepted, universeWritten, verified: Boolean(payload.verified) };
   } catch (error) {
     await persistSourceHealth(db, source, sourceKind, 'error', { error: s(error?.message || error) });
     throw error;
@@ -107,3 +142,4 @@ export async function handleIntelligenceMeshIngestRequest(request, env = {}) {
     });
   }
 }
+

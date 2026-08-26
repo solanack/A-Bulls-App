@@ -30,7 +30,7 @@ function normalizeEdge(relation,index,focusId,entitiesById){
   if(sourceId!==focusId&&targetId!==focusId)return null;
   const source=entitiesById.get(sourceId),target=entitiesById.get(targetId);
   if(!source||!target)return null;
-  const relationKind=text(relation.kind||relation.type||relation.category||'observed');
+  const relationKind=text(relation.relationKind||relation.kind||relation.type||relation.category||'observed');
   const observedAt=finite(relation.observedAt||relation.blockTime||relation.timestamp,0);
   return Object.freeze({
     id:text(relation.id)||`edge:${sourceId}:${targetId}:${receipt}:${index}`,

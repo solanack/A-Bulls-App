@@ -16,7 +16,7 @@ Do not deploy Pages first against an old Worker. The vNext frontend calls vNext 
 
 1. Confirm the release-candidate CI is green on PR #15.
 2. In Cloudflare, verify the existing Worker secrets/bindings are still present before replacing Worker code.
-3. Apply D1 migrations `0007` through `0013` in numeric order to the intended production Intelligence/leaderboard database. Do not reapply a migration already recorded/applied in production.
+3. Apply D1 migrations `0007` through `0014` in numeric order to the intended production Intelligence/leaderboard database. Do not reapply a migration already recorded/applied in production.
 4. Verify Worker bindings point at the intended production D1/KV resources. The repository intentionally does not contain account-specific IDs or secrets.
 5. Preserve these existing Worker secrets where used by the retained baseline: `HELIUS_API_KEY`, `GOOGLE_CLIENT_ID`, `AUTH_SESSION_SECRET`.
 6. Add `INTELLIGENCE_MESH_INGEST_TOKEN` only if protected external ingest will be enabled.
@@ -57,6 +57,7 @@ The app can still use the standard/progressive RPC path while those optional acc
 - Replay play/pause/seek/rewind and buy/sell effects work.
 - Compare and What If preserve observed-vs-simulated disclosure.
 - Trickster story creation and local export fail closed when validation/export prerequisites are unavailable.
+- Saved Trickster projects remain local unless the user explicitly publishes a frozen share manifest; a shared manifest stays read-only and evidence-linked.
 - Bull Invaders starts, exits back to Games, and retained Ranked/campaign behavior is unchanged.
 - No LIFE, Ansem, Bullpen/community, Ansem.io, or removed-game navigation is present.
 
