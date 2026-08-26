@@ -27,7 +27,18 @@ test('fails closed to server rendering when device plan or encoder is unavailabl
   const noEncoder=await renderEventStoryVideo(detail,{mediaLoader:async()=>({}),negotiate:async()=>null});assert.equal(noEncoder.videoReady,false);assert.equal(noEncoder.reason,'encoder_unavailable');
 });
 
-test('non Event Story manifests never enter the evidence renderer accidentally',async()=>{
+test('token sequence uses the same evidence renderer when a render plan exists',async()=>{
+  let called=false;
+  const result=await renderEventStoryVideo({...detail,manifest:{storyType:'token-sequence',output:{aspectRatio:'9:16'}},marketReplay:{activity:{totalEvents:1}}},{mediaLoader:async()=>({}),negotiate:async()=>({extension:'mp4',videoCodec:'avc1',audioCodec:null}),drawerFactory:({bundle})=>{assert.equal(bundle.storyType,'token-sequence');assert.equal(bundle.marketReplay.activity.totalEvents,1);return async()=>{};},encode:async()=>{called=true;return{blob:{size:1},extension:'mp4',mimeType:'video/mp4',width:1080,height:1920,fps:30};}});
+  assert.equal(result.videoReady,true);assert.equal(called,true);
+});
+
+test('unsupported story families never enter the evidence renderer accidentally',async()=>{
   const result=await renderEventStoryVideo({...detail,manifest:{storyType:'wallet-comparison',output:{aspectRatio:'9:16'}}});
-  assert.equal(result.videoReady,false);assert.equal(result.reason,'event_story_render_plan_unavailable');
+  assert.equal(result.videoReady,false);assert.equal(result.reason,'evidence_story_render_plan_unavailable');
+});
+
+test('token sequence without a render plan fails closed',async()=>{
+  const result=await renderEventStoryVideo({...detail,manifest:{storyType:'token-sequence',output:{aspectRatio:'9:16'}},renderPlan:[]});
+  assert.equal(result.videoReady,false);assert.equal(result.renderRequired,'server');assert.equal(result.reason,'evidence_story_render_plan_unavailable');
 });
