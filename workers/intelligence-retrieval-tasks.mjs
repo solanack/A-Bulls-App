@@ -10,7 +10,7 @@ const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:
 function bearer(request){const header=s(request.headers.get('authorization'));return header.toLowerCase().startsWith('bearer ')?header.slice(7).trim():'';}
 function authorized(request,env={}){const expected=s(env.INTELLIGENCE_MESH_INGEST_TOKEN),supplied=bearer(request);return Boolean(expected)&&expected.length===supplied.length&&expected===supplied;}
 export function externalRetrievalEnabled(env={}){return s(env.INTELLIGENCE_MESH_ENABLED).toLowerCase()==='true'&&s(env.INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED).toLowerCase()==='true';}
-export function externalRetrievalMaxAttempts(env={}){return Math.max(1,Math.min(10,Math.trunc(Number(env.INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS)||4));}
+export function externalRetrievalMaxAttempts(env={}){return Math.max(1,Math.min(10,Math.trunc(Number(env.INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS)||4)));}
 
 export function normalizeRetrievalTaskInput(input={}){
   const wallet=s(input.wallet),source=s(input.source),sourceKind=s(input.sourceKind||input.source_kind).toLowerCase(),from=finite(input.requestedFrom??input.from),to=finite(input.requestedTo??input.to),indexJobId=finite(input.indexJobId??input.index_job_id);
