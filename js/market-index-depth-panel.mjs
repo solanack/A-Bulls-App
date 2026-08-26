@@ -31,8 +31,7 @@ async function watchJobs({client,jobIds,root,status,reloadButton}){
     }catch(error){status.textContent='STATUS TEMPORARILY UNAVAILABLE';}
     await wait(5000);
   }
-  if(root.isConnected&&!reloadButton.hidden)return;
-  if(root.isConnected&&status.textContent.startsWith('INDEXING'))status.textContent+=' · CHECK AGAIN BY RELOADING';
+  if(root.isConnected&&reloadButton.hidden&&(status.textContent.startsWith('INDEXING')||status.textContent.startsWith('RETRY SCHEDULED')))status.textContent+=' · CHECK AGAIN BY RELOADING';
 }
 
 export function createMarketIndexDepthPanel({apiBase,mint,from,to}={}){
