@@ -2,16 +2,7 @@ name: Solana Intelligence Compatibility CI
 
 on:
   pull_request:
-    paths:
-      - 'js/intelligence-workspace-*.mjs'
-      - 'js/replay-*.mjs'
-      - 'js/trade-*.mjs'
-      - 'js/temporal-*.mjs'
-      - 'workers/intelligence-*.mjs'
-      - 'workers/migrations/0009_intelligence_mesh.sql'
-      - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
-      - 'sw.js'
-      - '.github/workflows/bull-intelligence-ci.yml'
+    types: [ready_for_review]
   workflow_dispatch:
 
 permissions:
