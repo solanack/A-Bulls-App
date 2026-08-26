@@ -1,3 +1,5 @@
+import { attachMarketIndexDepthPanel } from './market-index-depth-panel.mjs';
+
 const trim=value=>String(value==null?'':value).trim();
 
 export class MarketReplayClient{
@@ -7,6 +9,8 @@ export class MarketReplayClient{
     const response=await fetch(`${this.#baseUrl}/api/intelligence/market-replay`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(input),signal});
     let payload={};try{payload=await response.json();}catch{}
     if(!response.ok||payload?.ok!==true)throw Object.assign(new Error(payload?.error||`market_replay_${response.status}`),{status:response.status,payload});
-    return payload.bundle;
+    const bundle=payload.bundle;
+    if(typeof document!=='undefined'&&typeof setTimeout==='function')setTimeout(()=>attachMarketIndexDepthPanel({apiBase:this.#baseUrl,bundle}),0);
+    return bundle;
   }
 }
