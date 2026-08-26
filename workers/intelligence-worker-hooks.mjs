@@ -6,6 +6,7 @@ import { handleIntelligenceVNext } from './intelligence-router-vnext.mjs';
 import { runIntelligenceMeshScheduler } from './intelligence-mesh-scheduler.mjs';
 import { handleIntelligenceMeshIngestRequest } from './intelligence-mesh-ingest.mjs';
 import { handleIntelligenceAdapterRequest } from './intelligence-adapter-router.mjs';
+import { handleExternalRetrievalTaskRequest } from './intelligence-retrieval-tasks.mjs';
 import { handleUniverseRequest } from './intelligence-universe-router.mjs';
 import { handleTricksterRequest } from './intelligence-trickster-router.mjs';
 import { handleReplayBundleRequest } from './intelligence-replay-bundle.mjs';
@@ -18,6 +19,8 @@ import { handleEventMarketContextRequest } from './intelligence-event-context.mj
 import { pruneUniverseObservations } from './intelligence-universe-runtime.mjs';
 
 export async function handleIntelligenceFetch(request, env = {}) {
+  const retrievalTasks = await handleExternalRetrievalTaskRequest(request, env);
+  if (retrievalTasks) return retrievalTasks;
   const meshIngest = await handleIntelligenceMeshIngestRequest(request, env);
   if (meshIngest) return meshIngest;
   const adapterIngest = await handleIntelligenceAdapterRequest(request, env);
