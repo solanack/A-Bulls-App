@@ -11,6 +11,7 @@ This service is the provider-neutral execution boundary for bounded historical r
 - A completed task does **not** imply complete wallet history or complete token-market coverage.
 - A bounded interval is considered searched only when the executor explicitly returns `rangeVerified: true` with `searchedFrom` and `searchedTo` spanning that interval.
 - A verified zero-row result means only that the bounded wallet interval was searched and no rows were returned by that source. It is not a claim that the market had no activity.
+- External retrieval retries are bounded. Exhaustion releases the parent history job to progressive RPC repair instead of trapping it behind a broken archive source.
 
 ## Required configuration
 
@@ -20,6 +21,7 @@ This service is the provider-neutral execution boundary for bounded historical r
 - `INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED=true`: enables the Old Faithful historical executor only when a real injected Old Faithful transport is also supplied.
 - `INTELLIGENCE_BRIDGE_CLAIM_LIMIT`: optional bounded claim count, 1–5.
 - `INTELLIGENCE_BRIDGE_LEASE_SECONDS`: optional lease duration, 30–300 seconds.
+- `INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS`: Worker-side retry budget for one external task, default 4 and clamped to 1–10.
 
 The Worker must separately enable the Intelligence Mesh, external retrieval, and the specific historical source. Bridge configuration cannot turn Worker features on.
 
@@ -33,6 +35,7 @@ The Worker must separately enable the Intelligence Mesh, external retrieval, and
 4. For non-empty results, submit normalized evidence to `/api/internal/intelligence/adapters/<sourceKind>` with the exact `taskId`.
 5. For verified empty results, finish the exact task through `/api/internal/intelligence/retrieval-tasks/finish` with the searched-range receipt.
 6. On retrieval, range-verification, or ingest failure, return the leased task to retry state. The bridge never marks failed or partial work complete.
+7. When the Worker retry budget is exhausted, the external task becomes terminally failed and the parent wallet-history job is released back to the progressive RPC path. The same failed external task is not recreated for that bounded request.
 
 ## Executor layers
 
