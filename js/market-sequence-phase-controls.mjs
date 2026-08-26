@@ -1,4 +1,5 @@
 import { sliceMarketReplayToPhase } from './market-sequence-phase-slice.mjs';
+import { dispatchMarketPhaseFieldEffect } from './field-sequence-effects.mjs';
 
 const node=(tag,className,text)=>{const el=document.createElement(tag);if(className)el.className=className;if(text!=null)el.textContent=text;return el;};
 const fmt=value=>Number(value||0).toLocaleString(undefined,{maximumSignificantDigits:6});
@@ -16,7 +17,7 @@ export function createMarketSequencePhaseControls({bundle,reconstruction,onPlay,
     if(phase.largestAbsTokenDelta!=null)copy.append(node('small','',`Largest observed |token Δ| · ${fmt(phase.largestAbsTokenDelta)}`));
     const actions=node('div','market-sequence-phase__actions'),play=node('button','secondary','PLAY PHASE'),story=node('button','secondary','CREATE PHASE STORY');
     play.type=story.type='button';
-    play.addEventListener('click',()=>onPlay?.(sliceMarketReplayToPhase(bundle,phase),phase));
+    play.addEventListener('click',()=>{dispatchMarketPhaseFieldEffect(phase);onPlay?.(sliceMarketReplayToPhase(bundle,phase),phase);});
     story.addEventListener('click',()=>onCreateStory?.(sliceMarketReplayToPhase(bundle,phase),phase));
     actions.append(play,story);card.append(copy,actions);grid.append(card);
   }
