@@ -6,7 +6,7 @@ const FILTERS=Object.freeze(['all','swap','transfer','nft','staking','program','
 const MODE_FILTER=Object.freeze({explore:'all',intelligence:'all',replay:'all',compare:'all','what-if':'all',sequences:'swap',trickster:'all',evidence:'all',games:'all'});
 function node(tag,className,text){const item=document.createElement(tag);if(className)item.className=className;if(text!=null)item.textContent=text;return item;}
 export class UniverseExperience {
-  #host;#root;#stage;#truth;#renderer;#client;#snapshot;#filter='all';#mode='explore';#unsubscribe;#onDestinationRequest;#onFieldMode;
+  #host;#root;#stage;#truth;#renderer;#client;#snapshot;#filter='all';#mode='explore';#unsubscribe;#onDestinationRequest;#onFieldMode;#onSearch;
   constructor({host,apiBase,THREE,onDestinationRequest,client,syntheticCount=2500}){
     if(!(host instanceof Element))throw new TypeError('host element is required');
     this.#host=host;this.#onDestinationRequest=onDestinationRequest;this.#client=client??new UniverseClient({baseUrl:apiBase});this.#snapshot=createSyntheticUniverse({count:syntheticCount});
@@ -15,7 +15,7 @@ export class UniverseExperience {
     for(const filter of FILTERS){const button=node('button','secondary',filter.toUpperCase());button.type='button';button.dataset.universeFilter=filter;button.setAttribute('aria-pressed',String(filter==='all'));button.addEventListener('click',()=>this.setFilter(filter));toolbar.append(button);}
     this.#truth=node('div','universe-truth-panel');this.#truth.setAttribute('aria-live','polite');overlay.append(toolbar,node('div'),this.#truth);this.#root.append(this.#stage,overlay,node('div','universe-whiteout'));this.#host.replaceChildren(this.#root);
     this.#renderer=new UniverseRenderer({host:this.#stage,snapshot:this.#snapshot,THREE,onSelect:(entity,destination)=>this.#select(entity,destination)});this.#renderTruth('prototype');this.#unsubscribe=this.#client.subscribe(event=>this.#handleClient(event));
-    this.#onFieldMode=event=>this.setMode(event?.detail?.mode);globalThis.addEventListener('abulls:field-mode',this.#onFieldMode);
+    this.#onFieldMode=event=>this.setMode(event?.detail?.mode);this.#onSearch=event=>this.#renderer.focusRequest(event?.detail||{});globalThis.addEventListener('abulls:field-mode',this.#onFieldMode);globalThis.addEventListener('abulls:universal-search',this.#onSearch);
   }
   #renderTruth(state){this.#truth.replaceChildren();const list=node('dl'),values=[['Mode',this.#mode.toUpperCase()],['State',state==='ready'?'LIVE DATA':state==='degraded'?'PARTIAL SERVICE':'SYNTHETIC PROTOTYPE'],['Window',`${this.#snapshot.windowStart} → ${this.#snapshot.windowEnd}`],['Shown',`${this.#filteredSnapshot().particles.length.toLocaleString()} / ${this.#snapshot.observedEventCount.toLocaleString()}`],['Coverage',this.#snapshot.coverageStatement],['Sources',this.#snapshot.sources.join(', ')||'none'],['Meaning','A bounded observation window—not the entire Solana chain']];for(const [label,value] of values)list.append(node('dt','',label),node('dd','',value));this.#truth.append(list);}
   #filteredSnapshot(){if(this.#filter==='all')return this.#snapshot;return Object.freeze({...this.#snapshot,particles:Object.freeze(this.#snapshot.particles.filter(({category})=>category===this.#filter))});}
@@ -24,6 +24,6 @@ export class UniverseExperience {
   async #select(entity,destination){this.#root.dataset.transition='accelerating';try{await this.#onDestinationRequest?.(destination,entity);this.#renderer.markDestinationReady();this.#root.dataset.transition='revealing';globalThis.setTimeout(()=>{if(this.#root)this.#root.dataset.transition='idle';},500);}catch(error){this.#renderer.cancelTransition();this.#root.dataset.transition='idle';this.#renderTruth('degraded');}}
   #handleClient(event){if(event.state==='ready'&&event.snapshot){this.#snapshot=event.snapshot;this.#renderer.updateSnapshot(this.#filteredSnapshot());this.#renderTruth('ready');}else if(event.state==='degraded'||event.state==='error')this.#renderTruth('degraded');}
   start(options){this.#client.start(options);}stop(){this.#client.stop();}
-  destroy(){this.stop();this.#unsubscribe?.();globalThis.removeEventListener('abulls:field-mode',this.#onFieldMode);this.#renderer.destroy();this.#root.remove();}
+  destroy(){this.stop();this.#unsubscribe?.();globalThis.removeEventListener('abulls:field-mode',this.#onFieldMode);globalThis.removeEventListener('abulls:universal-search',this.#onSearch);this.#renderer.destroy();this.#root.remove();}
 }
 export const UniverseFilters=FILTERS;
