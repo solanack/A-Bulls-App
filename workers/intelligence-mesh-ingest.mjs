@@ -4,6 +4,8 @@
  */
 
 import { ingestDecodedObservations, intelligenceDb, normalizeIndexedEvents } from './intelligence-indexer.mjs';
+import { persistUniverseObservations } from './intelligence-universe-runtime.mjs';
+import { projectIndexedEventsToUniverse } from './intelligence-universe-projection.mjs';
 
 const SOURCE_KINDS = new Set(['yellowstone', 'richat', 'substreams', 'old-faithful', 'rpc', 'repair', 'snapshot', 'test']);
 const s = value => String(value == null ? '' : value).trim();
@@ -44,6 +46,10 @@ async function persistProvenance(db, wallet, source, sourceKind, rows, verified 
   }
 }
 
+export function universeObservationsForEvents(rows = [], { verified = false, sourceKind = '' } = {}) {
+  return projectIndexedEventsToUniverse(rows, { verified, sourceKind });
+}
+
 async function persistSourceHealth(db, source, sourceKind, state, details = {}) {
   await db.prepare(`
     INSERT INTO intelligence_source_health
@@ -80,8 +86,13 @@ export async function ingestIntelligenceBatch(env = {}, payload = {}) {
       bucketSeconds: n(payload.bucketSeconds || 3600)
     });
     await persistProvenance(db, wallet, source, sourceKind, normalized, Boolean(payload.verified), s(payload.archiveRef));
-    await persistSourceHealth(db, source, sourceKind, 'ok', { accepted: result.accepted });
-    return { ok: true, wallet, source, sourceKind, accepted: result.accepted, verified: Boolean(payload.verified) };
+    let universeWritten = 0;
+    if (String(env.UNIVERSE_ENABLED || '').toLowerCase() === 'true') {
+      const projected = universeObservationsForEvents(normalized, { verified: Boolean(payload.verified), sourceKind });
+      if (projected.length) universeWritten = await persistUniverseObservations(env, projected);
+    }
+    await persistSourceHealth(db, source, sourceKind, 'ok', { accepted: result.accepted, universeWritten });
+    return { ok: true, wallet, source, sourceKind, accepted: result.accepted, universeWritten, verified: Boolean(payload.verified) };
   } catch (error) {
     await persistSourceHealth(db, source, sourceKind, 'error', { error: s(error?.message || error) });
     throw error;

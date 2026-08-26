@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { buildTricksterNarrationPlan, narrationAtFrame } from './trickster-narration-plan.mjs';
+
+const manifest={claims:[{id:'o1',kind:'observed',statement:'Wallet A bought the token.',disclosure:''},{id:'c1',kind:'calculated',statement:'Wallet A had more observed trades.',disclosure:'Indexed window only.'},{id:'i1',kind:'inferred',statement:'Wallet B mirrors Wallet A timing.',disclosure:'Simulation only.'}],scenes:[{id:'s1',type:'synchronized-trade-replay',claimIds:['o1']},{id:'s2',type:'calculated-differences',claimIds:['c1']},{id:'s3',type:'what-if-replay',claimIds:['i1']},{id:'s4',type:'comparison-hook',claimIds:[]}]};
+const timeline={fps:30,scenes:[{id:'s1',type:'synchronized-trade-replay',startFrame:0,endFrame:89,durationFrames:90},{id:'s2',type:'calculated-differences',startFrame:90,endFrame:179,durationFrames:90},{id:'s3',type:'what-if-replay',startFrame:180,endFrame:269,durationFrames:90},{id:'s4',type:'comparison-hook',startFrame:270,endFrame:329,durationFrames:60}]};
+
+test('uses only validated manifest claim text and explicit evidence labels',()=>{const plan=buildTricksterNarrationPlan(manifest,timeline);assert.equal(plan.scenes[0].segments[0].text,'Observed on chain. Wallet A bought the token.');assert.equal(plan.scenes[1].segments[0].text,'Calculated from indexed evidence. Wallet A had more observed trades.');assert.equal(plan.scenes[2].segments[0].text,'Simulation. Wallet B mirrors Wallet A timing.');});
+test('claim-free scenes remain silent instead of inventing narration',()=>{const plan=buildTricksterNarrationPlan(manifest,timeline);assert.equal(plan.scenes[3].silent,true);assert.deepEqual(plan.scenes[3].segments,[]);assert.match(plan.disclosure,/Claim-free scenes remain silent/);});
+test('narration lookup follows deterministic frame boundaries',()=>{const plan=buildTricksterNarrationPlan(manifest,timeline);assert.equal(narrationAtFrame(plan,95).sceneId,'s2');assert.equal(narrationAtFrame(plan,275).sceneId,'s4');});

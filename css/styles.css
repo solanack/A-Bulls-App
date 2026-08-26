@@ -2567,8 +2567,6 @@ body.game-active #views{ padding-bottom: 0; }
 .rent-incinerator-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px}
 .rent-incinerator-head span{font-weight:900;text-transform:uppercase;letter-spacing:.05em}
 .rent-incinerator-head b{color:var(--g2);font-size:10px}
-.life-advice-list{display:grid;gap:12px}
-.life-advice-list article{padding:16px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.025);font-size:14px;line-height:1.65;color:#f1edf2}
 .mobile-community-tabs{display:none!important}
 @media(max-width:520px){
   .ansem-protocol-grid{grid-template-columns:1fr}

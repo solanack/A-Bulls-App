@@ -1,0 +1,37 @@
+name = "black-bull-run-sol-api"
+main = "worker-vnext-entry.mjs"
+compatibility_date = "2026-08-01"
+
+[build]
+command = "node ../scripts/reconstruct-worker-8.2.0.mjs"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+ALLOWED_ORIGINS = "https://abullsapp.com,https://www.abullsapp.com"
+UNIVERSE_ENABLED = "true"
+TRICKSTER_STUDIO_ENABLED = "true"
+TRICKSTER_SHARE_ENABLED = "false"
+PLAYABLE_DATA_ENABLED = "true"
+INTELLIGENCE_MESH_ENABLED = "true"
+MARKET_BACKFILL_QUEUE_ENABLED = "false"
+INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED = "false"
+INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED = "false"
+INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
+
+[[d1_databases]]
+binding = "LEADERBOARD_DB"
+database_name = "<YOUR_PRODUCTION_D1_DATABASE_NAME>"
+database_id = "<YOUR_PRODUCTION_D1_DATABASE_ID>"
+
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "<YOUR_ACCOUNT_UNIQUE_INTEGER_NAMESPACE_ID>"
+  [ratelimits.simple]
+  limit = 60
+  period = 60
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1

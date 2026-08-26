@@ -1,25 +1,8 @@
 name: Intelligence Mesh CI
 
 on:
-  push:
-    branches: [ feature/intelligence-mesh-v1 ]
-    paths:
-      - 'workers/intelligence-*.mjs'
-      - 'js/intelligence-*.js'
-      - 'workers/migrations/0009_intelligence_mesh.sql'
-      - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
-      - 'docs/INTELLIGENCE-MESH.md'
-      - 'docs/INTELLIGENCE-MESH-BUILD-STATUS.md'
-      - '.github/workflows/intelligence-mesh-ci.yml'
   pull_request:
-    paths:
-      - 'workers/intelligence-*.mjs'
-      - 'js/intelligence-*.js'
-      - 'workers/migrations/0009_intelligence_mesh.sql'
-      - 'workers/migrations/0010_intelligence_mesh_runtime.sql'
-      - 'docs/INTELLIGENCE-MESH.md'
-      - 'docs/INTELLIGENCE-MESH-BUILD-STATUS.md'
-      - '.github/workflows/intelligence-mesh-ci.yml'
+    types: [ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -35,31 +18,82 @@ jobs:
           node-version: '22'
       - name: Syntax
         run: |
+          set -euo pipefail
           for f in workers/intelligence-*.mjs; do node --check "$f"; done
-          for f in js/intelligence-*.js; do node --check "$f"; done
+          for f in js/intelligence-workspace-*.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs js/field-*.mjs js/trickster-field-*.mjs; do
+            [ -e "$f" ] && node --check "$f"
+          done
+          for f in services/intelligence-bridge/*.mjs; do node --check "$f"; done
       - name: Unit tests
-        run: node --test workers/intelligence-*.test.mjs
-      - name: Neutral naming contract
+        run: |
+          node --test workers/intelligence-*.test.mjs
+          node --test js/temporal-replay-engine.test.mjs js/trade-comparison-replay.test.mjs js/field-replay-effects.test.mjs js/field-sequence-effects.test.mjs js/field-story-scene.test.mjs js/trickster-field-playback.test.mjs
+          node --test services/intelligence-bridge/*.test.mjs
+      - name: Neutral data contract
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/intelligence-nft-layer.mjs workers/intelligence-operations.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
+          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-history-orchestrator.mjs workers/intelligence-source-selection.mjs workers/intelligence-retrieval-tasks.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/intelligence-nft-layer.mjs workers/intelligence-operations.mjs workers/intelligence-replay-bundle.mjs workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql workers/migrations/0013_external_retrieval_tasks.sql
       - name: Migration safety contract
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_index_coverage' workers/migrations/0010_intelligence_mesh_runtime.sql
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_demand_patterns' workers/migrations/0010_intelligence_mesh_runtime.sql
-          grep -q 'CREATE TABLE IF NOT EXISTS community_integrations' workers/migrations/0010_intelligence_mesh_runtime.sql
-          ! grep -Eiq 'DROP[[:space:]]+TABLE|TRUNCATE|DELETE[[:space:]]+FROM' workers/migrations/0010_intelligence_mesh_runtime.sql
+          grep -q 'ADD COLUMN requested_from INTEGER' workers/migrations/0012_history_job_depth.sql
+          grep -q 'ADD COLUMN requested_to INTEGER' workers/migrations/0012_history_job_depth.sql
+          grep -q 'CREATE TABLE IF NOT EXISTS intelligence_retrieval_tasks' workers/migrations/0013_external_retrieval_tasks.sql
+          grep -q 'lease_until INTEGER' workers/migrations/0013_external_retrieval_tasks.sql
+          grep -q 'range_verified INTEGER' workers/migrations/0013_external_retrieval_tasks.sql
+          grep -q 'result_json TEXT' workers/migrations/0013_external_retrieval_tasks.sql
+          ! grep -Eiq 'community_integrations|ansem|bullpen' workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql workers/migrations/0013_external_retrieval_tasks.sql
+          ! grep -Eiq 'DROP[[:space:]]+TABLE|TRUNCATE|DELETE[[:space:]]+FROM' workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql workers/migrations/0013_external_retrieval_tasks.sql
       - name: Progressive history contract
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'getSignaturesForAddress' workers/intelligence-history-engine.mjs
           grep -q 'getTransaction' workers/intelligence-history-engine.mjs
-          grep -q 'INTELLIGENCE_RPC_URL' workers/intelligence-history-engine.mjs
-          grep -q 'intelligence_index_jobs' workers/intelligence-mesh-scheduler.mjs
+          grep -q 'INTELLIGENCE_RPC_URL' workers/intelligence-history-orchestrator.mjs
+          grep -q 'INTELLIGENCE_RPC_FALLBACK_URLS' workers/intelligence-history-orchestrator.mjs
+          grep -q 'INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED' workers/intelligence-history-orchestrator.mjs
+          grep -q 'INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED' workers/intelligence-history-orchestrator.mjs
+          grep -q 'loadObservedSourceHealth' workers/intelligence-history-orchestrator.mjs
+          grep -q 'buildRetrievalPlan' workers/intelligence-history-orchestrator.mjs
+          grep -q 'runSourceAwareHistoryPass' workers/intelligence-mesh-scheduler.mjs
+          grep -q 'requested_from' workers/intelligence-mesh-scheduler.mjs
+          grep -q 'requested_to' workers/intelligence-mesh-scheduler.mjs
+          grep -q 'waiting-external' workers/intelligence-mesh-scheduler.mjs workers/intelligence-index-job-status.mjs
+          grep -q 'INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED' workers/intelligence-retrieval-tasks.mjs
+          grep -q 'INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS' workers/intelligence-retrieval-tasks.mjs workers/wrangler.toml
+          grep -q "state='failed'" workers/intelligence-retrieval-tasks.mjs
+          grep -q 'external_retrieval_exhausted' workers/intelligence-retrieval-tasks.mjs
+          grep -q 'completed or terminally failed external work is never recreated' workers/intelligence-history-orchestrator.mjs
+          grep -q 'normalizeRetrievalReceipt' workers/intelligence-retrieval-tasks.mjs
+          grep -q 'requestedWindowSatisfied' workers/intelligence-retrieval-tasks.mjs
+          grep -q '/api/internal/intelligence/retrieval-tasks/claim' workers/intelligence-retrieval-tasks.mjs
+          grep -q '/api/internal/intelligence/retrieval-tasks/finish' workers/intelligence-retrieval-tasks.mjs
+          grep -q 'handleExternalRetrievalTaskRequest' workers/intelligence-worker-hooks.mjs
+          grep -q 'handleIntelligenceMeshIngestRequest' workers/intelligence-worker-hooks.mjs
+          grep -q 'handleIntelligenceAdapterRequest' workers/intelligence-worker-hooks.mjs
+          grep -q 'finishExternalRetrievalTask' workers/intelligence-adapter-router.mjs
+          grep -q 'rangeVerified' workers/intelligence-adapter-router.mjs
+          grep -q 'unknown-until-measured' workers/intelligence-source-selection.mjs
+      - name: External bridge contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'retrieval-tasks/claim' services/intelligence-bridge/runner.mjs
+          grep -q 'retrieval-tasks/finish' services/intelligence-bridge/runner.mjs
+          grep -q 'receiptSatisfiesTask' services/intelligence-bridge/runner.mjs
+          grep -q 'bridge_verified_range_required' services/intelligence-bridge/runner.mjs
+          grep -q 'bridge_executor_unavailable' services/intelligence-bridge/runner.mjs
+          grep -q 'provider_range_verification_required' services/intelligence-bridge/executor-contract.mjs
+          grep -q 'provider_range_does_not_cover_task' services/intelligence-bridge/executor-contract.mjs
+          grep -q 'substreams_complete_range_required' services/intelligence-bridge/substreams-executor.mjs
+          grep -q 'old_faithful_complete_range_required' services/intelligence-bridge/old-faithful-executor.mjs
+          grep -q 'no_historical_bridge_executors_enabled' services/intelligence-bridge/service.mjs
+          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' services/intelligence-bridge/*.mjs
       - name: Product feature contract
         shell: bash
         run: |
@@ -72,9 +106,23 @@ jobs:
           grep -q '/api/intelligence/chain-radar' workers/intelligence-mesh-router.mjs
           grep -q '/api/intelligence/chain-weather' workers/intelligence-mesh-router.mjs
           grep -q '/api/intelligence/nft-memory' workers/intelligence-asset-router.mjs
-          grep -q '/api/intelligence/community-integrations' workers/intelligence-asset-router.mjs
+          grep -q '/api/intelligence/replay-bundle' workers/intelligence-replay-bundle.mjs
+          grep -q 'PLAYABLE_DATA_ENABLED' workers/intelligence-replay-bundle.mjs
+          grep -q 'abulls:temporal-replay-events' js/temporal-replay-engine.mjs js/universe-renderer.mjs
+          grep -q 'resolveFieldEffectPosition' js/field-replay-effects.mjs js/universe-renderer.mjs
+          grep -q 'walletFieldLane' js/field-replay-effects.mjs
+          grep -q 'abulls:field-market-phase' js/field-sequence-effects.mjs js/universe-renderer.mjs
+          grep -q 'dispatchMarketPhaseFieldEffect' js/market-sequence-phase-controls.mjs
+          grep -q 'abulls:field-story-scene' js/field-story-scene.mjs js/universe-renderer.mjs
+          grep -q 'PLAY STORY IN FIELD' js/trickster-field-playback.mjs
+          grep -q 'installTricksterFieldPlaybackBridge' js/experience-entry.mjs
+          grep -q 'field-replay-effects' sw.js
+          grep -q 'field-sequence-effects' sw.js
+          grep -q 'field-story-scene' sw.js
+          grep -q 'trickster-field-playback' sw.js
+          ! grep -Eiq 'community-integrations|ansem|bullpen' workers/intelligence-asset-router.mjs workers/intelligence-operations.mjs
       - name: Read-only guardrails
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-*.mjs js/intelligence-*.js
+          ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' workers/intelligence-*.mjs js/intelligence-workspace-*.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs js/field-*.mjs js/trickster-field-*.mjs services/intelligence-bridge/*.mjs

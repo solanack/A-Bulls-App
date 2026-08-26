@@ -144,15 +144,3 @@ CREATE TABLE IF NOT EXISTS intelligence_demand_patterns (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 CREATE INDEX IF NOT EXISTS idx_intelligence_demand_priority ON intelligence_demand_patterns(priority_score DESC, updated_at DESC);
-
-CREATE TABLE IF NOT EXISTS community_integrations (
-  integration_key TEXT PRIMARY KEY,
-  display_name TEXT NOT NULL,
-  category TEXT NOT NULL DEFAULT 'community',
-  enabled INTEGER NOT NULL DEFAULT 1,
-  legacy INTEGER NOT NULL DEFAULT 0,
-  config_json TEXT NOT NULL DEFAULT '{}',
-  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-INSERT OR IGNORE INTO community_integrations(integration_key, display_name, category, enabled, legacy)
-VALUES ('ansem', 'Ansem', 'community', 1, 1), ('bullpen', 'Bullpen NFTs', 'community', 1, 1), ('ansem-io', 'Ansem.io', 'community', 1, 1);

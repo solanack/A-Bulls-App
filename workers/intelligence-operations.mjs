@@ -1,15 +1,10 @@
-/* Intelligence Mesh operational read models: Community Integrations and Demand Engine. */
+/* Intelligence Mesh operational read models: Demand Engine, gaps, and index jobs. */
 
 import { intelligenceDb } from './intelligence-indexer.mjs';
 
 const s=v=>String(v==null?'':v).trim();
 const n=v=>Number.isFinite(Number(v))?Number(v):0;
 async function all(stmt){try{const r=await stmt.all();return r?.results||[]}catch{return[]}}
-
-export async function communityIntegrations(env={}){
-  const db=intelligenceDb(env); if(!db) return [];
-  return all(db.prepare(`SELECT integration_key,display_name,category,enabled,legacy,config_json,updated_at FROM community_integrations ORDER BY legacy DESC,display_name ASC`));
-}
 
 export async function demandPatterns(env={},limit=50){
   const db=intelligenceDb(env); if(!db) return [];
