@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { configuredRpcSources, mergeSourceHealth, externalHistorySource } from './intelligence-history-orchestrator.mjs';
+import { configuredRpcSources, configuredExternalHistorySources, mergeSourceHealth, externalHistorySource } from './intelligence-history-orchestrator.mjs';
 import { buildRetrievalPlan } from './intelligence-source-selection.mjs';
 
 test('builds executable RPC source order with duplicate URLs removed',()=>{
@@ -10,6 +10,19 @@ test('builds executable RPC source order with duplicate URLs removed',()=>{
     HELIUS_API_KEY:'abc'
   });
   assert.deepEqual(sources.map(x=>x.name),['configured-rpc','configured-rpc-fallback-1','helius-standard-rpc','solana-public-rpc']);
+});
+
+test('bootstraps only explicitly enabled external history executors and overlays observed health',()=>{
+  const sources=configuredExternalHistorySources({
+    INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED:'true',
+    INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED:'true',
+    INTELLIGENCE_SUBSTREAMS_SOURCE_NAME:'substreams-a'
+  },[{name:'substreams-a',kind:'substreams',state:'ok',latencyMs:120}]);
+  assert.deepEqual(sources.map(x=>x.name),['substreams-a','old-faithful']);
+  assert.equal(sources[0].state,'ok');
+  assert.equal(sources[0].latencyMs,120);
+  assert.equal(sources[1].state,'unknown');
+  assert.equal(sources[0].execution,'external-bridge');
 });
 
 test('merges observed health without allowing health rows to replace executable URLs',()=>{
