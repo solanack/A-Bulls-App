@@ -53,10 +53,12 @@ export async function runSourceAwareHistoryPass(env={},wallet='',options={}){
     if(preferred&&externalHistorySource(preferred)){
       const existing=await existingExternalTask(db,{indexJobId,source:preferred,from,to});
       if(existing?.state==='queued'||existing?.state==='leased')return Object.freeze({ok:true,deferred:true,state:'waiting-external',source:s(preferred.name),externalTaskId:Number(existing.id),retrieval:Object.freeze({depthClass:combinedPlan.depthClass,selected:s(preferred.name),coverageClaim:'unknown-until-measured',disclosure:combinedPlan.disclosure})});
-      if(existing?.state!=='complete'){
+      if(!existing){
         const queued=await queueExternalRetrievalTask(env,{indexJobId,wallet,source:s(preferred.name),sourceKind:s(preferred.kind),requestedFrom:from,requestedTo:to});
         return Object.freeze({ok:true,deferred:true,state:'waiting-external',source:s(preferred.name),externalTaskId:Number(queued?.task?.taskId)||null,retrieval:Object.freeze({depthClass:combinedPlan.depthClass,selected:s(preferred.name),coverageClaim:'unknown-until-measured',disclosure:combinedPlan.disclosure})});
       }
+      // completed or terminally failed external work is never recreated for the same bounded request.
+      // The progressive RPC path below remains available for repair/continuation.
     }
   }
 
