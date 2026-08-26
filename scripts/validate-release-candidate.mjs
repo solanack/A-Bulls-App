@@ -32,9 +32,11 @@ expect('Trickster enabled in browser shell',/tricksterStudioEnabled:\s*true/.tes
 expect('replacement module loaded',/experience-entry\.mjs\?v=8/.test(index));
 expect('field investigation routing present',/fieldCommandRequest/.test(bootstrap)&&/field-investigation-create/.test(bootstrap));
 expect('field hub cached',/field-investigation-hub/.test(sw));
+expect('field evidence scope cached',/field-evidence-scope/.test(sw));
+expect('production request guard wired',/intelligence-request-guard/.test(await text('workers/worker-vnext-entry.mjs')));
 expect('Trickster project store cached',/trickster-project-store/.test(sw));
 expect('Trickster share client cached',/trickster-share-client/.test(sw));
-expect('vNext-65 PWA checkpoint',/8\.7\.0-vnext-65/.test(sw));
+expect('vNext-68 PWA checkpoint',/8\.7\.0-vnext-68/.test(sw));
 expect('NO INDEXED EVIDENCE truth state',/NO INDEXED EVIDENCE/.test(market)||/NO INDEXED EVIDENCE/.test(workspace));
 expect('Worker 8.2.0 reconstruction configured',/reconstruct-worker-8\.2\.0\.mjs/.test(wrangler));
 expect('Trickster shares fail closed by default',/TRICKSTER_SHARE_ENABLED\s*=\s*"false"/.test(wrangler));

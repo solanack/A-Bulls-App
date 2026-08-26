@@ -4,7 +4,7 @@ This document is the handoff boundary between repository work and production Clo
 
 ## Release scope
 
-- Frontend baseline: Pages 8.7.0, built forward as the vNext full-screen field experience. Current PWA checkpoint: `8.7.0-vnext-65`.
+- Frontend baseline: Pages 8.7.0, built forward as the vNext full-screen field experience. Current PWA checkpoint: `8.7.0-vnext-68`.
 - Worker baseline: verified Worker 8.2.0 reconstructed at build time, extended through `workers/worker-vnext-entry.mjs`.
 - Bull Invaders is the only game.
 - LIFE, Ansem/$ANSEM, Bullpen NFT/community integration, Ansem.io, Community Integrations and removed games stay removed.
@@ -19,12 +19,13 @@ Do not deploy Pages first against an old Worker. The vNext frontend calls vNext 
 2. In Cloudflare, verify the existing Worker secrets/bindings are still present before replacing Worker code.
 3. Apply D1 migrations `0007` through `0014` in numeric order to the intended production Intelligence/leaderboard database. Do not reapply a migration already recorded/applied in production. Migration `0014_trickster_share_manifests.sql` is required before `TRICKSTER_SHARE_ENABLED` can be enabled.
 4. Verify Worker bindings point at the intended production D1/KV resources. The repository intentionally does not contain account-specific IDs or secrets.
-5. Preserve these existing Worker secrets where used by the retained baseline: `HELIUS_API_KEY`, `GOOGLE_CLIENT_ID`, `AUTH_SESSION_SECRET`.
-6. Add `INTELLIGENCE_MESH_INGEST_TOKEN` only if protected external ingest will be enabled.
-7. Deploy the Worker release candidate with the vNext routes enabled only after migrations/bindings are verified.
-8. Smoke-test Worker health and read-only Intelligence routes from `https://abullsapp.com` origin.
-9. Deploy Pages from the same release-candidate commit.
-10. Attach/verify `abullsapp.com` and `www.abullsapp.com`, then perform desktop + phone smoke tests.
+5. Configure the `RATE_LIMITER` binding with an account-unique integer namespace ID before making Intelligence routes public. The Worker enforces HTTP 429 with `Retry-After` when the binding denies a request.
+6. Preserve these existing Worker secrets where used by the retained baseline: `HELIUS_API_KEY`, `GOOGLE_CLIENT_ID`, `AUTH_SESSION_SECRET`.
+7. Add `INTELLIGENCE_MESH_INGEST_TOKEN` only if protected external ingest will be enabled.
+8. Deploy the Worker release candidate with the vNext routes enabled only after migrations/bindings are verified.
+9. Smoke-test Worker health and read-only Intelligence routes from `https://abullsapp.com` origin.
+10. Deploy Pages from the same release-candidate commit.
+11. Attach/verify `abullsapp.com` and `www.abullsapp.com`, then perform desktop + phone smoke tests.
 
 ## Feature flags for the first .com release
 
@@ -51,7 +52,7 @@ The app can still use the standard/progressive RPC path while those optional acc
 
 - `ALLOWED_ORIGINS` contains `https://abullsapp.com` and `https://www.abullsapp.com`.
 - `privacy.html`, `terms.html`, and `share.html` return 200.
-- PWA manifest and service worker update successfully to `8.7.0-vnext-65`.
+- PWA manifest and service worker update successfully to `8.7.0-vnext-68`.
 - Desktop opens as a true full-viewport experience; mobile uses the dedicated compact presentation.
 - Search accepts public Solana addresses/mints/signatures without requesting a wallet signature.
 - Exact field focus opens a spatial investigation hub; every rendered relationship has an evidence receipt and both endpoints are loaded in the bounded snapshot.

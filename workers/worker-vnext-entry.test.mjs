@@ -55,4 +55,13 @@ assert.equal(replay.status, 404);
 assert.equal((await jsonOf(replay)).error, 'feature_disabled');
 assert.equal(replay.headers.get('access-control-allow-origin'), 'https://abullsapp.com');
 
+// Configured production rate limiting is enforced before vNext route execution.
+const limited = await worker.fetch(new Request('https://api.example/api/intelligence/mesh-status', {
+  headers: { Origin: 'https://abullsapp.com', 'CF-Connecting-IP': '203.0.113.10' }
+}), { ...env, RATE_LIMITER: { limit: async () => ({ success: false }) } }, {});
+assert.equal(limited.status, 429);
+assert.equal((await jsonOf(limited)).error, 'rate_limited');
+assert.equal(limited.headers.get('retry-after'), '60');
+assert.equal(limited.headers.get('access-control-allow-origin'), 'https://abullsapp.com');
+
 console.log('Worker vNext retained-baseline compatibility contract passed');

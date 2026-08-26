@@ -6,6 +6,7 @@
 
 import baselineWorker from './worker-baseline-retained.mjs';
 import { handleIntelligenceFetch, handleIntelligenceScheduled } from './intelligence-worker-hooks.mjs';
+import { guardIntelligenceRequest } from './intelligence-request-guard.mjs';
 
 const RETAINED_BASELINE_PATHS = new Set([
   '/api/health',
@@ -65,6 +66,8 @@ async function cleanupLeaderboard(env = {}) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const guarded = await guardIntelligenceRequest(request, env);
+    if (guarded) return withCors(guarded, request, env);
     const vnext = await handleIntelligenceFetch(request, env);
     if (vnext) return withCors(vnext, request, env);
     if (!RETAINED_BASELINE_PATHS.has(url.pathname)) return notFound(request, env);
