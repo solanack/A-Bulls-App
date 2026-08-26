@@ -65,6 +65,10 @@ jobs:
           grep -q 'requested_to' workers/intelligence-mesh-scheduler.mjs
           grep -q 'waiting-external' workers/intelligence-mesh-scheduler.mjs workers/intelligence-index-job-status.mjs
           grep -q 'INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED' workers/intelligence-retrieval-tasks.mjs
+          grep -q 'INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS' workers/intelligence-retrieval-tasks.mjs workers/wrangler.toml
+          grep -q "state='failed'" workers/intelligence-retrieval-tasks.mjs
+          grep -q 'external_retrieval_exhausted' workers/intelligence-retrieval-tasks.mjs
+          grep -q 'completed or terminally failed external work is never recreated' workers/intelligence-history-orchestrator.mjs
           grep -q 'normalizeRetrievalReceipt' workers/intelligence-retrieval-tasks.mjs
           grep -q 'requestedWindowSatisfied' workers/intelligence-retrieval-tasks.mjs
           grep -q '/api/internal/intelligence/retrieval-tasks/claim' workers/intelligence-retrieval-tasks.mjs
@@ -86,6 +90,9 @@ jobs:
           grep -q 'bridge_executor_unavailable' services/intelligence-bridge/runner.mjs
           grep -q 'provider_range_verification_required' services/intelligence-bridge/executor-contract.mjs
           grep -q 'provider_range_does_not_cover_task' services/intelligence-bridge/executor-contract.mjs
+          grep -q 'substreams_complete_range_required' services/intelligence-bridge/substreams-executor.mjs
+          grep -q 'old_faithful_complete_range_required' services/intelligence-bridge/old-faithful-executor.mjs
+          grep -q 'no_historical_bridge_executors_enabled' services/intelligence-bridge/service.mjs
           ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' services/intelligence-bridge/*.mjs
       - name: Product feature contract
         shell: bash
