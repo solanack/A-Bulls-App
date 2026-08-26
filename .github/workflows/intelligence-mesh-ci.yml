@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-history-orchestrator.mjs workers/intelligence-source-selection.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/intelligence-nft-layer.mjs workers/intelligence-operations.mjs workers/intelligence-replay-bundle.mjs workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql
+          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-history-orchestrator.mjs workers/intelligence-source-selection.mjs workers/intelligence-retrieval-tasks.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/intelligence-nft-layer.mjs workers/intelligence-operations.mjs workers/intelligence-replay-bundle.mjs workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql workers/migrations/0013_external_retrieval_tasks.sql
       - name: Migration safety contract
         shell: bash
         run: |
@@ -40,8 +40,10 @@ jobs:
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_demand_patterns' workers/migrations/0010_intelligence_mesh_runtime.sql
           grep -q 'ADD COLUMN requested_from INTEGER' workers/migrations/0012_history_job_depth.sql
           grep -q 'ADD COLUMN requested_to INTEGER' workers/migrations/0012_history_job_depth.sql
-          ! grep -Eiq 'community_integrations|ansem|bullpen' workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql
-          ! grep -Eiq 'DROP[[:space:]]+TABLE|TRUNCATE|DELETE[[:space:]]+FROM' workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql
+          grep -q 'CREATE TABLE IF NOT EXISTS intelligence_retrieval_tasks' workers/migrations/0013_external_retrieval_tasks.sql
+          grep -q 'lease_until INTEGER' workers/migrations/0013_external_retrieval_tasks.sql
+          ! grep -Eiq 'community_integrations|ansem|bullpen' workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql workers/migrations/0013_external_retrieval_tasks.sql
+          ! grep -Eiq 'DROP[[:space:]]+TABLE|TRUNCATE|DELETE[[:space:]]+FROM' workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql workers/migrations/0013_external_retrieval_tasks.sql
       - name: Progressive history contract
         shell: bash
         run: |
@@ -55,7 +57,14 @@ jobs:
           grep -q 'runSourceAwareHistoryPass' workers/intelligence-mesh-scheduler.mjs
           grep -q 'requested_from' workers/intelligence-mesh-scheduler.mjs
           grep -q 'requested_to' workers/intelligence-mesh-scheduler.mjs
-          grep -q 'intelligence_index_jobs' workers/intelligence-mesh-scheduler.mjs
+          grep -q 'waiting-external' workers/intelligence-mesh-scheduler.mjs workers/intelligence-index-job-status.mjs
+          grep -q 'INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED' workers/intelligence-retrieval-tasks.mjs
+          grep -q '/api/internal/intelligence/retrieval-tasks/claim' workers/intelligence-retrieval-tasks.mjs
+          grep -q '/api/internal/intelligence/retrieval-tasks/finish' workers/intelligence-retrieval-tasks.mjs
+          grep -q 'handleExternalRetrievalTaskRequest' workers/intelligence-worker-hooks.mjs
+          grep -q 'handleIntelligenceMeshIngestRequest' workers/intelligence-worker-hooks.mjs
+          grep -q 'handleIntelligenceAdapterRequest' workers/intelligence-worker-hooks.mjs
+          grep -q 'finishExternalRetrievalTask' workers/intelligence-adapter-router.mjs
           grep -q 'unknown-until-measured' workers/intelligence-source-selection.mjs
       - name: Product feature contract
         shell: bash
