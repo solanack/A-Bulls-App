@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { configuredRpcSources, mergeSourceHealth } from './intelligence-history-orchestrator.mjs';
+import { configuredRpcSources, mergeSourceHealth, externalHistorySource } from './intelligence-history-orchestrator.mjs';
 import { buildRetrievalPlan } from './intelligence-source-selection.mjs';
 
 test('builds executable RPC source order with duplicate URLs removed',()=>{
@@ -29,4 +29,13 @@ test('retrieval plan skips failed executable provider and keeps coverage unknown
   ],{from:now-86400,nowSeconds:now});
   assert.equal(plan.primary.name,'configured-rpc-fallback-1');
   assert.equal(plan.coverageClaim,'unknown-until-measured');
+});
+
+test('only bounded historical transports are eligible for external history execution',()=>{
+  assert.equal(externalHistorySource({kind:'substreams'}),true);
+  assert.equal(externalHistorySource({kind:'old-faithful'}),true);
+  assert.equal(externalHistorySource({kind:'archive-faithful'}),true);
+  assert.equal(externalHistorySource({kind:'yellowstone'}),false);
+  assert.equal(externalHistorySource({kind:'richat'}),false);
+  assert.equal(externalHistorySource({kind:'rpc'}),false);
 });
