@@ -44,6 +44,7 @@ The Worker must separately enable the Intelligence Mesh, external retrieval, and
 - `old-faithful-executor.mjs` is a fail-closed Old Faithful shell and preserves archive references when returned.
 - `bootstrap.mjs` enables only executors whose Worker-style feature flags are on **and** whose real transports are injected.
 - `service.mjs` creates the long-running bridge service and refuses startup when no historical executor is safely configured.
+- the service exposes frozen readiness metadata (`ready`, source kinds, `readOnly`, transport-injection state) without exposing credentials.
 
 Provider-specific network transports are intentionally not hard-coded here. They must be implemented from verified provider contracts and injected into the executor shells. Yellowstone/Richat remain live-ingest transports and are not arbitrary historical executors.
 
