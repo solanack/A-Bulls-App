@@ -15,6 +15,7 @@ export function createBridgeService({env=process.env,transports={},fetchImpl=fet
   return Object.freeze({
     config,
     executors,
+    readiness:Object.freeze({ready:true,sourceKinds,readOnly:true,providerTransportsInjected:true}),
     start:()=>runBridgeLoop({config,executors,fetchImpl,signal,intervalMs})
   });
 }
