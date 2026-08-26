@@ -4,6 +4,7 @@ import { normalizeAdapterBatch } from './intelligence-adapters.mjs';
 import { ingestIntelligenceBatch } from './intelligence-mesh-ingest.mjs';
 import { buildOhlc, persistCandles, persistTradeRoute } from './intelligence-mesh-runtime.mjs';
 import { ingestNftObservations } from './intelligence-nft-layer.mjs';
+import { finishExternalRetrievalTask } from './intelligence-retrieval-tasks.mjs';
 
 const s = v => String(v == null ? '' : v).trim();
 const n = v => Number.isFinite(Number(v)) ? Number(v) : 0;
@@ -35,6 +36,7 @@ export async function handleIntelligenceAdapterRequest(request, env = {}) {
   const source = s(payload.source || kind);
   const rows = Array.isArray(payload.rows) ? payload.rows : Array.isArray(payload.events) ? payload.events : [];
   const nftRows = Array.isArray(payload.nftRows) ? payload.nftRows : Array.isArray(payload.nft_events) ? payload.nft_events : [];
+  const taskId = Number.isInteger(Number(payload.taskId ?? payload.task_id)) && Number(payload.taskId ?? payload.task_id) > 0 ? Number(payload.taskId ?? payload.task_id) : null;
   if (!wallet) return json({ ok:false, error:'wallet_required' }, 400);
   if (!rows.length && !nftRows.length) return json({ ok:false, error:'rows_required' }, 400);
   if (rows.length > 500 || nftRows.length > 500) return json({ ok:false, error:'batch_too_large' }, 400);
@@ -67,7 +69,15 @@ export async function handleIntelligenceAdapterRequest(request, env = {}) {
     }
 
     const nftIngest = nftRows.length ? await ingestNftObservations(env, wallet, nftRows, source) : { accepted: 0 };
-    return json({ ok:true, adapter:kind, source, accepted:ingest.accepted, nftAccepted:nftIngest.accepted, routeHops, candlesWritten, verified:normalized.verified });
+    let taskCompletion = null;
+    if (taskId) {
+      try {
+        taskCompletion = await finishExternalRetrievalTask(env, { taskId, state:'complete', wallet, sourceKind:kind });
+      } catch (error) {
+        taskCompletion = { ok:false, taskId, error:s(error?.message || error) };
+      }
+    }
+    return json({ ok:true, adapter:kind, source, accepted:ingest.accepted, nftAccepted:nftIngest.accepted, routeHops, candlesWritten, verified:normalized.verified, taskCompletion });
   } catch (error) {
     return json({ ok:false, error:s(error?.message || error) }, 400);
   }
