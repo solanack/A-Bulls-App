@@ -6,7 +6,9 @@
     "node": ">=22"
   },
   "scripts": {
-    "build:experience-vendor": "node scripts/build-experience-vendor.mjs"
+    "build:experience-vendor": "node scripts/build-experience-vendor.mjs",
+    "build:worker-baseline": "node scripts/reconstruct-worker-8.2.0.mjs",
+    "test:worker-compat": "node --test workers/worker-vnext-entry.test.mjs"
   },
   "dependencies": {
     "mediabunny": "1.55.2",
