@@ -10,6 +10,7 @@ function replayBounds(bundle={}){
 }
 function beatByScene(bundle={},scene={}){const id=String(scene.id||'').replace(/^sequence-/,'');return(bundle?.marketReplay?.reconstruction?.beats||[]).find(beat=>String(beat.id)===id)||null;}
 function idsFromBeat(beat){return Object.freeze([...(beat?.evidenceIds||[])].map(String).filter(Boolean));}
+function candleCount(bundle,from,to,quoteMint){if(!quoteMint)return 0;return(bundle.candles||[]).filter(item=>{const t=finite(item?.timestamp);return t!=null&&t>=from&&t<=to;}).length;}
 
 export function buildTokenSequenceSceneRuntime(bundle={},manifest={}){
   if(manifest?.storyType!=='token-sequence')return Object.freeze([]);
@@ -20,11 +21,12 @@ export function buildTokenSequenceSceneRuntime(bundle={},manifest={}){
     const type=text(scene.type),beat=beatByScene(bundle,scene),base={sceneId:text(scene.id),type,evidenceCount:(manifest.evidence||[]).length,quoteMint:quoteMint||null,bucketSeconds};
     if(type==='market-hook'||type==='market-sequence')return Object.freeze({...base,mode:'market-window',from:bounds.from,to:bounds.to,eventIds:type==='market-hook'?Object.freeze(allEventIds.slice(0,Math.min(40,allEventIds.length))):allEventIds,candleCount:(bundle.candles||[]).length});
     if(type==='sequence-opening'){const eventIds=idsFromBeat(beat);return Object.freeze({...base,mode:'focus-event',from:bounds.from,to:bounds.to,focusId:eventIds[0]||null,eventIds,candleCount:0});}
-    if(type==='market-phase'){const eventIds=idsFromBeat(beat),from=finite(beat?.from)??bounds.from,to=finite(beat?.to)??bounds.to;return Object.freeze({...base,mode:'market-window',phaseId:text(beat?.id)||null,phaseLabel:text(beat?.title)||null,from,to,eventIds,candleCount:quoteMint?(bundle.candles||[]).filter(item=>{const t=finite(item?.timestamp);return t!=null&&t>=from&&t<=to;}).length:0});}
+    if(type==='market-phase'){const eventIds=idsFromBeat(beat),from=finite(beat?.from)??bounds.from,to=finite(beat?.to)??bounds.to;return Object.freeze({...base,mode:'market-window',phaseId:text(beat?.id)||null,phaseLabel:text(beat?.title)||null,from,to,eventIds,candleCount:candleCount(bundle,from,to,quoteMint)});}
+    if(type==='phase-transition'){const eventIds=idsFromBeat(beat),from=finite(beat?.from)??bounds.from,to=finite(beat?.to)??bounds.to;return Object.freeze({...base,mode:'market-window',transitionId:text(beat?.id)||null,transitionLabel:text(beat?.title)||null,from,to,eventIds,candleCount:candleCount(bundle,from,to,quoteMint),transition:beat?.transition?Object.freeze({...beat.transition}):null});}
     if(type==='selected-price-movement')return Object.freeze({...base,mode:quoteMint?'price-aftermath':'evidence-close',from:bounds.from,to:bounds.to,eventIds:Object.freeze([]),candleCount:quoteMint?(bundle.candles||[]).length:0});
     if(['participant-chronology','participation-expansion','largest-observed-trade','program-context-change','direction-mix'].includes(type)){const eventIds=idsFromBeat(beat);return Object.freeze({...base,mode:'market-window',from:bounds.from,to:finite(beat?.timestamp)??bounds.to,eventIds:eventIds.length?eventIds:allEventIds,candleCount:quoteMint?(bundle.candles||[]).length:0});}
     return Object.freeze({...base,mode:'evidence-close',from:null,to:null,eventIds:Object.freeze([]),candleCount:0});
   }));
 }
 
-export const TokenSequenceRuntimeDisclosure='Token-sequence scenes visualize only indexed events in the bounded replay window. Neutral phase scenes are calculated time partitions, not market-regime labels. Price motion is present only when an explicit quote market was selected.';
+export const TokenSequenceRuntimeDisclosure='Token-sequence scenes visualize only indexed events in the bounded replay window. Neutral phase and phase-transition scenes are descriptive calculations, not market-regime labels. Price motion is present only when an explicit quote market was selected.';
