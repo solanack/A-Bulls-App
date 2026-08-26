@@ -6,6 +6,7 @@ import { intelligenceDb } from './intelligence-indexer.mjs';
 import { runSourceAwareHistoryPass } from './intelligence-history-orchestrator.mjs';
 
 const n = v => Number.isFinite(Number(v)) ? Number(v) : 0;
+const finite = v => v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const s = v => String(v == null ? '' : v).trim();
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -20,18 +21,24 @@ export function marketBackfillQueueEnabled(env = {}) {
 export async function queueHistoryJob(env = {}, wallet = '', options = {}) {
   const db = intelligenceDb(env);
   if (!db) throw new Error('Intelligence database binding is unavailable.');
+  const requestedFrom=finite(options.requestedFrom),requestedTo=finite(options.requestedTo);
   const existing = await db.prepare(`
-    SELECT id,state,cursor_before,page_size FROM intelligence_index_jobs
+    SELECT id,state,cursor_before,page_size,requested_from,requested_to FROM intelligence_index_jobs
     WHERE wallet=? AND job_type='wallet-backfill' AND state IN ('queued','running')
     ORDER BY updated_at DESC LIMIT 1
   `).bind(s(wallet)).first();
-  if (existing?.id) return { jobId: existing.id, state: existing.state, reused: true };
+  if (existing?.id) {
+    const widenedFrom=requestedFrom==null?finite(existing.requested_from):existing.requested_from==null?requestedFrom:Math.min(Number(existing.requested_from),requestedFrom);
+    const widenedTo=requestedTo==null?finite(existing.requested_to):existing.requested_to==null?requestedTo:Math.max(Number(existing.requested_to),requestedTo);
+    await db.prepare(`UPDATE intelligence_index_jobs SET requested_from=?,requested_to=?,updated_at=unixepoch() WHERE id=?`).bind(widenedFrom,widenedTo,existing.id).run();
+    return { jobId: existing.id, state: existing.state, reused: true, requestedFrom:widenedFrom, requestedTo:widenedTo };
+  }
   const pageSize = Math.max(1, Math.min(50, Math.round(n(options.pageSize || 25))));
   const result = await db.prepare(`
-    INSERT INTO intelligence_index_jobs(wallet,job_type,state,cursor_before,page_size,next_attempt_at,created_at,updated_at)
-    VALUES(?,'wallet-backfill','queued',?,?,unixepoch(),unixepoch(),unixepoch())
-  `).bind(s(wallet), s(options.before) || null, pageSize).run();
-  return { jobId: result?.meta?.last_row_id || null, state: 'queued', reused: false };
+    INSERT INTO intelligence_index_jobs(wallet,job_type,state,cursor_before,page_size,requested_from,requested_to,next_attempt_at,created_at,updated_at)
+    VALUES(?,'wallet-backfill','queued',?,?,?,?,unixepoch(),unixepoch(),unixepoch())
+  `).bind(s(wallet), s(options.before) || null, pageSize, requestedFrom, requestedTo).run();
+  return { jobId: result?.meta?.last_row_id || null, state: 'queued', reused: false, requestedFrom, requestedTo };
 }
 
 export async function queueMarketBackfillCandidates(env = {}, plan = {}, options = {}) {
@@ -43,7 +50,7 @@ export async function queueMarketBackfillCandidates(env = {}, plan = {}, options
   for (const candidate of candidates.slice(0, limit)) {
     const wallet = s(candidate?.wallet);
     if (!wallet) continue;
-    const job = await queueHistoryJob(env, wallet, { pageSize });
+    const job = await queueHistoryJob(env, wallet, { pageSize, requestedFrom:finite(plan.requestFrom??candidate?.requestFrom), requestedTo:finite(plan.requestTo) });
     jobs.push({ wallet, reason: s(candidate?.reason) || 'market-backfill-plan', ...job });
   }
   return { ok: true, enabled: true, queued: jobs.filter(job => !job.reused).length, reused: jobs.filter(job => job.reused).length, jobs };
@@ -51,7 +58,7 @@ export async function queueMarketBackfillCandidates(env = {}, plan = {}, options
 
 async function claimJobs(db, limit = 2) {
   const rows = await db.prepare(`
-    SELECT id,wallet,cursor_before,page_size FROM intelligence_index_jobs
+    SELECT id,wallet,cursor_before,page_size,requested_from,requested_to FROM intelligence_index_jobs
     WHERE state='queued' AND (next_attempt_at IS NULL OR next_attempt_at<=?)
     ORDER BY updated_at ASC LIMIT ?
   `).bind(now(), Math.max(1, Math.min(5, n(limit) || 2))).all();
@@ -83,7 +90,9 @@ export async function runIntelligenceMeshScheduler(env = {}, options = {}) {
     try {
       const result = await runSourceAwareHistoryPass(env, job.wallet, {
         before: job.cursor_before || '',
-        pageSize: job.page_size || 25
+        pageSize: job.page_size || 25,
+        from: finite(job.requested_from),
+        to: finite(job.requested_to)
       });
       await patchJob(db, job.id, {
         state: result.complete ? 'complete' : 'queued',
@@ -94,14 +103,14 @@ export async function runIntelligenceMeshScheduler(env = {}, options = {}) {
         source: result.source,
         nextAttemptAt: result.complete ? null : now() + 15
       });
-      results.push({ jobId: job.id, wallet: job.wallet, ...result });
+      results.push({ jobId: job.id, wallet: job.wallet, requestedFrom:finite(job.requested_from), requestedTo:finite(job.requested_to), ...result });
     } catch (error) {
       await patchJob(db, job.id, {
         state: 'queued',
         error: s(error?.message || error),
         nextAttemptAt: now() + 120
       });
-      results.push({ jobId: job.id, wallet: job.wallet, ok: false, error: s(error?.message || error), attempts: Array.isArray(error?.attempts) ? error.attempts : [] });
+      results.push({ jobId: job.id, wallet: job.wallet, requestedFrom:finite(job.requested_from), requestedTo:finite(job.requested_to), ok: false, error: s(error?.message || error), attempts: Array.isArray(error?.attempts) ? error.attempts : [] });
     }
   }
 
