@@ -3,7 +3,7 @@
  */
 
 import { intelligenceDb } from './intelligence-indexer.mjs';
-import { backfillHistoryPass } from './intelligence-history-engine.mjs';
+import { runSourceAwareHistoryPass } from './intelligence-history-orchestrator.mjs';
 
 const n = v => Number.isFinite(Number(v)) ? Number(v) : 0;
 const s = v => String(v == null ? '' : v).trim();
@@ -81,7 +81,7 @@ export async function runIntelligenceMeshScheduler(env = {}, options = {}) {
   for (const job of jobs) {
     await patchJob(db, job.id, { state: 'running' });
     try {
-      const result = await backfillHistoryPass(env, job.wallet, {
+      const result = await runSourceAwareHistoryPass(env, job.wallet, {
         before: job.cursor_before || '',
         pageSize: job.page_size || 25
       });
@@ -101,7 +101,7 @@ export async function runIntelligenceMeshScheduler(env = {}, options = {}) {
         error: s(error?.message || error),
         nextAttemptAt: now() + 120
       });
-      results.push({ jobId: job.id, wallet: job.wallet, ok: false, error: s(error?.message || error) });
+      results.push({ jobId: job.id, wallet: job.wallet, ok: false, error: s(error?.message || error), attempts: Array.isArray(error?.attempts) ? error.attempts : [] });
     }
   }
 
