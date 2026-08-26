@@ -7,7 +7,7 @@ export function describeMarketIndexDepth(result={}){
   const plan=result?.plan||{},candidates=Math.max(0,Number(plan.candidateCount)||0),unknown=Math.max(0,Number(result?.unknownCoverageWallets)||0),observed=Math.max(0,Number(result?.observedWalletRows)||0);
   if(!observed)return Object.freeze({state:'no-observed-wallets',headline:'NO OBSERVED WALLETS TO DEEPEN',detail:'This replay has no observed-wallet rows from which to plan older-history indexing.',candidates,unknown});
   if(!candidates)return Object.freeze({state:'no-older-history-candidates',headline:'NO OLDER-HISTORY CANDIDATES',detail:unknown?`${unknown} observed ${unknown===1?'wallet has':'wallets have'} unknown coverage metadata, but the current schema does not justify guessing a backfill range for them.`:'No observed wallet currently meets the strict older-history candidate rule for this replay window.',candidates,unknown});
-  return Object.freeze({state:'candidates',headline:`${candidates} OLDER-HISTORY ${candidates===1?'CANDIDATE':'CANDIDATES'}`,detail:`These are planning candidates only. They indicate that the current oldest indexed point is newer than the requested start and history is not marked complete to genesis.`,candidates,unknown});
+  return Object.freeze({state:'candidates',headline:`${candidates} OLDER-HISTORY ${candidates===1?'CANDIDATE':'CANDIDATES'}`,detail:'These are planning candidates only. They indicate that the current oldest indexed point is newer than the requested start and history is not marked complete to genesis.',candidates,unknown});
 }
 
 export function createMarketIndexDepthPanel({apiBase,mint,from,to}={}){
@@ -35,4 +35,14 @@ export function createMarketIndexDepthPanel({apiBase,mint,from,to}={}){
     }catch(error){copy.replaceChildren(node('small','','INDEX DEPTH'),node('strong','','INDEX DEPTH UNAVAILABLE'),node('p','',error?.message==='feature_disabled'?'Index-depth planning remains disabled at the Worker.':`Index-depth planning could not be loaded: ${error?.message||'unknown error'}`));}
   })();
   return root;
+}
+
+export function attachMarketIndexDepthPanel({apiBase,bundle}={}){
+  if(typeof document==='undefined'||!bundle?.subject?.mint||!bundle?.window)return null;
+  const workspace=document.querySelector('.token-market-workspace .intelligence-results');if(!workspace)return null;
+  workspace.querySelector('.market-index-depth')?.remove();
+  const panel=createMarketIndexDepthPanel({apiBase,mint:bundle.subject.mint,from:bundle.window.from,to:bundle.window.to});
+  const coverage=workspace.querySelector('.intelligence-context-block');
+  if(coverage?.parentNode===workspace)coverage.after(panel);else workspace.prepend(panel);
+  return panel;
 }
