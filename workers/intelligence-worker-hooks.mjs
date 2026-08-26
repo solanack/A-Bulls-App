@@ -10,6 +10,7 @@ import { handleReplayBundleRequest } from './intelligence-replay-bundle.mjs';
 import { handleMarketReplayRequest } from './intelligence-market-replay.mjs';
 import { handleMarketBackfillPlanRequest } from './intelligence-market-backfill-router.mjs';
 import { handleMarketBackfillRequest } from './intelligence-market-backfill-request.mjs';
+import { handleIndexJobStatusRequest } from './intelligence-index-job-status.mjs';
 import { handleWalletTokenIndexRequest } from './intelligence-wallet-token-index.mjs';
 import { handleEventMarketContextRequest } from './intelligence-event-context.mjs';
 import { pruneUniverseObservations } from './intelligence-universe-runtime.mjs';
@@ -27,6 +28,8 @@ export async function handleIntelligenceFetch(request, env = {}) {
   if (marketBackfillPlan) return marketBackfillPlan;
   const marketBackfillRequest = await handleMarketBackfillRequest(request, env);
   if (marketBackfillRequest) return marketBackfillRequest;
+  const indexJobStatus = await handleIndexJobStatusRequest(request, env);
+  if (indexJobStatus) return indexJobStatus;
   const replay = await handleReplayBundleRequest(request, env);
   if (replay) return replay;
   const trickster = await handleTricksterRequest(request, env);
