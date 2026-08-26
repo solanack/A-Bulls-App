@@ -101,6 +101,15 @@ export function replayEffectForEvent(event,{referenceUsd=1000}={}) {
   return Object.freeze({kind:'pulse',tone:'neutral',intensity,hue:'neutral'});
 }
 
+export function dispatchTemporalReplayEvents(events=[],target=globalThis) {
+  if(!Array.isArray(events)||!events.length)return Object.freeze([]);
+  const frozen=Object.freeze([...events]);
+  if(typeof target?.dispatchEvent==='function'&&typeof CustomEvent==='function')target.dispatchEvent(new CustomEvent('abulls:temporal-replay-events',{detail:{events:frozen}}));
+  return frozen;
+}
+
+export const TemporalReplayEvent='abulls:temporal-replay-events';
+
 export class TemporalReplayController {
   constructor(timeline,{rate=1,loop=false}={}) {
     if(!timeline?.allowedRates) throw new TypeError('replay timeline is required');
@@ -159,7 +168,9 @@ export class TemporalReplayController {
       if(next>=this.timeline.durationMs) this.playing=false;
     }
     this.playheadMs=next;
-    return Object.freeze({snapshot:this.snapshot(),events:Object.freeze(emitted)});
+    const frozenEvents=Object.freeze(emitted);
+    dispatchTemporalReplayEvents(frozenEvents);
+    return Object.freeze({snapshot:this.snapshot(),events:frozenEvents});
   }
 
   snapshot() {
