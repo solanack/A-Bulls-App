@@ -28,9 +28,10 @@ const FRAMES=Object.freeze({
   'evidence-close':90
 });
 const phaseBeat=id=>/^phase-[1-3]$/.test(String(id||''));
-const claimForBeat=id=>phaseBeat(id)?`sequence-${id}`:CLAIM_BY_BEAT[id];
-const typeForBeat=id=>phaseBeat(id)?'market-phase':TYPE_BY_BEAT[id];
-const framesForBeat=id=>phaseBeat(id)?120:(FRAMES[id]||90);
+const transitionBeat=id=>/^phase-transition-[1-2]$/.test(String(id||''));
+const claimForBeat=id=>(phaseBeat(id)||transitionBeat(id))?`sequence-${id}`:CLAIM_BY_BEAT[id];
+const typeForBeat=id=>phaseBeat(id)?'market-phase':transitionBeat(id)?'phase-transition':TYPE_BY_BEAT[id];
+const framesForBeat=id=>phaseBeat(id)?120:transitionBeat(id)?120:(FRAMES[id]||90);
 
 export function tokenSequenceScenePlan(bundle={}){
   const reconstruction=bundle?.marketReplay?.reconstruction;
