@@ -42,6 +42,8 @@ jobs:
           grep -q 'ADD COLUMN requested_to INTEGER' workers/migrations/0012_history_job_depth.sql
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_retrieval_tasks' workers/migrations/0013_external_retrieval_tasks.sql
           grep -q 'lease_until INTEGER' workers/migrations/0013_external_retrieval_tasks.sql
+          grep -q 'range_verified INTEGER' workers/migrations/0013_external_retrieval_tasks.sql
+          grep -q 'result_json TEXT' workers/migrations/0013_external_retrieval_tasks.sql
           ! grep -Eiq 'community_integrations|ansem|bullpen' workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql workers/migrations/0013_external_retrieval_tasks.sql
           ! grep -Eiq 'DROP[[:space:]]+TABLE|TRUNCATE|DELETE[[:space:]]+FROM' workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql workers/migrations/0013_external_retrieval_tasks.sql
       - name: Progressive history contract
@@ -52,6 +54,8 @@ jobs:
           grep -q 'getTransaction' workers/intelligence-history-engine.mjs
           grep -q 'INTELLIGENCE_RPC_URL' workers/intelligence-history-orchestrator.mjs
           grep -q 'INTELLIGENCE_RPC_FALLBACK_URLS' workers/intelligence-history-orchestrator.mjs
+          grep -q 'INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED' workers/intelligence-history-orchestrator.mjs
+          grep -q 'INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED' workers/intelligence-history-orchestrator.mjs
           grep -q 'loadObservedSourceHealth' workers/intelligence-history-orchestrator.mjs
           grep -q 'buildRetrievalPlan' workers/intelligence-history-orchestrator.mjs
           grep -q 'runSourceAwareHistoryPass' workers/intelligence-mesh-scheduler.mjs
@@ -59,12 +63,15 @@ jobs:
           grep -q 'requested_to' workers/intelligence-mesh-scheduler.mjs
           grep -q 'waiting-external' workers/intelligence-mesh-scheduler.mjs workers/intelligence-index-job-status.mjs
           grep -q 'INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED' workers/intelligence-retrieval-tasks.mjs
+          grep -q 'normalizeRetrievalReceipt' workers/intelligence-retrieval-tasks.mjs
+          grep -q 'requestedWindowSatisfied' workers/intelligence-retrieval-tasks.mjs
           grep -q '/api/internal/intelligence/retrieval-tasks/claim' workers/intelligence-retrieval-tasks.mjs
           grep -q '/api/internal/intelligence/retrieval-tasks/finish' workers/intelligence-retrieval-tasks.mjs
           grep -q 'handleExternalRetrievalTaskRequest' workers/intelligence-worker-hooks.mjs
           grep -q 'handleIntelligenceMeshIngestRequest' workers/intelligence-worker-hooks.mjs
           grep -q 'handleIntelligenceAdapterRequest' workers/intelligence-worker-hooks.mjs
           grep -q 'finishExternalRetrievalTask' workers/intelligence-adapter-router.mjs
+          grep -q 'rangeVerified' workers/intelligence-adapter-router.mjs
           grep -q 'unknown-until-measured' workers/intelligence-source-selection.mjs
       - name: Product feature contract
         shell: bash
