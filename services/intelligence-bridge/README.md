@@ -46,7 +46,7 @@ The Worker must separately enable the Intelligence Mesh, external retrieval, and
 - `service.mjs` creates the long-running bridge service and refuses startup when no historical executor is safely configured.
 - the service exposes frozen readiness metadata (`ready`, source kinds, `readOnly`, transport-injection state) without exposing credentials.
 
-Provider-specific network transports are intentionally not hard-coded here. They must be implemented from verified provider contracts and injected into the executor shells. Yellowstone/Richat remain live-ingest transports and are not arbitrary historical executors.
+Provider-specific network transports are intentionally **pending verified provider contracts**. They are not hard-coded or guessed in this branch. Once a concrete Substreams or Old Faithful endpoint/auth/query contract is verified, that transport can be injected behind the existing executor shell without changing task, evidence, coverage, or safety semantics. Yellowstone/Richat remain live-ingest transports and are not arbitrary historical executors.
 
 ## Validation
 
