@@ -59,7 +59,9 @@ export function buildFieldInvestigationHub({focusEntity,entities=[],relations=[]
   const nodes=[...connectedIds].map(id=>entitiesById.get(id)).filter(Boolean).map(entity=>Object.freeze({
     id:text(entity.id),kind:text(entity.kind||'cluster'),category:text(entity.category||'unknown'),
     verificationState:text(entity.verificationState||'observed'),position:Object.freeze(Array.isArray(entity.position)?entity.position.slice(0,3).map(value=>finite(value)): [0,0,0]),
-    focused:text(entity.id)===focusId
+    focused:text(entity.id)===focusId,
+    evidenceIds:Object.freeze(edges.filter(edge=>edge.sourceId===text(entity.id)||edge.targetId===text(entity.id)).map(edge=>edge.evidenceId)),
+    relationKinds:Object.freeze([...new Set(edges.filter(edge=>edge.sourceId===text(entity.id)||edge.targetId===text(entity.id)).map(edge=>edge.relationKind))])
   }));
   return Object.freeze({
     focusId,focusKind:text(focusEntity.kind||'cluster'),nodes:Object.freeze(nodes),edges:Object.freeze(edges),actions:ACTIONS,

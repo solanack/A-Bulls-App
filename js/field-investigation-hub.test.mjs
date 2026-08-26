@@ -55,4 +55,6 @@ test('preserves the normalized relation kind without interpreting it',()=>{
     {sourceId:'wallet-a',targetId:'tx-b',evidenceId:'e-2',relationKind:'program-invocation'}
   ]});
   assert.equal(hub.edges[0].relationKind,'program-invocation');
+  assert.deepEqual(hub.nodes.find(node=>node.id==='tx-b').evidenceIds,['e-2']);
+  assert.deepEqual(hub.nodes.find(node=>node.id==='tx-b').relationKinds,['program-invocation']);
 });
