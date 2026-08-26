@@ -13,6 +13,10 @@ export function schedulerEnabled(env = {}) {
   return String(env.INTELLIGENCE_MESH_ENABLED || '').toLowerCase() === 'true';
 }
 
+export function marketBackfillQueueEnabled(env = {}) {
+  return schedulerEnabled(env) && String(env.MARKET_BACKFILL_QUEUE_ENABLED || '').toLowerCase() === 'true';
+}
+
 export async function queueHistoryJob(env = {}, wallet = '', options = {}) {
   const db = intelligenceDb(env);
   if (!db) throw new Error('Intelligence database binding is unavailable.');
@@ -28,6 +32,21 @@ export async function queueHistoryJob(env = {}, wallet = '', options = {}) {
     VALUES(?,'wallet-backfill','queued',?,?,unixepoch(),unixepoch(),unixepoch())
   `).bind(s(wallet), s(options.before) || null, pageSize).run();
   return { jobId: result?.meta?.last_row_id || null, state: 'queued', reused: false };
+}
+
+export async function queueMarketBackfillCandidates(env = {}, plan = {}, options = {}) {
+  if (!marketBackfillQueueEnabled(env)) return { ok: true, enabled: false, queued: 0, jobs: [] };
+  const candidates = Array.isArray(plan?.candidates) ? plan.candidates : [];
+  const limit = Math.max(0, Math.min(10, Math.trunc(n(options.limit == null ? 2 : options.limit))));
+  const pageSize = Math.max(1, Math.min(50, Math.round(n(options.pageSize || 25))));
+  const jobs = [];
+  for (const candidate of candidates.slice(0, limit)) {
+    const wallet = s(candidate?.wallet);
+    if (!wallet) continue;
+    const job = await queueHistoryJob(env, wallet, { pageSize });
+    jobs.push({ wallet, reason: s(candidate?.reason) || 'market-backfill-plan', ...job });
+  }
+  return { ok: true, enabled: true, queued: jobs.filter(job => !job.reused).length, reused: jobs.filter(job => job.reused).length, jobs };
 }
 
 async function claimJobs(db, limit = 2) {
