@@ -26,6 +26,7 @@ test('reconstructed scenes focus only the evidence assigned to each beat',()=>{
   const reconstructed={...bundle,marketReplay:{reconstruction:{beats:[
     {id:'opening-event',timestamp:1000,evidenceIds:['a']},
     {id:'phase-1',title:'PHASE 1',from:1000,to:3000,evidenceIds:['a','b']},
+    {id:'phase-transition-1',title:'PHASE 1 → PHASE 2',from:1000,to:5000,evidenceIds:['a','b','c'],transition:{eventDelta:1,walletDelta:1}},
     {id:'participation-expansion',timestamp:3000,evidenceIds:['a','b']},
     {id:'largest-token-delta',timestamp:5000,evidenceIds:['c']},
     {id:'evidence-close',timestamp:5000,evidenceIds:['a','b','c']}
@@ -33,6 +34,7 @@ test('reconstructed scenes focus only the evidence assigned to each beat',()=>{
   const reconstructedManifest={storyType:'token-sequence',evidence:[{id:'e1'}],scenes:[
     {id:'sequence-opening-event',type:'sequence-opening'},
     {id:'sequence-phase-1',type:'market-phase'},
+    {id:'sequence-phase-transition-1',type:'phase-transition'},
     {id:'sequence-participation-expansion',type:'participation-expansion'},
     {id:'sequence-largest-token-delta',type:'largest-observed-trade'},
     {id:'sequence-evidence-close',type:'evidence-summary'}
@@ -45,10 +47,16 @@ test('reconstructed scenes focus only the evidence assigned to each beat',()=>{
   assert.equal(runtime[1].from,1000);
   assert.equal(runtime[1].to,3000);
   assert.deepEqual(runtime[1].eventIds,['a','b']);
-  assert.deepEqual(runtime[2].eventIds,['a','b']);
-  assert.equal(runtime[2].to,3000);
-  assert.deepEqual(runtime[3].eventIds,['c']);
-  assert.equal(runtime[4].mode,'evidence-close');
+  assert.equal(runtime[2].transitionId,'phase-transition-1');
+  assert.equal(runtime[2].transitionLabel,'PHASE 1 → PHASE 2');
+  assert.equal(runtime[2].from,1000);
+  assert.equal(runtime[2].to,5000);
+  assert.deepEqual(runtime[2].eventIds,['a','b','c']);
+  assert.equal(runtime[2].transition.eventDelta,1);
+  assert.deepEqual(runtime[3].eventIds,['a','b']);
+  assert.equal(runtime[3].to,3000);
+  assert.deepEqual(runtime[4].eventIds,['c']);
+  assert.equal(runtime[5].mode,'evidence-close');
 });
 
 test('selected price-movement scene fails closed without explicit quote selection',()=>{
