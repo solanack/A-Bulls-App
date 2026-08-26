@@ -1,4 +1,4 @@
-import { attachMarketIndexDepthPanel } from './market-index-depth-panel.mjs';
+import { attachMarketBackfillPlanPanel } from './market-backfill-plan-panel.mjs';
 
 const trim=value=>String(value==null?'':value).trim();
 
@@ -10,7 +10,7 @@ export class MarketReplayClient{
     let payload={};try{payload=await response.json();}catch{}
     if(!response.ok||payload?.ok!==true)throw Object.assign(new Error(payload?.error||`market_replay_${response.status}`),{status:response.status,payload});
     const bundle=payload.bundle;
-    if(typeof document!=='undefined'&&typeof setTimeout==='function')setTimeout(()=>attachMarketIndexDepthPanel({apiBase:this.#baseUrl,bundle}),0);
+    if(typeof document!=='undefined'&&typeof setTimeout==='function')setTimeout(()=>attachMarketBackfillPlanPanel({apiBase:this.#baseUrl,bundle}),0);
     return bundle;
   }
 }
