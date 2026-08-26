@@ -23,12 +23,12 @@ jobs:
           for f in js/intelligence-workspace-*.mjs js/replay-*.mjs js/trade-*.mjs js/temporal-*.mjs; do
             [ -e "$f" ] && node --check "$f"
           done
-          node --check services/intelligence-bridge/runner.mjs
+          for f in services/intelligence-bridge/*.mjs; do node --check "$f"; done
       - name: Unit tests
         run: |
           node --test workers/intelligence-*.test.mjs
           node --test js/temporal-replay-engine.test.mjs js/trade-comparison-replay.test.mjs
-          node --test services/intelligence-bridge/runner.test.mjs
+          node --test services/intelligence-bridge/*.test.mjs
       - name: Neutral data contract
         shell: bash
         run: |
@@ -81,8 +81,11 @@ jobs:
           set -euo pipefail
           grep -q 'retrieval-tasks/claim' services/intelligence-bridge/runner.mjs
           grep -q 'retrieval-tasks/finish' services/intelligence-bridge/runner.mjs
-          grep -q 'rangeVerified' services/intelligence-bridge/runner.mjs
+          grep -q 'receiptSatisfiesTask' services/intelligence-bridge/runner.mjs
+          grep -q 'bridge_verified_range_required' services/intelligence-bridge/runner.mjs
           grep -q 'bridge_executor_unavailable' services/intelligence-bridge/runner.mjs
+          grep -q 'provider_range_verification_required' services/intelligence-bridge/executor-contract.mjs
+          grep -q 'provider_range_does_not_cover_task' services/intelligence-bridge/executor-contract.mjs
           ! grep -Eiq 'sendTransaction|signTransaction|secretKey|seed phrase|private[_ -]?key' services/intelligence-bridge/*.mjs
       - name: Product feature contract
         shell: bash
