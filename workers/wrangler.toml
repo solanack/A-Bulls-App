@@ -13,6 +13,7 @@ ALLOWED_ORIGINS = "https://abullsapp.com,https://www.abullsapp.com,https://black
 # vNext server products remain fail-closed until explicitly enabled after migration/verification.
 UNIVERSE_ENABLED = "false"
 TRICKSTER_STUDIO_ENABLED = "false"
+TRICKSTER_SHARE_ENABLED = "false"
 PLAYABLE_DATA_ENABLED = "false"
 INTELLIGENCE_MESH_ENABLED = "false"
 MARKET_BACKFILL_QUEUE_ENABLED = "false"
