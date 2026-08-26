@@ -10,6 +10,7 @@ const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:
 function bearer(request){const header=s(request.headers.get('authorization'));return header.toLowerCase().startsWith('bearer ')?header.slice(7).trim():'';}
 function authorized(request,env={}){const expected=s(env.INTELLIGENCE_MESH_INGEST_TOKEN),supplied=bearer(request);return Boolean(expected)&&expected.length===supplied.length&&expected===supplied;}
 export function externalRetrievalEnabled(env={}){return s(env.INTELLIGENCE_MESH_ENABLED).toLowerCase()==='true'&&s(env.INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED).toLowerCase()==='true';}
+export function externalRetrievalMaxAttempts(env={}){return Math.max(1,Math.min(10,Math.trunc(Number(env.INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS)||4)));}
 
 export function normalizeRetrievalTaskInput(input={}){
   const wallet=s(input.wallet),source=s(input.source),sourceKind=s(input.sourceKind||input.source_kind).toLowerCase(),from=finite(input.requestedFrom??input.from),to=finite(input.requestedTo??input.to),indexJobId=finite(input.indexJobId??input.index_job_id);
@@ -41,11 +42,11 @@ export async function claimExternalRetrievalTasks(env={},input={}){
   if(!externalRetrievalEnabled(env))return Object.freeze({ok:true,enabled:false,tasks:Object.freeze([])});
   const db=intelligenceDb(env);if(!db)throw new Error('intelligence_db_unavailable');
   const allowedKinds=(Array.isArray(input.sourceKinds)?input.sourceKinds:[]).map(x=>s(x).toLowerCase()).filter(x=>SOURCE_KINDS.has(x));
-  const limit=Math.max(1,Math.min(5,Math.trunc(Number(input.limit)||1))),leaseSeconds=Math.max(30,Math.min(300,Math.trunc(Number(input.leaseSeconds)||120))),ts=now();
-  const rows=await db.prepare(`SELECT id,index_job_id,wallet,source,source_kind,requested_from,requested_to,state,lease_until,attempts FROM intelligence_retrieval_tasks WHERE ((state='queued' AND (next_attempt_at IS NULL OR next_attempt_at<=?)) OR (state='leased' AND lease_until IS NOT NULL AND lease_until<=?)) ORDER BY updated_at ASC LIMIT 25`).bind(ts,ts).all();
+  const limit=Math.max(1,Math.min(5,Math.trunc(Number(input.limit)||1))),leaseSeconds=Math.max(30,Math.min(300,Math.trunc(Number(input.leaseSeconds)||120))),ts=now(),maxAttempts=externalRetrievalMaxAttempts(env);
+  const rows=await db.prepare(`SELECT id,index_job_id,wallet,source,source_kind,requested_from,requested_to,state,lease_until,attempts FROM intelligence_retrieval_tasks WHERE attempts<? AND ((state='queued' AND (next_attempt_at IS NULL OR next_attempt_at<=?)) OR (state='leased' AND lease_until IS NOT NULL AND lease_until<=?)) ORDER BY updated_at ASC LIMIT 25`).bind(maxAttempts,ts,ts).all();
   const selected=(rows?.results||[]).filter(row=>!allowedKinds.length||allowedKinds.includes(s(row.source_kind).toLowerCase())).slice(0,limit),tasks=[];
-  for(const row of selected){const leaseUntil=ts+leaseSeconds;await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='leased',lease_until=?,attempts=attempts+1,updated_at=unixepoch() WHERE id=?`).bind(leaseUntil,row.id).run();tasks.push(Object.freeze({taskId:Number(row.id),indexJobId:finite(row.index_job_id),wallet:s(row.wallet),source:s(row.source),sourceKind:s(row.source_kind),requestedFrom:finite(row.requested_from),requestedTo:finite(row.requested_to),leaseUntil,attempt:Number(row.attempts||0)+1}));}
-  return Object.freeze({ok:true,enabled:true,tasks:Object.freeze(tasks),disclosure:'Tasks contain only bounded public-wallet retrieval coordinates. Claiming a task does not assert that the requested interval contains transactions or that the selected source has complete coverage.'});
+  for(const row of selected){const leaseUntil=ts+leaseSeconds;await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='leased',lease_until=?,attempts=attempts+1,updated_at=unixepoch() WHERE id=?`).bind(leaseUntil,row.id).run();tasks.push(Object.freeze({taskId:Number(row.id),indexJobId:finite(row.index_job_id),wallet:s(row.wallet),source:s(row.source),sourceKind:s(row.source_kind),requestedFrom:finite(row.requested_from),requestedTo:finite(row.requested_to),leaseUntil,attempt:Number(row.attempts||0)+1,maxAttempts}));}
+  return Object.freeze({ok:true,enabled:true,tasks:Object.freeze(tasks),maxAttempts,disclosure:'Tasks contain only bounded public-wallet retrieval coordinates. Claiming a task does not assert that the requested interval contains transactions or that the selected source has complete coverage.'});
 }
 
 export async function finishExternalRetrievalTask(env={},input={}){
@@ -54,7 +55,7 @@ export async function finishExternalRetrievalTask(env={},input={}){
   const taskId=finite(input.taskId??input.id);if(taskId==null||taskId<1||!Number.isInteger(taskId))throw new Error('task_id_required');
   const state=s(input.state||'complete').toLowerCase(),error=s(input.error),expectedWallet=s(input.wallet),expectedKind=s(input.sourceKind||input.source_kind).toLowerCase();
   if(state!=='complete'&&state!=='retry')throw new Error('invalid_task_state');
-  const task=await db.prepare(`SELECT id,index_job_id,wallet,source,source_kind,requested_from,requested_to,state FROM intelligence_retrieval_tasks WHERE id=? LIMIT 1`).bind(taskId).first();
+  const task=await db.prepare(`SELECT id,index_job_id,wallet,source,source_kind,requested_from,requested_to,state,attempts FROM intelligence_retrieval_tasks WHERE id=? LIMIT 1`).bind(taskId).first();
   if(!task?.id)throw new Error('task_not_found');
   if(s(task.state)!=='leased')throw new Error('task_not_leased');
   if(expectedWallet&&s(task.wallet)!==expectedWallet)throw new Error('task_wallet_mismatch');
@@ -68,8 +69,14 @@ export async function finishExternalRetrievalTask(env={},input={}){
     }
     return Object.freeze({ok:true,enabled:true,taskId,indexJobId:finite(task.index_job_id),wallet:s(task.wallet),sourceKind:s(task.source_kind),state,receipt});
   }
-  await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='queued',lease_until=NULL,last_error=?,next_attempt_at=?,updated_at=unixepoch() WHERE id=?`).bind(error||'external_retrieval_retry',now()+120,taskId).run();
-  return Object.freeze({ok:true,enabled:true,taskId,indexJobId:finite(task.index_job_id),wallet:s(task.wallet),sourceKind:s(task.source_kind),state});
+  const maxAttempts=externalRetrievalMaxAttempts(env),attempts=Math.max(0,Math.trunc(Number(task.attempts)||0)),message=error||'external_retrieval_retry';
+  if(attempts>=maxAttempts){
+    await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='failed',lease_until=NULL,last_error=?,next_attempt_at=NULL,updated_at=unixepoch() WHERE id=?`).bind(message,taskId).run();
+    if(task.index_job_id!=null)await db.prepare(`UPDATE intelligence_index_jobs SET state='queued',last_error='external_retrieval_exhausted',next_attempt_at=unixepoch(),updated_at=unixepoch() WHERE id=? AND state='waiting-external'`).bind(task.index_job_id).run();
+    return Object.freeze({ok:true,enabled:true,taskId,indexJobId:finite(task.index_job_id),wallet:s(task.wallet),sourceKind:s(task.source_kind),state:'failed',attempts,maxAttempts,error:message});
+  }
+  await db.prepare(`UPDATE intelligence_retrieval_tasks SET state='queued',lease_until=NULL,last_error=?,next_attempt_at=?,updated_at=unixepoch() WHERE id=?`).bind(message,now()+120,taskId).run();
+  return Object.freeze({ok:true,enabled:true,taskId,indexJobId:finite(task.index_job_id),wallet:s(task.wallet),sourceKind:s(task.source_kind),state,attempts,maxAttempts});
 }
 
 export async function handleExternalRetrievalTaskRequest(request,env={}){
