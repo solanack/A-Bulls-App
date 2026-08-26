@@ -1,5 +1,10 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {fieldReplayEffect,fieldReplayBurst} from './field-replay-effects.mjs';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {fieldReplayEffect,fieldReplayBurst,resolveFieldEffectAnchor} from './field-replay-effects.mjs';
+
 test('buys and sells become semantic field lightning without inventing values',()=>{const buy=fieldReplayEffect({id:'b',side:'buy',valueUsd:500,verification:'observed'}),sell=fieldReplayEffect({id:'s',side:'sell',valueUsd:5000,verification:'observed'});assert.equal(buy.kind,'lightning');assert.equal(buy.hue,'green');assert.equal(sell.kind,'lightning');assert.equal(sell.hue,'red');assert.ok(sell.intensity>=buy.intensity);});
 test('simulation identity survives field effect conversion',()=>{const effect=fieldReplayEffect({side:'buy',verification:'simulation',metadata:{scenario:'mirror-source-wallet-timing'}});assert.equal(effect.simulation,true);assert.equal(effect.verification,'simulation');});
 test('missing value does not become a fabricated displayed amount',()=>{const effect=fieldReplayEffect({side:'transfer-in'});assert.equal(effect.intensity,.25);assert.equal(effect.eventId,'');});
 test('burst preserves replay order',()=>{const effects=fieldReplayBurst([{id:'1',side:'buy'},{id:'2',side:'sell'}]);assert.deepEqual(effects.map(x=>x.eventId),['1','2']);});
+test('wallet and token replay effects anchor to matching field entities',()=>{const particles=[{id:'wallet-a',kind:'wallet',position:[1,2,3]},{id:'mint-a',kind:'token',position:[4,5,6]}];const wallet=resolveFieldEffectAnchor(fieldReplayEffect({wallet:'wallet-a',side:'buy'}),particles),token=resolveFieldEffectAnchor(fieldReplayEffect({token:'mint-a',side:'sell'}),particles);assert.deepEqual(wallet.position,[1,2,3]);assert.equal(wallet.entityKind,'wallet');assert.deepEqual(token.position,[4,5,6]);assert.equal(token.entityKind,'token');});
+test('unmatched replay effects use stable deterministic fallback positions',()=>{const effect=fieldReplayEffect({id:'sig-1',side:'buy'}),a=resolveFieldEffectAnchor(effect,[]),b=resolveFieldEffectAnchor(effect,[]);assert.equal(a.matched,false);assert.deepEqual(a.position,b.position);});
