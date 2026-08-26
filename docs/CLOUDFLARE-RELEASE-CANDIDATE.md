@@ -1,6 +1,6 @@
 # A Bulls App — Cloudflare Release Candidate
 
-This document is the handoff boundary between repository work and production Cloudflare changes.
+This document is the handoff boundary between repository work and production Cloudflare changes. The owner-facing execution sequence is in `docs/OWNER-DEPLOYMENT-HANDOFF.md`; Android and store work follows `docs/ANDROID-STORE-HANDOFF.md`.
 
 ## Release scope
 

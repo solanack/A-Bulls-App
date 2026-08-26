@@ -43,7 +43,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --test js/*.test.mjs workers/*.test.mjs services/intelligence-bridge/*.test.mjs tests/*.test.mjs
+          node --test js/*.test.mjs workers/*.test.mjs services/intelligence-bridge/*.test.mjs scripts/*.test.mjs tests/*.test.mjs
 
       - name: Release architecture guards
         shell: bash
@@ -99,5 +99,10 @@ jobs:
           test -f terms.html
           test -f manifest.webmanifest
           test -f _headers
+          test -f docs/OWNER-DEPLOYMENT-HANDOFF.md
+          test -f docs/ANDROID-STORE-HANDOFF.md
+          test -f docs/RELEASE-CANDIDATE-STATUS.json
+          test -f workers/wrangler.production.example.toml
+          node scripts/verify-production-config.mjs workers/wrangler.production.example.toml && exit 1 || true
           ! grep -Eiq '<html|<!doctype' _headers
           grep -q 'X-Content-Type-Options: nosniff' _headers

@@ -22,7 +22,7 @@ for(const file of modules){const rel=relative(root,file);const result=spawnSync(
 if(!failures.some(item=>item.startsWith('syntax ')))ok(`syntax checked ${modules.length} modules`);
 for(const file of ['js/config.js','js/main.js','sw.js'])run(`syntax ${file}`,process.execPath,['--check',file]);
 
-const tests=[...await filesIn('js',name=>name.endsWith('.test.mjs')),...await filesIn('workers',name=>name.endsWith('.test.mjs')),...await filesIn('services/intelligence-bridge',name=>name.endsWith('.test.mjs')),...await filesIn('tests',name=>name.endsWith('.test.mjs'))];
+const tests=[...await filesIn('js',name=>name.endsWith('.test.mjs')),...await filesIn('workers',name=>name.endsWith('.test.mjs')),...await filesIn('services/intelligence-bridge',name=>name.endsWith('.test.mjs')),...await filesIn('scripts',name=>name.endsWith('.test.mjs')),...await filesIn('tests',name=>name.endsWith('.test.mjs'))];
 if(tests.length)run(`complete Node test suite (${tests.length} files)`,process.execPath,['--test',...tests]);else fail('no test files discovered');
 
 const [config,index,entry,bootstrap,workspace,market,sw,wrangler,runbook]=await Promise.all(['js/config.js','index.html','js/experience-entry.mjs','js/experience-bootstrap.mjs','js/intelligence-workspace-vnext.mjs','js/token-market-workspace.mjs','sw.js','workers/wrangler.toml','docs/CLOUDFLARE-RELEASE-CANDIDATE.md'].map(text));
@@ -48,6 +48,10 @@ expect('privacy page exists',await exists('privacy.html'));
 expect('Cloudflare Pages headers are policy syntax',!/<html|<!doctype/i.test(await text('_headers'))&&/X-Content-Type-Options:\s*nosniff/.test(await text('_headers')));
 expect('terms page exists',await exists('terms.html'));
 expect('release runbook tracks 0014',/0014/.test(runbook)&&/TRICKSTER_SHARE_ENABLED/.test(runbook));
+expect('owner deployment handoff exists',await exists('docs/OWNER-DEPLOYMENT-HANDOFF.md'));
+expect('Android/store handoff exists',await exists('docs/ANDROID-STORE-HANDOFF.md'));
+expect('production Wrangler example exists',await exists('workers/wrangler.production.example.toml'));
+expect('production config verifier exists',await exists('scripts/verify-production-config.mjs'));
 
 const retiredTargets=[index,config,entry,workspace,market,sw,wrangler].join('\n');
 expect('retired product guard',!/Ansem|Bullpen|ansem\.io|community-integrations|Solana Bang Bang|Claude of Duty|BBRLife|lifeView/i.test(retiredTargets));

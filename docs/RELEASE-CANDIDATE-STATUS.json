@@ -1,0 +1,29 @@
+{
+  "product": "A Bulls App",
+  "pwaCheckpoint": "8.7.0-vnext-70",
+  "workerBaseline": "8.2.0",
+  "branch": "feature/universe-trickster-v1",
+  "pullRequest": 15,
+  "productionState": "unmerged-undeployed",
+  "requiredMigrations": ["0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014"],
+  "firstReleaseFlags": {
+    "UNIVERSE_ENABLED": true,
+    "TRICKSTER_STUDIO_ENABLED": true,
+    "PLAYABLE_DATA_ENABLED": true,
+    "INTELLIGENCE_MESH_ENABLED": true,
+    "TRICKSTER_SHARE_ENABLED": false,
+    "MARKET_BACKFILL_QUEUE_ENABLED": false,
+    "INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED": false,
+    "INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED": false,
+    "INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED": false
+  },
+  "ownerInputsRequired": [
+    "Cloudflare production D1 database name and ID",
+    "Cloudflare account-unique rate-limit namespace ID",
+    "Existing Worker secrets and bindings",
+    "Existing deployment IDs and D1 backup for rollback",
+    "A-Bulls-App-release.keystore and existing alias/passwords",
+    "Google Play developer account",
+    "Solana dApp Store publisher account and durable publisher wallet"
+  ]
+}
