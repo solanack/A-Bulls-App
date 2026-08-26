@@ -9,6 +9,7 @@ const n = v => Number.isFinite(Number(v)) ? Number(v) : 0;
 const finite = v => v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const s = v => String(v == null ? '' : v).trim();
 const now = () => Math.floor(Date.now() / 1000);
+const has = (obj,key) => Object.prototype.hasOwnProperty.call(obj,key);
 
 export function schedulerEnabled(env = {}) {
   return String(env.INTELLIGENCE_MESH_ENABLED || '').toLowerCase() === 'true';
@@ -24,7 +25,7 @@ export async function queueHistoryJob(env = {}, wallet = '', options = {}) {
   const requestedFrom=finite(options.requestedFrom),requestedTo=finite(options.requestedTo);
   const existing = await db.prepare(`
     SELECT id,state,cursor_before,page_size,requested_from,requested_to FROM intelligence_index_jobs
-    WHERE wallet=? AND job_type='wallet-backfill' AND state IN ('queued','running')
+    WHERE wallet=? AND job_type='wallet-backfill' AND state IN ('queued','running','waiting-external')
     ORDER BY updated_at DESC LIMIT 1
   `).bind(s(wallet)).first();
   if (existing?.id) {
@@ -66,15 +67,28 @@ async function claimJobs(db, limit = 2) {
 }
 
 async function patchJob(db, id, patch = {}) {
+  const cursorValue = has(patch,'cursorBefore') ? (s(patch.cursorBefore) || null) : null;
+  const sourceValue = has(patch,'source') ? (s(patch.source) || null) : null;
+  const errorValue = has(patch,'error') ? (s(patch.error) || null) : null;
+  const nextValue = has(patch,'nextAttemptAt') ? (patch.nextAttemptAt == null ? null : n(patch.nextAttemptAt)) : null;
   await db.prepare(`
     UPDATE intelligence_index_jobs SET
-      state=?,cursor_before=?,pages_completed=pages_completed+?,signatures_seen=signatures_seen+?,
-      transactions_ingested=transactions_ingested+?,source=?,last_error=?,next_attempt_at=?,updated_at=unixepoch()
+      state=?,
+      cursor_before=CASE WHEN ?=1 THEN ? ELSE cursor_before END,
+      pages_completed=pages_completed+?,signatures_seen=signatures_seen+?,transactions_ingested=transactions_ingested+?,
+      source=CASE WHEN ?=1 THEN ? ELSE source END,
+      last_error=CASE WHEN ?=1 THEN ? ELSE last_error END,
+      next_attempt_at=CASE WHEN ?=1 THEN ? ELSE next_attempt_at END,
+      updated_at=unixepoch()
     WHERE id=?
   `).bind(
-    s(patch.state || 'queued'), s(patch.cursorBefore) || null, n(patch.pages), n(patch.signatures),
-    n(patch.transactions), s(patch.source) || null, s(patch.error) || null,
-    patch.nextAttemptAt == null ? null : n(patch.nextAttemptAt), n(id)
+    s(patch.state || 'queued'),
+    has(patch,'cursorBefore')?1:0,cursorValue,
+    n(patch.pages),n(patch.signatures),n(patch.transactions),
+    has(patch,'source')?1:0,sourceValue,
+    has(patch,'error')?1:0,errorValue,
+    has(patch,'nextAttemptAt')?1:0,nextValue,
+    n(id)
   ).run();
 }
 
@@ -86,14 +100,20 @@ export async function runIntelligenceMeshScheduler(env = {}, options = {}) {
   const results = [];
 
   for (const job of jobs) {
-    await patchJob(db, job.id, { state: 'running' });
+    await patchJob(db, job.id, { state: 'running', error:null });
     try {
       const result = await runSourceAwareHistoryPass(env, job.wallet, {
+        indexJobId: job.id,
         before: job.cursor_before || '',
         pageSize: job.page_size || 25,
         from: finite(job.requested_from),
         to: finite(job.requested_to)
       });
+      if(result.deferred){
+        await patchJob(db, job.id, { state:'waiting-external', source:result.source, nextAttemptAt:null });
+        results.push({ jobId:job.id,wallet:job.wallet,requestedFrom:finite(job.requested_from),requestedTo:finite(job.requested_to),...result });
+        continue;
+      }
       await patchJob(db, job.id, {
         state: result.complete ? 'complete' : 'queued',
         cursorBefore: result.nextCursor || '',
@@ -101,6 +121,7 @@ export async function runIntelligenceMeshScheduler(env = {}, options = {}) {
         signatures: result.signatures,
         transactions: result.transactionsFetched,
         source: result.source,
+        error:null,
         nextAttemptAt: result.complete ? null : now() + 15
       });
       results.push({ jobId: job.id, wallet: job.wallet, requestedFrom:finite(job.requested_from), requestedTo:finite(job.requested_to), ...result });
