@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeBridgeConfig, normalizeExecutorResult, processRetrievalTask, runBridgeOnce } from './runner.mjs';
+import { normalizeBridgeConfig, normalizeExecutorResult, receiptSatisfiesTask, processRetrievalTask, runBridgeOnce } from './runner.mjs';
 
 const task={taskId:7,wallet:'11111111111111111111111111111111',source:'archive-a',sourceKind:'old-faithful',requestedFrom:100,requestedTo:200};
 const config=normalizeBridgeConfig({apiBase:'https://api.example/','token':'secret','sourceKinds:['old-faithful'],limit:2,leaseSeconds:90});
@@ -15,6 +15,9 @@ test('normalizes fail-closed bridge configuration',()=>{
 test('executor range is verified only with valid explicit coordinates',()=>{
   const good=normalizeExecutorResult({rows:[],searchedFrom:100,searchedTo:200,rangeVerified:true},task);
   assert.equal(good.rangeVerified,true);
+  assert.equal(receiptSatisfiesTask(good,task),true);
+  const partial=normalizeExecutorResult({rows:[],searchedFrom:120,searchedTo:200,rangeVerified:true},task);
+  assert.equal(receiptSatisfiesTask(partial,task),false);
   const bad=normalizeExecutorResult({rows:[],searchedFrom:200,searchedTo:100,rangeVerified:true},task);
   assert.equal(bad.rangeVerified,false);
   assert.equal(bad.searchedFrom,null);
@@ -30,6 +33,17 @@ test('missing executor retries the exact leased task',async()=>{
   assert.equal(calls[0].body.taskId,7);
   assert.equal(calls[0].body.wallet,task.wallet);
   assert.equal(calls[0].body.sourceKind,'old-faithful');
+});
+
+test('unverified or partial retrieval cannot complete a task',async()=>{
+  const calls=[];
+  const fetchImpl=async(url,init)=>{calls.push({url,body:JSON.parse(init.body)});return new Response(JSON.stringify({ok:true}),{status:200,headers:{'content-type':'application/json'}});};
+  const result=await processRetrievalTask(task,{config,executors:{'old-faithful':async()=>({rows:[{signature:'sig'}],searchedFrom:120,searchedTo:200,rangeVerified:true})},fetchImpl});
+  assert.equal(result.state,'retry');
+  assert.equal(result.error,'bridge_verified_range_required');
+  assert.equal(calls.length,1);
+  assert.match(calls[0].url,/retrieval-tasks\/finish$/);
+  assert.equal(calls[0].body.state,'retry');
 });
 
 test('verified empty retrieval completes with explicit searched-range receipt',async()=>{
