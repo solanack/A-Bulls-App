@@ -51,6 +51,8 @@ jobs:
             js/intelligence-event-ledger.test.mjs \
             js/market-sequence-discovery.test.mjs \
             js/market-sequence-participants.test.mjs \
+            js/market-sequence-phases.test.mjs \
+            js/market-sequence-phase-slice.test.mjs \
             js/market-sequence-reconstruction.test.mjs \
             js/token-sequence-director.test.mjs \
             js/token-sequence-story-runtime.test.mjs \
@@ -85,9 +87,12 @@ jobs:
           grep -q 'TokenMarketWorkspace' js/experience-entry.mjs
           grep -q 'NOTABLE SEQUENCES' js/token-market-workspace.mjs
           grep -q 'PLAY MOMENT' js/token-market-workspace.mjs
+          grep -q 'PLAY PHASE' js/market-sequence-phase-controls.mjs
+          grep -q 'CREATE PHASE STORY' js/market-sequence-phase-controls.mjs
           grep -q 'CREATE FULL MARKET STORY' js/token-market-workspace.mjs
           grep -q 'discoverMarketSequences' js/token-market-workspace.mjs
           grep -q 'reconstructMarketSequence' js/token-market-workspace.mjs
+          grep -q 'createMarketSequencePhaseControls' js/token-market-workspace.mjs
           grep -q "storyType:'token-sequence'" js/token-market-workspace.mjs
           grep -q 'tokenSequenceScenePlan' js/trickster-studio.mjs
           grep -q 'summarizeTokenSequenceDirection' js/trickster-studio.mjs
@@ -95,12 +100,15 @@ jobs:
           grep -q "storyType==='token-sequence'" js/experience-entry.mjs
           grep -q 'market-sequence-discovery' sw.js
           grep -q 'market-sequence-participants' sw.js
+          grep -q 'market-sequence-phases' sw.js
+          grep -q 'market-sequence-phase-slice' sw.js
+          grep -q 'market-sequence-phase-controls' sw.js
           grep -q 'market-sequence-reconstruction' sw.js
           grep -q 'token-sequence-director' sw.js
           grep -q 'market-sequence-discovery.css' index.html
           grep -q 'token-sequence-story-runtime' sw.js
           grep -q 'token-market-workspace' sw.js
-          grep -q "const BUILD = '8.7.0-vnext-38'" sw.js
+          grep -q "const BUILD = '8.7.0-vnext-40'" sw.js
           grep -q 'worker-vnext-entry.mjs' workers/wrangler.toml
           grep -q 'reconstruct-worker-8.2.0.mjs' workers/wrangler.toml
           grep -q 'worker-baseline-retained.mjs' workers/worker-vnext-entry.mjs
