@@ -1,4 +1,4 @@
-const BUILD = '8.7.0-vnext-34';
+const BUILD = '8.7.0-vnext-35';
 const CACHE = `abullsapp-v${BUILD}`;
 
 const versioned = paths => paths.map(path => `${path}?v=${BUILD}`);
@@ -22,12 +22,13 @@ const NEXT_EXPERIENCE = [
   './css/intelligence-workspace-vnext.css?v=2',
   './css/intelligence-event-inspector.css?v=5',
   './css/token-market-workspace.css?v=1',
+  './css/market-sequence-discovery.css?v=1',
   './css/bull-invaders-vnext.css?v=1',
   './js/experience-entry.mjs?v=7',
   './js/market-context-player-bridge.mjs?v=3',
   ...[
     'experience-bootstrap','experience-feature-flags','experience-dependencies','product-registry','product-shell-vnext',
-    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','market-replay-client','token-market-workspace','token-sequence-story-runtime','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','event-story-scene-runtime','event-story-scene-slice','event-story-render-plan','event-story-scene-transition','event-story-frame-model','event-story-frame-renderer','event-story-frame-drawer','event-story-video-export','wallet-comparison-story-runtime','wallet-comparison-render-plan','wallet-comparison-frame-model','wallet-comparison-frame-renderer','wallet-comparison-frame-drawer','wallet-comparison-video-export','wallet-comparison-what-if','intelligence-event-ledger','universe-contracts','universe-quality',
+    'product-adapters','universal-search','entity-resolver-client','wallet-token-index-client','market-replay-client','market-sequence-discovery','token-market-workspace','token-sequence-story-runtime','event-market-context-client','market-context-replay','event-story-director','event-story-price-selection','event-story-focus','event-story-scene-runtime','event-story-scene-slice','event-story-render-plan','event-story-scene-transition','event-story-frame-model','event-story-frame-renderer','event-story-frame-drawer','event-story-video-export','wallet-comparison-story-runtime','wallet-comparison-render-plan','wallet-comparison-frame-model','wallet-comparison-frame-renderer','wallet-comparison-frame-drawer','wallet-comparison-video-export','wallet-comparison-what-if','intelligence-event-ledger','universe-contracts','universe-quality',
     'universe-synthetic-data','universe-transition','universe-renderer','universe-client',
     'universe-experience','trickster-story-manifest','trickster-composer',
     'trickster-export-capabilities','trickster-timeline','trickster-caption-plan','trickster-caption-renderer','trickster-audio-cues','trickster-audio-renderer','trickster-narration-plan','trickster-clip-export','trickster-validation-client','trickster-video-delivery','trickster-studio',
