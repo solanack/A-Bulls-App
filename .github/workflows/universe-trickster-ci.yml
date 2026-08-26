@@ -76,6 +76,8 @@ jobs:
             workers/intelligence-wallet-token-index.test.mjs \
             workers/intelligence-event-context.test.mjs \
             workers/intelligence-market-replay.test.mjs \
+            workers/intelligence-market-backfill-plan.test.mjs \
+            workers/intelligence-market-backfill-router.test.mjs \
             workers/intelligence-replay-bundle.test.mjs \
             workers/intelligence-universe-runtime.test.mjs \
             workers/intelligence-trickster-router.test.mjs
@@ -92,6 +94,8 @@ jobs:
           grep -q 'createMarketCoveragePanel' js/token-market-workspace.mjs
           grep -q 'createMarketReplayEmptyState' js/token-market-workspace.mjs
           grep -q 'summarizeMarketCoverage' workers/intelligence-market-replay.mjs
+          grep -q 'handleMarketBackfillPlanRequest' workers/intelligence-worker-hooks.mjs
+          grep -q 'buildMarketBackfillPlan' workers/intelligence-market-backfill-router.mjs
           grep -q 'NOTABLE SEQUENCES' js/token-market-workspace.mjs
           grep -q 'PLAY MOMENT' js/token-market-workspace.mjs
           grep -q 'PLAY PHASE' js/market-sequence-phase-controls.mjs
