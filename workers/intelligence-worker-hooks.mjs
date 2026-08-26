@@ -8,6 +8,7 @@ import { handleUniverseRequest } from './intelligence-universe-router.mjs';
 import { handleTricksterRequest } from './intelligence-trickster-router.mjs';
 import { handleReplayBundleRequest } from './intelligence-replay-bundle.mjs';
 import { handleMarketReplayRequest } from './intelligence-market-replay.mjs';
+import { handleMarketBackfillPlanRequest } from './intelligence-market-backfill-router.mjs';
 import { handleWalletTokenIndexRequest } from './intelligence-wallet-token-index.mjs';
 import { handleEventMarketContextRequest } from './intelligence-event-context.mjs';
 import { pruneUniverseObservations } from './intelligence-universe-runtime.mjs';
@@ -21,6 +22,8 @@ export async function handleIntelligenceFetch(request, env = {}) {
   if (eventContext) return eventContext;
   const marketReplay = await handleMarketReplayRequest(request, env);
   if (marketReplay) return marketReplay;
+  const marketBackfillPlan = await handleMarketBackfillPlanRequest(request, env);
+  if (marketBackfillPlan) return marketBackfillPlan;
   const replay = await handleReplayBundleRequest(request, env);
   if (replay) return replay;
   const trickster = await handleTricksterRequest(request, env);
