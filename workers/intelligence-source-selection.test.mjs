@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sourceDepthClass, chooseEvidenceSource } from './intelligence-source-selection.mjs';
+import { sourceDepthClass, chooseEvidenceSource, buildRetrievalPlan } from './intelligence-source-selection.mjs';
 
 const now=2_000_000_000;
 test('classifies retrieval depth without claiming coverage',()=>{
@@ -26,4 +26,15 @@ test('prefers healthy archive source for deep history and excludes errored sourc
   ],{from:now-400*86400,nowSeconds:now});
   assert.equal(result.selected.name,'old-faithful');
   assert.notEqual(result.selected.name,'broken-archive');
+});
+
+test('builds deterministic fallback order without converting ranking into a coverage claim',()=>{
+  const plan=buildRetrievalPlan([
+    {name:'rpc',kind:'rpc',state:'ok',latencyMs:60,lastOkAt:now},
+    {name:'archive',kind:'archive',state:'ok',latencyMs:200,lastOkAt:now},
+    {name:'failed',kind:'archive',state:'error',latencyMs:1,lastOkAt:now}
+  ],{from:now-500*86400,nowSeconds:now});
+  assert.equal(plan.primary.name,'archive');
+  assert.deepEqual(plan.attemptOrder.map(x=>x.name),['archive','rpc']);
+  assert.equal(plan.coverageClaim,'unknown-until-measured');
 });
