@@ -5,6 +5,7 @@ import { externalRetrievalEnabled, queueExternalRetrievalTask } from './intellig
 
 const s=v=>String(v==null?'':v).trim();
 const finite=v=>v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Number(v):null;
+const enabled=v=>s(v).toLowerCase()==='true';
 const uniqByUrl=sources=>{const seen=new Set(),out=[];for(const source of sources){const url=s(source?.url);if(!url||seen.has(url))continue;seen.add(url);out.push(source);}return out;};
 
 export function configuredRpcSources(env={}){
@@ -19,6 +20,14 @@ export function configuredRpcSources(env={}){
   return Object.freeze(uniqByUrl(sources).map(source=>Object.freeze(source)));
 }
 
+export function configuredExternalHistorySources(env={},observed=[]){
+  const health=new Map((Array.isArray(observed)?observed:[]).map(row=>[s(row.name),row]));
+  const configured=[];
+  if(enabled(env.INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED))configured.push({name:s(env.INTELLIGENCE_SUBSTREAMS_SOURCE_NAME)||'substreams-svm',kind:'substreams'});
+  if(enabled(env.INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED))configured.push({name:s(env.INTELLIGENCE_OLD_FAITHFUL_SOURCE_NAME)||'old-faithful',kind:'old-faithful'});
+  return Object.freeze(configured.map(source=>Object.freeze({...source,...(health.get(source.name)||{}),name:source.name,kind:source.kind,url:null,execution:'external-bridge',state:s(health.get(source.name)?.state||'unknown')||'unknown'})));
+}
+
 export function mergeSourceHealth(configured=[],observed=[]){
   const health=new Map((Array.isArray(observed)?observed:[]).map(row=>[s(row.name),row]));
   return Object.freeze((Array.isArray(configured)?configured:[]).map(source=>Object.freeze({...source,...(health.get(source.name)||{}),name:source.name,kind:source.kind,url:source.url,state:s(health.get(source.name)?.state||'unknown')||'unknown'})));
@@ -29,22 +38,18 @@ export function externalHistorySource(source={}){
   return kind==='substreams'||kind==='old-faithful'||kind.includes('faithful');
 }
 
-function externalCatalog(observed=[]){
-  return (Array.isArray(observed)?observed:[]).filter(source=>externalHistorySource(source)&&s(source.state).toLowerCase()!=='error').map(source=>Object.freeze({...source,url:null,execution:'external-bridge'}));
-}
-
 async function existingExternalTask(db,{indexJobId,source,from,to}){
   if(indexJobId==null||from==null||to==null)return null;
-  return db.prepare(`SELECT id,state,lease_until FROM intelligence_retrieval_tasks WHERE index_job_id=? AND source_kind=? AND requested_from=? AND requested_to=? ORDER BY updated_at DESC LIMIT 1`).bind(indexJobId,s(source.kind),Math.trunc(from),Math.trunc(to)).first();
+  return db.prepare(`SELECT id,state,lease_until,range_verified,searched_from,searched_to FROM intelligence_retrieval_tasks WHERE index_job_id=? AND source_kind=? AND requested_from=? AND requested_to=? ORDER BY updated_at DESC LIMIT 1`).bind(indexJobId,s(source.kind),Math.trunc(from),Math.trunc(to)).first();
 }
 
 export async function runSourceAwareHistoryPass(env={},wallet='',options={}){
   const db=intelligenceDb(env);if(!db)throw new Error('Intelligence database binding is unavailable.');
-  const configured=configuredRpcSources(env),observed=await loadObservedSourceHealth(db),rpcSources=mergeSourceHealth(configured,observed),from=finite(options.from),to=finite(options.to),indexJobId=finite(options.indexJobId);
+  const configured=configuredRpcSources(env),observed=await loadObservedSourceHealth(db),rpcSources=mergeSourceHealth(configured,observed),externalSources=configuredExternalHistorySources(env,observed),from=finite(options.from),to=finite(options.to),indexJobId=finite(options.indexJobId);
   const request={from,to,nowSeconds:options.nowSeconds};
 
-  if(externalRetrievalEnabled(env)&&indexJobId!=null&&from!=null&&to!=null){
-    const combined=Object.freeze([...rpcSources,...externalCatalog(observed)]),combinedPlan=buildRetrievalPlan(combined,request),preferred=combinedPlan.primary;
+  if(externalRetrievalEnabled(env)&&indexJobId!=null&&from!=null&&to!=null&&externalSources.length){
+    const combined=Object.freeze([...rpcSources,...externalSources]),combinedPlan=buildRetrievalPlan(combined,request),preferred=combinedPlan.primary;
     if(preferred&&externalHistorySource(preferred)){
       const existing=await existingExternalTask(db,{indexJobId,source:preferred,from,to});
       if(existing?.state==='queued'||existing?.state==='leased')return Object.freeze({ok:true,deferred:true,state:'waiting-external',source:s(preferred.name),externalTaskId:Number(existing.id),retrieval:Object.freeze({depthClass:combinedPlan.depthClass,selected:s(preferred.name),coverageClaim:'unknown-until-measured',disclosure:combinedPlan.disclosure})});
