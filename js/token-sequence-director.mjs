@@ -27,6 +27,10 @@ const FRAMES=Object.freeze({
   'explicit-price-aftermath':120,
   'evidence-close':90
 });
+const phaseBeat=id=>/^phase-[1-3]$/.test(String(id||''));
+const claimForBeat=id=>phaseBeat(id)?`sequence-${id}`:CLAIM_BY_BEAT[id];
+const typeForBeat=id=>phaseBeat(id)?'market-phase':TYPE_BY_BEAT[id];
+const framesForBeat=id=>phaseBeat(id)?120:(FRAMES[id]||90);
 
 export function tokenSequenceScenePlan(bundle={}){
   const reconstruction=bundle?.marketReplay?.reconstruction;
@@ -34,10 +38,10 @@ export function tokenSequenceScenePlan(bundle={}){
   const claims=new Set((bundle.claims||[]).map(claim=>String(claim.id)));
   const scenes=[];
   for(const beat of reconstruction.beats){
-    const beatId=String(beat?.id||'');if(!TYPE_BY_BEAT[beatId])continue;
-    const claimId=CLAIM_BY_BEAT[beatId];
+    const beatId=String(beat?.id||''),type=typeForBeat(beatId);if(!type)continue;
+    const claimId=claimForBeat(beatId);
     if(claimId&&!claims.has(claimId))continue;
-    scenes.push(Object.freeze({id:`sequence-${beatId}`,type:TYPE_BY_BEAT[beatId],durationFrames:FRAMES[beatId]||90,claimIds:Object.freeze(claimId?[claimId]:[])}));
+    scenes.push(Object.freeze({id:`sequence-${beatId}`,type,durationFrames:framesForBeat(beatId),claimIds:Object.freeze(claimId?[claimId]:[])}));
   }
   if(!scenes.some(scene=>scene.type==='evidence-summary'))scenes.push(Object.freeze({id:'sequence-evidence-close',type:'evidence-summary',durationFrames:90,claimIds:Object.freeze([])}));
   return Object.freeze(scenes);
@@ -47,7 +51,7 @@ export function summarizeTokenSequenceDirection(bundle={}){
   const beats=bundle?.marketReplay?.reconstruction?.beats||[];
   return Object.freeze({
     title:'RECONSTRUCTED MARKET SEQUENCE',
-    beats:Object.freeze(beats.map(beat=>Object.freeze({id:String(beat.id||''),title:String(beat.title||''),purpose:String(beat.statement||''),claimIds:Object.freeze(CLAIM_BY_BEAT[beat.id]?[CLAIM_BY_BEAT[beat.id]]:[])}))),
+    beats:Object.freeze(beats.map(beat=>{const id=String(beat.id||''),claimId=claimForBeat(id);return Object.freeze({id,title:String(beat.title||''),purpose:String(beat.statement||''),claimIds:Object.freeze(claimId?[claimId]:[])});})),
     disclosure:String(bundle?.marketReplay?.reconstruction?.disclosure||'Ordered reconstruction uses indexed public-chain evidence only.')
   });
 }
