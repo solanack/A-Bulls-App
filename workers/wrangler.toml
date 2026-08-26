@@ -15,10 +15,19 @@ UNIVERSE_ENABLED = "false"
 TRICKSTER_STUDIO_ENABLED = "false"
 PLAYABLE_DATA_ENABLED = "false"
 INTELLIGENCE_MESH_ENABLED = "false"
+MARKET_BACKFILL_QUEUE_ENABLED = "false"
+INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED = "false"
+INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED = "false"
+INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
 
-# Optional neutral Solana RPC override. Leave unset to use the configured/default read-only RPC path.
+# Optional neutral Solana RPC overrides. Comma-separate additional standard RPC fallbacks.
 # INTELLIGENCE_RPC_URL = "https://api.mainnet-beta.solana.com"
-# Protected internal ingest secret must be stored with Wrangler, never in this file:
+# INTELLIGENCE_RPC_FALLBACK_URLS = "https://rpc-backup-1.example,https://rpc-backup-2.example"
+# Optional external bridge source labels. These identify configured retrieval paths, not quality ratings.
+# INTELLIGENCE_SUBSTREAMS_SOURCE_NAME = "substreams-svm"
+# INTELLIGENCE_OLD_FAITHFUL_SOURCE_NAME = "old-faithful"
+
+# Protected internal ingest/retrieval secret must be stored with Wrangler, never in this file:
 # npx wrangler secret put INTELLIGENCE_MESH_INGEST_TOKEN
 
 # Existing identity/game secrets retained from the verified Worker 8.2.0 baseline:
