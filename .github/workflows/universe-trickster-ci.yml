@@ -50,6 +50,7 @@ jobs:
             js/trade-replay-player.test.mjs \
             js/intelligence-event-ledger.test.mjs \
             js/market-sequence-discovery.test.mjs \
+            js/market-sequence-participants.test.mjs \
             js/market-sequence-reconstruction.test.mjs \
             js/token-sequence-director.test.mjs \
             js/token-sequence-story-runtime.test.mjs \
@@ -93,12 +94,13 @@ jobs:
           grep -q 'buildTokenSequenceSceneRuntime' js/trickster-studio.mjs
           grep -q "storyType==='token-sequence'" js/experience-entry.mjs
           grep -q 'market-sequence-discovery' sw.js
+          grep -q 'market-sequence-participants' sw.js
           grep -q 'market-sequence-reconstruction' sw.js
           grep -q 'token-sequence-director' sw.js
           grep -q 'market-sequence-discovery.css' index.html
           grep -q 'token-sequence-story-runtime' sw.js
           grep -q 'token-market-workspace' sw.js
-          grep -q "const BUILD = '8.7.0-vnext-37'" sw.js
+          grep -q "const BUILD = '8.7.0-vnext-38'" sw.js
           grep -q 'worker-vnext-entry.mjs' workers/wrangler.toml
           grep -q 'reconstruct-worker-8.2.0.mjs' workers/wrangler.toml
           grep -q 'worker-baseline-retained.mjs' workers/worker-vnext-entry.mjs
