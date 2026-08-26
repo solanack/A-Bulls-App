@@ -2,7 +2,7 @@ import { buildBridgeExecutors, bridgeSourceKinds } from './bootstrap.mjs';
 import { runBridgeLoop, normalizeBridgeConfig } from './runner.mjs';
 
 export function createBridgeService({env=process.env,transports={},fetchImpl=fetch,signal,intervalMs=5000}={}){
-  const executors=buildBridgeExecutors({env,transports});
+  const executors=buildBridgeExecutors({env,transports,fetchImpl});
   const sourceKinds=bridgeSourceKinds(executors);
   if(!sourceKinds.length)throw new Error('no_historical_bridge_executors_enabled');
   const config=normalizeBridgeConfig({
