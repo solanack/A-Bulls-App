@@ -21,3 +21,13 @@ export function activeTimeForTimestamp(map={},timestamp){
   }
   return points.at(-1).activeTimeMs;
 }
+
+export function timestampForActiveTime(map={},activeTimeMs){
+  const target=finite(activeTimeMs),points=map?.points||[];if(target==null||!points.length)return null;
+  if(target<=points[0].activeTimeMs)return points[0].timestamp;
+  for(let index=1;index<points.length;index++){
+    const prev=points[index-1],next=points[index];if(target>next.activeTimeMs)continue;
+    const activeGap=next.activeTimeMs-prev.activeTimeMs,sourceGap=next.timestamp-prev.timestamp;if(activeGap<=0)return next.timestamp;return prev.timestamp+((target-prev.activeTimeMs)/activeGap)*sourceGap;
+  }
+  return points.at(-1).timestamp;
+}
