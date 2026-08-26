@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/intelligence-nft-layer.mjs workers/intelligence-operations.mjs workers/intelligence-replay-bundle.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
+          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-history-orchestrator.mjs workers/intelligence-source-selection.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/intelligence-nft-layer.mjs workers/intelligence-operations.mjs workers/intelligence-replay-bundle.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
       - name: Migration safety contract
         shell: bash
         run: |
@@ -46,8 +46,13 @@ jobs:
           set -euo pipefail
           grep -q 'getSignaturesForAddress' workers/intelligence-history-engine.mjs
           grep -q 'getTransaction' workers/intelligence-history-engine.mjs
-          grep -q 'INTELLIGENCE_RPC_URL' workers/intelligence-history-engine.mjs
+          grep -q 'INTELLIGENCE_RPC_URL' workers/intelligence-history-orchestrator.mjs
+          grep -q 'INTELLIGENCE_RPC_FALLBACK_URLS' workers/intelligence-history-orchestrator.mjs
+          grep -q 'loadObservedSourceHealth' workers/intelligence-history-orchestrator.mjs
+          grep -q 'buildRetrievalPlan' workers/intelligence-history-orchestrator.mjs
+          grep -q 'runSourceAwareHistoryPass' workers/intelligence-mesh-scheduler.mjs
           grep -q 'intelligence_index_jobs' workers/intelligence-mesh-scheduler.mjs
+          grep -q 'unknown-until-measured' workers/intelligence-source-selection.mjs
       - name: Product feature contract
         shell: bash
         run: |
