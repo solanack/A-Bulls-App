@@ -26,6 +26,8 @@ INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
 # Optional external bridge source labels. These identify configured retrieval paths, not quality ratings.
 # INTELLIGENCE_SUBSTREAMS_SOURCE_NAME = "substreams-svm"
 # INTELLIGENCE_OLD_FAITHFUL_SOURCE_NAME = "old-faithful"
+# Optional bounded retry budget for one external retrieval task. Defaults to 4; allowed range is 1-10.
+# INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS = "4"
 
 # Protected internal ingest/retrieval secret must be stored with Wrangler, never in this file:
 # npx wrangler secret put INTELLIGENCE_MESH_INGEST_TOKEN
