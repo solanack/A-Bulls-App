@@ -1,47 +1,22 @@
 /* A Bulls App Worker — vNext compatibility entry.
- * Build-forward baseline: verified Worker 8.2.0 + additive vNext routes.
- * Retired Ansem/Bullpen/Bull Vision/LIFE/community endpoints never fall through.
+ * Build-forward provenance: verified Worker 8.2.0.
+ * Active baseline runtime retains only system/auth/Bull Invaders leaderboard routes.
+ * All wallet/intelligence product behavior is owned by vNext.
  */
 
-import baselineWorker from './worker-baseline-8.2.0.js';
+import baselineWorker from './worker-baseline-retained.mjs';
 import { handleIntelligenceFetch, handleIntelligenceScheduled } from './intelligence-worker-hooks.mjs';
 
-const RETIRED_PATHS = new Set([
-  '/api/ansem/analytics',
-  '/api/ansemio/snapshot',
-  '/api/nft/collection-stats',
-  '/api/nft/ecosystem-stats',
-  '/api/intelligence/community-integrations'
+const RETAINED_BASELINE_PATHS = new Set([
+  '/api/health',
+  '/api/auth/google/config',
+  '/api/auth/google',
+  '/api/auth/google/session',
+  '/api/auth/player-session',
+  '/api/leaderboard/top',
+  '/api/leaderboard/challenge',
+  '/api/leaderboard/submit'
 ]);
-
-const BASELINE_INTELLIGENCE_PATHS = new Set([
-  '/api/intelligence/capabilities',
-  '/api/intelligence/chain-radar',
-  '/api/intelligence/chain-weather',
-  '/api/intelligence/mesh-status',
-  '/api/intelligence/radar',
-  '/api/intelligence/source-health',
-  '/api/intelligence/weather',
-  '/api/intelligence/candles',
-  '/api/intelligence/chain-lens',
-  '/api/intelligence/constellation',
-  '/api/intelligence/ghost-portfolio',
-  '/api/intelligence/history/pass',
-  '/api/intelligence/history/queue',
-  '/api/intelligence/index-coverage',
-  '/api/intelligence/museum',
-  '/api/intelligence/nft-memory',
-  '/api/intelligence/parallel-universe',
-  '/api/intelligence/time-machine',
-  '/api/intelligence/timeline',
-  '/api/intelligence/wallet-dna',
-  '/api/intelligence/wallet-rivalry',
-  '/api/intelligence/wallet-summary'
-]);
-
-function retired(pathname) {
-  return RETIRED_PATHS.has(pathname) || pathname === '/api/bull-vision' || pathname.startsWith('/api/bull-vision/');
-}
 
 function allowedOrigins(env = {}) {
   return String(env.ALLOWED_ORIGINS || 'https://abullsapp.com,https://www.abullsapp.com,http://localhost:8788,http://localhost:4173,http://127.0.0.1:4173')
@@ -64,9 +39,7 @@ function corsHeaders(request, env = {}) {
 function withCors(response, request, env) {
   if (!(response instanceof Response)) return response;
   const headers = new Headers(response.headers);
-  for (const [key, value] of Object.entries(corsHeaders(request, env))) {
-    if (!headers.has(key)) headers.set(key, value);
-  }
+  for (const [key, value] of Object.entries(corsHeaders(request, env))) if (!headers.has(key)) headers.set(key, value);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -92,15 +65,9 @@ async function cleanupLeaderboard(env = {}) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-
-    if (retired(url.pathname)) return notFound(request, env);
-
     const vnext = await handleIntelligenceFetch(request, env);
-    if (vnext) {
-      const baselineOwnsPath = BASELINE_INTELLIGENCE_PATHS.has(url.pathname);
-      if (!(baselineOwnsPath && vnext.status === 404)) return withCors(vnext, request, env);
-    }
-
+    if (vnext) return withCors(vnext, request, env);
+    if (!RETAINED_BASELINE_PATHS.has(url.pathname)) return notFound(request, env);
     return baselineWorker.fetch(request, env, ctx);
   },
 
@@ -118,6 +85,6 @@ export default {
 
 export const __workerVNextContract = Object.freeze({
   baselineVersion: '8.2.0',
-  retiredPaths: Object.freeze([...RETIRED_PATHS, '/api/bull-vision/*']),
-  baselineIntelligenceFallbacks: Object.freeze([...BASELINE_INTELLIGENCE_PATHS])
+  baselineRuntime: 'retained-system-auth-bull-invaders',
+  retainedBaselinePaths: Object.freeze([...RETAINED_BASELINE_PATHS])
 });
