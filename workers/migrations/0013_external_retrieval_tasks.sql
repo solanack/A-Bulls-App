@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS intelligence_retrieval_tasks (
   attempts INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
   next_attempt_at INTEGER,
+  searched_from INTEGER,
+  searched_to INTEGER,
+  range_verified INTEGER NOT NULL DEFAULT 0,
+  observed_rows INTEGER,
+  result_json TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
