@@ -31,15 +31,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-history-orchestrator.mjs workers/intelligence-source-selection.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/intelligence-nft-layer.mjs workers/intelligence-operations.mjs workers/intelligence-replay-bundle.mjs workers/migrations/0010_intelligence_mesh_runtime.sql
+          ! grep -Eiq 'BULL_MESH_ENABLED|BULL_MESH_INGEST_TOKEN|bull_index_coverage|bull_source_health|bull_price_candles|bull_trade_routes' workers/intelligence-mesh-*.mjs workers/intelligence-adapter*.mjs workers/intelligence-history-engine.mjs workers/intelligence-history-orchestrator.mjs workers/intelligence-source-selection.mjs workers/intelligence-product-layer.mjs workers/intelligence-simulations.mjs workers/intelligence-router-vnext.mjs workers/intelligence-nft-layer.mjs workers/intelligence-operations.mjs workers/intelligence-replay-bundle.mjs workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql
       - name: Migration safety contract
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_index_coverage' workers/migrations/0010_intelligence_mesh_runtime.sql
           grep -q 'CREATE TABLE IF NOT EXISTS intelligence_demand_patterns' workers/migrations/0010_intelligence_mesh_runtime.sql
-          ! grep -Eiq 'community_integrations|ansem|bullpen' workers/migrations/0010_intelligence_mesh_runtime.sql
-          ! grep -Eiq 'DROP[[:space:]]+TABLE|TRUNCATE|DELETE[[:space:]]+FROM' workers/migrations/0010_intelligence_mesh_runtime.sql
+          grep -q 'ADD COLUMN requested_from INTEGER' workers/migrations/0012_history_job_depth.sql
+          grep -q 'ADD COLUMN requested_to INTEGER' workers/migrations/0012_history_job_depth.sql
+          ! grep -Eiq 'community_integrations|ansem|bullpen' workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql
+          ! grep -Eiq 'DROP[[:space:]]+TABLE|TRUNCATE|DELETE[[:space:]]+FROM' workers/migrations/0010_intelligence_mesh_runtime.sql workers/migrations/0012_history_job_depth.sql
       - name: Progressive history contract
         shell: bash
         run: |
@@ -51,6 +53,8 @@ jobs:
           grep -q 'loadObservedSourceHealth' workers/intelligence-history-orchestrator.mjs
           grep -q 'buildRetrievalPlan' workers/intelligence-history-orchestrator.mjs
           grep -q 'runSourceAwareHistoryPass' workers/intelligence-mesh-scheduler.mjs
+          grep -q 'requested_from' workers/intelligence-mesh-scheduler.mjs
+          grep -q 'requested_to' workers/intelligence-mesh-scheduler.mjs
           grep -q 'intelligence_index_jobs' workers/intelligence-mesh-scheduler.mjs
           grep -q 'unknown-until-measured' workers/intelligence-source-selection.mjs
       - name: Product feature contract
