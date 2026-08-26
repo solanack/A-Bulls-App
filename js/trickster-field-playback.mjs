@@ -3,19 +3,22 @@ import { dispatchStorySceneFieldState } from './field-story-scene.mjs';
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const finite=(value,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallback;
 
-function parseSceneButton(button,index){
-  const strong=button?.querySelector('strong')?.textContent?.trim()||`scene-${index+1}`;
-  const meta=button?.querySelector('small')?.textContent||'';
-  const durationMatch=meta.match(/([0-9]+(?:\.[0-9]+)?)s/);
-  const claimMatch=meta.match(/([0-9]+) evidence-backed claims?/i);
-  const runtimeMatch=meta.match(/evidence-backed claims\s*·\s*([^·]+?)(?:\s*·\s*frames|$)/i);
+export function parseTricksterSceneMeta({title='',meta='',index=0}={}){
+  const safeTitle=String(title||`scene-${index+1}`).trim()||`scene-${index+1}`;
+  const text=String(meta||'');
+  const durationMatch=text.match(/([0-9]+(?:\.[0-9]+)?)s/);
+  const claimMatch=text.match(/([0-9]+) evidence-backed claims?/i);
+  const runtimeMatch=text.match(/evidence-backed claims\s*·\s*([^·]+?)(?:\s*·\s*frames|$)/i);
   return Object.freeze({
-    id:`field-scene-${index+1}-${strong.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}`,
+    id:`field-scene-${index+1}-${safeTitle.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}`,
     mode:(runtimeMatch?.[1]||'evidence-close').trim().replaceAll(' ','-'),
     durationMs:Math.max(250,Math.round(finite(durationMatch?.[1],3)*1000)),
-    claimCount:Math.max(0,Math.trunc(finite(claimMatch?.[1],0))),
-    button
+    claimCount:Math.max(0,Math.trunc(finite(claimMatch?.[1],0)))
   });
+}
+
+function parseSceneButton(button,index){
+  return Object.freeze({...parseTricksterSceneMeta({title:button?.querySelector('strong')?.textContent,meta:button?.querySelector('small')?.textContent,index}),button});
 }
 
 function sceneEntries(root){
