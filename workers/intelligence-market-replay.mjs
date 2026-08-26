@@ -62,11 +62,11 @@ export async function buildMarketReplayBundle(env={},input={}){
   const db=intelligenceDb(env);if(!db)throw new Error('intelligence_db_unavailable');
   const mint=s(input.mint||input.token);if(!ADDRESS_RE.test(mint))throw new TypeError('invalid_token_mint');
   const quoteMint=s(input.quoteMint||input.quote_mint);if(quoteMint&&!ADDRESS_RE.test(quoteMint))throw new TypeError('invalid_quote_mint');
-  const bucketSeconds=Math.max(60,Math.min(86400,Math.trunc(n(input.bucketSeconds)||60));
+  const bucketSeconds=Math.max(60,Math.min(86400,Math.trunc(n(input.bucketSeconds)||60)));
   const now=Math.floor(Date.now()/1000),to=Math.max(0,Math.trunc(n(input.to||now))),from=Math.max(0,Math.trunc(n(input.from||(to-86400))));
   if(to<from)throw new RangeError('invalid_replay_window');
   if(to-from>604800)throw new RangeError('market_replay_window_too_large');
-  const limit=Math.max(50,Math.min(1500,Math.trunc(n(input.limit)||750));
+  const limit=Math.max(50,Math.min(1500,Math.trunc(n(input.limit)||750)));
 
   const summary=await first(db.prepare(`SELECT COUNT(*) event_count,COUNT(DISTINCT wallet) wallet_count,SUM(CASE WHEN event_class='swap-like' AND token_delta>0 THEN 1 ELSE 0 END) buy_count,SUM(CASE WHEN event_class='swap-like' AND token_delta<0 THEN 1 ELSE 0 END) sell_count,MIN(block_time) first_event,MAX(block_time) last_event FROM bull_wallet_events WHERE mint=? AND block_time BETWEEN ? AND ?`).bind(mint,from,to));
   const observedWalletCount=Math.max(0,Math.trunc(n(summary?.wallet_count)));
