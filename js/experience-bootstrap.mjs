@@ -4,20 +4,23 @@ import { searchRequest } from './universal-search.mjs';
 
 const TITLES=Object.freeze({intelligence:'INTELLIGENCE',replay:'TEMPORAL REPLAY',compare:'COMPARE','what-if':'WHAT IF',sequences:'MARKET SEQUENCES',trickster:'CREATE · TRICKSTER',evidence:'EVIDENCE',games:'GAMES'});
 const text=value=>String(value==null?'':value).trim();
+const BASE58_RE=/^[1-9A-HJ-NP-Za-km-z]{32,88}$/;
 
 export function fieldCommandRequest(command,context={}){
   const destination=command==='sequences'?'market-sequence':command;
   const hub=context?.investigationHub;
   const focusId=text(context?.focusId||hub?.focusId);
-  const entityKind=text(hub?.focusKind||context?.entityKind);
+  const entityKind=text(context?.focusKind||hub?.focusKind||context?.entityKind).toLowerCase();
   const verificationState=text(hub?.nodes?.find?.(node=>node.id===focusId)?.verificationState);
   const evidenceIds=Object.freeze([...(hub?.edges||[])].map(edge=>text(edge?.evidenceId)).filter(Boolean));
+  const kind=!focusId?'':entityKind==='transaction'?'transaction-signature':BASE58_RE.test(focusId)?'solana-address':'field-entity';
   return Object.freeze({
     destination,
     ...(focusId?{query:focusId,entityId:focusId}:{}),
     ...(entityKind?{entityKind}:{}),
+    ...(kind?{kind}:{}),
     ...(verificationState?{verificationState}:{}),
-    ...(context?.simulation===true?{simulation:true}:{}),
+    ...(command==='what-if'||context?.simulation===true?{simulation:true}:{}),
     ...(evidenceIds.length?{evidenceIds}:{}),
   });
 }
@@ -35,8 +38,12 @@ export function bootstrapNextExperience({flags,host,adapters,serviceState='ready
     onFieldCommand?.(command,context);
     if(command==='explore'){shell.closeWorkspace();return;}
     const request=fieldCommandRequest(command,context);
+    const hasFocus=Boolean(request.entityId);
     const source=context?.investigationHub?'field-investigation':'field-command';
-    if(command==='trickster'){mountAdapter('trickster',{source,request,investigationHub:context.investigationHub||null});return;}
+    if(command==='trickster'){
+      if(hasFocus){mountAdapter('intelligence',{source:'field-investigation-create',request,investigationHub:context.investigationHub||null},TITLES.trickster);return;}
+      mountAdapter('trickster',{source,request});return;
+    }
     if(command==='games'){mountAdapter('games',{source});return;}
     mountAdapter('intelligence',{source,request,investigationHub:context.investigationHub||null},TITLES[command]);
   };
