@@ -8,14 +8,15 @@ test('normalizes bounded unique positive integer job ids',()=>{
   assert.equal(Object.isFrozen(ids),true);
 });
 
-test('separates retries and aggregates work performed by returned jobs',()=>{
+test('separates retries and aggregates work and actual retrieval sources',()=>{
   const summary=summarizeIndexJobs([
-    {state:'complete',lastError:null,nextAttemptAt:null,pagesCompleted:2,signaturesSeen:50,transactionsIngested:42},
-    {state:'running',lastError:null,nextAttemptAt:null,pagesCompleted:1,signaturesSeen:25,transactionsIngested:20},
-    {state:'queued',lastError:null,nextAttemptAt:1100,pagesCompleted:0,signaturesSeen:0,transactionsIngested:0},
-    {state:'queued',lastError:'rpc_timeout',nextAttemptAt:1120,pagesCompleted:1,signaturesSeen:25,transactionsIngested:0},
-    {state:'queued',lastError:'old_error',nextAttemptAt:990,pagesCompleted:1,signaturesSeen:10,transactionsIngested:8}
+    {state:'complete',source:'configured-rpc-fallback-1',lastError:null,nextAttemptAt:null,pagesCompleted:2,signaturesSeen:50,transactionsIngested:42},
+    {state:'running',source:'configured-rpc-fallback-1',lastError:null,nextAttemptAt:null,pagesCompleted:1,signaturesSeen:25,transactionsIngested:20},
+    {state:'queued',source:null,lastError:null,nextAttemptAt:1100,pagesCompleted:0,signaturesSeen:0,transactionsIngested:0},
+    {state:'queued',source:'solana-public-rpc',lastError:'rpc_timeout',nextAttemptAt:1120,pagesCompleted:1,signaturesSeen:25,transactionsIngested:0},
+    {state:'queued',source:'solana-public-rpc',lastError:'old_error',nextAttemptAt:990,pagesCompleted:1,signaturesSeen:10,transactionsIngested:8}
   ],1000);
-  assert.deepEqual(summary,{complete:1,running:1,queued:3,retrying:1,nextRetryAt:1120,pagesCompleted:5,signaturesSeen:110,transactionsIngested:70});
+  assert.deepEqual(summary,{complete:1,running:1,queued:3,retrying:1,nextRetryAt:1120,pagesCompleted:5,signaturesSeen:110,transactionsIngested:70,sources:['configured-rpc-fallback-1','solana-public-rpc']});
   assert.equal(Object.isFrozen(summary),true);
+  assert.equal(Object.isFrozen(summary.sources),true);
 });
