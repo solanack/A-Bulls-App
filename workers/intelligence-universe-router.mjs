@@ -1,6 +1,7 @@
 import { universeSnapshot } from './intelligence-universe-runtime.mjs';
 import { ecosystemUniverseSnapshot } from './intelligence-ecosystem-universe-snapshot.mjs';
-import { analyzeUniversePatterns, listUniverses, universeMembers } from './intelligence-ecosystem-universes.mjs';
+import { listUniverses, universeMembers } from './intelligence-ecosystem-universes.mjs';
+import { analyzeDurableUniversePatterns } from './intelligence-pattern-lab-durable.mjs';
 
 const json=(body,status=200,cache='no-store')=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':cache,'x-content-type-options':'nosniff'}});
 const s=value=>String(value??'').trim();
@@ -24,7 +25,7 @@ export async function handleUniverseRequest(request,env={}){
   if(path==='/api/intelligence/universe-patterns'){
     if(String(env.UNIVERSE_PATTERN_LAB_ENABLED||'').toLowerCase()!=='true')return json({ok:false,error:'feature_disabled'},404);
     const universeId=s(url.searchParams.get('universe'))||'solana';
-    const analysis=await analyzeUniversePatterns(env,universeId,{windowSeconds:Number(url.searchParams.get('window')||86400),limit:Number(url.searchParams.get('limit')||15000)});
+    const analysis=await analyzeDurableUniversePatterns(env,universeId,{windowSeconds:Number(url.searchParams.get('window')||86400),limit:Number(url.searchParams.get('limit')||20000)});
     return json({ok:true,readOnly:true,theoryOnly:true,analysis},200,'public, max-age=30, stale-while-revalidate=120');
   }
 
