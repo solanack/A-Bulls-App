@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { __z500UniverseContract } from './intelligence-z500-universe.mjs';
+import { __launchpadUniverseSelectorContract } from './intelligence-launchpad-universe-selectors.mjs';
 import { __heliusUniverseWatchlistContract } from './intelligence-helius-universe-watchlist.mjs';
 import { __heliusUniverseIngestContract } from './intelligence-helius-universe-ingest.mjs';
 import { __universeSchedulerContract } from './intelligence-universe-scheduler.mjs';
@@ -19,6 +20,13 @@ test('Z500 selector is bounded, leased, and two-cycle confirmed',()=>{
   assert.equal(__z500UniverseContract.refreshSeconds,900);
   assert.equal(__z500UniverseContract.confirmationCycles,2);
   assert.equal(__z500UniverseContract.failClosed,true);
+});
+
+test('Launchpad universe selectors stay source-configured and fail closed',()=>{
+  assert.deepEqual(__launchpadUniverseSelectorContract.universes,['jupiter-launchpad','pump-fun','raydium-launchlab']);
+  assert.equal(__launchpadUniverseSelectorContract.directMintOnly,true);
+  assert.equal(__launchpadUniverseSelectorContract.confirmationCycles,2);
+  assert.equal(__launchpadUniverseSelectorContract.failClosed,true);
 });
 
 test('Helius rotation adds before retire and is bounded',()=>{
