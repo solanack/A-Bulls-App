@@ -11,18 +11,18 @@ const EXCLUDED=new Set([
 const s=v=>String(v??'').trim();
 const n=v=>Number.isFinite(Number(v))?Number(v):0;
 
-const normalizeName=value=>s(value)
+export const normalizeZ500Name=value=>s(value)
   .toLowerCase()
   .normalize('NFKD')
   .replace(/[^a-z0-9]+/g,'')
   .trim();
 
-const normalizeTicker=value=>s(value)
+export const normalizeZ500Ticker=value=>s(value)
   .replace(/^\$/,'')
   .toUpperCase()
   .replace(/[^A-Z0-9_]/g,'');
 
-const validMint=value=>{
+export const validZ500Mint=value=>{
   const mint=s(value);
   return BASE58_RE.test(mint)&&!EXCLUDED.has(mint);
 };
@@ -43,31 +43,21 @@ export const Z500_REFERENCE=Object.freeze([
 export async function seedZ500IdentityRegistry(env={},rows=Z500_REFERENCE){
   const db=intelligenceDb(env);
   if(!db)return{ok:false,error:'database_unavailable'};
-
   let seeded=0;
 
   for(const row of rows){
     const canonicalId=s(row.canonicalId);
     const name=s(row.name);
-    const ticker=normalizeTicker(row.ticker);
+    const ticker=normalizeZ500Ticker(row.ticker);
     const tier=s(row.tier).toUpperCase()||null;
     const rank=Math.max(1,Math.trunc(n(row.rank)||1));
-
     if(!canonicalId||!name||!ticker)continue;
 
     await db.prepare(`
       INSERT INTO intelligence_z500_token_registry(
-        canonical_id,
-        ansem_name,
-        ansem_ticker,
-        ansem_tier,
-        ansem_rank,
-        verification_state,
-        first_seen_at,
-        last_seen_at,
-        updated_at
-      )
-      VALUES(?,?,?,?,?,'unverified',unixepoch(),unixepoch(),unixepoch())
+        canonical_id,ansem_name,ansem_ticker,ansem_tier,ansem_rank,
+        verification_state,first_seen_at,last_seen_at,updated_at
+      ) VALUES(?,?,?,?,?,'unverified',unixepoch(),unixepoch(),unixepoch())
       ON CONFLICT(canonical_id) DO UPDATE SET
         ansem_name=excluded.ansem_name,
         ansem_ticker=excluded.ansem_ticker,
@@ -75,57 +65,67 @@ export async function seedZ500IdentityRegistry(env={},rows=Z500_REFERENCE){
         ansem_rank=excluded.ansem_rank,
         last_seen_at=unixepoch(),
         updated_at=unixepoch()
-    `).bind(
-      canonicalId,
-      name,
-      ticker,
-      tier,
-      rank
-    ).run();
-
+    `).bind(canonicalId,name,ticker,tier,rank).run();
     seeded++;
   }
-
   return{ok:true,seeded};
 }
 
+function marketSupport(item={}){
+  const marketCap=Math.max(0,n(item.marketCapUsd));
+  const volume=Math.max(0,n(item.volume24hUsd));
+  const liquidity=Math.max(0,n(item.liquidityUsd));
+  const ageDays=item.pairCreatedAt?Math.max(0,(Date.now()-n(item.pairCreatedAt))/86400000):0;
+  const mcapScore=Math.min(8,Math.log10(1+marketCap)*1.15);
+  const volumeScore=Math.min(6,Math.log10(1+volume));
+  const liquidityScore=Math.min(6,Math.log10(1+liquidity));
+  const ageScore=Math.min(2,Math.log10(1+ageDays));
+  return Math.max(0,mcapScore+volumeScore+liquidityScore+ageScore);
+}
+
+function sourceWeight(source){
+  switch(s(source).toLowerCase()){
+    case 'ansem-direct': return 55;
+    case 'coingecko': return 32;
+    case 'dexscreener': return 24;
+    case 'pump-local': return 14;
+    default: return 5;
+  }
+}
+
 export function evaluateZ500Identity(reference={},evidence=[]){
-  const expectedName=normalizeName(reference.ansemName||reference.name);
-  const expectedTicker=normalizeTicker(reference.ansemTicker||reference.ticker);
+  const expectedName=normalizeZ500Name(reference.ansemName||reference.name);
+  const expectedTicker=normalizeZ500Ticker(reference.ansemTicker||reference.ticker);
 
   const usable=(Array.isArray(evidence)?evidence:[])
-    .filter(item=>validMint(item?.mint))
+    .filter(item=>validZ500Mint(item?.mint))
     .map(item=>({
+      ...item,
       source:s(item.source).toLowerCase(),
       mint:s(item.mint),
       name:s(item.name),
-      ticker:normalizeTicker(item.ticker||item.symbol),
+      ticker:normalizeZ500Ticker(item.ticker||item.symbol),
       sourceIdentifier:s(item.sourceIdentifier),
       directMint:Boolean(item.directMint),
-      authoritativeLink:Boolean(item.authoritativeLink)
+      authoritativeLink:Boolean(item.authoritativeLink),
+      marketCapUsd:n(item.marketCapUsd),
+      volume24hUsd:n(item.volume24hUsd),
+      liquidityUsd:n(item.liquidityUsd),
+      pairCreatedAt:n(item.pairCreatedAt)
     }));
 
   const byMint=new Map();
-
   for(const item of usable){
     const row=byMint.get(item.mint)||{
       mint:item.mint,
-      sources:new Set(),
-      exactNameSources:new Set(),
-      exactTickerSources:new Set(),
-      directSources:new Set(),
-      authoritativeSources:new Set(),
-      evidence:[]
+      sources:new Set(),exactNameSources:new Set(),exactTickerSources:new Set(),
+      directSources:new Set(),authoritativeSources:new Set(),evidence:[]
     };
-
     if(item.source)row.sources.add(item.source);
-    if(expectedName&&normalizeName(item.name)===expectedName)
-      row.exactNameSources.add(item.source||'unknown');
-    if(expectedTicker&&item.ticker===expectedTicker)
-      row.exactTickerSources.add(item.source||'unknown');
+    if(expectedName&&normalizeZ500Name(item.name)===expectedName)row.exactNameSources.add(item.source||'unknown');
+    if(expectedTicker&&item.ticker===expectedTicker)row.exactTickerSources.add(item.source||'unknown');
     if(item.directMint)row.directSources.add(item.source||'unknown');
     if(item.authoritativeLink)row.authoritativeSources.add(item.source||'unknown');
-
     row.evidence.push(item);
     byMint.set(item.mint,row);
   }
@@ -136,89 +136,34 @@ export function evaluateZ500Identity(reference={},evidence=[]){
     const tickerMatch=row.exactTickerSources.size>0;
     const direct=row.directSources.size>0;
     const authoritative=row.authoritativeSources.size>0;
-
-    /*
-     * Symbol/name matches are NEVER enough on their own.
-     *
-     * A mint is strong only when:
-     *   A) an authoritative source directly links the Z500 identity
-     *      to that mint; or
-     *   B) at least two independent sources agree on the same mint,
-     *      and name + ticker agree with the Ansem identity.
-     */
-    const stronglyVerified=
-      authoritative ||
-      (
-        sourceCount>=2 &&
-        nameMatch &&
-        tickerMatch &&
-        direct
-      );
-
+    const market=Math.max(0,...row.evidence.map(marketSupport));
+    const score=[...row.sources].reduce((sum,source)=>sum+sourceWeight(source),0)
+      +(nameMatch?16:0)+(tickerMatch?16:0)+(direct?10:0)+(authoritative?30:0)+market;
+    const stronglyVerified=authoritative||(sourceCount>=2&&nameMatch&&tickerMatch&&direct);
     return{
-      mint:row.mint,
-      sourceCount,
-      nameMatch,
-      tickerMatch,
-      direct,
-      authoritative,
-      stronglyVerified,
-      sources:[...row.sources],
-      evidence:row.evidence
+      mint:row.mint,sourceCount,nameMatch,tickerMatch,direct,authoritative,stronglyVerified,
+      marketSupport:market,score,sources:[...row.sources],evidence:row.evidence
     };
-  });
+  }).sort((a,b)=>b.score-a.score||b.marketSupport-a.marketSupport||a.mint.localeCompare(b.mint));
 
   const strong=candidates.filter(x=>x.stronglyVerified);
-
   if(strong.length===1){
-    return{
-      state:'verified',
-      mint:strong[0].mint,
-      confidence:strong[0].authoritative?1:0.95,
-      method:strong[0].authoritative
-        ?'authoritative-direct-mint'
-        :'multi-source-exact-identity',
-      candidates
-    };
+    return{state:'verified',mint:strong[0].mint,confidence:strong[0].authoritative?1:0.95,method:strong[0].authoritative?'authoritative-direct-mint':'multi-source-exact-identity',candidates};
   }
 
   if(strong.length>1){
-    return{
-      state:'conflict',
-      mint:null,
-      confidence:0,
-      method:'multiple-verified-mints',
-      candidates
-    };
+    const [best,runnerUp]=strong;
+    const hasCanonicalCrossCheck=best.sources.includes('coingecko')&&best.sources.includes('dexscreener');
+    const dominant=hasCanonicalCrossCheck&&best.marketSupport>=8&&best.score>=runnerUp.score+25;
+    if(dominant){
+      return{state:'verified',mint:best.mint,confidence:0.9,method:'multi-source-market-dominance',candidates};
+    }
+    return{state:'conflict',mint:null,confidence:0,method:'multiple-verified-mints',candidates};
   }
 
-  if(candidates.length>1){
-    return{
-      state:'ambiguous',
-      mint:null,
-      confidence:0,
-      method:'multiple-candidate-mints',
-      candidates
-    };
-  }
-
-  if(candidates.length===1){
-    return{
-      state:'candidate',
-      mint:null,
-      confidence:0,
-      method:'insufficient-independent-evidence',
-      candidates
-    };
-  }
-
-  return{
-    state:'unverified',
-    mint:null,
-    confidence:0,
-    method:'no-valid-mint-evidence',
-    candidates:[]
-  };
+  if(candidates.length>1)return{state:'ambiguous',mint:null,confidence:0,method:'multiple-candidate-mints',candidates};
+  if(candidates.length===1)return{state:'candidate',mint:null,confidence:0,method:'insufficient-independent-evidence',candidates};
+  return{state:'unverified',mint:null,confidence:0,method:'no-valid-mint-evidence',candidates:[]};
 }
 
 export const __z500IdentityRegistryContract=Object.freeze({
@@ -226,6 +171,8 @@ export const __z500IdentityRegistryContract=Object.freeze({
   tickerAloneNeverVerifies:true,
   nameAloneNeverVerifies:true,
   independentSourcesRequired:2,
+  marketDataSupportingOnly:true,
+  dominantMarketTieBreakRequiresCoinGeckoAndDexScreener:true,
   conflictingVerifiedMintsFailClosed:true,
   referenceCount:10
 });
