@@ -1,0 +1,200 @@
+import { intelligenceDb } from './intelligence-indexer.mjs';
+import { persistUniverseObservations } from './intelligence-universe-runtime.mjs';
+
+const ADDRESS_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const SIGNATURE_RE=/^[1-9A-HJ-NP-Za-km-z]{64,96}$/;
+const DEFAULT_PROGRAMS=Object.freeze([
+  '6EF8rrecthR5DkPSj2BJJFhcEryXq8pFCEuPUVMF6P',
+  'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA'
+]);
+const s=value=>String(value??'').trim();
+const n=value=>Number.isFinite(Number(value))?Number(value):0;
+const clamp=(value,min,max)=>Math.min(max,Math.max(min,n(value)));
+const bool=value=>String(value||'').toLowerCase()==='true';
+const json=(body,status=200,cache='no-store')=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':cache,'x-content-type-options':'nosniff'}});
+const all=async statement=>{try{return(await statement.all())?.results||[];}catch{return[];}};
+const first=async statement=>{try{return await statement.first();}catch{return null;}};
+
+function config(env={}){
+  const configuredPrograms=s(env.PUMP_PROGRAM_IDS).split(',').map(s).filter(value=>ADDRESS_RE.test(value));
+  return Object.freeze({
+    enabled:bool(env.PUMP_INDEX_ENABLED),
+    streamEnabled:bool(env.PUMP_STREAM_ENABLED),
+    activeLimit:Math.max(1,Math.min(25,Math.trunc(n(env.PUMP_ACTIVE_TOKEN_LIMIT)||10))),
+    monthlyBudget:Math.max(1,Math.trunc(n(env.PUMP_MONTHLY_CREDIT_BUDGET)||4_000_000)),
+    warningPercent:clamp(env.PUMP_BUDGET_WARNING_PERCENT||70,1,99),
+    hardStopPercent:clamp(env.PUMP_BUDGET_HARD_STOP_PERCENT||90,1,100),
+    rawRetentionHours:Math.max(1,Math.min(720,Math.trunc(n(env.PUMP_RAW_RETENTION_HOURS)||72))),
+    candleRetentionDays:Math.max(1,Math.min(3650,Math.trunc(n(env.PUMP_CANDLE_RETENTION_DAYS)||365))),
+    rankRefreshMinutes:Math.max(1,Math.min(60,Math.trunc(n(env.PUMP_RANK_REFRESH_MINUTES)||5))),
+    programs:Object.freeze(configuredPrograms.length?configuredPrograms:DEFAULT_PROGRAMS)
+  });
+}
+
+function monthStart(now=Math.floor(Date.now()/1000)){
+  const date=new Date(now*1000);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}-01`;
+}
+function dayKey(now=Math.floor(Date.now()/1000)){return new Date(now*1000).toISOString().slice(0,10);}
+
+export async function pumpBudgetState(env={},now=Math.floor(Date.now()/1000)){
+  const db=intelligenceDb(env),cfg=config(env);
+  if(!db)return Object.freeze({mode:'unavailable',usedCredits:0,...cfg});
+  const row=await first(db.prepare('SELECT COALESCE(SUM(estimated_total_credits),0) used FROM pump_credit_usage WHERE usage_day>=?').bind(monthStart(now)));
+  const used=Math.max(0,Math.trunc(n(row?.used))),pct=cfg.monthlyBudget?used/cfg.monthlyBudget*100:100;
+  const mode=pct>=cfg.hardStopPercent?'hard-stop':pct>=80?'degraded':pct>=cfg.warningPercent?'warning':'normal';
+  return Object.freeze({mode,usedCredits:used,usedPercent:pct,remainingCredits:Math.max(0,cfg.monthlyBudget-used),monthlyBudget:cfg.monthlyBudget,warningPercent:cfg.warningPercent,hardStopPercent:cfg.hardStopPercent});
+}
+
+function transferMint(item={}){return s(item.mint||item.tokenMint||item.token_address);}
+function transferAmount(item={}){return Math.abs(n(item.tokenAmount??item.amount??item.rawTokenAmount?.tokenAmount));}
+
+export function normalizePumpEvent(input={},eventIndex=0){
+  const signature=s(input.signature||input.transactionSignature||input.txSignature);
+  const tokenTransfers=Array.isArray(input.tokenTransfers)?input.tokenTransfers:[];
+  const nativeTransfers=Array.isArray(input.nativeTransfers)?input.nativeTransfers:[];
+  const primary=tokenTransfers.find(item=>ADDRESS_RE.test(transferMint(item)))||{};
+  const mint=s(input.mint||input.tokenMint||transferMint(primary));
+  const tokenAmount=Math.abs(n(input.tokenAmount??input.token_amount??transferAmount(primary)))||null;
+  let wallet=s(input.wallet||input.user||input.trader),side=s(input.side||input.action).toLowerCase();
+  if(!['buy','sell','trade'].includes(side)){
+    const from=s(primary.fromUserAccount||primary.fromTokenAccount),to=s(primary.toUserAccount||primary.toTokenAccount);
+    const solFromWallet=nativeTransfers.some(item=>s(item.fromUserAccount)===to||s(item.fromUserAccount)===wallet);
+    const solToWallet=nativeTransfers.some(item=>s(item.toUserAccount)===from||s(item.toUserAccount)===wallet);
+    if(solFromWallet){side='buy';wallet=wallet||to;}
+    else if(solToWallet){side='sell';wallet=wallet||from;}
+    else side='trade';
+  }
+  if(!wallet){wallet=side==='buy'?s(primary.toUserAccount):s(primary.fromUserAccount);}
+  let solAmount=Math.abs(n(input.solAmount??input.sol_amount??input.nativeAmount));
+  if(!solAmount&&nativeTransfers.length)solAmount=nativeTransfers.reduce((sum,item)=>sum+Math.abs(n(item.amount))/1_000_000_000,0);
+  const blockTime=Math.max(0,Math.trunc(n(input.blockTime??input.timestamp??input.block_time)));
+  const slot=Math.max(0,Math.trunc(n(input.slot)));
+  const index=Math.max(0,Math.trunc(n(input.eventIndex??input.instructionIndex??eventIndex)));
+  const programId=s(input.programId||input.program_id||input.sourceProgram||input.instructions?.[0]?.programId);
+  const eventId=s(input.eventId)||`${signature}:${index}`;
+  if(!SIGNATURE_RE.test(signature)||!ADDRESS_RE.test(mint)||!blockTime||!eventId)throw new TypeError('invalid_pump_event');
+  return Object.freeze({eventId,signature,eventIndex:index,mint,wallet:ADDRESS_RE.test(wallet)?wallet:null,side,tokenAmount,solAmount:solAmount||null,priceSol:tokenAmount&&solAmount?solAmount/tokenAmount:null,slot:slot||null,blockTime,programId:ADDRESS_RE.test(programId)?programId:null,source:s(input.source)||'helius-pump',commitment:['confirmed','finalized'].includes(s(input.commitment))?s(input.commitment):'confirmed',symbol:s(input.symbol).slice(0,24)||null,name:s(input.name).slice(0,120)||null,imageUrl:s(input.imageUrl||input.image_uri).slice(0,600)||null,pairAddress:ADDRESS_RE.test(s(input.pairAddress||input.pool))?s(input.pairAddress||input.pool):null});
+}
+
+async function recordUsage(db,{bytes=0,events=0,credits=0,now}){
+  await db.prepare(`INSERT INTO pump_credit_usage(usage_day,streamed_bytes,webhook_events,stream_credits,rpc_credits,estimated_total_credits,updated_at) VALUES(?,?,?,?,0,?,?) ON CONFLICT(usage_day) DO UPDATE SET streamed_bytes=streamed_bytes+excluded.streamed_bytes,webhook_events=webhook_events+excluded.webhook_events,stream_credits=stream_credits+excluded.stream_credits,estimated_total_credits=estimated_total_credits+excluded.estimated_total_credits,updated_at=excluded.updated_at`).bind(dayKey(now),bytes,events,credits,credits,now).run();
+}
+
+async function activeMintSet(db){const rows=await all(db.prepare('SELECT mint FROM pump_active_tokens'));return new Set(rows.map(row=>s(row.mint)));}
+
+async function persistCandidate(db,event,now){
+  const inserted=await db.prepare('INSERT OR IGNORE INTO pump_seen_events(event_id,mint,block_time,inserted_at) VALUES(?,?,?,?)').bind(event.eventId,event.mint,event.blockTime,now).run();
+  if(!n(inserted?.meta?.changes))return false;
+  const bucket=Math.floor(event.blockTime/300)*300;
+  await db.prepare(`INSERT INTO pump_volume_buckets(mint,bucket_start,volume_sol,buy_count,sell_count,trade_count,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(mint,bucket_start) DO UPDATE SET volume_sol=volume_sol+excluded.volume_sol,buy_count=buy_count+excluded.buy_count,sell_count=sell_count+excluded.sell_count,trade_count=trade_count+1,updated_at=excluded.updated_at`).bind(event.mint,bucket,event.solAmount||0,event.side==='buy'?1:0,event.side==='sell'?1:0,1,now).run();
+  await db.prepare(`INSERT INTO pump_tokens(mint,symbol,name,image_url,pair_address,metadata_source,first_seen,last_seen,updated_at) VALUES(?,?,?,?,?,'observed-stream',?,?,?) ON CONFLICT(mint) DO UPDATE SET symbol=COALESCE(excluded.symbol,symbol),name=COALESCE(excluded.name,name),image_url=COALESCE(excluded.image_url,image_url),pair_address=COALESCE(excluded.pair_address,pair_address),last_seen=MAX(last_seen,excluded.last_seen),updated_at=excluded.updated_at`).bind(event.mint,event.symbol,event.name,event.imageUrl,event.pairAddress,event.blockTime,event.blockTime,now).run();
+  return true;
+}
+
+async function persistDetailedTrade(db,event,now){
+  await db.prepare(`INSERT OR IGNORE INTO pump_trades(event_id,signature,event_index,mint,wallet,side,token_amount,sol_amount,price_sol,slot,block_time,program_id,source,commitment,inserted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(event.eventId,event.signature,event.eventIndex,event.mint,event.wallet,event.side,event.tokenAmount,event.solAmount,event.priceSol,event.slot,event.blockTime,event.programId,event.source,event.commitment,now).run();
+  if(event.priceSol==null)return;
+  const bucket=Math.floor(event.blockTime/60)*60;
+  await db.prepare(`INSERT INTO pump_candles(mint,bucket_start,bucket_seconds,open,high,low,close,open_time,close_time,volume_token,volume_sol,buy_count,sell_count,trade_count,source_set_json,updated_at) VALUES(?,?,60,?,?,?,?,?,?,?,?,?,?,1,?,?) ON CONFLICT(mint,bucket_start,bucket_seconds) DO UPDATE SET open=CASE WHEN excluded.open_time<open_time THEN excluded.open ELSE open END,high=MAX(high,excluded.high),low=MIN(low,excluded.low),close=CASE WHEN excluded.close_time>=close_time THEN excluded.close ELSE close END,open_time=MIN(open_time,excluded.open_time),close_time=MAX(close_time,excluded.close_time),volume_token=volume_token+excluded.volume_token,volume_sol=volume_sol+excluded.volume_sol,buy_count=buy_count+excluded.buy_count,sell_count=sell_count+excluded.sell_count,trade_count=trade_count+1,updated_at=excluded.updated_at`).bind(event.mint,bucket,event.priceSol,event.priceSol,event.priceSol,event.priceSol,event.blockTime,event.blockTime,event.tokenAmount||0,event.solAmount||0,event.side==='buy'?1:0,event.side==='sell'?1:0,JSON.stringify([event.source]),now).run();
+}
+
+export async function ingestPumpEvents(env={},inputs=[],{bytes=0,now=Math.floor(Date.now()/1000)}={}){
+  const db=intelligenceDb(env),cfg=config(env);if(!db)throw new Error('intelligence_db_unavailable');if(!cfg.enabled)throw new Error('feature_disabled');
+  const budget=await pumpBudgetState(env,now);if(budget.mode==='hard-stop')throw new Error('pump_budget_hard_stop');
+  const list=(Array.isArray(inputs)?inputs:[inputs]).slice(0,100),active=await activeMintSet(db);
+  let accepted=0,duplicates=0,rejected=0;const observations=[];
+  for(let index=0;index<list.length;index+=1){
+    let event;try{event=normalizePumpEvent(list[index],index);}catch{rejected+=1;continue;}
+    const fresh=await persistCandidate(db,event,now);if(!fresh){duplicates+=1;continue;}accepted+=1;
+    if(active.has(event.mint)&&budget.mode!=='hard-stop'){
+      await persistDetailedTrade(db,event,now);
+      observations.push({eventId:`pump:${event.eventId}`,entityKind:'token',entityId:event.mint,category:'swap',observedAt:event.blockTime,slot:event.slot,commitment:event.commitment,magnitudeBand:Math.min(1,Math.log10(1+(event.solAmount||0))/3),source:event.source,evidence:{signature:event.signature,side:event.side,wallet:event.wallet,relations:event.wallet?[{sourceId:event.mint,targetId:event.wallet,evidenceId:event.signature,relationKind:event.side,observedAt:event.blockTime,verificationState:event.commitment}]:[]}});
+    }
+  }
+  if(observations.length)await persistUniverseObservations(env,observations).catch(()=>0);
+  const webhookCredits=list.length,streamCredits=Math.ceil(Math.max(0,bytes)/100_000)*2,credits=s(env.PUMP_INGEST_CREDIT_MODE)==='stream'?streamCredits:webhookCredits;
+  await recordUsage(db,{bytes,events:list.length,credits,now});
+  await db.prepare(`UPDATE pump_ingest_health SET state='receiving',last_message_at=?,last_success_at=?,received_events=received_events+?,accepted_events=accepted_events+?,duplicate_events=duplicate_events+?,rejected_events=rejected_events+?,updated_at=? WHERE id=1`).bind(now,now,list.length,accepted,duplicates,rejected,now).run();
+  return Object.freeze({received:list.length,accepted,duplicates,rejected,detailed:observations.length,estimatedCredits:credits,budget:await pumpBudgetState(env,now)});
+}
+
+export async function refreshPumpRankings(env={},now=Math.floor(Date.now()/1000)){
+  const db=intelligenceDb(env),cfg=config(env);if(!db||!cfg.enabled)return{updated:false};
+  const cycle=Math.floor(now/(cfg.rankRefreshMinutes*60))*(cfg.rankRefreshMinutes*60);
+  const rows24=await all(db.prepare(`SELECT mint,SUM(volume_sol) volume_sol,SUM(trade_count) trade_count FROM pump_volume_buckets WHERE bucket_start>=? GROUP BY mint ORDER BY volume_sol DESC,trade_count DESC,mint LIMIT 25`).bind(now-86400));
+  const rows1=await all(db.prepare(`SELECT mint,SUM(volume_sol) volume_sol,SUM(trade_count) trade_count FROM pump_volume_buckets WHERE bucket_start>=? GROUP BY mint ORDER BY volume_sol DESC,trade_count DESC,mint LIMIT 25`).bind(now-3600));
+  const rank1=new Map(rows1.map((row,index)=>[s(row.mint),index+1]));
+  for(const [index,row] of rows24.entries())await db.prepare('INSERT OR REPLACE INTO pump_ranking_snapshots(snapshot_at,window_seconds,rank,mint,volume_sol,trade_count) VALUES(?,?,?,?,?,?)').bind(cycle,86400,index+1,row.mint,n(row.volume_sol),Math.trunc(n(row.trade_count))).run();
+  for(const [index,row] of rows1.entries())await db.prepare('INSERT OR REPLACE INTO pump_ranking_snapshots(snapshot_at,window_seconds,rank,mint,volume_sol,trade_count) VALUES(?,?,?,?,?,?)').bind(cycle,3600,index+1,row.mint,n(row.volume_sol),Math.trunc(n(row.trade_count))).run();
+  const top=rows24.slice(0,cfg.activeLimit),active=await all(db.prepare('SELECT * FROM pump_active_tokens ORDER BY rank_24h'));
+  if(!active.length){for(const [index,row] of top.entries())await db.prepare(`INSERT OR REPLACE INTO pump_active_tokens(mint,rank_24h,rank_1h,qualifying_cycles,active_since,last_evaluated,entry_reason) VALUES(?,?,?,?,?,?,'initial-verified-volume')`).bind(row.mint,index+1,rank1.get(s(row.mint))||null,2,now,now).run();}
+  else{
+    for(const [index,row] of top.entries())await db.prepare(`INSERT INTO pump_rank_candidates(mint,qualifying_cycles,last_rank_24h,last_volume_sol,last_seen_cycle) VALUES(?,1,?,?,?) ON CONFLICT(mint) DO UPDATE SET qualifying_cycles=CASE WHEN last_seen_cycle<? THEN qualifying_cycles+1 ELSE qualifying_cycles END,last_rank_24h=excluded.last_rank_24h,last_volume_sol=excluded.last_volume_sol,last_seen_cycle=excluded.last_seen_cycle`).bind(row.mint,index+1,n(row.volume_sol),cycle,cycle).run();
+    const qualified=await all(db.prepare('SELECT * FROM pump_rank_candidates WHERE qualifying_cycles>=2 AND last_seen_cycle=? ORDER BY last_rank_24h LIMIT ?').bind(cycle,cfg.activeLimit));
+    for(const candidate of qualified){await db.prepare(`INSERT INTO pump_active_tokens(mint,rank_24h,rank_1h,qualifying_cycles,active_since,last_evaluated,entry_reason) VALUES(?,?,?,?,?,?,'two-cycle-verified-volume') ON CONFLICT(mint) DO UPDATE SET rank_24h=excluded.rank_24h,rank_1h=excluded.rank_1h,qualifying_cycles=excluded.qualifying_cycles,last_evaluated=excluded.last_evaluated`).bind(candidate.mint,candidate.last_rank_24h,rank1.get(s(candidate.mint))||null,candidate.qualifying_cycles,now,now).run();}
+    const keep=qualified.slice(0,cfg.activeLimit).map(row=>s(row.mint));if(keep.length===cfg.activeLimit){const marks=keep.map(()=>'?').join(',');await db.prepare(`DELETE FROM pump_active_tokens WHERE mint NOT IN (${marks})`).bind(...keep).run();}
+  }
+  for(const [index,row] of top.entries())await db.prepare('UPDATE pump_active_tokens SET rank_24h=?,rank_1h=?,last_evaluated=? WHERE mint=?').bind(index+1,rank1.get(s(row.mint))||null,now,row.mint).run();
+  return{updated:true,cycle,candidates:rows24.length,active:(await activeMintSet(db)).size};
+}
+
+export async function maintainPumpIndex(env={},now=Math.floor(Date.now()/1000)){
+  const db=intelligenceDb(env),cfg=config(env);if(!db||!cfg.enabled)return{enabled:false};
+  const ranking=await refreshPumpRankings(env,now);
+  const rawCutoff=now-cfg.rawRetentionHours*3600,candleCutoff=now-cfg.candleRetentionDays*86400;
+  await Promise.allSettled([
+    db.prepare('DELETE FROM pump_seen_events WHERE inserted_at<?').bind(now-48*3600).run(),
+    db.prepare('DELETE FROM pump_trades WHERE block_time<?').bind(rawCutoff).run(),
+    db.prepare('DELETE FROM pump_volume_buckets WHERE bucket_start<?').bind(now-2*86400).run(),
+    db.prepare('DELETE FROM pump_candles WHERE bucket_start<?').bind(candleCutoff).run(),
+    db.prepare('DELETE FROM pump_ranking_snapshots WHERE snapshot_at<?').bind(now-90*86400).run()
+  ]);
+  const budget=await pumpBudgetState(env,now);
+  let webhookPaused=false;
+  if(budget.mode==='hard-stop'&&s(env.PUMP_HELIUS_WEBHOOK_ID)&&s(env.HELIUS_API_KEY)){
+    const endpoint=`https://api.helius.xyz/v0/webhooks/${encodeURIComponent(s(env.PUMP_HELIUS_WEBHOOK_ID))}?api-key=${encodeURIComponent(s(env.HELIUS_API_KEY))}`;
+    try{
+      const response=await fetch(endpoint,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({active:false})});
+      webhookPaused=response.ok;
+      if(response.ok)await recordUsage(db,{bytes:0,events:0,credits:100,now});
+    }catch{}
+  }
+  return{enabled:true,ranking,budget,webhookPaused};
+}
+
+async function topPayload(env,now=Math.floor(Date.now()/1000)){
+  const db=intelligenceDb(env),budget=await pumpBudgetState(env,now);if(!db)throw new Error('intelligence_db_unavailable');
+  const rows=await all(db.prepare(`SELECT a.mint,a.rank_24h,a.rank_1h,a.active_since,t.symbol,t.name,t.image_url,t.pair_address,COALESCE(v.volume_24h,0) volume_24h,COALESCE(v.trade_count_24h,0) trade_count_24h,COALESCE(h.volume_1h,0) volume_1h,COALESCE(h.trade_count_1h,0) trade_count_1h FROM pump_active_tokens a LEFT JOIN pump_tokens t ON t.mint=a.mint LEFT JOIN (SELECT mint,SUM(volume_sol) volume_24h,SUM(trade_count) trade_count_24h FROM pump_volume_buckets WHERE bucket_start>=? GROUP BY mint) v ON v.mint=a.mint LEFT JOIN (SELECT mint,SUM(volume_sol) volume_1h,SUM(trade_count) trade_count_1h FROM pump_volume_buckets WHERE bucket_start>=? GROUP BY mint) h ON h.mint=a.mint ORDER BY a.rank_24h,a.mint`).bind(now-86400,now-3600));
+  const health=await first(db.prepare('SELECT * FROM pump_ingest_health WHERE id=1'));
+  return{schemaVersion:'pump-top10-v1',generatedAt:now*1000,readOnly:true,rankingBasis:'verified observed SOL volume',coverage:{complete:false,statement:'Rankings cover events received by the bounded Pump ingest. They do not claim complete Pump.fun or Solana coverage.'},budget,tokens:rows.map(row=>({mint:s(row.mint),rank24h:n(row.rank_24h)||null,rank1h:n(row.rank_1h)||null,symbol:s(row.symbol)||null,name:s(row.name)||null,imageUrl:s(row.image_url)||null,pairAddress:s(row.pair_address)||null,volumeSol24h:n(row.volume_24h),volumeSol1h:n(row.volume_1h),trades24h:Math.trunc(n(row.trade_count_24h)),trades1h:Math.trunc(n(row.trade_count_1h)),activeSince:n(row.active_since)*1000})),health:{state:s(health?.state)||'idle',lastMessageAt:n(health?.last_message_at)?n(health.last_message_at)*1000:null,lastSuccessAt:n(health?.last_success_at)?n(health.last_success_at)*1000:null}};
+}
+
+function tokenPath(path){const match=path.match(/^\/api\/intelligence\/pump\/token\/([^/]+)(?:\/(trades|candles))?$/);return match?{mint:decodeURIComponent(match[1]),kind:match[2]||'summary'}:null;}
+function walletPath(path){const match=path.match(/^\/api\/intelligence\/pump\/wallet\/([^/]+)$/);return match?decodeURIComponent(match[1]):null;}
+
+export async function handlePumpTop10Request(request,env={}){
+  const url=new URL(request.url),path=url.pathname,cfg=config(env);if(!path.startsWith('/api/intelligence/pump/'))return null;
+  if(!cfg.enabled)return json({ok:false,error:'feature_disabled'},404);
+  const db=intelligenceDb(env);if(!db)return json({ok:false,error:'intelligence_db_unavailable'},503);
+  if(path==='/api/intelligence/pump/ingest'){
+    if(request.method!=='POST')return json({ok:false,error:'method_not_allowed'},405);
+    const expected=s(env.PUMP_INGEST_SECRET),provided=s(request.headers.get('authorization')).replace(/^Bearer\s+/i,'')||s(request.headers.get('x-pump-ingest-secret'));
+    if(!expected||provided!==expected)return json({ok:false,error:'unauthorized'},401);
+    let body;try{body=await request.json();}catch{return json({ok:false,error:'invalid_json'},400);}
+    try{return json({ok:true,result:await ingestPumpEvents(env,Array.isArray(body)?body:(body.events||body),{bytes:n(request.headers.get('content-length'))})},202);}catch(error){const code=s(error?.message||error);return json({ok:false,error:code},code==='pump_budget_hard_stop'?429:400);}
+  }
+  if(request.method!=='GET')return json({ok:false,error:'method_not_allowed'},405);
+  if(path==='/api/intelligence/pump/top')return json({ok:true,data:await topPayload(env)},200,'public, max-age=5, stale-while-revalidate=15');
+  if(path==='/api/intelligence/pump/status'){const data=await topPayload(env);return json({ok:true,data:{enabled:cfg.enabled,streamEnabled:cfg.streamEnabled,budget:data.budget,health:data.health,activeTokenCount:data.tokens.length,coverage:data.coverage}},200,'public, max-age=15');}
+  const token=tokenPath(path);
+  if(token){if(!ADDRESS_RE.test(token.mint))return json({ok:false,error:'invalid_token_mint'},400);const limit=Math.max(1,Math.min(500,Math.trunc(n(url.searchParams.get('limit'))||100))),to=Math.max(0,Math.trunc(n(url.searchParams.get('to'))||Date.now()/1000)),from=Math.max(to-7*86400,Math.trunc(n(url.searchParams.get('from'))||to-86400));
+    if(token.kind==='trades'){const rows=await all(db.prepare('SELECT * FROM pump_trades WHERE mint=? AND block_time BETWEEN ? AND ? ORDER BY block_time DESC,event_id DESC LIMIT ?').bind(token.mint,from,to,limit));return json({ok:true,data:{mint:token.mint,from:from*1000,to:to*1000,trades:rows,coverage:{complete:false,statement:'Detailed trades are retained only while this token is in the bounded active set.'}}});}
+    if(token.kind==='candles'){const rows=await all(db.prepare('SELECT * FROM pump_candles WHERE mint=? AND bucket_start BETWEEN ? AND ? ORDER BY bucket_start ASC LIMIT 10000').bind(token.mint,from,to));return json({ok:true,data:{mint:token.mint,from:from*1000,to:to*1000,candles:rows,coverage:{complete:false}}});}
+    const row=await first(db.prepare('SELECT t.*,a.rank_24h,a.rank_1h,a.active_since FROM pump_tokens t LEFT JOIN pump_active_tokens a ON a.mint=t.mint WHERE t.mint=?').bind(token.mint));return row?json({ok:true,data:row}):json({ok:false,error:'not_indexed'},404);
+  }
+  const wallet=walletPath(path);if(wallet){if(!ADDRESS_RE.test(wallet))return json({ok:false,error:'invalid_wallet'},400);const limit=Math.max(1,Math.min(500,Math.trunc(n(url.searchParams.get('limit'))||100))),rows=await all(db.prepare('SELECT * FROM pump_trades WHERE wallet=? ORDER BY block_time DESC,event_id DESC LIMIT ?').bind(wallet,limit));return json({ok:true,data:{wallet,trades:rows,coverage:{complete:false,statement:'This contains retained Pump top-10 observations only. The wallet-history index remains the broader source.'}}});}
+  return json({ok:false,error:'not_found'},404);
+}
+
+export const __pumpTop10Contract=Object.freeze({defaultPrograms:DEFAULT_PROGRAMS,maximumBatch:100,maximumActiveTokens:25});

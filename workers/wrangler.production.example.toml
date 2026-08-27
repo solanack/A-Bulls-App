@@ -1,0 +1,53 @@
+name = "black-bull-run-sol-api"
+main = "worker-vnext-entry.mjs"
+compatibility_date = "2026-08-01"
+
+[build]
+command = "node ../scripts/reconstruct-worker-8.2.0.mjs"
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+ALLOWED_ORIGINS = "https://abullsapp.com,https://www.abullsapp.com"
+UNIVERSE_ENABLED = "true"
+TRICKSTER_STUDIO_ENABLED = "true"
+TRICKSTER_SHARE_ENABLED = "false"
+PLAYABLE_DATA_ENABLED = "true"
+INTELLIGENCE_MESH_ENABLED = "true"
+BULL_INDEXER_ENABLED = "true"
+BULL_NFT_INDEXER_ENABLED = "false"
+BULL_ARCHIVAL_ENABLED = "false"
+MARKET_BACKFILL_QUEUE_ENABLED = "true"
+INTELLIGENCE_SCHEDULER_BATCH_SIZE = "3"
+INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED = "false"
+INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED = "false"
+INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
+PUMP_INDEX_ENABLED = "true"
+PUMP_STREAM_ENABLED = "false"
+PUMP_ACTIVE_TOKEN_LIMIT = "10"
+PUMP_MONTHLY_CREDIT_BUDGET = "4000000"
+PUMP_BUDGET_WARNING_PERCENT = "70"
+PUMP_BUDGET_HARD_STOP_PERCENT = "90"
+PUMP_RANK_REFRESH_MINUTES = "5"
+PUMP_RAW_RETENTION_HOURS = "72"
+PUMP_CANDLE_RETENTION_DAYS = "365"
+PUMP_INGEST_CREDIT_MODE = "webhook"
+PUMP_HELIUS_WEBHOOK_ID = ""
+PUMP_PROGRAM_IDS = "6EF8rrecthR5DkPSj2BJJFhcEryXq8pFCEuPUVMF6P,pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"
+
+[[d1_databases]]
+binding = "LEADERBOARD_DB"
+database_name = "<YOUR_PRODUCTION_D1_DATABASE_NAME>"
+database_id = "<YOUR_PRODUCTION_D1_DATABASE_ID>"
+
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "<YOUR_ACCOUNT_UNIQUE_INTEGER_NAMESPACE_ID>"
+  [ratelimits.simple]
+  limit = 60
+  period = 60
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1

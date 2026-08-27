@@ -1,0 +1,66 @@
+name = "black-bull-run-sol"
+main = "worker-vnext-entry.mjs"
+compatibility_date = "2026-08-01"
+
+[build]
+command = "node ../scripts/reconstruct-worker-8.2.0.mjs"
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+ALLOWED_ORIGINS = "https://abullsapp.com,https://www.abullsapp.com"
+UNIVERSE_ENABLED = "true"
+TRICKSTER_STUDIO_ENABLED = "true"
+TRICKSTER_SHARE_ENABLED = "false"
+PLAYABLE_DATA_ENABLED = "true"
+INTELLIGENCE_MESH_ENABLED = "true"
+BULL_INDEXER_ENABLED = "true"
+BULL_NFT_INDEXER_ENABLED = "false"
+BULL_ARCHIVAL_ENABLED = "false"
+MARKET_BACKFILL_QUEUE_ENABLED = "true"
+INTELLIGENCE_SCHEDULER_BATCH_SIZE = "3"
+INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED = "false"
+INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED = "false"
+INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
+PUMP_INDEX_ENABLED = "true"
+PUMP_INDEX_SOURCE = "ansem-z500"
+PUMP_STREAM_ENABLED = "false"
+PUMP_ACTIVE_TOKEN_LIMIT = "10"
+PUMP_MONTHLY_CREDIT_BUDGET = "1000000"
+PUMP_BUDGET_WARNING_PERCENT = "60"
+PUMP_BUDGET_HARD_STOP_PERCENT = "80"
+PUMP_RANK_REFRESH_MINUTES = "15"
+PUMP_RAW_RETENTION_HOURS = "72"
+PUMP_CANDLE_RETENTION_DAYS = "365"
+PUMP_INGEST_CREDIT_MODE = "webhook"
+PUMP_HELIUS_WEBHOOK_ID = "06af243a-c7a6-445f-8966-31d3d46b9ddc"
+
+ECOSYSTEM_UNIVERSES_ENABLED = "true"
+Z500_UNIVERSE_ENABLED = "false"
+Z500_HELIUS_ROTATION_ENABLED = "false"
+Z500_TOP_LIMIT = "10"
+Z500_REFRESH_SECONDS = "900"
+Z500_CONFIRMATION_CYCLES = "2"
+[[d1_databases]]
+binding = "LEADERBOARD_DB"
+database_name = "a-bulls-app-leaderboard-production"
+database_id = "f0747244-28c7-4a70-a40c-6f5200e9e6bd"
+
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "8262026"
+  [ratelimits.simple]
+  limit = 60
+  period = 60
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1
+
+# Dedicated A Bulls App Intelligence database
+[[d1_databases]]
+binding = "INTELLIGENCE_DB"
+database_name = "a-bulls-app-intelligence"
+database_id = "a54ed900-ccd0-4fe5-9522-71996e96d16b"
+migrations_dir = "migrations"

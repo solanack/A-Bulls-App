@@ -61,10 +61,3 @@ INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
 [observability]
 enabled = true
 head_sampling_rate = 0.1
-
-# Dedicated A Bulls App Intelligence database
-[[d1_databases]]
-binding = "INTELLIGENCE_DB"
-database_name = "a-bulls-app-intelligence"
-database_id = "a54ed900-ccd0-4fe5-9522-71996e96d16b"
-migrations_dir = "migrations"

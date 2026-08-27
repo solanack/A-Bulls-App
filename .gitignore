@@ -1,0 +1,17 @@
+
+# Local/private deployment state
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+.wrangler/
+node_modules/
+*.log
+
+# Keys / certificates
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
