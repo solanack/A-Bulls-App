@@ -3,7 +3,7 @@
 const s=v=>String(v??'').trim(),finite=v=>v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Number(v):null,n=v=>finite(v)??0,clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),BASE58=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const state={apiBase:'',universe:'solana',last:null,marketReplay:null,loading:false,error:null};
 function hash(v){let h=2166136261;for(const c of s(v)){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
-function rng(seed){return()=>((seed=Math.imul(seed^seed>>>15,1|seed)+0x6D2B79F5|0)^seed>>>7)>>>0)/4294967296}
+function rng(seed){return()=>{seed=(seed+0x6D2B79F5)|0;let t=Math.imul(seed^(seed>>>15),1|seed);t=(t+Math.imul(t^(t>>>7),61|t))^t;return ((t^(t>>>14))>>>0)/4294967296}}
 function endpoint(path,params={}){const u=new URL(state.apiBase+path,location.origin);for(const[k,v]of Object.entries(params))if(v!==''&&v!=null)u.searchParams.set(k,String(v));return u.toString()}
 async function request(path,{method='GET',params=null,body=null}={}){const r=await fetch(endpoint(path,params||{}),{method,headers:{accept:'application/json',...(body?{'content-type':'application/json'}:{})},body:body?JSON.stringify(body):undefined}),j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||`intelligence_http_${r.status}`);return j}
 const get=(path,params)=>request(path,{params});const post=(path,body)=>request(path,{method:'POST',body});
