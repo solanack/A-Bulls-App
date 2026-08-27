@@ -1,0 +1,35 @@
+name = "a-bulls-app-z500-preview"
+main = "worker-vnext-entry.mjs"
+compatibility_date = "2026-08-01"
+
+[build]
+command = "node ../scripts/reconstruct-worker-8.2.0.mjs"
+
+[vars]
+ALLOWED_ORIGINS = "https://abullsapp.com,https://www.abullsapp.com"
+UNIVERSE_ENABLED = "true"
+TRICKSTER_STUDIO_ENABLED = "false"
+TRICKSTER_SHARE_ENABLED = "false"
+PLAYABLE_DATA_ENABLED = "false"
+INTELLIGENCE_MESH_ENABLED = "false"
+MARKET_BACKFILL_QUEUE_ENABLED = "false"
+INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED = "false"
+INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED = "false"
+INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
+ECOSYSTEM_UNIVERSES_ENABLED = "false"
+Z500_UNIVERSE_ENABLED = "false"
+Z500_HELIUS_ROTATION_ENABLED = "false"
+Z500_ALLOW_REFERENCE_FALLBACK = "false"
+Z500_TOP_LIMIT = "10"
+Z500_REFRESH_SECONDS = "900"
+Z500_CONFIRMATION_CYCLES = "2"
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1
+
+[[d1_databases]]
+binding = "INTELLIGENCE_DB"
+database_name = "a-bulls-app-intelligence"
+database_id = "a54ed900-ccd0-4fe5-9522-71996e96d16b"
+migrations_dir = "migrations"
