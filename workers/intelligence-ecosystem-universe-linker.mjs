@@ -17,3 +17,20 @@ export async function linkObservationToUniverses(env={},observation={}){
 }
 
 export async function linkObservationBatchToUniverses(env={},observations=[]){let links=0;for(const observation of observations.slice(0,1000))links+=await linkObservationToUniverses(env,observation);return links;}
+
+// Called immediately after bull_wallet_events are persisted. It freezes the ecosystem
+// membership that was true at ingest time, so a later Top-10 rotation never erases the
+// historical research context of an already observed event.
+export async function linkIndexedEventsDurably(env={},events=[]){
+  const db=intelligenceDb(env);if(!db)return 0;let written=0;
+  for(const event of events.slice(0,500)){
+    const signature=s(event.signature),wallet=s(event.wallet),mint=s(event.mint);const blockTime=Math.max(0,Math.trunc(Number(event.blockTime||event.block_time)||0));
+    if(!signature||!wallet||!blockTime)continue;
+    const row=await db.prepare(`SELECT id,signature,wallet,mint,block_time FROM bull_wallet_events WHERE signature=? AND wallet=? AND mint=? ORDER BY id DESC LIMIT 1`).bind(signature,wallet,mint).first();
+    if(!row?.id)continue;
+    const memberships=mint?(await db.prepare(`SELECT universe_id,source_snapshot_id FROM intelligence_universe_membership WHERE active=1 AND entity_kind='token' AND entity_id=?`).bind(mint).all())?.results||[]:[];
+    const targets=[{universe_id:'solana',source_snapshot_id:null},...memberships.filter(item=>s(item.universe_id)!=='solana')];
+    for(const target of targets){const result=await db.prepare(`INSERT OR IGNORE INTO intelligence_universe_event_links(universe_id,event_row_id,signature,wallet,mint,block_time,membership_snapshot_id) VALUES(?,?,?,?,?,?,?)`).bind(s(target.universe_id),row.id,signature,wallet,mint,blockTime,s(target.source_snapshot_id)||null).run();written+=Number(result?.meta?.changes||0);}
+  }
+  return written;
+}
