@@ -31,7 +31,7 @@ function corsHeaders(request, env = {}) {
   return {
     ...(selected ? { 'Access-Control-Allow-Origin': selected } : {}),
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Pump-Ingest-Secret',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin'
   };
@@ -71,7 +71,7 @@ export default {
     }
     const guarded = await guardIntelligenceRequest(request, env);
     if (guarded) return withCors(guarded, request, env);
-    const vnext = await handleIntelligenceFetch(request, env);
+    const vnext = await handleIntelligenceFetch(request, env, ctx);
     if (vnext) return withCors(vnext, request, env);
     if (!RETAINED_BASELINE_PATHS.has(url.pathname)) return notFound(request, env);
     return baselineWorker.fetch(request, env, ctx);
