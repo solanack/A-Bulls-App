@@ -1,5 +1,6 @@
 import { intelligenceDb } from './intelligence-indexer.mjs';
 import { refreshZ500Universe } from './intelligence-z500-universe.mjs';
+import { refreshConfiguredLaunchpadUniverses } from './intelligence-launchpad-universe-selectors.mjs';
 import { reconcileZ500HeliusWatchlist } from './intelligence-helius-universe-watchlist.mjs';
 import { runPatternLabWindows } from './intelligence-pattern-lab-durable.mjs';
 import { analyzeDecisionModels } from './intelligence-decision-research.mjs';
@@ -14,7 +15,7 @@ async function acquireLease(db,key,now,ttl){
   return n(result?.meta?.changes)>0;
 }
 async function finishLease(db,key,now,state,error=''){await db.prepare('UPDATE intelligence_scheduler_leases SET lease_until=?,last_completed_at=?,last_state=?,last_error=?,updated_at=unixepoch() WHERE lease_key=?').bind(now,now,state,error?s(error).slice(0,500):null,key).run();}
-async function activeUniverses(env,limit=5){const db=intelligenceDb(env);if(!db)return[];const result=await db.prepare("SELECT universe_id FROM intelligence_universes WHERE active=1 ORDER BY CASE universe_id WHEN 'z500-top10' THEN 0 WHEN 'solana' THEN 1 ELSE 2 END,universe_id LIMIT ?").bind(Math.max(1,Math.min(8,Math.trunc(n(limit)||5)))).all();return(result?.results||[]).map(row=>s(row.universe_id)).filter(Boolean);}
+async function activeUniverses(env,limit=5){const db=intelligenceDb(env);if(!db)return[];const result=await db.prepare("SELECT universe_id FROM intelligence_universes WHERE active=1 ORDER BY CASE universe_id WHEN 'z500-top10' THEN 0 WHEN 'solana' THEN 1 ELSE 2 END,universe_id LIMIT ?").bind(Math.max(1,Math.min(8,Math.trunc(n(limit)||5))).all();return(result?.results||[]).map(row=>s(row.universe_id)).filter(Boolean);}
 
 async function patternPass(env,now){
   if(String(env.UNIVERSE_PATTERN_LAB_ENABLED||'').toLowerCase()!=='true')return{enabled:false};
@@ -41,11 +42,12 @@ export async function runUniverseScheduledMaintenance(env={},options={}){
   const now=Math.max(0,Math.trunc(n(options.now)||Date.now()/1000));
   if(String(env.ECOSYSTEM_UNIVERSES_ENABLED||'').toLowerCase()!=='true')return{enabled:false};
   const selector=await refreshZ500Universe(env,{now});
+  const launchpads=await refreshConfiguredLaunchpadUniverses(env,{now});
   const watchlist=await reconcileZ500HeliusWatchlist(env,{now});
   const patternLab=await patternPass(env,now);
   const decisionResearch=await decisionPass(env,now);
   const anomalyResearch=await anomalyPass(env,now);
-  return{enabled:true,now,selector,watchlist,patternLab,decisionResearch,anomalyResearch};
+  return{enabled:true,now,selector,launchpads,watchlist,patternLab,decisionResearch,anomalyResearch};
 }
 
 export async function universeSchedulerHealth(env={}){
