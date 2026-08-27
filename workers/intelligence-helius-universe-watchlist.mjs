@@ -13,7 +13,7 @@ function config(env={}){
     webhookId:s(env.PUMP_HELIUS_WEBHOOK_ID||env.Z500_HELIUS_WEBHOOK_ID),
     apiKey:s(env.HELIUS_API_KEY),
     apiBase:s(env.HELIUS_WEBHOOK_API_BASE)||'https://api-mainnet.helius-rpc.com/v0/webhooks',
-    maxUpdatesPerDay:Math.max(2,Math.min(200,Math.trunc(n(env.Z500_MAX_WEBHOOK_UPDATES_PER_DAY)||48)),
+    maxUpdatesPerDay:Math.max(2,Math.min(200,Math.trunc(n(env.Z500_MAX_WEBHOOK_UPDATES_PER_DAY)||48))),
     timeoutMs:Math.max(1500,Math.min(15000,Math.trunc(n(env.Z500_HELIUS_TIMEOUT_MS)||7000)))
   });
 }
