@@ -8,8 +8,8 @@ import { __z500EvidenceContract } from './intelligence-z500-evidence-collector.m
 import { __z500UniverseContract } from './intelligence-z500-universe.mjs';
 
 const REF={name:'Bullshit Coin',ticker:'BULLSHIT'};
-const MINT_A='8hLEWTgS5n7Q1X5F6y5zQh8aAdXQY4HuNu62hJ56pump';
-const MINT_B='5LkQa1rQw9z7rW4GqAjRkZYj33zyZwZJYcP9cKZ1pump';
+const MINT_A='22222222222222222222222222222222';
+const MINT_B='33333333333333333333333333333333';
 
 function item(source,mint,extra={}){
   return {
