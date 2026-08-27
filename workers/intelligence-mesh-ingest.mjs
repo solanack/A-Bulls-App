@@ -6,7 +6,7 @@
 import { ingestDecodedObservations, intelligenceDb, normalizeIndexedEvents } from './intelligence-indexer.mjs';
 import { persistUniverseObservations } from './intelligence-universe-runtime.mjs';
 import { projectIndexedEventsToUniverse } from './intelligence-universe-projection.mjs';
-import { linkObservationBatchToUniverses } from './intelligence-ecosystem-universe-linker.mjs';
+import { linkObservationBatchToUniverses, linkIndexedEventsDurably } from './intelligence-ecosystem-universe-linker.mjs';
 
 const SOURCE_KINDS = new Set(['yellowstone', 'richat', 'substreams', 'old-faithful', 'rpc', 'repair', 'snapshot', 'test']);
 const s = value => String(value == null ? '' : value).trim();
@@ -77,18 +77,19 @@ export async function ingestIntelligenceBatch(env = {}, payload = {}) {
       bucketSeconds: n(payload.bucketSeconds || 3600)
     });
     await persistProvenance(db, wallet, source, sourceKind, normalized, Boolean(payload.verified), s(payload.archiveRef));
-    let universeWritten = 0, universeLinks = 0;
+    let universeWritten = 0, universeLinks = 0, durableUniverseLinks = 0;
     if (String(env.UNIVERSE_ENABLED || '').toLowerCase() === 'true') {
       const projected = universeObservationsForEvents(normalized, { verified: Boolean(payload.verified), sourceKind });
       if (projected.length) {
         universeWritten = await persistUniverseObservations(env, projected);
         if (String(env.ECOSYSTEM_UNIVERSES_ENABLED || '').toLowerCase() === 'true') {
           universeLinks = await linkObservationBatchToUniverses(env, projected);
+          durableUniverseLinks = await linkIndexedEventsDurably(env, normalized);
         }
       }
     }
-    await persistSourceHealth(db, source, sourceKind, 'ok', { accepted: result.accepted, universeWritten, universeLinks });
-    return { ok: true, wallet, source, sourceKind, accepted: result.accepted, universeWritten, universeLinks, verified: Boolean(payload.verified) };
+    await persistSourceHealth(db, source, sourceKind, 'ok', { accepted: result.accepted, universeWritten, universeLinks, durableUniverseLinks });
+    return { ok: true, wallet, source, sourceKind, accepted: result.accepted, universeWritten, universeLinks, durableUniverseLinks, verified: Boolean(payload.verified) };
   } catch (error) {
     await persistSourceHealth(db, source, sourceKind, 'error', { error: s(error?.message || error) });
     throw error;
