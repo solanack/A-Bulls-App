@@ -7,6 +7,7 @@ import { analyzeDecisionModels } from './intelligence-decision-research.mjs';
 import { analyzeUniverseAnomalies } from './intelligence-anomaly-research.mjs';
 import { durableUniverseEvidence, universeMembershipTimeline } from './intelligence-universe-durable-linker.mjs';
 import { universeSchedulerHealth } from './intelligence-universe-scheduler.mjs';
+import { loadLiveZ500References } from './intelligence-z500-evidence-collector.mjs';
 
 const json=(body,status=200,cache='no-store')=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':cache,'x-content-type-options':'nosniff'}});
 const s=value=>String(value??'').trim();
@@ -54,6 +55,22 @@ async function z500IdentityStatus(env={}){
   }
 }
 
+async function z500SourceProbe(env={}){
+  try{
+    const result=await loadLiveZ500References({...env,Z500_ALLOW_REFERENCE_FALLBACK:'false'});
+    return{
+      ok:true,
+      readOnly:true,
+      live:result.live===true,
+      source:s(result.source),
+      count:Array.isArray(result.rows)?result.rows.length:0,
+      rows:(Array.isArray(result.rows)?result.rows:[]).map(row=>({rank:n(row.rank)||null,name:s(row.name),ticker:s(row.ticker),tier:s(row.tier)||null}))
+    };
+  }catch(error){
+    return{ok:false,readOnly:true,live:false,error:s(error?.message||error)};
+  }
+}
+
 export async function handleUniverseRequest(request,env={}){
   const url=new URL(request.url),path=url.pathname;
   if(!path.startsWith('/api/intelligence/universe'))return null;
@@ -63,6 +80,7 @@ export async function handleUniverseRequest(request,env={}){
   if(path==='/api/intelligence/universes')return json({ok:true,readOnly:true,universes:await listUniverses(env)},200,'public, max-age=30, stale-while-revalidate=120');
 
   if(path==='/api/intelligence/universe-z500-identity')return json(await z500IdentityStatus(env),200,'no-store');
+  if(path==='/api/intelligence/universe-z500-source-probe')return json(await z500SourceProbe(env),200,'no-store');
 
   if(path==='/api/intelligence/universe-members'){
     const universeId=s(url.searchParams.get('universe'))||'solana';
