@@ -1,3 +1,4 @@
+import { intelligenceDb } from './intelligence-indexer.mjs';
 import { universeSnapshot } from './intelligence-universe-runtime.mjs';
 import { ecosystemUniverseSnapshot } from './intelligence-ecosystem-universe-snapshot.mjs';
 import { listUniverses, universeMembers } from './intelligence-ecosystem-universes.mjs';
@@ -11,6 +12,48 @@ const json=(body,status=200,cache='no-store')=>new Response(JSON.stringify(body)
 const s=value=>String(value??'').trim();
 const n=value=>Number.isFinite(Number(value))?Number(value):0;
 
+async function z500IdentityStatus(env={}){
+  const db=intelligenceDb(env);
+  if(!db)return{ok:false,error:'database_unavailable'};
+  try{
+    const result=await db.prepare(`
+      SELECT canonical_id,ansem_rank,ansem_name,ansem_ticker,ansem_tier,
+             verified_mint,verification_state,verification_method,
+             verification_confidence,coingecko_id,coingecko_mint,
+             conflict_reason,last_verified_at,updated_at
+      FROM intelligence_z500_token_registry
+      ORDER BY CASE WHEN ansem_rank IS NULL THEN 999999 ELSE ansem_rank END,canonical_id
+      LIMIT 25
+    `).all();
+    const identities=(result?.results||[]).map(row=>({
+      canonicalId:s(row.canonical_id),
+      rank:n(row.ansem_rank)||null,
+      name:s(row.ansem_name),
+      ticker:s(row.ansem_ticker),
+      tier:s(row.ansem_tier)||null,
+      verifiedMint:s(row.verified_mint)||null,
+      state:s(row.verification_state)||'unverified',
+      method:s(row.verification_method)||null,
+      confidence:n(row.verification_confidence),
+      coinGeckoId:s(row.coingecko_id)||null,
+      coinGeckoMint:s(row.coingecko_mint)||null,
+      conflictReason:s(row.conflict_reason)||null,
+      lastVerifiedAt:n(row.last_verified_at)?n(row.last_verified_at)*1000:null,
+      updatedAt:n(row.updated_at)?n(row.updated_at)*1000:null
+    }));
+    return{
+      ok:true,
+      readOnly:true,
+      failClosed:true,
+      verified:identities.filter(row=>row.state==='verified').length,
+      required:10,
+      identities
+    };
+  }catch(error){
+    return{ok:false,error:s(error?.message||error)};
+  }
+}
+
 export async function handleUniverseRequest(request,env={}){
   const url=new URL(request.url),path=url.pathname;
   if(!path.startsWith('/api/intelligence/universe'))return null;
@@ -18,6 +61,8 @@ export async function handleUniverseRequest(request,env={}){
   if(String(env.UNIVERSE_ENABLED||'').toLowerCase()!=='true')return json({ok:false,error:'feature_disabled'},404);
 
   if(path==='/api/intelligence/universes')return json({ok:true,readOnly:true,universes:await listUniverses(env)},200,'public, max-age=30, stale-while-revalidate=120');
+
+  if(path==='/api/intelligence/universe-z500-identity')return json(await z500IdentityStatus(env),200,'no-store');
 
   if(path==='/api/intelligence/universe-members'){
     const universeId=s(url.searchParams.get('universe'))||'solana';
