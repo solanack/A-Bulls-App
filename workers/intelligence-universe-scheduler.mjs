@@ -33,9 +33,9 @@ export async function runUniverseScheduledMaintenance(env={},options={}){
 
 export async function universeSchedulerHealth(env={}){
   const db=intelligenceDb(env);if(!db)return{ok:false,error:'database_unavailable'};
-  const leases=await db.prepare("SELECT lease_key,lease_until,last_started_at,last_completed_at,last_state,last_error,run_count,updated_at FROM intelligence_scheduler_leases WHERE lease_key LIKE 'selector:%' OR lease_key LIKE 'pattern-lab:%' ORDER BY lease_key").all();
-  const source=await db.prepare("SELECT snapshot_id,universe_id,source,selector_version,observed_at,candidate_count,accepted_count,state,error_code FROM intelligence_universe_source_snapshots WHERE universe_id='z500-top10' ORDER BY observed_at DESC LIMIT 1").first();
-  const webhook=await db.prepare("SELECT provider,webhook_id,universe_id,desired_hash,applied_hash,state,account_count,last_attempt_at,last_success_at,last_error,updated_at FROM intelligence_webhook_reconcile_state WHERE universe_id='z500-top10' ORDER BY updated_at DESC LIMIT 1").first();
+  const leases=await db.prepare("SELECT lease_key,lease_until,last_started_at,last_completed_at,last_state,run_count,updated_at FROM intelligence_scheduler_leases WHERE lease_key LIKE 'selector:%' OR lease_key LIKE 'pattern-lab:%' ORDER BY lease_key").all();
+  const source=await db.prepare("SELECT universe_id,source,selector_version,observed_at,candidate_count,accepted_count,state FROM intelligence_universe_source_snapshots WHERE universe_id='z500-top10' ORDER BY observed_at DESC LIMIT 1").first();
+  const webhook=await db.prepare("SELECT provider,universe_id,state,account_count,last_attempt_at,last_success_at,updated_at FROM intelligence_webhook_reconcile_state WHERE universe_id='z500-top10' ORDER BY updated_at DESC LIMIT 1").first();
   return{ok:true,leases:leases?.results||[],z500Source:source||null,z500Webhook:webhook||null};
 }
 
