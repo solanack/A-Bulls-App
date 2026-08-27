@@ -1,0 +1,17 @@
+/* A Bulls App — Universe Ship Systems v0.1 */
+(()=>{'use strict';
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const state={xp:0,level:1,credits:0,weapon:'pulse',weaponLevel:1,engineLevel:1,shieldLevel:1,scannerLevel:1,missiles:3,lock:null,tractor:null,unlocks:new Set(['pulse','scanner'])};
+const U=()=>window.UniverseFlight,emit=(t,d={})=>dispatchEvent(new CustomEvent('universeflight:'+t,{detail:d}));
+function stats(){return{...state,unlocks:[...state.unlocks],nextXp:state.level*1000}}
+function award(xp=0,credits=0){state.xp+=Math.max(0,xp);state.credits+=Math.max(0,credits);while(state.xp>=state.level*1000){state.xp-=state.level*1000;state.level++;if(state.level===2)state.unlocks.add('tractor');if(state.level===3)state.unlocks.add('missile');if(state.level===5)state.unlocks.add('overdrive');emit('ship-level',stats())}emit('ship-progression',stats())}
+function upgrade(kind){const key=kind+'Level';if(!(key in state))return false;const cost=250*state[key];if(state.credits<cost)return false;state.credits-=cost;state[key]=Math.min(5,state[key]+1);const u=U()?.state;if(u?.ship&&kind==='shield')u.ship.shield=Math.min(100+state.shieldLevel*20,u.ship.shield+20);emit('ship-upgrade',{kind,level:state[key],cost,...stats()});return true}
+function nearestEnemy(max=650){const u=U()?.state;if(!u)return null;let best=null,bd=max;for(const e of u.game?.enemies||[]){const d=Math.hypot(e.x-u.ship.x,e.y-u.ship.y);if(d<bd){best=e;bd=d}}return best}
+function lock(){state.lock=nearestEnemy();emit('weapon-lock',{target:state.lock});return state.lock}
+function missile(){if(!state.unlocks.has('missile')||state.missiles<=0)return false;const u=U()?.state,t=state.lock&&state.lock.hp>0?state.lock:nearestEnemy();if(!u||!t)return false;state.missiles--;t.hp-=2+state.weaponLevel;if(t.hp<=0){u.game.score+=750;award(160,120);emit('enemy-destroyed',{id:t.id,score:u.game.score,weapon:'missile'})}u.camera.shake=Math.max(u.camera.shake,.45);emit('missile',{target:t.id,remaining:state.missiles});return true}
+function scan(){const u=U();if(!u)return null;const p=u.state?.selected||null;emit('deep-scan',{target:p,level:state.scannerLevel,radius:170+state.scannerLevel*70});return p}
+function tractor(on=true){if(!state.unlocks.has('tractor'))return false;state.tractor=on?{active:true,radius:130+state.engineLevel*25}:null;emit('tractor',{active:!!state.tractor});return true}
+function tick(){const u=U()?.state;if(!u||!state.tractor?.active)return;for(const p of u.game?.pickups||[]){const dx=u.ship.x-p.x,dy=u.ship.y-p.y,d=Math.max(1,Math.hypot(dx,dy));if(d<state.tractor.radius){p.x+=dx/d*5;p.y+=dy/d*5}}}
+function mount(){setInterval(tick,50);addEventListener('universeflight:enemy-destroyed',e=>{if(e.detail?.weapon!=='missile')award(80,50)});addEventListener('universeflight:mission-boss-defeated',()=>award(500,500));addEventListener('universeflight:mission-loot',()=>award(100,100));addEventListener('keydown',e=>{if(window.UniverseExperience?.state.mode!=='mission')return;if(e.code==='KeyQ')lock();if(e.code==='KeyR')missile();if(e.code==='KeyT')tractor(!state.tractor);if(e.code==='KeyF')scan()})}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();window.UniverseShipSystems={state,stats,award,upgrade,lock,missile,scan,tractor};
+})();
