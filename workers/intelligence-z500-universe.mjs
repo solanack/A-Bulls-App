@@ -17,7 +17,7 @@ function config(env={}){
     confirmationCycles:Math.max(1,Math.min(4,Math.trunc(n(env.Z500_CONFIRMATION_CYCLES)||2))),
     sourceUrl:s(env.Z500_SOURCE_URL),
     timeoutMs:Math.max(1500,Math.min(15000,Math.trunc(n(env.Z500_SOURCE_TIMEOUT_MS)||7000))),
-    identityTtlSeconds:Math.max(3600,Math.min(30*86400,Math.trunc(n(env.Z500_IDENTITY_TTL_SECONDS)||604800))
+    identityTtlSeconds:Math.max(3600,Math.min(30*86400,Math.trunc(n(env.Z500_IDENTITY_TTL_SECONDS)||604800)))
   });
 }
 
