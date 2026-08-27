@@ -5,6 +5,7 @@
 import { handleIntelligenceVNext } from './intelligence-router-vnext.mjs';
 import { runIntelligenceMeshScheduler } from './intelligence-mesh-scheduler.mjs';
 import { handleIntelligenceMeshIngestRequest } from './intelligence-mesh-ingest.mjs';
+import { handleHeliusUniverseWebhook } from './intelligence-helius-universe-ingest.mjs';
 import { handleIntelligenceAdapterRequest } from './intelligence-adapter-router.mjs';
 import { handleExternalRetrievalTaskRequest } from './intelligence-retrieval-tasks.mjs';
 import { handleUniverseRequest } from './intelligence-universe-router.mjs';
@@ -21,6 +22,8 @@ import { runUniverseScheduledMaintenance } from './intelligence-universe-schedul
 
 export async function handleIntelligenceFetch(request, env = {}, ctx = null) {
   if(ctx)env.__EXECUTION_CTX=ctx;
+  const heliusUniverse = await handleHeliusUniverseWebhook(request, env);
+  if (heliusUniverse) return heliusUniverse;
   const retrievalTasks = await handleExternalRetrievalTaskRequest(request, env);
   if (retrievalTasks) return retrievalTasks;
   const meshIngest = await handleIntelligenceMeshIngestRequest(request, env);
