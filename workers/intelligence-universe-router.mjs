@@ -2,6 +2,8 @@ import { universeSnapshot } from './intelligence-universe-runtime.mjs';
 import { ecosystemUniverseSnapshot } from './intelligence-ecosystem-universe-snapshot.mjs';
 import { listUniverses, universeMembers } from './intelligence-ecosystem-universes.mjs';
 import { analyzeDurableUniversePatterns } from './intelligence-pattern-lab-durable.mjs';
+import { analyzeDecisionModels } from './intelligence-decision-research.mjs';
+import { analyzeUniverseAnomalies } from './intelligence-anomaly-research.mjs';
 import { durableUniverseEvidence, universeMembershipTimeline } from './intelligence-universe-durable-linker.mjs';
 import { universeSchedulerHealth } from './intelligence-universe-scheduler.mjs';
 
@@ -15,9 +17,7 @@ export async function handleUniverseRequest(request,env={}){
   if(request.method!=='GET')return json({ok:false,error:'method_not_allowed'},405);
   if(String(env.UNIVERSE_ENABLED||'').toLowerCase()!=='true')return json({ok:false,error:'feature_disabled'},404);
 
-  if(path==='/api/intelligence/universes'){
-    return json({ok:true,readOnly:true,universes:await listUniverses(env)},200,'public, max-age=30, stale-while-revalidate=120');
-  }
+  if(path==='/api/intelligence/universes')return json({ok:true,readOnly:true,universes:await listUniverses(env)},200,'public, max-age=30, stale-while-revalidate=120');
 
   if(path==='/api/intelligence/universe-members'){
     const universeId=s(url.searchParams.get('universe'))||'solana';
@@ -44,14 +44,24 @@ export async function handleUniverseRequest(request,env={}){
     return json({ok:true,readOnly:true,theoryOnly:true,analysis,disclosure:'Pattern hypotheses describe observable execution behavior. They do not prove automation, identity, intent, coordination, causation, or future performance.'},200,'public, max-age=30, stale-while-revalidate=120');
   }
 
-  if(path==='/api/intelligence/universe-health'){
-    return json({ok:true,readOnly:true,health:await universeSchedulerHealth(env)},200,'no-store');
+  if(path==='/api/intelligence/universe-decision-models'){
+    if(String(env.UNIVERSE_DECISION_RESEARCH_ENABLED??env.UNIVERSE_PATTERN_LAB_ENABLED??'').toLowerCase()!=='true')return json({ok:false,error:'feature_disabled'},404);
+    const universeId=s(url.searchParams.get('universe'))||'solana';
+    const analysis=await analyzeDecisionModels(env,universeId,{windowSeconds:n(url.searchParams.get('window'))||7*86400,limit:n(url.searchParams.get('limit'))||20000,walletLimit:n(url.searchParams.get('walletLimit'))||250});
+    return json({ok:true,readOnly:true,theoryOnly:true,analysis,disclosure:'Decision models reconstruct observable indexed conditions around trades. They are hypotheses about recurring behavior, not access to a trader’s private thoughts or proof of a strategy.'},200,'public, max-age=60, stale-while-revalidate=180');
   }
+
+  if(path==='/api/intelligence/universe-anomalies'){
+    if(String(env.UNIVERSE_ANOMALY_RESEARCH_ENABLED??env.UNIVERSE_PATTERN_LAB_ENABLED??'').toLowerCase()!=='true')return json({ok:false,error:'feature_disabled'},404);
+    const universeId=s(url.searchParams.get('universe'))||'solana';
+    const analysis=await analyzeUniverseAnomalies(env,universeId,{windowSeconds:n(url.searchParams.get('window'))||7*86400,limit:n(url.searchParams.get('limit'))||20000});
+    return json({ok:true,readOnly:true,theoryOnly:true,analysis,disclosure:'Anomaly findings are evidence-backed investigation leads. They do not identify bad actors, establish common ownership, prove manipulation, or establish malicious intent.'},200,'public, max-age=60, stale-while-revalidate=180');
+  }
+
+  if(path==='/api/intelligence/universe-health')return json({ok:true,readOnly:true,health:await universeSchedulerHealth(env)},200,'no-store');
 
   if(path!=='/api/intelligence/universe-snapshot')return null;
   const windowSeconds=n(url.searchParams.get('window'))||60,limit=n(url.searchParams.get('limit'))||2500,universeId=s(url.searchParams.get('universe'))||'solana';
-  const snapshot=universeId==='solana'&&url.searchParams.has('universe')===false
-    ? await universeSnapshot(env,{windowSeconds,limit})
-    : await ecosystemUniverseSnapshot(env,universeId,{windowSeconds,limit});
+  const snapshot=universeId==='solana'&&url.searchParams.has('universe')===false?await universeSnapshot(env,{windowSeconds,limit}):await ecosystemUniverseSnapshot(env,universeId,{windowSeconds,limit});
   return json({ok:true,readOnly:true,completeChainRepresentation:false,universeId,snapshot},200,'public, max-age=2, stale-while-revalidate=4');
 }
