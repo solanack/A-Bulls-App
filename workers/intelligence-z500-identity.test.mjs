@@ -6,6 +6,7 @@ import {
 } from './intelligence-z500-identity-registry.mjs';
 import { __z500EvidenceContract } from './intelligence-z500-evidence-collector.mjs';
 import { __z500UniverseContract } from './intelligence-z500-universe.mjs';
+import { __universeSchedulerContract } from './intelligence-universe-scheduler.mjs';
 
 const REF={name:'Bullshit Coin',ticker:'BULLSHIT'};
 const MINT_A='22222222222222222222222222222222';
@@ -55,4 +56,8 @@ test('contracts preserve hard verification gates',()=>{
   assert.equal(__z500EvidenceContract.liveAnsemRequiredByDefault,true);
   assert.equal(__z500UniverseContract.membershipSource,'verified-canonical-mint-registry');
   assert.equal(__z500UniverseContract.failClosed,true);
+  assert.equal(__universeSchedulerContract.z500IdentityBeforeSelector,true);
+  assert.equal(__universeSchedulerContract.z500IdentityBatchDefault,2);
+  assert.equal(__universeSchedulerContract.z500IdentityRefreshDefaultSeconds,300);
+  assert.equal(__universeSchedulerContract.watchlistReconcilesAfterSelector,true);
 });
