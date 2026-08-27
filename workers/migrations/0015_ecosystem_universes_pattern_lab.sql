@@ -31,10 +31,8 @@ CREATE TABLE IF NOT EXISTS intelligence_universe_membership (
   PRIMARY KEY (universe_id, entity_kind, entity_id),
   FOREIGN KEY (universe_id) REFERENCES intelligence_universes(universe_id)
 );
-CREATE INDEX IF NOT EXISTS idx_universe_membership_active_rank
-  ON intelligence_universe_membership(universe_id, active, rank, last_seen_at DESC);
-CREATE INDEX IF NOT EXISTS idx_universe_membership_entity
-  ON intelligence_universe_membership(entity_kind, entity_id, active);
+CREATE INDEX IF NOT EXISTS idx_universe_membership_active_rank ON intelligence_universe_membership(universe_id, active, rank, last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_universe_membership_entity ON intelligence_universe_membership(entity_kind, entity_id, active);
 
 CREATE TABLE IF NOT EXISTS intelligence_universe_membership_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,11 +46,10 @@ CREATE TABLE IF NOT EXISTS intelligence_universe_membership_events (
   reason TEXT NOT NULL DEFAULT '',
   metadata_json TEXT NOT NULL DEFAULT '{}'
 );
-CREATE INDEX IF NOT EXISTS idx_universe_membership_events_window
-  ON intelligence_universe_membership_events(universe_id, observed_at DESC);
-CREATE INDEX IF NOT EXISTS idx_universe_membership_events_entity
-  ON intelligence_universe_membership_events(entity_kind, entity_id, observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_universe_membership_events_window ON intelligence_universe_membership_events(universe_id, observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_universe_membership_events_entity ON intelligence_universe_membership_events(entity_kind, entity_id, observed_at DESC);
 
+-- Short-lived render links for the live particle surface.
 CREATE TABLE IF NOT EXISTS intelligence_universe_observation_links (
   universe_id TEXT NOT NULL,
   event_id TEXT NOT NULL,
@@ -61,10 +58,25 @@ CREATE TABLE IF NOT EXISTS intelligence_universe_observation_links (
   observed_at INTEGER NOT NULL,
   PRIMARY KEY (universe_id, event_id, entity_kind, entity_id)
 );
-CREATE INDEX IF NOT EXISTS idx_universe_observation_links_window
-  ON intelligence_universe_observation_links(universe_id, observed_at DESC);
-CREATE INDEX IF NOT EXISTS idx_universe_observation_links_entity
-  ON intelligence_universe_observation_links(universe_id, entity_kind, entity_id, observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_universe_observation_links_window ON intelligence_universe_observation_links(universe_id, observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_universe_observation_links_entity ON intelligence_universe_observation_links(universe_id, entity_kind, entity_id, observed_at DESC);
+
+-- Durable research link. A chain event is stored once in bull_wallet_events and can
+-- participate in multiple universes without duplicating the event itself.
+CREATE TABLE IF NOT EXISTS intelligence_universe_event_links (
+  universe_id TEXT NOT NULL,
+  event_row_id INTEGER NOT NULL,
+  signature TEXT NOT NULL,
+  wallet TEXT NOT NULL,
+  mint TEXT NOT NULL DEFAULT '',
+  block_time INTEGER NOT NULL,
+  membership_snapshot_id TEXT,
+  linked_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (universe_id, event_row_id)
+);
+CREATE INDEX IF NOT EXISTS idx_universe_event_links_window ON intelligence_universe_event_links(universe_id, block_time DESC);
+CREATE INDEX IF NOT EXISTS idx_universe_event_links_wallet ON intelligence_universe_event_links(universe_id, wallet, block_time DESC);
+CREATE INDEX IF NOT EXISTS idx_universe_event_links_mint ON intelligence_universe_event_links(universe_id, mint, block_time DESC);
 
 CREATE TABLE IF NOT EXISTS intelligence_wallet_behavior_features (
   universe_id TEXT NOT NULL,
@@ -89,10 +101,8 @@ CREATE TABLE IF NOT EXISTS intelligence_wallet_behavior_features (
   computed_at INTEGER NOT NULL DEFAULT (unixepoch()),
   PRIMARY KEY (universe_id, wallet, window_start, window_end, feature_version)
 );
-CREATE INDEX IF NOT EXISTS idx_wallet_behavior_features_universe
-  ON intelligence_wallet_behavior_features(universe_id, window_end DESC, transaction_count DESC);
-CREATE INDEX IF NOT EXISTS idx_wallet_behavior_features_wallet
-  ON intelligence_wallet_behavior_features(wallet, window_end DESC);
+CREATE INDEX IF NOT EXISTS idx_wallet_behavior_features_universe ON intelligence_wallet_behavior_features(universe_id, window_end DESC, transaction_count DESC);
+CREATE INDEX IF NOT EXISTS idx_wallet_behavior_features_wallet ON intelligence_wallet_behavior_features(wallet, window_end DESC);
 
 CREATE TABLE IF NOT EXISTS intelligence_pattern_hypotheses (
   hypothesis_id TEXT PRIMARY KEY,
@@ -111,10 +121,8 @@ CREATE TABLE IF NOT EXISTS intelligence_pattern_hypotheses (
   last_seen_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
-CREATE INDEX IF NOT EXISTS idx_pattern_hypotheses_universe
-  ON intelligence_pattern_hypotheses(universe_id, state, confidence DESC, last_seen_at DESC);
-CREATE INDEX IF NOT EXISTS idx_pattern_hypotheses_subject
-  ON intelligence_pattern_hypotheses(subject_kind, subject_id, last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pattern_hypotheses_universe ON intelligence_pattern_hypotheses(universe_id, state, confidence DESC, last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pattern_hypotheses_subject ON intelligence_pattern_hypotheses(subject_kind, subject_id, last_seen_at DESC);
 
 INSERT OR IGNORE INTO intelligence_universes
   (universe_id,label,ecosystem_kind,source,description,active,selector_version,refresh_seconds)
