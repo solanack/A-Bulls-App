@@ -10,6 +10,8 @@
     "build:worker-baseline": "node scripts/reconstruct-worker-8.2.0.mjs",
     "validate:release-candidate": "npm run build:experience-vendor && npm run build:worker-baseline && node scripts/validate-release-candidate.mjs",
     "test:worker-compat": "node --test workers/worker-vnext-entry.test.mjs",
+    "test:universe-v2": "node --test workers/intelligence-universe-v2.test.mjs",
+    "test:intelligence": "node --test workers/*.test.mjs",
     "validate:production-config": "node scripts/verify-production-config.mjs"
   },
   "dependencies": {
