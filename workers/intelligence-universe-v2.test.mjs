@@ -5,6 +5,8 @@ import { __heliusUniverseWatchlistContract } from './intelligence-helius-univers
 import { __heliusUniverseIngestContract } from './intelligence-helius-universe-ingest.mjs';
 import { __universeSchedulerContract } from './intelligence-universe-scheduler.mjs';
 import { __durableUniverseLinkContract } from './intelligence-universe-durable-linker.mjs';
+import { __decisionResearchContract } from './intelligence-decision-research.mjs';
+import { __anomalyResearchContract } from './intelligence-anomaly-research.mjs';
 import { deriveWalletBehaviorFeatures, hypothesesForFeatures } from './intelligence-ecosystem-universes.mjs';
 
 const WALLET='11111111111111111111111111111111';
@@ -34,6 +36,9 @@ test('Helius ingest remains bounded to active universe mints',()=>{
 
 test('Universe scheduler keeps fast cron work behind subsystem leases',()=>{
   assert.equal(__universeSchedulerContract.z500LeaseSeconds,900);
+  assert.equal(__universeSchedulerContract.patternDefaultSeconds,3600);
+  assert.equal(__universeSchedulerContract.decisionDefaultSeconds,10800);
+  assert.equal(__universeSchedulerContract.anomalyDefaultSeconds,21600);
   assert.equal(__universeSchedulerContract.watchlistReconcilesAfterSelector,true);
 });
 
@@ -41,6 +46,19 @@ test('Durable links preserve historical universe context',()=>{
   assert.equal(__durableUniverseLinkContract.canonicalTable,'bull_wallet_events');
   assert.equal(__durableUniverseLinkContract.membershipAtIngest,true);
   assert.equal(__durableUniverseLinkContract.preservesExitedUniverseHistory,true);
+});
+
+test('Decision research is explicitly evidence-only and theory-only',()=>{
+  assert.equal(__decisionResearchContract.usesIndexedEvidenceOnly,true);
+  assert.equal(__decisionResearchContract.theoryOnly,true);
+  assert.equal(__decisionResearchContract.minimumProfileTrades,4);
+});
+
+test('Anomaly research never contracts to bad-actor labeling',()=>{
+  assert.equal(__anomalyResearchContract.usesCanonicalEvidenceOnly,true);
+  assert.equal(__anomalyResearchContract.theoryOnly,true);
+  assert.equal(__anomalyResearchContract.noBadActorLabel,true);
+  assert.ok(__anomalyResearchContract.minimumSynchronizedWallets>=4);
 });
 
 test('Pattern features can surface regular execution as a hypothesis, not a fact',()=>{
