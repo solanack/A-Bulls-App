@@ -1,0 +1,1229 @@
+import { destinationForEntity } from './universe-contracts.mjs';
+import { FrameBudgetController, initialUniverseQuality, qualityProfile } from './universe-quality.mjs';
+import { HyperspaceTransition } from './universe-transition.mjs';
+import { fieldReplayBurst, resolveFieldEffectPosition } from './field-replay-effects.mjs';
+import { fieldFocusForEntity, findFieldEntity } from './field-entity-focus.mjs';
+
+const COLORS = Object.freeze({
+  swap: [0.42, 0.18, 1],
+  transfer: [0.08, 0.82, 0.96],
+  nft: [1, 0.34, 0.7],
+  staking: [0.3, 1, 0.54],
+  program: [1, 0.72, 0.2],
+  failure: [1, 0.2, 0.2],
+  unknown: [0.72, 0.72, 0.8]
+});
+const MODE_STYLE = Object.freeze({
+  explore: [1, 1, 0],
+  intelligence: [0.82, 1.08, 0.08],
+  replay: [1.25, 1.18, 0.2],
+  compare: [0.72, 1.12, -0.08],
+  'what-if': [0.9, 1.2, 0.12],
+  sequences: [1.15, 1.3, 0.16],
+  trickster: [1.35, 1.12, 0.28],
+  evidence: [0.6, 0.95, -0.12],
+  games: [1.45, 1.16, 0.35]
+});
+const REPLAY_COLOR = Object.freeze({
+  green: [0.18, 1, 0.42],
+  red: [1, 0.12, 0.16],
+  violet: [0.58, 0.2, 1],
+  neutral: [0.8, 0.84, 1]
+});
+const CSS_COLOR = Object.freeze({
+  swap: '#7c4dff',
+  transfer: '#3ad6f0',
+  nft: '#ff5aa8',
+  staking: '#4dff8a',
+  program: '#ffc247',
+  failure: '#ff4d4d',
+  unknown: '#c8c8d4'
+});
+
+function capabilitiesFromBrowser() {
+  const webgl2Canvas = document.createElement('canvas');
+  const webglCanvas = document.createElement('canvas');
+  let webgl2 = false;
+  let webgl = false;
+  try { webgl2 = Boolean(webgl2Canvas.getContext('webgl2')); } catch { webgl2 = false; }
+  try { webgl = Boolean(webglCanvas.getContext('webgl') || webglCanvas.getContext('experimental-webgl')); } catch { webgl = false; }
+  return {
+    webgl2,
+    webgl: webgl || webgl2,
+    webgpu: Boolean(globalThis.navigator?.gpu),
+    deviceMemory: Number(globalThis.navigator?.deviceMemory ?? 0),
+    saveData: Boolean(globalThis.navigator?.connection?.saveData),
+    reducedMotion: globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  };
+}
+
+function createStarfield(count = 480, seed = 42) {
+  let value = seed >>> 0;
+  const random = () => {
+    value += 0x6D2B79F5;
+    let t = value;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+  const positions = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  for (let i = 0; i < count; i += 1) {
+    const radius = 90 + random() * 170;
+    const angle = random() * Math.PI * 2;
+    const vertical = (random() - 0.5) * 150;
+    positions[i * 3] = Math.cos(angle) * radius;
+    positions[i * 3 + 1] = vertical;
+    positions[i * 3 + 2] = Math.sin(angle) * radius;
+    sizes[i] = 0.35 + random() * 1.35;
+  }
+  return { positions, sizes, count };
+}
+
+function hostSize(host) {
+  const parent = host.parentElement;
+  const width = Math.max(
+    host.clientWidth || 0,
+    parent?.clientWidth || 0,
+    globalThis.innerWidth || 1
+  );
+  const height = Math.max(
+    host.clientHeight || 0,
+    parent?.clientHeight || 0,
+    globalThis.innerHeight || 1
+  );
+  return { width: Math.max(1, width), height: Math.max(1, height) };
+}
+
+function cssRgb([r, g, b], alpha = 1) {
+  return `rgba(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)},${alpha})`;
+}
+
+export class UniverseRenderer {
+  #host; #snapshot; #three; #renderer; #scene; #camera; #points; #stars; #material; #starMaterial;
+  #raf = 0; #lastFrame = 0; #quality; #transition = new HyperspaceTransition(); #onSelect;
+  #destroyed = false; #destinationReady = false; #mode = 'explore';
+  #modeTarget = [1, 1, 0]; #modeCurrent = [1, 1, 0];
+  #onMode; #onReplay; #onTemporalReplay; #onMarketPhase; #onStoryScene;
+  #replayEffects = []; #phaseEffect = null; #phaseUntil = 0; #storyField = null;
+  #cameraTarget = { distance: 125, yaw: 0.4, pitch: 0.18, target: [0, 0, 0] };
+  #investigationHub = null; #hubObjects = [];
+  #backend = 'none'; #canvas = null; #ctx = null; #visible = [];
+  #starfield = createStarfield(); #pointer = { active: false, x: 0, y: 0, moved: false };
+  #queryActive = Boolean(globalThis.__ABULLS_QUERY_ACTIVE);
+  #queryBlend = 0;
+  #queryBasePositions = null;
+  #queryTargets = null;
+  #queryMouth = null;
+  #querySurfaceFlags = null;
+  #onQueryState = (event) => {
+    this.setQueryActive(Boolean(event?.detail?.active));
+  };
+  #resizeObserver = null; #reducedMotion = false; #autoSpin = 0.00042;
+
+  constructor({ host, snapshot, THREE, onSelect, capabilities = capabilitiesFromBrowser() }) {
+    if (!(host instanceof Element)) throw new TypeError('host element is required');
+    this.#host = host;
+    this.#snapshot = snapshot;
+    this.#three = THREE;
+    this.#onSelect = onSelect;
+    this.#reducedMotion = Boolean(capabilities.reducedMotion);
+    const tier = initialUniverseQuality(capabilities);
+    this.#quality = new FrameBudgetController(tier, capabilities);
+    this.#onMode = (e) => this.setMode(e?.detail?.mode);
+    this.#onReplay = (e) => this.#queueReplayEffects(e?.detail?.effects);
+    this.#onTemporalReplay = (e) => this.#queueReplayEffects(fieldReplayBurst(e?.detail?.events || []));
+    this.#onMarketPhase = (e) => {
+      const effect = e?.detail?.effect;
+      if (!effect) return;
+      this.#phaseEffect = effect;
+      this.#phaseUntil = performance.now() + 3600;
+      this.setMode('sequences');
+    };
+    this.#onStoryScene = (e) => {
+      const state = e?.detail;
+      if (!state?.camera || !state?.field) return;
+      this.#storyField = state.field;
+      this.#cameraTarget = {
+        distance: Number(state.camera.distance) || 125,
+        yaw: Number(state.camera.yaw) || 0,
+        pitch: Number(state.camera.pitch) || 0,
+        target: [0, 0, 0]
+      };
+      this.setMode('trickster');
+    };
+    globalThis.addEventListener('abulls:field-mode', this.#onMode);
+    globalThis.addEventListener('abulls:query-state', this.#onQueryState);
+    globalThis.addEventListener('abulls:field-replay-events', this.#onReplay);
+    globalThis.addEventListener('abulls:temporal-replay-events', this.#onTemporalReplay);
+    globalThis.addEventListener('abulls:field-market-phase', this.#onMarketPhase);
+    globalThis.addEventListener('abulls:field-story-scene', this.#onStoryScene);
+    const profile = qualityProfile(tier);
+    void profile;
+    if (THREE) {
+      try {
+        this.#mountThree();
+        return;
+      } catch {
+        this.#teardownGpu();
+      }
+    }
+    this.#mountCanvas();
+  }
+
+  #bindCanvasInput(canvas) {
+    canvas.addEventListener('pointerdown', this.#onPointerDown);
+    canvas.addEventListener('pointermove', this.#onPointerMove);
+    canvas.addEventListener('pointerup', this.#onPointerUp);
+    canvas.addEventListener('pointercancel', this.#onPointerUp);
+    canvas.addEventListener('wheel', this.#onWheel, { passive: false });
+    canvas.addEventListener('click', this.#onClick);
+    globalThis.addEventListener('pointerup', this.#onGlobalPointerUp);
+    globalThis.addEventListener('pointercancel', this.#onGlobalPointerUp);
+    document.addEventListener('visibilitychange', this.#onVisibility);
+  }
+
+  #unbindCanvasInput(canvas) {
+    canvas?.removeEventListener('pointerdown', this.#onPointerDown);
+    canvas?.removeEventListener('pointermove', this.#onPointerMove);
+    canvas?.removeEventListener('pointerup', this.#onPointerUp);
+    canvas?.removeEventListener('pointercancel', this.#onPointerUp);
+    canvas?.removeEventListener('wheel', this.#onWheel);
+    canvas?.removeEventListener('click', this.#onClick);
+    globalThis.removeEventListener('pointerup', this.#onGlobalPointerUp);
+    globalThis.removeEventListener('pointercancel', this.#onGlobalPointerUp);
+    document.removeEventListener('visibilitychange', this.#onVisibility);
+  }
+
+  #observeHost() {
+    this.#resizeObserver?.disconnect();
+    if (typeof ResizeObserver === 'function') {
+      this.#resizeObserver = new ResizeObserver(() => this.#resize());
+      this.#resizeObserver.observe(this.#host);
+      if (this.#host.parentElement) this.#resizeObserver.observe(this.#host.parentElement);
+    }
+    globalThis.addEventListener('resize', this.#resize);
+    globalThis.visualViewport?.addEventListener('resize', this.#resize);
+  }
+
+  #mountThree() {
+    const T = this.#three;
+    const profile = this.#quality.profile;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'universe-canvas';
+    canvas.setAttribute('aria-label', 'Interactive Solana activity field');
+    this.#host.append(canvas);
+    const attrs = { alpha: true, antialias: false, powerPreference: 'high-performance', premultipliedAlpha: false };
+    let context = null;
+    try { context = canvas.getContext('webgl2', attrs); } catch { context = null; }
+    if (!context) {
+      try { context = canvas.getContext('webgl', attrs) || canvas.getContext('experimental-webgl', attrs); } catch { context = null; }
+    }
+    if (!context) throw new Error('webgl-unavailable');
+    this.#canvas = canvas;
+    this.#renderer = new T.WebGLRenderer({ canvas, context, antialias: false, alpha: true, powerPreference: 'high-performance' });
+    this.#renderer.setClearColor(0x000000, 0);
+    this.#renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, profile.pixelRatio));
+    this.#scene = new T.Scene();
+    this.#camera = new T.PerspectiveCamera(55, 1, 0.1, 700);
+    this.#camera.position.set(0, 18, 125);
+    this.#material = new T.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      vertexColors: true,
+      blending: T.AdditiveBlending,
+      uniforms: {
+        uPixelRatio: { value: this.#renderer.getPixelRatio() },
+        uWarp: { value: 0 },
+        uIntensity: { value: 1 }
+      },
+      vertexShader: `attribute float aSize;uniform float uPixelRatio;uniform float uWarp;uniform float uIntensity;varying vec3 vColor;void main(){vColor=color*uIntensity;vec3 warped=position;float depthSign=position.z>=0.0?1.0:-1.0;warped.z+=depthSign*uWarp*(25.0+abs(position.z)*2.2);vec4 mvPosition=modelViewMatrix*vec4(warped,1.0);gl_PointSize=aSize*uPixelRatio*(210.0/max(12.0,-mvPosition.z));gl_Position=projectionMatrix*mvPosition;}`,
+      fragmentShader: `varying vec3 vColor;void main(){vec2 p=gl_PointCoord-vec2(0.5);float d=length(p);float core=smoothstep(0.18,0.0,d);float halo=smoothstep(0.5,0.12,d);float alpha=max(core,halo*0.55);gl_FragColor=vec4(vColor,alpha);}`
+    });
+    this.#starMaterial = new T.PointsMaterial({
+      color: 0xcfd6e6,
+      size: 1.15,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+      blending: T.AdditiveBlending,
+      sizeAttenuation: true
+    });
+    const starGeom = new T.BufferGeometry();
+    starGeom.setAttribute('position', new T.BufferAttribute(this.#starfield.positions, 3));
+    this.#stars = new T.Points(starGeom, this.#starMaterial);
+    this.#scene.add(this.#stars);
+    this.#points = new T.Points(this.#geometryForSnapshot(this.#snapshot), this.#material);
+    this.#scene.add(this.#points);
+    this.#backend = 'webgl';
+    this.#bindCanvasInput(canvas);
+    this.#observeHost();
+    canvas.addEventListener('webglcontextlost', this.#onContextLost, { passive: false });
+    this.#resize();
+    this.#lastFrame = performance.now();
+    this.#raf = requestAnimationFrame(this.#frame);
+  }
+
+  #mountCanvas() {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'universe-canvas';
+    canvas.setAttribute('aria-label', 'Interactive Solana activity field');
+    this.#host.append(canvas);
+    this.#canvas = canvas;
+    this.#ctx = canvas.getContext('2d', { alpha: true });
+    this.#backend = 'canvas';
+    this.#visible = this.#snapshot.particles.slice(0, this.#quality.profile.particleLimit);
+    this.#bindCanvasInput(canvas);
+    this.#observeHost();
+    this.#resize();
+    this.#lastFrame = performance.now();
+    this.#raf = requestAnimationFrame(this.#frame);
+  }
+
+  #onContextLost = (event) => {
+    event.preventDefault();
+    if (this.#destroyed || this.#backend !== 'webgl') return;
+    this.#teardownGpu();
+    this.#mountCanvas();
+  };
+
+  #geometryForSnapshot(snapshot) {
+    const T = this.#three;
+    const visible = snapshot.particles.slice(0, this.#quality.profile.particleLimit);
+    const positions = new Float32Array(visible.length * 3);
+    const colors = new Float32Array(visible.length * 3);
+    const sizes = new Float32Array(visible.length);
+    visible.forEach((entity, index) => {
+      positions.set(entity.position, index * 3);
+      colors.set(COLORS[entity.category] ?? COLORS.unknown, index * 3);
+      sizes[index] = 1.6 + entity.magnitudeBand * 4.6;
+    });
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new T.BufferAttribute(colors, 3));
+    geometry.setAttribute('aSize', new T.BufferAttribute(sizes, 1));
+    geometry.userData.entities = visible;
+    this.#visible = visible;
+    return geometry;
+  }
+
+  #queueReplayEffects(effects) {
+    if (!Array.isArray(effects) || !effects.length) return;
+    const now = performance.now();
+    const particles = this.#points?.geometry?.userData?.entities || this.#visible || this.#snapshot?.particles || [];
+    if (this.#backend === 'webgl' && this.#scene) {
+      const T = this.#three;
+      for (const effect of effects.slice(0, 32)) {
+        const color = REPLAY_COLOR[effect.hue] ?? REPLAY_COLOR.neutral;
+        const resolved = resolveFieldEffectPosition(effect, particles);
+        const [ax, ay, az] = resolved.position;
+        const geometry = new T.BufferGeometry();
+        let object;
+        if (effect.kind === 'lightning') {
+          const vertices = [];
+          for (let i = 0; i < 5; i++) {
+            const jitter = (i === 0 || i === 4) ? 0 : (i % 2 === 0 ? 1 : -1) * (2 + effect.intensity * 4);
+            vertices.push(ax + jitter, ay + 12 - i * 6, az + (i % 2 ? 2 : -2) * effect.intensity);
+          }
+          geometry.setAttribute('position', new T.Float32BufferAttribute(vertices, 3));
+          object = new T.Line(geometry, new T.LineBasicMaterial({
+            color: new T.Color(...color),
+            transparent: true,
+            opacity: effect.simulation ? 0.32 : 0.95,
+            blending: T.AdditiveBlending
+          }));
+        } else {
+          geometry.setAttribute('position', new T.Float32BufferAttribute([ax, ay, az], 3));
+          object = new T.Points(geometry, new T.PointsMaterial({
+            color: new T.Color(...color),
+            size: 5 + effect.intensity * 12,
+            transparent: true,
+            opacity: effect.simulation ? 0.26 : 0.85,
+            blending: T.AdditiveBlending,
+            depthWrite: false
+          }));
+        }
+        object.userData = {
+          born: now,
+          life: 450 + effect.intensity * 950,
+          simulation: Boolean(effect.simulation),
+          matched: resolved.anchor.matched,
+          entityId: resolved.anchor.entityId,
+          entityKind: resolved.anchor.entityKind,
+          eventId: effect.eventId,
+          walletIdentity: resolved.walletIdentity,
+          visualOffset: resolved.offset,
+          hue: effect.hue,
+          intensity: effect.intensity,
+          kind: effect.kind,
+          position: resolved.position
+        };
+        this.#scene.add(object);
+        this.#replayEffects.push(object);
+      }
+      return;
+    }
+    for (const effect of effects.slice(0, 32)) {
+      const resolved = resolveFieldEffectPosition(effect, particles);
+      this.#replayEffects.push({
+        userData: {
+          born: now,
+          life: 450 + effect.intensity * 950,
+          hue: effect.hue,
+          intensity: effect.intensity,
+          kind: effect.kind,
+          position: resolved.position,
+          simulation: Boolean(effect.simulation)
+        }
+      });
+    }
+  }
+
+  #animateReplayEffects(now) {
+    for (let i = this.#replayEffects.length - 1; i >= 0; i--) {
+      const object = this.#replayEffects[i];
+      const age = now - object.userData.born;
+      const progress = age / object.userData.life;
+      if (progress >= 1) {
+        if (this.#backend === 'webgl') {
+          this.#scene?.remove(object);
+          object.geometry?.dispose();
+          object.material?.dispose();
+        }
+        this.#replayEffects.splice(i, 1);
+        continue;
+      }
+      if (this.#backend === 'webgl' && object.material) {
+        object.material.opacity = (object.userData.simulation ? 0.32 : 0.95) * (1 - progress);
+        object.scale.setScalar(1 + progress * (object.isPoints ? 2.5 : 0.35));
+        if (object.userData.simulation) object.rotation.z = progress * 0.16;
+      }
+    }
+  }
+
+  #clearHubObjects() {
+    for (const object of this.#hubObjects) {
+      this.#scene?.remove(object);
+      object.geometry?.dispose();
+      object.material?.dispose();
+    }
+    this.#hubObjects = [];
+  }
+
+  setInvestigationHub(hub) {
+    this.#investigationHub = hub || null;
+    this.#clearHubObjects();
+    if (!hub?.focusId) return hub || false;
+    const entities = this.#points?.geometry?.userData?.entities || this.#visible || [];
+    const byId = new Map(entities.map((entity) => [String(entity.id), entity]));
+    const focus = byId.get(String(hub.focusId));
+    if (focus) this.focusEntity(focus);
+    if (this.#backend !== 'webgl' || !this.#scene) return hub;
+    const T = this.#three;
+    for (const edge of (Array.isArray(hub.edges) ? hub.edges : []).slice(0, 160)) {
+      const source = byId.get(String(edge.sourceId));
+      const target = byId.get(String(edge.targetId));
+      if (!source || !target || !edge.evidenceId) continue;
+      const geometry = new T.BufferGeometry();
+      geometry.setAttribute('position', new T.Float32BufferAttribute([...source.position, ...target.position], 3));
+      const material = new T.LineBasicMaterial({
+        color: new T.Color(0.72, 0.78, 1),
+        transparent: true,
+        opacity: 0.34,
+        blending: T.AdditiveBlending,
+        depthWrite: false
+      });
+      const line = new T.Line(geometry, material);
+      line.userData = { fieldInvestigation: true, evidenceId: edge.evidenceId, sourceId: edge.sourceId, targetId: edge.targetId };
+      this.#scene.add(line);
+      this.#hubObjects.push(line);
+    }
+    if (focus) {
+      const geometry = new T.BufferGeometry();
+      geometry.setAttribute('position', new T.Float32BufferAttribute(focus.position, 3));
+      const marker = new T.Points(geometry, new T.PointsMaterial({
+        color: new T.Color(1, 1, 1),
+        size: 10,
+        transparent: true,
+        opacity: 0.78,
+        blending: T.AdditiveBlending,
+        depthWrite: false
+      }));
+      marker.userData = { fieldInvestigation: true, focusId: hub.focusId };
+      this.#scene.add(marker);
+      this.#hubObjects.push(marker);
+    }
+    return hub;
+  }
+
+  clearInvestigationHub() {
+    this.#investigationHub = null;
+    this.#clearHubObjects();
+    return true;
+  }
+
+  focusEntity(entity) {
+    if (!entity) return false;
+    const focus = fieldFocusForEntity(entity);
+    this.#cameraTarget = { distance: focus.distance, yaw: this.#cameraTarget.yaw, pitch: this.#cameraTarget.pitch, target: [...focus.target] };
+    return focus;
+  }
+
+  focusRequest(request = {}) {
+    const particles = this.#points?.geometry?.userData?.entities || this.#visible || this.#snapshot?.particles || [];
+    const entity = findFieldEntity(particles, request);
+    return entity ? this.focusEntity(entity) : false;
+  }
+
+  clearFocus() {
+    this.#cameraTarget = { distance: 125, yaw: this.#cameraTarget.yaw, pitch: this.#cameraTarget.pitch, target: [0, 0, 0] };
+  }
+
+  #queryHash(value) {
+    let x = Math.sin(value * 12.9898 + 78.233) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  #buildQueryTargets(count, source) {
+    const targets = new Float32Array(count * 3);
+    const mouth = new Uint8Array(count);
+    const flags = new Uint8Array(count); // 1 surface, 2 interior, 3 mouth
+
+    const hash = (value) => {
+      const x = Math.sin(value * 12.9898 + 78.233) * 43758.5453;
+      return x - Math.floor(x);
+    };
+
+    const insideEyeSocket = (x, y, z) => {
+      const eyeY = 11;
+      const eyeX = 15.5;
+      const eyeAngle = 0.30;
+
+      const test = (cx, angle) => {
+        const dx = x - cx;
+        const dy = y - eyeY;
+
+        const ca = Math.cos(angle);
+        const sa = Math.sin(angle);
+
+        const ex = dx * ca - dy * sa;
+        const ey = dx * sa + dy * ca;
+
+        const shape =
+          (ex * ex) / (13.5 * 13.5) +
+          (ey * ey) / (6.4 * 6.4);
+
+        return shape < 1 && z > 2;
+      };
+
+      return test(-eyeX, -eyeAngle) || test(eyeX, eyeAngle);
+    };
+
+    const insideNasalCavity = (x, y, z) =>
+      Math.abs(x) < 4.2 &&
+      y > -13 &&
+      y < -5 &&
+      z > 7;
+
+    const insideMouthCavity = (x, y, z) =>
+      Math.abs(x) < 11 &&
+      y > -25 &&
+      y < -17 &&
+      z > 4;
+
+    const headRadius = (y) => {
+      const yn = Math.max(-1, Math.min(1, (y + 1) / 52));
+      const section = Math.sqrt(Math.max(0.001, 1 - yn * yn));
+
+      let rx = 37 * section;
+      let rz = 34 * section;
+
+      const upper = Math.exp(-Math.pow((y - 24) / 19, 2));
+      rx *= 1 + upper * 0.38;
+      rz *= 1 + upper * 0.34;
+
+      if (y < -6) {
+        const t = Math.max(0, Math.min(1, (y + 46) / 40));
+        rx *= 0.30 + t * 0.70;
+        rz *= 0.46 + t * 0.54;
+      }
+
+      const cheek = Math.exp(-Math.pow((y + 1) / 9, 2));
+      rx *= 1 + cheek * 0.12;
+
+      return [rx, rz];
+    };
+
+    const surfaceCount = Math.floor(count * 0.66);
+
+    for (let i = 0; i < count; i += 1) {
+      const seed = i * 59 + 17.3;
+
+      if (i < surfaceCount) {
+        let accepted = false;
+        let x = 0, y = 0, z = 0;
+
+        for (let attempt = 0; attempt < 80 && !accepted; attempt += 1) {
+          const u = hash(seed + attempt * 7.1);
+          const v = hash(seed + attempt * 11.3);
+          const w = hash(seed + attempt * 17.9);
+
+          y = -46 + v * 96;
+
+          const [rx, rz] = headRadius(y);
+          const theta = u * Math.PI * 2;
+
+          x = Math.cos(theta) * rx;
+          z = Math.sin(theta) * rz;
+
+          const frontness = Math.max(0, z / Math.max(1, rz));
+
+          // forehead + brow
+          if (frontness > 0.2 && y > 6) {
+            z += 5.2 * Math.exp(-Math.pow((y - 23) / 15, 2));
+            z += 2.8 * Math.exp(-Math.pow((y - 11) / 5, 2));
+          }
+
+          // cheek planes
+          if (
+            frontness > 0.15 &&
+            y > -9 &&
+            y < 8 &&
+            Math.abs(x) > 9 &&
+            Math.abs(x) < 28
+          ) {
+            z += 2.4;
+          }
+
+          // nose bridge
+          if (
+            frontness > 0.25 &&
+            Math.abs(x) < 5.5 &&
+            y > -9 &&
+            y < 14
+          ) {
+            z += 6.5 * Math.max(0, 1 - Math.abs(y - 1) / 15);
+          }
+
+          // mouth area sits forward slightly
+          if (
+            frontness > 0.15 &&
+            Math.abs(x) < 13 &&
+            y > -27 &&
+            y < -15
+          ) {
+            z += 1.5;
+          }
+
+          // chin recedes
+          if (y < -30) {
+            z -= 4.0 * Math.min(1, (-30 - y) / 16);
+          }
+
+          // tiny organic variation
+          x += (w - 0.5) * 0.9;
+          z += (hash(seed + attempt * 23.7) - 0.5) * 0.8;
+
+          if (insideEyeSocket(x, y, z)) continue;
+          if (insideNasalCavity(x, y, z)) continue;
+
+          // carve mouth cavity but allow lip/mouth particles later
+          if (insideMouthCavity(x, y, z)) continue;
+
+          accepted = true;
+        }
+
+        targets[i * 3] = x;
+        targets[i * 3 + 1] = y;
+        targets[i * 3 + 2] = z;
+        flags[i] = 1;
+      } else {
+        // interior particles: live inside volume, never on surface
+        let x = 0, y = 0, z = 0;
+        let accepted = false;
+
+        for (let attempt = 0; attempt < 80 && !accepted; attempt += 1) {
+          const u = hash(seed + attempt * 5.3);
+          const v = hash(seed + attempt * 9.7);
+          const w = hash(seed + attempt * 13.1);
+
+          y = -42 + v * 88;
+
+          const [rx, rz] = headRadius(y);
+
+          const r = Math.cbrt(u) * 0.78;
+          const theta = w * Math.PI * 2;
+
+          x = Math.cos(theta) * rx * r;
+          z = Math.sin(theta) * rz * r;
+
+          if (insideEyeSocket(x, y, z)) continue;
+          if (insideNasalCavity(x, y, z)) continue;
+          if (insideMouthCavity(x, y, z)) continue;
+
+          accepted = true;
+        }
+
+        targets[i * 3] = x;
+        targets[i * 3 + 1] = y;
+        targets[i * 3 + 2] = z;
+        flags[i] = 2;
+      }
+    }
+
+    // dedicated mouth-line particles
+    for (let i = 0; i < count; i += 37) {
+      const t = hash(i + 600.9);
+
+      const x = -10.5 + t * 21;
+      const y = -21.5 - Math.sin((t - 0.5) * Math.PI) * 1.5;
+      const z = 20.5 + Math.sqrt(Math.max(0, 1 - Math.pow(x / 11, 2))) * 2.3;
+
+      targets[i * 3] = x;
+      targets[i * 3 + 1] = y;
+      targets[i * 3 + 2] = z;
+
+      mouth[i] = 1;
+      flags[i] = 3;
+    }
+
+    this.#queryTargets = targets;
+    this.#queryMouth = mouth;
+    this.#querySurfaceFlags = flags;
+
+    if (source) {
+      this.#queryBasePositions = new Float32Array(source);
+    }
+  }
+
+  #updateQueryBlend(elapsed) {
+    const targetBlend = this.#queryActive ? 1 : 0;
+    const smoothing = 1 - Math.exp(-Math.max(1, elapsed) / 260);
+    this.#queryBlend += (targetBlend - this.#queryBlend) * smoothing;
+
+    if (!this.#queryActive && this.#queryBlend < 0.0005) {
+      this.#queryBlend = 0;
+    }
+  }
+
+  #canvasQueryPosition(entity, index, now) {
+    const original = entity?.position || [0, 0, 0];
+
+    if (this.#queryBlend <= 0.0001) return original;
+
+    const count = this.#visible?.length || 0;
+
+    if (!this.#queryTargets || this.#queryTargets.length !== count * 3) {
+      this.#buildQueryTargets(count, null);
+    }
+
+    const j = index * 3;
+    const target = this.#queryTargets;
+    const mouth = this.#queryMouth;
+
+    if (!target || j + 2 >= target.length) return original;
+
+    const flag = this.#querySurfaceFlags?.[index] || 1;
+
+    let tx = target[j];
+    let ty = target[j + 1];
+    let tz = target[j + 2];
+
+    if (flag === 2) {
+      const a = now * 0.00045 + index * 0.713;
+      const b = now * 0.00071 + index * 1.193;
+      const c = now * 0.00031 + index * 0.337;
+
+      tx += Math.sin(a) * 4.8 + Math.cos(b * 0.63) * 2.1;
+      ty += Math.cos(b) * 3.9 + Math.sin(c * 1.31) * 2.0;
+      tz += Math.sin(a * 0.79) * 5.2 + Math.cos(c) * 2.4;
+    } else {
+      const phase = now * 0.00125 + index * 1.618;
+
+      tx += Math.sin(phase) * 0.22;
+      ty += Math.cos(phase * 0.83) * 0.18;
+      tz += Math.sin(phase * 0.57) * 0.25;
+    }
+
+    if (flag === 3 || mouth?.[index]) {
+      const speech = Math.sin(now * 0.0075 + index * 0.31) * 1.05;
+      ty += speech;
+      tz += Math.abs(speech) * 0.32;
+    }
+
+    const blend = this.#queryBlend;
+
+    return [
+      original[0] + (tx - original[0]) * blend,
+      original[1] + (ty - original[1]) * blend,
+      original[2] + (tz - original[2]) * blend
+    ];
+  }
+
+  setQueryActive(active) {
+    this.#queryActive = Boolean(active);
+
+    if (this.#queryActive) {
+      this.#queryBasePositions = null;
+      this.#queryTargets = null;
+      this.#queryMouth = null;
+      this.#querySurfaceFlags = null;
+
+      this.clearFocus();
+
+      this.#cameraTarget.distance = 125;
+      this.#cameraTarget.yaw = 0;
+      this.#cameraTarget.pitch = 0;
+      this.#cameraTarget.target = [0, 0, 0];
+    }
+
+    return this.#queryActive;
+  }
+
+  #animateQueryParticles(now, elapsed) {
+    if (this.#backend !== 'webgl' || !this.#points?.geometry) return;
+
+    const attribute = this.#points.geometry.getAttribute('position');
+    if (!attribute?.array) return;
+
+    const positions = attribute.array;
+    const count = attribute.count;
+
+    if (
+      !this.#queryBasePositions ||
+      this.#queryBasePositions.length !== positions.length ||
+      !this.#queryTargets ||
+      this.#queryTargets.length !== positions.length
+    ) {
+      this.#buildQueryTargets(count, positions);
+    }
+
+    if (this.#queryBlend < 0.0005 && !this.#queryActive) {
+
+      if (this.#queryBasePositions) {
+        positions.set(this.#queryBasePositions);
+        attribute.needsUpdate = true;
+      }
+
+      this.#queryBasePositions = null;
+      this.#queryTargets = null;
+      this.#queryMouth = null;
+      this.#querySurfaceFlags = null;
+      return;
+    }
+
+    const blend = this.#queryBlend;
+    const base = this.#queryBasePositions;
+    const target = this.#queryTargets;
+    const mouth = this.#queryMouth;
+    const flags = this.#querySurfaceFlags;
+
+    for (let i = 0; i < count; i += 1) {
+      const j = i * 3;
+      const flag = flags?.[i] || 1;
+
+      let tx = target[j];
+      let ty = target[j + 1];
+      let tz = target[j + 2];
+
+      if (flag === 2) {
+        /*
+          Interior blockchain particles remain alive inside the skull.
+          Multiple slow frequencies prevent them from moving like one rigid cloud.
+        */
+        const a = now * 0.00045 + i * 0.713;
+        const b = now * 0.00071 + i * 1.193;
+        const c = now * 0.00031 + i * 0.337;
+
+        tx += Math.sin(a) * 4.8 + Math.cos(b * 0.63) * 2.1;
+        ty += Math.cos(b) * 3.9 + Math.sin(c * 1.31) * 2.0;
+        tz += Math.sin(a * 0.79) * 5.2 + Math.cos(c) * 2.4;
+
+      } else {
+        /*
+          Surface particles stay attached to the anatomy,
+          with only subtle biological motion.
+        */
+        const phase = now * 0.00125 + i * 1.618;
+
+        tx += Math.sin(phase) * 0.22;
+        ty += Math.cos(phase * 0.83) * 0.18;
+        tz += Math.sin(phase * 0.57) * 0.25;
+      }
+
+      if (flag === 3 || mouth?.[i]) {
+        /*
+          Mouth remains clearly defined but alive.
+        */
+        const speech = Math.sin(now * 0.0075 + i * 0.31) * 1.05;
+
+        ty += speech;
+        tz += Math.abs(speech) * 0.32;
+      }
+
+      positions[j] = base[j] + (tx - base[j]) * blend;
+      positions[j + 1] = base[j + 1] + (ty - base[j + 1]) * blend;
+      positions[j + 2] = base[j + 2] + (tz - base[j + 2]) * blend;
+    }
+
+    attribute.needsUpdate = true;
+  }
+
+  setMode(mode = 'explore') {
+    this.#mode = Object.hasOwn(MODE_STYLE, mode) ? mode : 'explore';
+    this.#modeTarget = [...MODE_STYLE[this.#mode]];
+    if (this.#mode !== 'trickster') {
+      this.#storyField = null;
+      if (this.#mode === 'explore' && !this.#investigationHub) this.clearFocus();
+    }
+    return this.#mode;
+  }
+
+  updateSnapshot(snapshot) {
+    if (!snapshot?.particles) throw new TypeError('valid snapshot is required');
+    this.#snapshot = snapshot;
+    this.#visible = snapshot.particles.slice(0, this.#quality.profile.particleLimit);
+    if (this.#backend === 'webgl' && this.#points) {
+      const previous = this.#points.geometry;
+      this.#points.geometry = this.#geometryForSnapshot(snapshot);
+      previous.dispose();
+      if (this.#investigationHub) this.setInvestigationHub(this.#investigationHub);
+      return;
+    }
+    if (this.#investigationHub) this.setInvestigationHub(this.#investigationHub);
+  }
+
+  #resize = () => {
+    const { width, height } = hostSize(this.#host);
+    if (this.#backend === 'webgl' && this.#renderer) {
+      this.#renderer.setSize(width, height, false);
+      this.#camera.aspect = width / height;
+      this.#camera.updateProjectionMatrix();
+      return;
+    }
+    if (this.#backend === 'canvas' && this.#canvas && this.#ctx) {
+      const ratio = Math.min(globalThis.devicePixelRatio || 1, 2);
+      this.#canvas.width = Math.floor(width * ratio);
+      this.#canvas.height = Math.floor(height * ratio);
+      this.#canvas.style.width = `${width}px`;
+      this.#canvas.style.height = `${height}px`;
+      this.#ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
+  };
+
+  #onPointerDown = (event) => {
+    this.#pointer = { active: true, x: event.clientX, y: event.clientY, moved: false, id: event.pointerId };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  #onPointerMove = (event) => {
+    if (!this.#pointer.active) return;
+    const dx = event.clientX - this.#pointer.x;
+    const dy = event.clientY - this.#pointer.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) this.#pointer.moved = true;
+    this.#cameraTarget.yaw += dx * 0.005;
+    this.#cameraTarget.pitch = Math.max(-0.9, Math.min(0.9, this.#cameraTarget.pitch + dy * 0.004));
+    this.#pointer.x = event.clientX;
+    this.#pointer.y = event.clientY;
+  };
+
+  #onPointerUp = (event) => {
+    this.#pointer.active = false;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  };
+
+  #onGlobalPointerUp = () => {
+    this.#pointer.active = false;
+  };
+
+  #onVisibility = () => {
+    if (document.hidden) this.#pointer.active = false;
+  };
+
+  #onWheel = (event) => {
+    event.preventDefault();
+    this.#cameraTarget.distance = Math.max(48, Math.min(260, this.#cameraTarget.distance + event.deltaY * 0.08));
+  };
+
+  #onClick = (event) => {
+    if (this.#pointer.moved) return;
+    if (this.#backend === 'webgl') this.#pickWebgl(event);
+    else this.#pickCanvas(event);
+  };
+
+  #pickWebgl = (event) => {
+    const T = this.#three;
+    const rect = this.#renderer.domElement.getBoundingClientRect();
+    const pointer = new T.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    const raycaster = new T.Raycaster();
+    raycaster.params.Points = { threshold: 2.8 };
+    raycaster.setFromCamera(pointer, this.#camera);
+    const hit = raycaster.intersectObject(this.#points, false)[0];
+    if (!hit) return;
+    const entity = this.#points.geometry.userData.entities[hit.index];
+    if (!entity) return;
+    this.#selectEntity(entity);
+  };
+
+  #projectPoint(position, width, height) {
+    const cam = this.#cameraTarget;
+    const [tx, ty, tz] = cam.target || [0, 0, 0];
+    let x = position[0] - tx;
+    let y = position[1] - ty;
+    let z = position[2] - tz;
+    const cosY = Math.cos(cam.yaw);
+    const sinY = Math.sin(cam.yaw);
+    const x1 = x * cosY - z * sinY;
+    const z1 = x * sinY + z * cosY;
+    const cosP = Math.cos(cam.pitch);
+    const sinP = Math.sin(cam.pitch);
+    const y1 = y * cosP - z1 * sinP;
+    const z2 = y * sinP + z1 * cosP;
+    const depth = z2 + cam.distance;
+    const scale = (Math.min(width, height) * 0.92) / Math.max(18, depth);
+    return {
+      x: width / 2 + x1 * scale,
+      y: height / 2 - y1 * scale,
+      depth,
+      scale
+    };
+  }
+
+  #pickCanvas = (event) => {
+    const rect = this.#canvas.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    let best = null;
+    let bestDist = 18;
+    for (const entity of this.#visible) {
+      const projected = this.#projectPoint(entity.position, rect.width, rect.height);
+      if (projected.depth < 8) continue;
+      const dx = projected.x - px;
+      const dy = projected.y - py;
+      const dist = Math.hypot(dx, dy);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = entity;
+      }
+    }
+    if (best) this.#selectEntity(best);
+  };
+
+  #selectEntity(entity) {
+    this.focusEntity(entity);
+    this.#destinationReady = false;
+    this.#transition.start(entity);
+    this.#onSelect?.(entity, destinationForEntity(entity), this.#transition);
+  }
+
+  #drawCanvas(now, warp) {
+    const ctx = this.#ctx;
+    const { width, height } = hostSize(this.#host);
+    ctx.clearRect(0, 0, width, height);
+    const nebula = ctx.createRadialGradient(width * 0.5, height * 0.42, 20, width * 0.5, height * 0.5, Math.max(width, height) * 0.72);
+    nebula.addColorStop(0, 'rgba(28, 32, 48, 0.55)');
+    nebula.addColorStop(0.45, 'rgba(10, 12, 18, 0.2)');
+    nebula.addColorStop(1, 'rgba(3, 3, 7, 0)');
+    ctx.fillStyle = nebula;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const stars = this.#starfield;
+    for (let i = 0; i < stars.count; i += 1) {
+      const projected = this.#projectPoint(
+        [stars.positions[i * 3], stars.positions[i * 3 + 1], stars.positions[i * 3 + 2]],
+        width,
+        height
+      );
+      if (projected.depth < 4) continue;
+      const size = Math.max(0.4, stars.sizes[i] * (70 / projected.depth));
+      const alpha = Math.max(0.08, Math.min(0.5, 18 / projected.depth));
+      ctx.fillStyle = `rgba(210,220,235,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(projected.x, projected.y, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const intensity = this.#modeCurrent[0];
+    for (let entityIndex = 0; entityIndex < this.#visible.length; entityIndex += 1) {
+      const entity = this.#visible[entityIndex];
+      const renderPosition = this.#canvasQueryPosition(entity, entityIndex, now);
+      const projected = this.#projectPoint(renderPosition, width, height);
+      if (projected.depth < 6) continue;
+      const warped = projected.x + warp * (renderPosition[0] * 0.4);
+      const size = Math.max(1.2, (1.4 + entity.magnitudeBand * 4.2) * (90 / projected.depth) * this.#modeCurrent[1]);
+      const color = COLORS[entity.category] ?? COLORS.unknown;
+      const alpha = Math.max(0.18, Math.min(0.95, (22 / projected.depth) * intensity));
+      const glow = ctx.createRadialGradient(warped, projected.y, 0, warped, projected.y, size * 3.2);
+      glow.addColorStop(0, cssRgb(color, alpha));
+      glow.addColorStop(0.35, cssRgb(color, alpha * 0.45));
+      glow.addColorStop(1, cssRgb(color, 0));
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(warped, projected.y, size * 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = cssRgb([Math.min(1, color[0] + 0.25), Math.min(1, color[1] + 0.25), Math.min(1, color[2] + 0.25)], Math.min(1, alpha + 0.2));
+      ctx.beginPath();
+      ctx.arc(warped, projected.y, Math.max(0.8, size * 0.38), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const hub = this.#investigationHub;
+    if (hub?.focusId) {
+      const byId = new Map(this.#visible.map((entity) => [String(entity.id), entity]));
+      ctx.strokeStyle = 'rgba(200, 214, 255, 0.32)';
+      ctx.lineWidth = 1;
+      for (const edge of (hub.edges || []).slice(0, 80)) {
+        const source = byId.get(String(edge.sourceId));
+        const target = byId.get(String(edge.targetId));
+        if (!source || !target) continue;
+        const a = this.#projectPoint(source.position, width, height);
+        const b = this.#projectPoint(target.position, width, height);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
+
+    for (const effect of this.#replayEffects) {
+      const age = now - effect.userData.born;
+      const progress = Math.min(1, age / effect.userData.life);
+      const projected = this.#projectPoint(effect.userData.position, width, height);
+      const color = REPLAY_COLOR[effect.userData.hue] ?? REPLAY_COLOR.neutral;
+      const radius = (8 + effect.userData.intensity * 18) * (1 + progress * 1.8);
+      ctx.strokeStyle = cssRgb(color, 0.85 * (1 - progress));
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(projected.x, projected.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  #frame = (now) => {
+    if (this.#destroyed) return;
+    const elapsed = now - this.#lastFrame;
+    this.#lastFrame = now;
+    this.#quality.sample(elapsed);
+    const transition = this.#transition.update(now, this.#destinationReady);
+    const warp = transition.state === 'accelerating'
+      ? Math.min(1, Math.max(0, (transition.elapsed - 350) / 900))
+      : transition.state === 'whiteout' ? 1 : 0;
+    if (this.#phaseEffect && now >= this.#phaseUntil) this.#phaseEffect = null;
+    const phase = this.#phaseEffect;
+    const story = this.#storyField;
+    const target = [
+      this.#modeTarget[0] * (phase?.intensity ?? story?.intensity ?? 1),
+      this.#modeTarget[1] * (phase?.scale ?? story?.scale ?? 1),
+      this.#modeTarget[2] + (phase?.rotation ?? 0)
+    ];
+    for (let i = 0; i < 3; i += 1) this.#modeCurrent[i] += (target[i] - this.#modeCurrent[i]) * 0.045;
+    if (!this.#reducedMotion && !this.#pointer.active && !this.#queryActive && this.#queryBlend < 0.02) {
+      const spin = elapsed * this.#autoSpin * Math.max(0.7, this.#modeCurrent[0] || 1);
+      this.#cameraTarget.yaw += spin;
+    }
+    this.#animateReplayEffects(now);
+    this.#updateQueryBlend(elapsed);
+    this.#animateQueryParticles(now, elapsed);
+    if (this.#backend === 'webgl') {
+      this.#material.uniforms.uWarp.value = warp;
+      this.#material.uniforms.uIntensity.value = this.#modeCurrent[0];
+      this.#points.scale.setScalar(this.#modeCurrent[1]);
+      this.#points.rotation.z = this.#modeCurrent[2];
+      if (this.#queryBlend > 0.001) {
+        /*
+          QUERY head stays stable by default.
+          User camera drag still works through #cameraTarget yaw/pitch,
+          so the head can be inspected from true side angles.
+        */
+        this.#points.rotation.y *= 0.92;
+        this.#points.rotation.x *= 0.92;
+      } else if (!this.#reducedMotion && !this.#pointer.active) {
+        this.#points.rotation.y += elapsed * 0.00009;
+      }
+      if (!this.#reducedMotion && !this.#pointer.active && this.#stars) {
+        this.#stars.rotation.y += elapsed * 0.00005;
+      }
+      const camera = this.#cameraTarget;
+      const [tx, ty, tz] = camera.target || [0, 0, 0];
+      const desiredX = tx + Math.sin(camera.yaw) * camera.distance;
+      const desiredY = ty + Math.sin(camera.pitch) * camera.distance;
+      const desiredZ = tz + Math.cos(camera.yaw) * camera.distance;
+      const follow = this.#pointer.active ? 0.22 : 0.16;
+      this.#camera.position.x += (desiredX - this.#camera.position.x) * follow;
+      this.#camera.position.y += (desiredY - this.#camera.position.y) * follow;
+      this.#camera.position.z += (desiredZ - this.#camera.position.z) * follow;
+      this.#camera.lookAt(tx, ty, tz);
+      this.#renderer.render(this.#scene, this.#camera);
+    } else {
+      this.#drawCanvas(now, warp);
+    }
+    this.#raf = requestAnimationFrame(this.#frame);
+  };
+
+  cancelTransition() {
+    this.#destinationReady = false;
+    return this.#transition.cancel(performance.now());
+  }
+
+  markDestinationReady() {
+    this.#destinationReady = true;
+    return this.#transition.update(performance.now(), true);
+  }
+
+  get backend() {
+    return this.#backend;
+  }
+
+  #teardownGpu() {
+    cancelAnimationFrame(this.#raf);
+    this.#unbindCanvasInput(this.#canvas);
+    this.#canvas?.removeEventListener('webglcontextlost', this.#onContextLost);
+    this.#clearHubObjects();
+    for (const object of this.#replayEffects) {
+      this.#scene?.remove(object);
+      object.geometry?.dispose();
+      object.material?.dispose();
+    }
+    this.#replayEffects = [];
+    this.#points?.geometry?.dispose();
+    this.#stars?.geometry?.dispose();
+    this.#material?.dispose();
+    this.#starMaterial?.dispose();
+    this.#renderer?.dispose();
+    this.#renderer?.domElement?.remove();
+    this.#canvas?.remove();
+    this.#renderer = null;
+    this.#scene = null;
+    this.#camera = null;
+    this.#points = null;
+    this.#stars = null;
+    this.#material = null;
+    this.#starMaterial = null;
+    this.#canvas = null;
+    this.#ctx = null;
+    this.#backend = 'none';
+  }
+
+  destroy() {
+    this.#destroyed = true;
+    cancelAnimationFrame(this.#raf);
+    this.#resizeObserver?.disconnect();
+    globalThis.removeEventListener('resize', this.#resize);
+    globalThis.visualViewport?.removeEventListener('resize', this.#resize);
+    globalThis.removeEventListener('abulls:field-mode', this.#onMode);
+    globalThis.removeEventListener('abulls:query-state', this.#onQueryState);
+    globalThis.removeEventListener('abulls:field-replay-events', this.#onReplay);
+    globalThis.removeEventListener('abulls:temporal-replay-events', this.#onTemporalReplay);
+    globalThis.removeEventListener('abulls:field-market-phase', this.#onMarketPhase);
+    globalThis.removeEventListener('abulls:field-story-scene', this.#onStoryScene);
+    this.#teardownGpu();
+  }
+}
+
+export const UniverseCategoryColor = CSS_COLOR;
