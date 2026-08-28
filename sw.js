@@ -1,9 +1,9 @@
-const BUILD='particle-universe-z500-integrated-4';
+const BUILD='particle-field-game-attachment-1';
 const CACHE=`abullsapp-${BUILD}`;
 const CORE=[
   './','./index.html','./flight.html','./share.html','./privacy.html','./terms.html','./favicon.svg','./manifest.webmanifest',
-  './css/styles.css','./css/dusk-atelier.css','./css/product-shell-vnext.css','./css/universe.css','./css/field-shell.css','./css/trickster-studio.css','./css/trickster-simulation.css','./css/intelligence-workspace-vnext.css','./css/intelligence-event-inspector.css','./css/token-market-workspace.css','./css/market-sequence-discovery.css',
-  './js/config.js','./js/main.js','./js/experience-entry.mjs','./js/market-context-player-bridge.mjs',
+  './css/styles.css','./css/dusk-atelier.css','./css/product-shell-vnext.css','./css/universe.css','./css/field-shell.css','./css/particle-game-attachment.css','./css/trickster-studio.css','./css/trickster-simulation.css','./css/intelligence-workspace-vnext.css','./css/intelligence-event-inspector.css','./css/token-market-workspace.css','./css/market-sequence-discovery.css',
+  './js/config.js','./js/main.js','./js/experience-entry.mjs','./js/experience-bootstrap.mjs','./js/field-shell.mjs','./js/particle-field-fallback.mjs','./js/market-context-player-bridge.mjs',
   './universe-flight.js','./universe-flight-data.js','./universe-what-if.js','./universe-warp.js','./universe-cinematics.js','./universe-movie.js','./universe-app.js','./universe-experience.js',
   './assets/icons/icon-192.png','./assets/icons/icon-512.png','./assets/icons/icon-maskable-192.png','./assets/icons/icon-maskable-512.png'
 ];
