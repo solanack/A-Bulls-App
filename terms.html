@@ -3,24 +3,27 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<meta name="theme-color" content="#050505"/>
+<meta name="theme-color" content="#171820"/>
 <title>Terms of Use — A Bulls App</title>
 <meta name="description" content="Terms of Use for A Bulls App (abullsapp.com)"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;family=Sora:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
 <style>
   :root {
-    --g: #c8ff00;
-    --g2: #00e676;
-    --bg: #050505;
-    --card: #0c0c0c;
-    --line: #1a3a1a;
-    --text: #e8ffe8;
-    --muted: #9bb8a5;
+    --g: #c4afcf;
+    --g2: #b0d3c4;
+    --bg: #171820;
+    --card: #292a34;
+    --line: rgba(196,175,207,.25);
+    --text: #f3f1f4;
+    --muted: #aaa7b2;
   }
   * { box-sizing: border-box; }
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: Manrope, "Segoe UI", system-ui, sans-serif;
     margin: 0;
     line-height: 1.6;
   }
@@ -28,13 +31,13 @@
   a { color: var(--g); }
   a.back { display: inline-block; margin-bottom: 20px; color: var(--muted); text-decoration: none; font-size: 14px; }
   a.back:hover { color: var(--g); }
-  h1 { color: var(--g); font-size: 28px; margin: 0 0 6px; }
+  h1 { color: var(--text); font: 600 28px/1.1 Sora, Manrope, sans-serif; letter-spacing: -.04em; margin: 0 0 6px; }
   .updated { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
-  h2 { color: var(--g2); font-size: 18px; margin: 32px 0 10px; border-top: 1px solid var(--line); padding-top: 20px; }
+  h2 { color: var(--g2); font: 600 18px/1.2 Sora, Manrope, sans-serif; margin: 32px 0 10px; border-top: 1px solid var(--line); padding-top: 20px; }
   p, li { color: var(--text); font-size: 15px; }
   ul { padding-left: 20px; }
   li { margin-bottom: 8px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+  .card { background: linear-gradient(145deg,#32343f,#272831); border: 1px solid var(--line); border-radius: 18px; padding: 18px; margin: 16px 0; box-shadow: 0 14px 34px rgba(7,7,11,.22); }
   .contact { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
 </style>
 </head>
@@ -42,16 +45,17 @@
 <div class="wrap">
   <a class="back" href="/">← Back to A Bulls App</a>
   <h1>Terms of Use</h1>
-  <div class="updated">Effective date: August 16, 2026</div>
+  <div class="updated">Effective date: August 26, 2026</div>
 
   <p>These Terms of Use govern your access to and use of A Bulls App ("the App"), published by DingDong Vibes, available at <a href="https://abullsapp.com">abullsapp.com</a> and as an installable Android app. By using the App, you agree to these terms.</p>
 
   <h2>1. What the App is</h2>
-  <p>The App provides community games (Bull Invaders and related titles), read-only Solana wallet and NFT information display, and related community content. The App is a fan/community tool and is provided for entertainment and informational purposes.</p>
+  <p>The App provides Bull Invaders, a persistent 3D interface for read-only Solana intelligence, deterministic replay and comparison tools, disclosed historical simulations, and evidence-backed story creation. The App is a fan/community tool and is provided for entertainment and informational purposes.</p>
 
   <div class="card">
     <strong>No wallet custody, ever.</strong> The App never requests a wallet connection, signature, transaction approval, private key, or seed phrase, and never has custody of funds or assets. Any address you enter is used only to display publicly available blockchain data back to you.
   </div>
+  <p>Spatial placement, visual proximity, replay effects, comparisons, and generated story presentation do not establish identity, ownership, coordination, intent, causation, strategy, profitability, or future behavior. What If output is a labeled simulation and never observed history.</p>
 
   <h2>2. Not financial advice</h2>
   <p>Nothing in the App — including wallet analytics, NFT data, market information, or community content — constitutes financial, investment, legal, or tax advice. Cryptocurrency and NFT values are volatile and can go to zero. Any decisions you make regarding digital assets are your own responsibility. Consult a qualified professional before making financial decisions.</p>
@@ -65,23 +69,23 @@
   </ul>
 
   <h2>4. Accounts and local data</h2>
-  <p>Google sign-in is optional. Signed-out users receive a random signed player session so server features do not collapse multiple people into one account. Local run history, settings, and uploaded media remain on your device; leaderboard submissions, Daily results, streaks, medals, and crew records are stored by our backend as described in the Privacy Policy. We are not responsible for loss of local data caused by uninstalling the App, clearing app data, or device failure.</p>
+  <p>Google sign-in is optional. Signed-out users receive a random signed player session so leaderboard submissions do not collapse multiple people into one account. Local run history, settings, and uploaded media remain on your device; accepted Ranked leaderboard submissions are stored by our backend as described in the Privacy Policy. We are not responsible for loss of local data caused by uninstalling the App, clearing app data, or device failure.</p>
+  <p>Trickster projects remain local unless you explicitly publish a frozen story manifest. Published manifests are read-only, evidence-linked, publicly retrievable through their share identifier, and expire under the service retention policy.</p>
 
-  <h2>5. Future Bullion feature</h2>
+  <h2>5. No monetization</h2>
   <div class="card">
-    <strong>Bullion is not enabled in this launch release.</strong> The current App has no in-app purchases or payment checkout.
+    <strong>The App has no in-app purchases or payment checkout.</strong>
   </div>
   <ul>
-    <li>No Bullion, digital goods, subscriptions, cryptocurrency, NFTs, or other products are sold by this release.</li>
-    <li>If Bullion is introduced later, it will remain closed-loop, non-transferable, non-redeemable, and without cash or cryptocurrency value.</li>
-    <li>Any later purchase feature will be governed by updated terms, privacy disclosures, and the applicable store's payment rules before launch.</li>
+    <li>No digital goods, subscriptions, cryptocurrency, NFTs, or other products are sold by this release.</li>
+    <li>All rewards are local cosmetic or status-only acknowledgements with no cash or cryptocurrency value.</li>
   </ul>
 
   <h2>6. Fair play and game modes</h2>
-  <p>Ranked mode uses the standard loadout and is eligible for the server-screened global leaderboard. Daily Runs use the published daily boss and modifier and allow one accepted result per signed player session each UTC day. Arcade is a practice mode and does not submit a leaderboard score. Server screening uses a signed one-time challenge, replay prevention, and broad score plausibility checks; it is not a guarantee that every client or score is cheat-free. No purchased gameplay items are enabled in this release.</p>
+  <p>Ranked mode uses the standard loadout and is eligible for the server-screened global leaderboard. Campaign mode is local practice and does not submit a leaderboard score. Server screening uses a signed one-time challenge, replay prevention, and broad score plausibility checks; it is not a guarantee that every client or score is cheat-free.</p>
 
   <h2>7. Intellectual property</h2>
-  <p>All App branding, game art, and original content are owned by DingDong Vibes or its licensors. NFT images and metadata displayed in the App remain the property of their respective creators/collections; the App displays this data for informational purposes under standard public API access and does not claim ownership of third-party NFT artwork.</p>
+  <p>All App branding, game art, and original content are owned by DingDong Vibes or its licensors. Third-party collection and market data shown for analytics remains the property of its respective providers and creators.</p>
 
   <h2>8. Third-party links and services</h2>
   <p>The App links to or embeds third-party services (e.g., Magic Eden, YouTube, Twitch and Google Identity Services). We do not control and are not responsible for the content, policies, or practices of these third parties.</p>
@@ -99,8 +103,8 @@
   <p>We may suspend or discontinue access to the App, or any feature of it, at any time.</p>
 
   <div class="contact">
-    Questions about these terms? Contact us at <a href="mailto:imadingdongsol@gmail.com">imadingdongsol@gmail.com</a>.
+    Questions about these terms? Contact us at <a href="/cdn-cgi/l/email-protection#01686c6065686f66656e6f66726e6d41666c60686d2f626e6c"><span class="__cf_email__" data-cfemail="8ce5e1ede8e5e2ebe8e3e2ebffe3e0ccebe1ede5e0a2efe3e1">[email&#160;protected]</span></a>.
   </div>
 </div>
-</body>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script></body>
 </html>
