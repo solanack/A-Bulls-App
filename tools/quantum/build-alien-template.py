@@ -32,181 +32,110 @@ def normalized(v):
     # z: -1..1 back/front
     nx = (x - cx) / (xr * 0.5)
     ny = (y - cy) / (yr * 0.5)
-    # Alien.glb faces toward -Z after its baked node transform.
-    # Flip Z here so normalized +Z means anatomical FRONT.
-    nz = -(z - cz) / (zr * 0.5)
+    # IMPORTANT: the current baked GLB already lands with the anatomical
+    # face on +Z in the renderer's camera convention. Do NOT invert it here.
+    nz = (z - cz) / (zr * 0.5)
 
     return nx, ny, nz
 
 def rotated_eye(nx, ny, side):
-    """
-    Large Grey-alien almond eye region.
-
-    side:
-      -1 left
-      +1 right
-    """
     ex = side * 0.39
     ey = 0.20
-
     dx = nx - ex
     dy = ny - ey
-
-    # outer corners slightly higher than inner corners
     angle = side * 0.16
     ca = math.cos(angle)
     sa = math.sin(angle)
-
     rx = dx * ca - dy * sa
     ry = dx * sa + dy * ca
-
     return (rx / 0.34) ** 2 + (ry / 0.20) ** 2
 
 def anatomy_role(nx, ny, nz):
-    """
-    1 surface
-    3 eye rim
-    4 nose
-    5 mouth
-    6 silhouette
-    """
-
     left_eye = rotated_eye(nx, ny, -1)
     right_eye = rotated_eye(nx, ny, +1)
     eye = min(left_eye, right_eye)
 
-    # Eye cavity interior:
-    # deliberately rejected later.
+    # Empty eye sockets on the camera-facing (+Z) side.
     if nz > 0.08 and eye < 0.72:
         return 0
-
-    # Eye rims get very high density.
     if nz > 0.02 and 0.72 <= eye <= 1.30:
         return 3
 
-    # Narrow bridge / small nose.
-    if (
-        nz > 0.20
-        and abs(nx) < 0.13
-        and -0.18 < ny < 0.23
-    ):
+    # Nose ridge, but keep tiny nostril openings empty.
+    if nz > 0.20 and abs(nx) < 0.13 and -0.18 < ny < 0.23:
+        if -0.17 < ny < -0.04 and 0.025 < abs(nx) < 0.095:
+            return 0
         return 4
 
-    # Small tight mouth.
-    if (
-        nz > 0.18
-        and abs(nx) < 0.25
-        and -0.53 < ny < -0.30
-    ):
+    # Mouth contour with a thin empty central slit.
+    if nz > 0.18 and abs(nx) < 0.25 and -0.53 < ny < -0.30:
+        if abs(nx) < 0.19 and -0.445 < ny < -0.385:
+            return 0
         return 5
 
-    # Strong silhouette density.
     if abs(nx) > 0.78:
         return 6
 
     return 1
 
 def keep_probability(role, nx, ny, nz):
-    """
-    Anatomy-weighted sampling.
-    """
+    if role == 3:
+        return 0.98
+    if role == 4:
+        return 0.88
+    if role == 5:
+        return 0.94
+    if role == 6:
+        return 0.70
 
-    if role == 3:       # eye rim
-        return 0.95
-
-    if role == 4:       # nose
-        return 0.82
-
-    if role == 5:       # mouth
-        return 0.90
-
-    if role == 6:       # silhouette
-        return 0.65
-
-    # Front facial plane gets more detail.
     front = max(0.0, min(1.0, (nz + 0.05) / 0.95))
-
-    # Cranium can be slightly less dense than features.
     upper = max(0.0, min(1.0, (ny - 0.25) / 0.75))
-
-    return 0.075 + front * 0.13 - upper * 0.025
+    return 0.070 + front * 0.15 - upper * 0.020
 
 samples = []
-
 for vertex in vertices:
     nx, ny, nz = normalized(vertex)
-
     role = anatomy_role(nx, ny, nz)
-
-    # Deep empty almond eye sockets.
     if role == 0:
         continue
-
-    probability = keep_probability(role, nx, ny, nz)
-
-    if random.random() > probability:
+    if random.random() > keep_probability(role, nx, ny, nz):
         continue
 
-    # Map model into Particle Field coordinates.
-    #
-    # Slightly exaggerate classic Grey proportions:
-    # broad cranium, long face, substantial skull depth.
     x = nx * 39.0
     y = ny * 50.0
     z = nz * 38.0
 
-    # Push upper cranium wider/deeper.
     upper = max(0.0, min(1.0, (ny - 0.18) / 0.82))
     x *= 1.0 + upper * 0.12
     z *= 1.0 + upper * 0.15
 
-    # Narrow lower jaw gradually.
     if ny < -0.18:
         lower = max(0.0, min(1.0, (-ny - 0.18) / 0.82))
         x *= 1.0 - lower * 0.22
 
     samples.append((x, y, z, role))
 
-print("INITIAL SAMPLES:", len(samples))
-
-# Cap production template while preserving important anatomy.
 TARGET = 18000
-
 if len(samples) > TARGET:
-    priority = {
-        3: 5.0,  # eye
-        5: 4.2,  # mouth
-        4: 3.7,  # nose
-        6: 2.8,  # silhouette
-        1: 1.0,
-    }
-
+    priority = {3: 5.0, 5: 4.2, 4: 3.7, 6: 2.8, 1: 1.0}
     weighted = []
-
     for sample in samples:
         role = sample[3]
         score = random.random() ** (1.0 / priority.get(role, 1.0))
         weighted.append((score, sample))
-
     weighted.sort(key=lambda item: item[0], reverse=True)
     samples = [item[1] for item in weighted[:TARGET]]
 
 positions = []
 roles = []
-
 counts = {}
-
 for x, y, z, role in samples:
-    positions.extend([
-        round(x, 4),
-        round(y, 4),
-        round(z, 4)
-    ])
+    positions.extend([round(x, 4), round(y, 4), round(z, 4)])
     roles.append(role)
     counts[role] = counts.get(role, 0) + 1
 
 payload = {
-    "version": 2,
+    "version": 3,
     "source": "Grey Alien Head 3D mesh",
     "coordinateSystem": {
         "x": "left-right",
@@ -218,9 +147,7 @@ payload = {
     "roles": roles
 }
 
-OUT_JSON.write_text(
-    json.dumps(payload, separators=(",", ":"))
-)
+OUT_JSON.write_text(json.dumps(payload, separators=(",", ":")))
 
 mjs = f"""/*
   AUTO-GENERATED QUANTUM ALIEN HEAD TEMPLATE
@@ -237,7 +164,7 @@ mjs = f"""/*
 */
 
 export const ALIEN_HEAD_TEMPLATE = Object.freeze({{
-  version: 2,
+  version: 3,
   count: {len(samples)},
 
   positions: new Float32Array(
@@ -249,10 +176,8 @@ export const ALIEN_HEAD_TEMPLATE = Object.freeze({{
   )
 }});
 """
-
 OUT_MJS.write_text(mjs)
 
-print()
 print("=== QUANTUM ALIEN TEMPLATE ===")
 print("TOTAL POINTS:", len(samples))
 print("SURFACE:", counts.get(1, 0))
@@ -260,14 +185,3 @@ print("EYE RIM:", counts.get(3, 0))
 print("NOSE:", counts.get(4, 0))
 print("MOUTH:", counts.get(5, 0))
 print("SILHOUETTE:", counts.get(6, 0))
-
-print()
-print("JSON:", OUT_JSON)
-print("MODULE:", OUT_MJS)
-
-print()
-print("SIZE JSON:", round(OUT_JSON.stat().st_size / 1024, 1), "KB")
-print("SIZE MJS:", round(OUT_MJS.stat().st_size / 1024, 1), "KB")
-
-print()
-print("REAL MESH -> QUANTUM TEMPLATE COMPLETE")
