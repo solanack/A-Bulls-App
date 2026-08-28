@@ -1,9 +1,10 @@
-const BUILD='particle-universe-immersive-2';
+const BUILD='particle-universe-z500-integrated-1';
 const CACHE=`abullsapp-${BUILD}`;
 const CORE=[
-  './','./index.html','./share.html','./privacy.html','./terms.html','./favicon.svg','./manifest.webmanifest',
+  './','./index.html','./flight.html','./share.html','./privacy.html','./terms.html','./favicon.svg','./manifest.webmanifest',
   './css/styles.css','./css/dusk-atelier.css','./css/product-shell-vnext.css','./css/universe.css','./css/field-shell.css','./css/trickster-studio.css','./css/trickster-simulation.css','./css/intelligence-workspace-vnext.css','./css/intelligence-event-inspector.css','./css/token-market-workspace.css','./css/market-sequence-discovery.css',
   './js/opening-sequence.js','./js/config.js','./js/main.js','./js/experience-entry.mjs','./js/market-context-player-bridge.mjs',
+  './universe-flight.js','./universe-flight-data.js','./universe-what-if.js','./universe-warp.js','./universe-cinematics.js','./universe-movie.js','./universe-app.js','./universe-experience.js',
   './assets/icons/icon-192.png','./assets/icons/icon-512.png','./assets/icons/icon-maskable-192.png','./assets/icons/icon-maskable-512.png'
 ];
 async function cacheOne(cache,path){try{const request=new Request(path,{cache:'reload'});const response=await fetch(request);if(response.ok&&response.type==='basic')await cache.put(request,response);}catch(_){}}
