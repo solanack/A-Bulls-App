@@ -83,16 +83,8 @@ function createStarfield(count = 480, seed = 42) {
 
 function hostSize(host) {
   const parent = host.parentElement;
-  const width = Math.max(
-    host.clientWidth || 0,
-    parent?.clientWidth || 0,
-    globalThis.innerWidth || 1
-  );
-  const height = Math.max(
-    host.clientHeight || 0,
-    parent?.clientHeight || 0,
-    globalThis.innerHeight || 1
-  );
+  const width = Math.max(host.clientWidth || 0, parent?.clientWidth || 0, globalThis.innerWidth || 1);
+  const height = Math.max(host.clientHeight || 0, parent?.clientHeight || 0, globalThis.innerHeight || 1);
   return { width: Math.max(1, width), height: Math.max(1, height) };
 }
 
@@ -117,8 +109,6 @@ export class UniverseRenderer {
   #queryTargets = null;
   #queryMouth = null;
   #querySurfaceFlags = null;
-
-  // QUERY-only quantum child-particle renderer.
   #quantumPoints = null;
   #quantumMaterial = null;
   #quantumParents = null;
@@ -126,9 +116,7 @@ export class UniverseRenderer {
   #quantumRoles = null;
   #quantumPhases = null;
   #quantumCount = 0;
-  #onQueryState = (event) => {
-    this.setQueryActive(Boolean(event?.detail?.active));
-  };
+  #onQueryState = (event) => { this.setQueryActive(Boolean(event?.detail?.active)); };
   #resizeObserver = null; #reducedMotion = false; #autoSpin = 0.00042;
 
   constructor({ host, snapshot, THREE, onSelect, capabilities = capabilitiesFromBrowser() }) {
@@ -171,12 +159,7 @@ export class UniverseRenderer {
     const profile = qualityProfile(tier);
     void profile;
     if (THREE) {
-      try {
-        this.#mountThree();
-        return;
-      } catch {
-        this.#teardownGpu();
-      }
+      try { this.#mountThree(); return; } catch { this.#teardownGpu(); }
     }
     this.#mountCanvas();
   }
@@ -226,9 +209,7 @@ export class UniverseRenderer {
     const attrs = { alpha: true, antialias: false, powerPreference: 'high-performance', premultipliedAlpha: false };
     let context = null;
     try { context = canvas.getContext('webgl2', attrs); } catch { context = null; }
-    if (!context) {
-      try { context = canvas.getContext('webgl', attrs) || canvas.getContext('experimental-webgl', attrs); } catch { context = null; }
-    }
+    if (!context) { try { context = canvas.getContext('webgl', attrs) || canvas.getContext('experimental-webgl', attrs); } catch { context = null; } }
     if (!context) throw new Error('webgl-unavailable');
     this.#canvas = canvas;
     this.#renderer = new T.WebGLRenderer({ canvas, context, antialias: false, alpha: true, powerPreference: 'high-performance' });
@@ -238,139 +219,28 @@ export class UniverseRenderer {
     this.#camera = new T.PerspectiveCamera(55, 1, 0.1, 700);
     this.#camera.position.set(0, 18, 125);
     this.#material = new T.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      vertexColors: true,
-      blending: T.AdditiveBlending,
-      uniforms: {
-        uPixelRatio: { value: this.#renderer.getPixelRatio() },
-        uWarp: { value: 0 },
-        uIntensity: { value: 1 }
-      },
+      transparent: true, depthWrite: false, vertexColors: true, blending: T.AdditiveBlending,
+      uniforms: { uPixelRatio: { value: this.#renderer.getPixelRatio() }, uWarp: { value: 0 }, uIntensity: { value: 1 } },
       vertexShader: `attribute float aSize;uniform float uPixelRatio;uniform float uWarp;uniform float uIntensity;varying vec3 vColor;void main(){vColor=color*uIntensity;vec3 warped=position;float depthSign=position.z>=0.0?1.0:-1.0;warped.z+=depthSign*uWarp*(25.0+abs(position.z)*2.2);vec4 mvPosition=modelViewMatrix*vec4(warped,1.0);gl_PointSize=aSize*uPixelRatio*(210.0/max(12.0,-mvPosition.z));gl_Position=projectionMatrix*mvPosition;}`,
       fragmentShader: `varying vec3 vColor;void main(){vec2 p=gl_PointCoord-vec2(0.5);float d=length(p);float core=smoothstep(0.18,0.0,d);float halo=smoothstep(0.5,0.12,d);float alpha=max(core,halo*0.55);gl_FragColor=vec4(vColor,alpha);}`
     });
-    this.#starMaterial = new T.PointsMaterial({
-      color: 0xcfd6e6,
-      size: 1.15,
-      transparent: true,
-      opacity: 0.42,
-      depthWrite: false,
-      blending: T.AdditiveBlending,
-      sizeAttenuation: true
-    });
+    this.#starMaterial = new T.PointsMaterial({ color: 0xcfd6e6, size: 1.15, transparent: true, opacity: 0.42, depthWrite: false, blending: T.AdditiveBlending, sizeAttenuation: true });
     const starGeom = new T.BufferGeometry();
     starGeom.setAttribute('position', new T.BufferAttribute(this.#starfield.positions, 3));
     this.#stars = new T.Points(starGeom, this.#starMaterial);
     this.#scene.add(this.#stars);
     this.#points = new T.Points(this.#geometryForSnapshot(this.#snapshot), this.#material);
     this.#scene.add(this.#points);
-
-    /*
-      QUERY QUANTUM CHILD LAYER
-
-      Separate from the normal blockchain particle field.
-      It remains invisible until QUERY begins.
-    */
     this.#quantumMaterial = new T.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      vertexColors: true,
-      blending: T.AdditiveBlending,
-
-      uniforms: {
-        uPixelRatio: {
-          value: this.#renderer.getPixelRatio()
-        },
-        uAlpha: {
-          value: 0.0
-        }
-      },
-
-      vertexShader: `
-        attribute float aSize;
-
-        uniform float uPixelRatio;
-
-        varying vec3 vColor;
-
-        void main() {
-          vColor = color;
-
-          vec4 mvPosition =
-            modelViewMatrix *
-            vec4(position, 1.0);
-
-          gl_PointSize =
-            aSize *
-            uPixelRatio *
-            (165.0 / max(12.0, -mvPosition.z));
-
-          gl_Position =
-            projectionMatrix *
-            mvPosition;
-        }
-      `,
-
-      fragmentShader: `
-        uniform float uAlpha;
-
-        varying vec3 vColor;
-
-        void main() {
-          vec2 point =
-            gl_PointCoord -
-            vec2(0.5);
-
-          float distanceFromCenter =
-            length(point);
-
-          if (distanceFromCenter > 0.5) {
-            discard;
-          }
-
-          float core =
-            smoothstep(
-              0.24,
-              0.0,
-              distanceFromCenter
-            );
-
-          float halo =
-            smoothstep(
-              0.50,
-              0.12,
-              distanceFromCenter
-            );
-
-          float alpha =
-            max(
-              core,
-              halo * 0.32
-            ) * uAlpha;
-
-          gl_FragColor =
-            vec4(
-              vColor,
-              alpha
-            );
-        }
-      `
+      transparent: true, depthWrite: false, vertexColors: true, blending: T.AdditiveBlending,
+      uniforms: { uPixelRatio: { value: this.#renderer.getPixelRatio() }, uAlpha: { value: 0.0 } },
+      vertexShader: `attribute float aSize;uniform float uPixelRatio;varying vec3 vColor;void main(){vColor=color;vec4 mvPosition=modelViewMatrix*vec4(position,1.0);gl_PointSize=aSize*uPixelRatio*(165.0/max(12.0,-mvPosition.z));gl_Position=projectionMatrix*mvPosition;}`,
+      fragmentShader: `uniform float uAlpha;varying vec3 vColor;void main(){vec2 point=gl_PointCoord-vec2(0.5);float d=length(point);if(d>0.5)discard;float core=smoothstep(0.24,0.0,d);float halo=smoothstep(0.50,0.12,d);float alpha=max(core,halo*0.32)*uAlpha;gl_FragColor=vec4(vColor,alpha);}`
     });
-
-    this.#quantumPoints =
-      new T.Points(
-        new T.BufferGeometry(),
-        this.#quantumMaterial
-      );
-
+    this.#quantumPoints = new T.Points(new T.BufferGeometry(), this.#quantumMaterial);
     this.#quantumPoints.visible = false;
     this.#quantumPoints.frustumCulled = false;
-
-    this.#scene.add(
-      this.#quantumPoints
-    );
-
+    this.#scene.add(this.#quantumPoints);
     this.#backend = 'webgl';
     this.#bindCanvasInput(canvas);
     this.#observeHost();
@@ -442,38 +312,12 @@ export class UniverseRenderer {
             vertices.push(ax + jitter, ay + 12 - i * 6, az + (i % 2 ? 2 : -2) * effect.intensity);
           }
           geometry.setAttribute('position', new T.Float32BufferAttribute(vertices, 3));
-          object = new T.Line(geometry, new T.LineBasicMaterial({
-            color: new T.Color(...color),
-            transparent: true,
-            opacity: effect.simulation ? 0.32 : 0.95,
-            blending: T.AdditiveBlending
-          }));
+          object = new T.Line(geometry, new T.LineBasicMaterial({ color: new T.Color(...color), transparent: true, opacity: effect.simulation ? 0.32 : 0.95, blending: T.AdditiveBlending }));
         } else {
           geometry.setAttribute('position', new T.Float32BufferAttribute([ax, ay, az], 3));
-          object = new T.Points(geometry, new T.PointsMaterial({
-            color: new T.Color(...color),
-            size: 5 + effect.intensity * 12,
-            transparent: true,
-            opacity: effect.simulation ? 0.26 : 0.85,
-            blending: T.AdditiveBlending,
-            depthWrite: false
-          }));
+          object = new T.Points(geometry, new T.PointsMaterial({ color: new T.Color(...color), size: 5 + effect.intensity * 12, transparent: true, opacity: effect.simulation ? 0.26 : 0.85, blending: T.AdditiveBlending, depthWrite: false }));
         }
-        object.userData = {
-          born: now,
-          life: 450 + effect.intensity * 950,
-          simulation: Boolean(effect.simulation),
-          matched: resolved.anchor.matched,
-          entityId: resolved.anchor.entityId,
-          entityKind: resolved.anchor.entityKind,
-          eventId: effect.eventId,
-          walletIdentity: resolved.walletIdentity,
-          visualOffset: resolved.offset,
-          hue: effect.hue,
-          intensity: effect.intensity,
-          kind: effect.kind,
-          position: resolved.position
-        };
+        object.userData = { born: now, life: 450 + effect.intensity * 950, simulation: Boolean(effect.simulation), matched: resolved.anchor.matched, entityId: resolved.anchor.entityId, entityKind: resolved.anchor.entityKind, eventId: effect.eventId, walletIdentity: resolved.walletIdentity, visualOffset: resolved.offset, hue: effect.hue, intensity: effect.intensity, kind: effect.kind, position: resolved.position };
         this.#scene.add(object);
         this.#replayEffects.push(object);
       }
@@ -481,17 +325,7 @@ export class UniverseRenderer {
     }
     for (const effect of effects.slice(0, 32)) {
       const resolved = resolveFieldEffectPosition(effect, particles);
-      this.#replayEffects.push({
-        userData: {
-          born: now,
-          life: 450 + effect.intensity * 950,
-          hue: effect.hue,
-          intensity: effect.intensity,
-          kind: effect.kind,
-          position: resolved.position,
-          simulation: Boolean(effect.simulation)
-        }
-      });
+      this.#replayEffects.push({ userData: { born: now, life: 450 + effect.intensity * 950, hue: effect.hue, intensity: effect.intensity, kind: effect.kind, position: resolved.position, simulation: Boolean(effect.simulation) } });
     }
   }
 
@@ -542,13 +376,7 @@ export class UniverseRenderer {
       if (!source || !target || !edge.evidenceId) continue;
       const geometry = new T.BufferGeometry();
       geometry.setAttribute('position', new T.Float32BufferAttribute([...source.position, ...target.position], 3));
-      const material = new T.LineBasicMaterial({
-        color: new T.Color(0.72, 0.78, 1),
-        transparent: true,
-        opacity: 0.34,
-        blending: T.AdditiveBlending,
-        depthWrite: false
-      });
+      const material = new T.LineBasicMaterial({ color: new T.Color(0.72, 0.78, 1), transparent: true, opacity: 0.34, blending: T.AdditiveBlending, depthWrite: false });
       const line = new T.Line(geometry, material);
       line.userData = { fieldInvestigation: true, evidenceId: edge.evidenceId, sourceId: edge.sourceId, targetId: edge.targetId };
       this.#scene.add(line);
@@ -557,14 +385,7 @@ export class UniverseRenderer {
     if (focus) {
       const geometry = new T.BufferGeometry();
       geometry.setAttribute('position', new T.Float32BufferAttribute(focus.position, 3));
-      const marker = new T.Points(geometry, new T.PointsMaterial({
-        color: new T.Color(1, 1, 1),
-        size: 10,
-        transparent: true,
-        opacity: 0.78,
-        blending: T.AdditiveBlending,
-        depthWrite: false
-      }));
+      const marker = new T.Points(geometry, new T.PointsMaterial({ color: new T.Color(1, 1, 1), size: 10, transparent: true, opacity: 0.78, blending: T.AdditiveBlending, depthWrite: false }));
       marker.userData = { fieldInvestigation: true, focusId: hub.focusId };
       this.#scene.add(marker);
       this.#hubObjects.push(marker);
@@ -572,981 +393,305 @@ export class UniverseRenderer {
     return hub;
   }
 
-  clearInvestigationHub() {
-    this.#investigationHub = null;
-    this.#clearHubObjects();
-    return true;
-  }
-
-  focusEntity(entity) {
-    if (!entity) return false;
-    const focus = fieldFocusForEntity(entity);
-    this.#cameraTarget = { distance: focus.distance, yaw: this.#cameraTarget.yaw, pitch: this.#cameraTarget.pitch, target: [...focus.target] };
-    return focus;
-  }
-
-  focusRequest(request = {}) {
-    const particles = this.#points?.geometry?.userData?.entities || this.#visible || this.#snapshot?.particles || [];
-    const entity = findFieldEntity(particles, request);
-    return entity ? this.focusEntity(entity) : false;
-  }
-
-  clearFocus() {
-    this.#cameraTarget = { distance: 125, yaw: this.#cameraTarget.yaw, pitch: this.#cameraTarget.pitch, target: [0, 0, 0] };
-  }
-
-  #queryHash(value) {
-    let x = Math.sin(value * 12.9898 + 78.233) * 43758.5453;
-    return x - Math.floor(x);
-  }
+  clearInvestigationHub() { this.#investigationHub = null; this.#clearHubObjects(); return true; }
+  focusEntity(entity) { if (!entity) return false; const focus = fieldFocusForEntity(entity); this.#cameraTarget = { distance: focus.distance, yaw: this.#cameraTarget.yaw, pitch: this.#cameraTarget.pitch, target: [...focus.target] }; return focus; }
+  focusRequest(request = {}) { const particles = this.#points?.geometry?.userData?.entities || this.#visible || this.#snapshot?.particles || []; const entity = findFieldEntity(particles, request); return entity ? this.focusEntity(entity) : false; }
+  clearFocus() { this.#cameraTarget = { distance: 125, yaw: this.#cameraTarget.yaw, pitch: this.#cameraTarget.pitch, target: [0, 0, 0] }; }
+  #queryHash(value) { let x = Math.sin(value * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); }
 
   #buildQueryTargets(count, source) {
     const targets = new Float32Array(count * 3);
     const mouth = new Uint8Array(count);
     const flags = new Uint8Array(count);
-
     const template = ALIEN_HEAD_TEMPLATE;
     const templatePositions = template?.positions;
     const templateRoles = template?.roles;
     const templateCount = Number(template?.count) || 0;
-
-    if (
-      !templatePositions ||
-      !templateRoles ||
-      templateCount < 100
-    ) {
-      throw new Error('Quantum alien head template is unavailable');
-    }
-
-    const hash = (value) => {
-      const x = Math.sin(value * 12.9898 + 78.233) * 43758.5453123;
-      return x - Math.floor(x);
-    };
-
-    /*
-      Approximately 72% of the real blockchain particles define
-      the anatomical shell.
-
-      The remaining particles become living interior matter.
-    */
+    if (!templatePositions || !templateRoles || templateCount < 100) throw new Error('Quantum alien head template is unavailable');
+    const hash = (value) => { const x = Math.sin(value * 12.9898 + 78.233) * 43758.5453123; return x - Math.floor(x); };
     const surfaceCount = Math.floor(count * 0.72);
-
     for (let i = 0; i < count; i += 1) {
       const j = i * 3;
-
-      /*
-        Use a deterministic but widely distributed template index.
-
-        We deliberately avoid simply taking the first N template points,
-        because that could cluster around whichever mesh region happened
-        to be stored first.
-      */
-      const u = hash(i * 7.137 + 19.31);
-      const templateIndex =
-        Math.min(
-          templateCount - 1,
-          Math.floor(u * templateCount)
-        );
-
+      const templateIndex = Math.min(templateCount - 1, Math.floor(hash(i * 7.137 + 19.31) * templateCount));
       const tj = templateIndex * 3;
-
       const mx = templatePositions[tj];
       const my = templatePositions[tj + 1];
-      const mz = templatePositions[tj + 2];
-
+      const mz = -templatePositions[tj + 2];
       const anatomyRole = templateRoles[templateIndex];
-
       if (i < surfaceCount) {
-        /*
-          REAL 3D ALIEN SURFACE
-
-          These coordinates came directly from the downloaded
-          alien mesh. No procedural skull approximation remains.
-        */
-        targets[j] = mx;
-        targets[j + 1] = my;
-        targets[j + 2] = mz;
-
-        /*
-          Runtime motion flags:
-            1 = stable anatomical surface
-            2 = living interior matter
-            3 = speaking mouth
-
-          The source template has richer anatomy roles,
-          but we map them to the existing renderer's motion system.
-        */
-        if (anatomyRole === 5) {
-          flags[i] = 3;
-          mouth[i] = 1;
-        } else {
-          flags[i] = 1;
-        }
-
+        targets[j] = mx; targets[j + 1] = my; targets[j + 2] = mz;
+        if (anatomyRole === 5) { flags[i] = 3; mouth[i] = 1; } else { flags[i] = 1; }
       } else {
-        /*
-          LIVING INTERIOR MATTER
-
-          Start from the real head geometry and pull the point
-          inward toward the skull's internal volume.
-
-          Because the source position already belongs to the
-          authentic head mesh, the resulting interior cloud
-          naturally follows the actual cranium instead of an
-          invented ellipsoid.
-        */
-        const inward =
-          0.28 +
-          hash(i * 13.711 + 4.91) * 0.38;
-
+        const inward = 0.28 + hash(i * 13.711 + 4.91) * 0.38;
         targets[j] = mx * inward;
-
-        /*
-          Keep vertical anatomy mostly intact so interior particles
-          populate the full cranium rather than collapsing into
-          the center.
-        */
-        targets[j + 1] =
-          my * (0.58 + hash(i * 5.173 + 8.2) * 0.25);
-
-        /*
-          Pull depth inward while retaining enough rear-cranium
-          distribution for genuine volumetric appearance.
-        */
-        targets[j + 2] =
-          mz * inward - 2.0;
-
+        targets[j + 1] = my * (0.58 + hash(i * 5.173 + 8.2) * 0.25);
+        targets[j + 2] = mz * inward + 5.5;
         flags[i] = 2;
       }
     }
-
     this.#queryTargets = targets;
     this.#queryMouth = mouth;
     this.#querySurfaceFlags = flags;
-
-    if (source) {
-      this.#queryBasePositions = new Float32Array(source);
-    }
+    if (source) this.#queryBasePositions = new Float32Array(source);
   }
 
   #updateQueryBlend(elapsed) {
     const targetBlend = this.#queryActive ? 1 : 0;
     const smoothing = 1 - Math.exp(-Math.max(1, elapsed) / 260);
     this.#queryBlend += (targetBlend - this.#queryBlend) * smoothing;
-
-    if (!this.#queryActive && this.#queryBlend < 0.0005) {
-      this.#queryBlend = 0;
-    }
+    if (!this.#queryActive && this.#queryBlend < 0.0005) this.#queryBlend = 0;
   }
 
   #canvasQueryPosition(entity, index, now) {
     const original = entity?.position || [0, 0, 0];
-
     if (this.#queryBlend <= 0.0001) return original;
-
     const count = this.#visible?.length || 0;
-
-    if (!this.#queryTargets || this.#queryTargets.length !== count * 3) {
-      this.#buildQueryTargets(count, null);
-    }
-
+    if (!this.#queryTargets || this.#queryTargets.length !== count * 3) this.#buildQueryTargets(count, null);
     const j = index * 3;
     const target = this.#queryTargets;
     const mouth = this.#queryMouth;
-
     if (!target || j + 2 >= target.length) return original;
-
     const flag = this.#querySurfaceFlags?.[index] || 1;
-
-    let tx = target[j];
-    let ty = target[j + 1];
-    let tz = target[j + 2];
-
+    let tx = target[j], ty = target[j + 1], tz = target[j + 2];
     if (flag === 2) {
       const a = now * 0.00045 + index * 0.713;
       const b = now * 0.00071 + index * 1.193;
       const c = now * 0.00031 + index * 0.337;
-
       tx += Math.sin(a) * 4.8 + Math.cos(b * 0.63) * 2.1;
       ty += Math.cos(b) * 3.9 + Math.sin(c * 1.31) * 2.0;
       tz += Math.sin(a * 0.79) * 5.2 + Math.cos(c) * 2.4;
     } else {
       const phase = now * 0.00125 + index * 1.618;
-
       tx += Math.sin(phase) * 0.22;
       ty += Math.cos(phase * 0.83) * 0.18;
       tz += Math.sin(phase * 0.57) * 0.25;
     }
-
     if (flag === 3 || mouth?.[index]) {
       const speech = Math.sin(now * 0.0075 + index * 0.31) * 1.05;
       ty += speech;
       tz += Math.abs(speech) * 0.32;
     }
-
     const blend = this.#queryBlend;
-
-    return [
-      original[0] + (tx - original[0]) * blend,
-      original[1] + (ty - original[1]) * blend,
-      original[2] + (tz - original[2]) * blend
-    ];
+    return [original[0] + (tx - original[0]) * blend, original[1] + (ty - original[1]) * blend, original[2] + (tz - original[2]) * blend];
   }
 
   setQueryActive(active) {
     this.#queryActive = Boolean(active);
-
     if (this.#queryActive) {
       this.#queryBasePositions = null;
       this.#queryTargets = null;
       this.#queryMouth = null;
       this.#querySurfaceFlags = null;
-
+      this.#quantumTargets = null;
+      this.#quantumParents = null;
+      this.#quantumRoles = null;
+      this.#quantumPhases = null;
+      this.#quantumCount = 0;
       this.clearFocus();
-
       this.#cameraTarget.distance = 125;
       this.#cameraTarget.yaw = 0;
       this.#cameraTarget.pitch = 0;
       this.#cameraTarget.target = [0, 0, 0];
     }
-
     return this.#queryActive;
   }
 
-  #animateQueryParticles(now, elapsed) {
+  #animateQueryParticles(now) {
     if (this.#backend !== 'webgl' || !this.#points?.geometry) return;
-
     const attribute = this.#points.geometry.getAttribute('position');
     if (!attribute?.array) return;
-
     const positions = attribute.array;
     const count = attribute.count;
-
-    if (
-      !this.#queryBasePositions ||
-      this.#queryBasePositions.length !== positions.length ||
-      !this.#queryTargets ||
-      this.#queryTargets.length !== positions.length
-    ) {
-      this.#buildQueryTargets(count, positions);
-    }
-
+    if (!this.#queryBasePositions || this.#queryBasePositions.length !== positions.length || !this.#queryTargets || this.#queryTargets.length !== positions.length) this.#buildQueryTargets(count, positions);
     if (this.#queryBlend < 0.0005 && !this.#queryActive) {
-
-      if (this.#queryBasePositions) {
-        positions.set(this.#queryBasePositions);
-        attribute.needsUpdate = true;
-      }
-
-      this.#queryBasePositions = null;
-      this.#queryTargets = null;
-      this.#queryMouth = null;
-      this.#querySurfaceFlags = null;
-      return;
+      if (this.#queryBasePositions) { positions.set(this.#queryBasePositions); attribute.needsUpdate = true; }
+      this.#queryBasePositions = null; this.#queryTargets = null; this.#queryMouth = null; this.#querySurfaceFlags = null; return;
     }
-
     const blend = this.#queryBlend;
     const base = this.#queryBasePositions;
     const target = this.#queryTargets;
     const mouth = this.#queryMouth;
     const flags = this.#querySurfaceFlags;
-
     for (let i = 0; i < count; i += 1) {
       const j = i * 3;
       const flag = flags?.[i] || 1;
-
-      let tx = target[j];
-      let ty = target[j + 1];
-      let tz = target[j + 2];
-
+      let tx = target[j], ty = target[j + 1], tz = target[j + 2];
       if (flag === 2) {
-        /*
-          Interior blockchain particles remain alive inside the skull.
-          Multiple slow frequencies prevent them from moving like one rigid cloud.
-        */
         const a = now * 0.00045 + i * 0.713;
         const b = now * 0.00071 + i * 1.193;
         const c = now * 0.00031 + i * 0.337;
-
         tx += Math.sin(a) * 4.8 + Math.cos(b * 0.63) * 2.1;
         ty += Math.cos(b) * 3.9 + Math.sin(c * 1.31) * 2.0;
         tz += Math.sin(a * 0.79) * 5.2 + Math.cos(c) * 2.4;
-
       } else {
-        /*
-          Surface particles stay attached to the anatomy,
-          with only subtle biological motion.
-        */
         const phase = now * 0.00125 + i * 1.618;
-
         tx += Math.sin(phase) * 0.22;
         ty += Math.cos(phase * 0.83) * 0.18;
         tz += Math.sin(phase * 0.57) * 0.25;
       }
-
       if (flag === 3 || mouth?.[i]) {
-        /*
-          Mouth remains clearly defined but alive.
-        */
         const speech = Math.sin(now * 0.0075 + i * 0.31) * 1.05;
-
         ty += speech;
         tz += Math.abs(speech) * 0.32;
       }
-
       positions[j] = base[j] + (tx - base[j]) * blend;
       positions[j + 1] = base[j + 1] + (ty - base[j + 1]) * blend;
       positions[j + 2] = base[j + 2] + (tz - base[j + 2]) * blend;
     }
-
     attribute.needsUpdate = true;
-
   }
 
-
   #buildQuantumMatter() {
-    if (
-      this.#backend !== 'webgl' ||
-      !this.#points?.geometry ||
-      !this.#quantumPoints
-    ) return false;
-
+    if (this.#backend !== 'webgl' || !this.#points?.geometry || !this.#quantumPoints) return false;
     const T = this.#three;
+    const parentGeometry = this.#points.geometry;
+    const parentPosition = parentGeometry.getAttribute('position');
+    const parentColor = parentGeometry.getAttribute('color');
+    if (!parentPosition?.array || !parentColor?.array || parentPosition.count < 1) return false;
+    const parentCount = parentPosition.count;
+    const memory = Number(globalThis.navigator?.deviceMemory || 4);
+    const targetBudget = memory >= 8 ? 120000 : memory >= 4 ? 96000 : 64000;
+    const childrenPerParent = Math.max(12, Math.min(64, Math.ceil(targetBudget / parentCount)));
+    const quantumCount = parentCount * childrenPerParent;
+    const positions = new Float32Array(quantumCount * 3);
+    const colors = new Float32Array(quantumCount * 3);
+    const sizes = new Float32Array(quantumCount);
+    const parents = new Uint32Array(quantumCount);
+    const targets = new Float32Array(quantumCount * 3);
+    const roles = new Uint8Array(quantumCount);
+    const phases = new Float32Array(quantumCount * 3);
+    const template = ALIEN_HEAD_TEMPLATE;
+    if (!template?.positions || !template?.roles || !template?.count) throw new Error('Alien quantum template unavailable');
+    const templatePositions = template.positions;
+    const templateRoles = template.roles;
+    const templateCount = template.count;
+    const hash = (value) => { const n = Math.sin(value * 12.9898 + 78.233) * 43758.5453123; return n - Math.floor(n); };
+    const interiorFraction = 0.18;
+    for (let child = 0; child < quantumCount; child += 1) {
+      const j = child * 3;
+      const parent = child % parentCount;
+      const pj = parent * 3;
+      parents[child] = parent;
+      positions[j] = parentPosition.array[pj];
+      positions[j + 1] = parentPosition.array[pj + 1];
+      positions[j + 2] = parentPosition.array[pj + 2];
+      colors[j] = parentColor.array[pj];
+      colors[j + 1] = parentColor.array[pj + 1];
+      colors[j + 2] = parentColor.array[pj + 2];
+      sizes[child] = 0.22 + hash(child * 2.371) * 0.28;
 
-    const parentGeometry =
-      this.#points.geometry;
+      const sampleFor = (salt = 0) => Math.min(templateCount - 1, Math.floor(hash(child * 7.917 + 11.31 + salt) * templateCount));
+      let templateIndex = sampleFor(0);
+      let templateRole = templateRoles[templateIndex] || 1;
+      let tj = templateIndex * 3;
+      let tx = templatePositions[tj];
+      let ty = templatePositions[tj + 1];
+      let tz = -templatePositions[tj + 2];
 
-    const parentPosition =
-      parentGeometry.getAttribute('position');
-
-    const parentColor =
-      parentGeometry.getAttribute('color');
-
-    if (
-      !parentPosition?.array ||
-      !parentColor?.array ||
-      parentPosition.count < 1
-    ) return false;
-
-    const parentCount =
-      parentPosition.count;
-
-    /*
-      The blockchain particles are PARENTS.
-
-      Each parent receives many microscopic GPU children.
-
-      We adapt the simultaneously rendered population for phones:
-        lower-memory device: ~64k
-        normal device:       ~96k
-        high-memory device: ~120k
-
-      This is only the visible quantum population. The architecture
-      does not limit the conceptual parent to this number of children.
-    */
-    const memory =
-      Number(
-        globalThis.navigator?.deviceMemory || 4
-      );
-
-    const targetBudget =
-      memory >= 8
-        ? 120000
-        : memory >= 4
-          ? 96000
-          : 64000;
-
-    const childrenPerParent =
-      Math.max(
-        12,
-        Math.min(
-          64,
-          Math.ceil(
-            targetBudget /
-            parentCount
-          )
-        )
-      );
-
-    const quantumCount =
-      parentCount *
-      childrenPerParent;
-
-    const positions =
-      new Float32Array(
-        quantumCount * 3
-      );
-
-    const colors =
-      new Float32Array(
-        quantumCount * 3
-      );
-
-    const sizes =
-      new Float32Array(
-        quantumCount
-      );
-
-    const parents =
-      new Uint32Array(
-        quantumCount
-      );
-
-    const targets =
-      new Float32Array(
-        quantumCount * 3
-      );
-
-    const roles =
-      new Uint8Array(
-        quantumCount
-      );
-
-    const phases =
-      new Float32Array(
-        quantumCount * 3
-      );
-
-    const template =
-      ALIEN_HEAD_TEMPLATE;
-
-    if (
-      !template?.positions ||
-      !template?.roles ||
-      !template?.count
-    ) {
-      throw new Error(
-        'Alien quantum template unavailable'
-      );
-    }
-
-    const templatePositions =
-      template.positions;
-
-    const templateRoles =
-      template.roles;
-
-    const templateCount =
-      template.count;
-
-    const hash = (value) => {
-      const n =
-        Math.sin(
-          value * 12.9898 +
-          78.233
-        ) * 43758.5453123;
-
-      return n -
-        Math.floor(n);
-    };
-
-    /*
-      82% resolves onto the authentic mesh surface.
-
-      18% becomes living matter circulating INSIDE the skull.
-    */
-    const interiorFraction =
-      0.18;
-
-    for (
-      let child = 0;
-      child < quantumCount;
-      child += 1
-    ) {
-      const j =
-        child * 3;
-
-      /*
-        Spread children evenly across blockchain parents.
-      */
-      const parent =
-        child % parentCount;
-
-      const pj =
-        parent * 3;
-
-      parents[child] =
-        parent;
-
-      /*
-        Every child is born at the position of its parent.
-      */
-      positions[j] =
-        parentPosition.array[pj];
-
-      positions[j + 1] =
-        parentPosition.array[pj + 1];
-
-      positions[j + 2] =
-        parentPosition.array[pj + 2];
-
-      /*
-        Exact parent color inheritance.
-        No recoloring of the Particle Field.
-      */
-      colors[j] =
-        parentColor.array[pj];
-
-      colors[j + 1] =
-        parentColor.array[pj + 1];
-
-      colors[j + 2] =
-        parentColor.array[pj + 2];
-
-      /*
-        Children are much smaller than their parent.
-      */
-      sizes[child] =
-        0.24 +
-        hash(
-          child * 2.371
-        ) * 0.34;
-
-      /*
-        Deterministically distribute children over the real
-        sampled 3D alien mesh.
-      */
-      const templateIndex =
-        Math.min(
-          templateCount - 1,
-          Math.floor(
-            hash(
-              child * 7.917 +
-              11.31
-            ) *
-            templateCount
-          )
-        );
-
-      const tj =
-        templateIndex * 3;
-
-      let tx =
-        templatePositions[tj];
-
-      let ty =
-        templatePositions[tj + 1];
-
-      let tz =
-        templatePositions[tj + 2];
-
-      const templateRole =
-        templateRoles[
-          templateIndex
-        ] || 1;
-
-      const interior =
-        hash(
-          child * 17.133 +
-          3.17
-        ) < interiorFraction;
-
-      if (interior) {
-        /*
-          Pull a genuine mesh coordinate inward.
-
-          This makes the moving interior follow the actual alien
-          skull volume instead of a procedural sphere.
-        */
-        const inward =
-          0.24 +
-          hash(
-            child * 9.731 +
-            1.91
-          ) * 0.44;
-
-        tx *= inward;
-
-        ty *=
-          0.54 +
-          hash(
-            child * 4.137 +
-            7.2
-          ) * 0.34;
-
-        tz *= inward;
-
-        /*
-          Keep the moving internal cloud deeper than the face,
-          helping preserve the large dark eye cavities.
-        */
-        tz -= 4.0;
-
-        roles[child] = 2;
-
-      } else if (
-        templateRole === 5
-      ) {
-        /*
-          Mouth surface — animated later.
-        */
-        roles[child] = 3;
-
-      } else {
-        /*
-          Stable but living anatomical surface.
-        */
-        roles[child] = 1;
+      /* Preserve the face as negative space by re-sampling any generic surface
+         point that projects into an eye, nostril, or mouth cavity. */
+      for (let attempt = 0; attempt < 7; attempt += 1) {
+        const nx = tx / 39.0;
+        const ny = ty / 50.0;
+        const front = tz > -6.0;
+        const eyeL = (((nx + 0.39) * Math.cos(-0.16) - (ny - 0.20) * Math.sin(-0.16)) / 0.34) ** 2 + (((nx + 0.39) * Math.sin(-0.16) + (ny - 0.20) * Math.cos(-0.16)) / 0.20) ** 2;
+        const eyeR = (((nx - 0.39) * Math.cos(0.16) - (ny - 0.20) * Math.sin(0.16)) / 0.34) ** 2 + (((nx - 0.39) * Math.sin(0.16) + (ny - 0.20) * Math.cos(0.16)) / 0.20) ** 2;
+        const eyeHole = front && Math.min(eyeL, eyeR) < 0.72;
+        const nostrilHole = front && Math.abs(nx) < 0.075 && ny > -0.16 && ny < -0.015;
+        const mouthHole = front && Math.abs(nx) < 0.22 && ny > -0.47 && ny < -0.385;
+        if (!(eyeHole || nostrilHole || mouthHole) || templateRole === 3 || templateRole === 4 || templateRole === 5) break;
+        templateIndex = sampleFor((attempt + 1) * 23.71);
+        templateRole = templateRoles[templateIndex] || 1;
+        tj = templateIndex * 3;
+        tx = templatePositions[tj];
+        ty = templatePositions[tj + 1];
+        tz = -templatePositions[tj + 2];
       }
 
+      const interior = hash(child * 17.133 + 3.17) < interiorFraction;
+      if (interior) {
+        const inward = 0.22 + hash(child * 9.731 + 1.91) * 0.40;
+        tx *= inward;
+        ty *= 0.54 + hash(child * 4.137 + 7.2) * 0.34;
+        tz = tz * inward + 7.5;
+        roles[child] = 2;
+      } else if (templateRole === 5) {
+        roles[child] = 3;
+      } else {
+        roles[child] = 1;
+      }
       targets[j] = tx;
       targets[j + 1] = ty;
       targets[j + 2] = tz;
-
-      /*
-        Stable individual motion phases.
-      */
-      phases[j] =
-        hash(
-          child * 3.117
-        ) * Math.PI * 2;
-
-      phases[j + 1] =
-        hash(
-          child * 5.731
-        ) * Math.PI * 2;
-
-      phases[j + 2] =
-        hash(
-          child * 11.917
-        ) * Math.PI * 2;
+      phases[j] = hash(child * 3.117) * Math.PI * 2;
+      phases[j + 1] = hash(child * 5.731) * Math.PI * 2;
+      phases[j + 2] = hash(child * 11.917) * Math.PI * 2;
     }
-
-    const geometry =
-      new T.BufferGeometry();
-
-    geometry.setAttribute(
-      'position',
-      new T.BufferAttribute(
-        positions,
-        3
-      )
-    );
-
-    geometry.setAttribute(
-      'color',
-      new T.BufferAttribute(
-        colors,
-        3
-      )
-    );
-
-    geometry.setAttribute(
-      'aSize',
-      new T.BufferAttribute(
-        sizes,
-        1
-      )
-    );
-
-    /*
-      Dispose only the old EMPTY/quantum geometry.
-      The normal Particle Field geometry is untouched.
-    */
-    this.#quantumPoints
-      .geometry
-      ?.dispose();
-
-    this.#quantumPoints.geometry =
-      geometry;
-
-    this.#quantumParents =
-      parents;
-
-    this.#quantumTargets =
-      targets;
-
-    this.#quantumRoles =
-      roles;
-
-    this.#quantumPhases =
-      phases;
-
-    this.#quantumCount =
-      quantumCount;
-
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new T.BufferAttribute(colors, 3));
+    geometry.setAttribute('aSize', new T.BufferAttribute(sizes, 1));
+    this.#quantumPoints.geometry?.dispose();
+    this.#quantumPoints.geometry = geometry;
+    this.#quantumParents = parents;
+    this.#quantumTargets = targets;
+    this.#quantumRoles = roles;
+    this.#quantumPhases = phases;
+    this.#quantumCount = quantumCount;
     return true;
   }
 
-
   #animateQuantumMatter(now) {
-    if (
-      this.#backend !== 'webgl' ||
-      !this.#quantumPoints ||
-      !this.#quantumMaterial
-    ) return;
-
-    /*
-      Build lazily the first time QUERY begins.
-      Normal Particle Field startup pays no quantum cost.
-    */
-    if (
-      this.#queryActive &&
-      (
-        !this.#quantumCount ||
-        !this.#quantumTargets ||
-        !this.#quantumParents
-      )
-    ) {
-      this.#buildQuantumMatter();
-    }
-
-    if (
-      !this.#quantumCount ||
-      !this.#quantumTargets ||
-      !this.#quantumParents ||
-      !this.#quantumRoles ||
-      !this.#quantumPhases
-    ) {
-      this.#quantumPoints.visible = false;
-      return;
-    }
-
-    const geometry =
-      this.#quantumPoints.geometry;
-
-    const positionAttribute =
-      geometry.getAttribute('position');
-
-    if (!positionAttribute?.array) {
-      this.#quantumPoints.visible = false;
-      return;
-    }
-
-    const parentAttribute =
-      this.#points?.geometry
-        ?.getAttribute('position');
-
-    if (!parentAttribute?.array) {
-      this.#quantumPoints.visible = false;
-      return;
-    }
-
-    const positions =
-      positionAttribute.array;
-
-    const parents =
-      this.#quantumParents;
-
-    const targets =
-      this.#quantumTargets;
-
-    const roles =
-      this.#quantumRoles;
-
-    const phases =
-      this.#quantumPhases;
-
-    /*
-      queryBlend is already the canonical QUERY transition.
-      We reuse it rather than inventing another state machine.
-    */
-    const blend =
-      Math.max(
-        0,
-        Math.min(
-          1,
-          this.#queryBlend
-        )
-      );
-
-    /*
-      Keep layer alive while collapsing so children visibly
-      return to their blockchain parents.
-    */
-    this.#quantumPoints.visible =
-      blend > 0.001 ||
-      this.#queryActive;
-
-    this.#quantumMaterial
-      .uniforms
-      .uAlpha
-      .value =
-        Math.min(
-          1,
-          blend * 1.35
-        );
-
-    /*
-      Smoothstep makes the transformation feel less mechanical.
-    */
-    const morph =
-      blend *
-      blend *
-      (3 - 2 * blend);
-
-    const time =
-      now * 0.001;
-
-    const parentPositions =
-      parentAttribute.array;
-
-    for (
-      let child = 0;
-      child < this.#quantumCount;
-      child += 1
-    ) {
-      const j =
-        child * 3;
-
-      const parent =
-        parents[child];
-
-      const pj =
-        parent * 3;
-
-      const px =
-        parentPositions[pj];
-
-      const py =
-        parentPositions[pj + 1];
-
-      const pz =
-        parentPositions[pj + 2];
-
-      let tx =
-        targets[j];
-
-      let ty =
-        targets[j + 1];
-
-      let tz =
-        targets[j + 2];
-
-      const role =
-        roles[child];
-
-      const phaseX =
-        phases[j];
-
-      const phaseY =
-        phases[j + 1];
-
-      const phaseZ =
-        phases[j + 2];
-
+    if (this.#backend !== 'webgl' || !this.#quantumPoints || !this.#quantumMaterial) return;
+    if (this.#queryActive && (!this.#quantumCount || !this.#quantumTargets || !this.#quantumParents)) this.#buildQuantumMatter();
+    if (!this.#quantumCount || !this.#quantumTargets || !this.#quantumParents || !this.#quantumRoles || !this.#quantumPhases) { this.#quantumPoints.visible = false; return; }
+    const geometry = this.#quantumPoints.geometry;
+    const positionAttribute = geometry.getAttribute('position');
+    if (!positionAttribute?.array) { this.#quantumPoints.visible = false; return; }
+    const parentAttribute = this.#points?.geometry?.getAttribute('position');
+    if (!parentAttribute?.array) { this.#quantumPoints.visible = false; return; }
+    const positions = positionAttribute.array;
+    const parents = this.#quantumParents;
+    const targets = this.#quantumTargets;
+    const roles = this.#quantumRoles;
+    const phases = this.#quantumPhases;
+    const blend = Math.max(0, Math.min(1, this.#queryBlend));
+    this.#quantumPoints.visible = blend > 0.001 || this.#queryActive;
+    this.#quantumMaterial.uniforms.uAlpha.value = Math.min(0.92, blend * 1.18);
+    const morph = blend * blend * (3 - 2 * blend);
+    const time = now * 0.001;
+    const parentPositions = parentAttribute.array;
+    for (let child = 0; child < this.#quantumCount; child += 1) {
+      const j = child * 3;
+      const pj = parents[child] * 3;
+      const px = parentPositions[pj], py = parentPositions[pj + 1], pz = parentPositions[pj + 2];
+      let tx = targets[j], ty = targets[j + 1], tz = targets[j + 2];
+      const role = roles[child];
+      const phaseX = phases[j], phaseY = phases[j + 1], phaseZ = phases[j + 2];
       if (role === 2) {
-        /*
-          LIVING INTERNAL QUANTUM MATTER
-
-          These particles never become a static shell.
-          They circulate through the actual skull interior.
-
-          Motion stays intentionally small enough that the
-          authentic alien anatomy remains readable.
-        */
-        const orbitA =
-          time * 0.72 +
-          phaseX;
-
-        const orbitB =
-          time * 0.49 +
-          phaseY;
-
-        const orbitC =
-          time * 0.61 +
-          phaseZ;
-
-        tx +=
-          Math.sin(orbitA) * 2.8 +
-          Math.cos(orbitB) * 1.1;
-
-        ty +=
-          Math.sin(orbitB) * 2.1 +
-          Math.cos(orbitC) * 0.8;
-
-        tz +=
-          Math.cos(orbitA) * 2.6 +
-          Math.sin(orbitC) * 1.0;
-
+        const orbitA = time * 0.72 + phaseX;
+        const orbitB = time * 0.49 + phaseY;
+        const orbitC = time * 0.61 + phaseZ;
+        tx += Math.sin(orbitA) * 2.1 + Math.cos(orbitB) * 0.8;
+        ty += Math.sin(orbitB) * 1.6 + Math.cos(orbitC) * 0.6;
+        tz += Math.cos(orbitA) * 1.8 + Math.sin(orbitC) * 0.7;
       } else {
-        /*
-          SURFACE QUANTUM MATTER
-
-          The face is never literally frozen.
-          Microscopic movement keeps it feeling alive while
-          remaining faithful to the scanned/modelled mesh.
-        */
-        tx +=
-          Math.sin(
-            time * 1.31 +
-            phaseX
-          ) * 0.12;
-
-        ty +=
-          Math.cos(
-            time * 1.07 +
-            phaseY
-          ) * 0.10;
-
-        tz +=
-          Math.sin(
-            time * 0.91 +
-            phaseZ
-          ) * 0.14;
+        tx += Math.sin(time * 1.31 + phaseX) * 0.09;
+        ty += Math.cos(time * 1.07 + phaseY) * 0.08;
+        tz += Math.sin(time * 0.91 + phaseZ) * 0.10;
       }
-
       if (role === 3) {
-        /*
-          Mouth matter reorganizes subtly as if the blockchain
-          itself is preparing to speak.
-        */
-        const speech =
-          Math.sin(
-            time * 7.2 +
-            phaseX
-          );
-
-        ty +=
-          speech * 0.42;
-
-        tz +=
-          Math.abs(speech) * 0.18;
+        const speech = Math.sin(time * 7.2 + phaseX);
+        ty += speech * 0.34;
+        tz += Math.abs(speech) * 0.12;
       }
-
-      /*
-        QUANTUM SUBDIVISION:
-
-        blend = 0:
-          every microscopic child occupies its blockchain parent.
-
-        blend = 1:
-          those children collectively occupy the authentic
-          alien-head mesh.
-
-        Therefore the original particle does not simply "move
-        into the face." It appears to subdivide into matter.
-      */
-      positions[j] =
-        px +
-        (tx - px) *
-        morph;
-
-      positions[j + 1] =
-        py +
-        (ty - py) *
-        morph;
-
-      positions[j + 2] =
-        pz +
-        (tz - pz) *
-        morph;
+      positions[j] = px + (tx - px) * morph;
+      positions[j + 1] = py + (ty - py) * morph;
+      positions[j + 2] = pz + (tz - pz) * morph;
     }
-
-    positionAttribute.needsUpdate =
-      true;
-
-    /*
-      Keep quantum geometry aligned with the same scene transform
-      as the parent Particle Field.
-    */
-    this.#quantumPoints.scale.copy(
-      this.#points.scale
-    );
-
-    this.#quantumPoints.rotation.copy(
-      this.#points.rotation
-    );
+    positionAttribute.needsUpdate = true;
+    this.#quantumPoints.scale.copy(this.#points.scale);
+    this.#quantumPoints.rotation.copy(this.#points.rotation);
   }
 
   setMode(mode = 'explore') {
@@ -1567,6 +712,7 @@ export class UniverseRenderer {
       const previous = this.#points.geometry;
       this.#points.geometry = this.#geometryForSnapshot(snapshot);
       previous.dispose();
+      this.#quantumTargets = null; this.#quantumParents = null; this.#quantumRoles = null; this.#quantumPhases = null; this.#quantumCount = 0;
       if (this.#investigationHub) this.setInvestigationHub(this.#investigationHub);
       return;
     }
@@ -1579,6 +725,7 @@ export class UniverseRenderer {
       this.#renderer.setSize(width, height, false);
       this.#camera.aspect = width / height;
       this.#camera.updateProjectionMatrix();
+      if (this.#quantumMaterial) this.#quantumMaterial.uniforms.uPixelRatio.value = this.#renderer.getPixelRatio();
       return;
     }
     if (this.#backend === 'canvas' && this.#canvas && this.#ctx) {
@@ -1591,53 +738,18 @@ export class UniverseRenderer {
     }
   };
 
-  #onPointerDown = (event) => {
-    this.#pointer = { active: true, x: event.clientX, y: event.clientY, moved: false, id: event.pointerId };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-
-  #onPointerMove = (event) => {
-    if (!this.#pointer.active) return;
-    const dx = event.clientX - this.#pointer.x;
-    const dy = event.clientY - this.#pointer.y;
-    if (Math.abs(dx) + Math.abs(dy) > 4) this.#pointer.moved = true;
-    this.#cameraTarget.yaw += dx * 0.005;
-    this.#cameraTarget.pitch = Math.max(-0.9, Math.min(0.9, this.#cameraTarget.pitch + dy * 0.004));
-    this.#pointer.x = event.clientX;
-    this.#pointer.y = event.clientY;
-  };
-
-  #onPointerUp = (event) => {
-    this.#pointer.active = false;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
-  };
-
-  #onGlobalPointerUp = () => {
-    this.#pointer.active = false;
-  };
-
-  #onVisibility = () => {
-    if (document.hidden) this.#pointer.active = false;
-  };
-
-  #onWheel = (event) => {
-    event.preventDefault();
-    this.#cameraTarget.distance = Math.max(48, Math.min(260, this.#cameraTarget.distance + event.deltaY * 0.08));
-  };
-
-  #onClick = (event) => {
-    if (this.#pointer.moved) return;
-    if (this.#backend === 'webgl') this.#pickWebgl(event);
-    else this.#pickCanvas(event);
-  };
+  #onPointerDown = (event) => { this.#pointer = { active: true, x: event.clientX, y: event.clientY, moved: false, id: event.pointerId }; event.currentTarget.setPointerCapture?.(event.pointerId); };
+  #onPointerMove = (event) => { if (!this.#pointer.active) return; const dx = event.clientX - this.#pointer.x; const dy = event.clientY - this.#pointer.y; if (Math.abs(dx) + Math.abs(dy) > 4) this.#pointer.moved = true; this.#cameraTarget.yaw += dx * 0.005; this.#cameraTarget.pitch = Math.max(-0.9, Math.min(0.9, this.#cameraTarget.pitch + dy * 0.004)); this.#pointer.x = event.clientX; this.#pointer.y = event.clientY; };
+  #onPointerUp = (event) => { this.#pointer.active = false; event.currentTarget.releasePointerCapture?.(event.pointerId); };
+  #onGlobalPointerUp = () => { this.#pointer.active = false; };
+  #onVisibility = () => { if (document.hidden) this.#pointer.active = false; };
+  #onWheel = (event) => { event.preventDefault(); this.#cameraTarget.distance = Math.max(48, Math.min(260, this.#cameraTarget.distance + event.deltaY * 0.08)); };
+  #onClick = (event) => { if (this.#pointer.moved) return; if (this.#backend === 'webgl') this.#pickWebgl(event); else this.#pickCanvas(event); };
 
   #pickWebgl = (event) => {
     const T = this.#three;
     const rect = this.#renderer.domElement.getBoundingClientRect();
-    const pointer = new T.Vector2(
-      ((event.clientX - rect.left) / rect.width) * 2 - 1,
-      -((event.clientY - rect.top) / rect.height) * 2 + 1
-    );
+    const pointer = new T.Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     const raycaster = new T.Raycaster();
     raycaster.params.Points = { threshold: 2.8 };
     raycaster.setFromCamera(pointer, this.#camera);
@@ -1651,53 +763,32 @@ export class UniverseRenderer {
   #projectPoint(position, width, height) {
     const cam = this.#cameraTarget;
     const [tx, ty, tz] = cam.target || [0, 0, 0];
-    let x = position[0] - tx;
-    let y = position[1] - ty;
-    let z = position[2] - tz;
-    const cosY = Math.cos(cam.yaw);
-    const sinY = Math.sin(cam.yaw);
+    let x = position[0] - tx, y = position[1] - ty, z = position[2] - tz;
+    const cosY = Math.cos(cam.yaw), sinY = Math.sin(cam.yaw);
     const x1 = x * cosY - z * sinY;
     const z1 = x * sinY + z * cosY;
-    const cosP = Math.cos(cam.pitch);
-    const sinP = Math.sin(cam.pitch);
+    const cosP = Math.cos(cam.pitch), sinP = Math.sin(cam.pitch);
     const y1 = y * cosP - z1 * sinP;
     const z2 = y * sinP + z1 * cosP;
     const depth = z2 + cam.distance;
     const scale = (Math.min(width, height) * 0.92) / Math.max(18, depth);
-    return {
-      x: width / 2 + x1 * scale,
-      y: height / 2 - y1 * scale,
-      depth,
-      scale
-    };
+    return { x: width / 2 + x1 * scale, y: height / 2 - y1 * scale, depth, scale };
   }
 
   #pickCanvas = (event) => {
     const rect = this.#canvas.getBoundingClientRect();
-    const px = event.clientX - rect.left;
-    const py = event.clientY - rect.top;
-    let best = null;
-    let bestDist = 18;
+    const px = event.clientX - rect.left, py = event.clientY - rect.top;
+    let best = null, bestDist = 18;
     for (const entity of this.#visible) {
       const projected = this.#projectPoint(entity.position, rect.width, rect.height);
       if (projected.depth < 8) continue;
-      const dx = projected.x - px;
-      const dy = projected.y - py;
-      const dist = Math.hypot(dx, dy);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = entity;
-      }
+      const dist = Math.hypot(projected.x - px, projected.y - py);
+      if (dist < bestDist) { bestDist = dist; best = entity; }
     }
     if (best) this.#selectEntity(best);
   };
 
-  #selectEntity(entity) {
-    this.focusEntity(entity);
-    this.#destinationReady = false;
-    this.#transition.start(entity);
-    this.#onSelect?.(entity, destinationForEntity(entity), this.#transition);
-  }
+  #selectEntity(entity) { this.focusEntity(entity); this.#destinationReady = false; this.#transition.start(entity); this.#onSelect?.(entity, destinationForEntity(entity), this.#transition); }
 
   #drawCanvas(now, warp) {
     const ctx = this.#ctx;
@@ -1709,25 +800,17 @@ export class UniverseRenderer {
     nebula.addColorStop(1, 'rgba(3, 3, 7, 0)');
     ctx.fillStyle = nebula;
     ctx.fillRect(0, 0, width, height);
-
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     const stars = this.#starfield;
     for (let i = 0; i < stars.count; i += 1) {
-      const projected = this.#projectPoint(
-        [stars.positions[i * 3], stars.positions[i * 3 + 1], stars.positions[i * 3 + 2]],
-        width,
-        height
-      );
+      const projected = this.#projectPoint([stars.positions[i * 3], stars.positions[i * 3 + 1], stars.positions[i * 3 + 2]], width, height);
       if (projected.depth < 4) continue;
       const size = Math.max(0.4, stars.sizes[i] * (70 / projected.depth));
       const alpha = Math.max(0.08, Math.min(0.5, 18 / projected.depth));
       ctx.fillStyle = `rgba(210,220,235,${alpha})`;
-      ctx.beginPath();
-      ctx.arc(projected.x, projected.y, size, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(projected.x, projected.y, size, 0, Math.PI * 2); ctx.fill();
     }
-
     const intensity = this.#modeCurrent[0];
     for (let entityIndex = 0; entityIndex < this.#visible.length; entityIndex += 1) {
       const entity = this.#visible[entityIndex];
@@ -1742,45 +825,29 @@ export class UniverseRenderer {
       glow.addColorStop(0, cssRgb(color, alpha));
       glow.addColorStop(0.35, cssRgb(color, alpha * 0.45));
       glow.addColorStop(1, cssRgb(color, 0));
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(warped, projected.y, size * 3.2, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(warped, projected.y, size * 3.2, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = cssRgb([Math.min(1, color[0] + 0.25), Math.min(1, color[1] + 0.25), Math.min(1, color[2] + 0.25)], Math.min(1, alpha + 0.2));
-      ctx.beginPath();
-      ctx.arc(warped, projected.y, Math.max(0.8, size * 0.38), 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(warped, projected.y, Math.max(0.8, size * 0.38), 0, Math.PI * 2); ctx.fill();
     }
-
     const hub = this.#investigationHub;
     if (hub?.focusId) {
       const byId = new Map(this.#visible.map((entity) => [String(entity.id), entity]));
-      ctx.strokeStyle = 'rgba(200, 214, 255, 0.32)';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(200, 214, 255, 0.32)'; ctx.lineWidth = 1;
       for (const edge of (hub.edges || []).slice(0, 80)) {
-        const source = byId.get(String(edge.sourceId));
-        const target = byId.get(String(edge.targetId));
+        const source = byId.get(String(edge.sourceId)), target = byId.get(String(edge.targetId));
         if (!source || !target) continue;
-        const a = this.#projectPoint(source.position, width, height);
-        const b = this.#projectPoint(target.position, width, height);
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
+        const a = this.#projectPoint(source.position, width, height), b = this.#projectPoint(target.position, width, height);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
       }
     }
-
     for (const effect of this.#replayEffects) {
       const age = now - effect.userData.born;
       const progress = Math.min(1, age / effect.userData.life);
       const projected = this.#projectPoint(effect.userData.position, width, height);
       const color = REPLAY_COLOR[effect.userData.hue] ?? REPLAY_COLOR.neutral;
       const radius = (8 + effect.userData.intensity * 18) * (1 + progress * 1.8);
-      ctx.strokeStyle = cssRgb(color, 0.85 * (1 - progress));
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(projected.x, projected.y, radius, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.strokeStyle = cssRgb(color, 0.85 * (1 - progress)); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(projected.x, projected.y, radius, 0, Math.PI * 2); ctx.stroke();
     }
     ctx.restore();
   }
@@ -1791,17 +858,11 @@ export class UniverseRenderer {
     this.#lastFrame = now;
     this.#quality.sample(elapsed);
     const transition = this.#transition.update(now, this.#destinationReady);
-    const warp = transition.state === 'accelerating'
-      ? Math.min(1, Math.max(0, (transition.elapsed - 350) / 900))
-      : transition.state === 'whiteout' ? 1 : 0;
+    const warp = transition.state === 'accelerating' ? Math.min(1, Math.max(0, (transition.elapsed - 350) / 900)) : transition.state === 'whiteout' ? 1 : 0;
     if (this.#phaseEffect && now >= this.#phaseUntil) this.#phaseEffect = null;
     const phase = this.#phaseEffect;
     const story = this.#storyField;
-    const target = [
-      this.#modeTarget[0] * (phase?.intensity ?? story?.intensity ?? 1),
-      this.#modeTarget[1] * (phase?.scale ?? story?.scale ?? 1),
-      this.#modeTarget[2] + (phase?.rotation ?? 0)
-    ];
+    const target = [this.#modeTarget[0] * (phase?.intensity ?? story?.intensity ?? 1), this.#modeTarget[1] * (phase?.scale ?? story?.scale ?? 1), this.#modeTarget[2] + (phase?.rotation ?? 0)];
     for (let i = 0; i < 3; i += 1) this.#modeCurrent[i] += (target[i] - this.#modeCurrent[i]) * 0.045;
     if (!this.#reducedMotion && !this.#pointer.active && !this.#queryActive && this.#queryBlend < 0.02) {
       const spin = elapsed * this.#autoSpin * Math.max(0.7, this.#modeCurrent[0] || 1);
@@ -1809,62 +870,23 @@ export class UniverseRenderer {
     }
     this.#animateReplayEffects(now);
     this.#updateQueryBlend(elapsed);
-    this.#animateQueryParticles(now, elapsed);
+    this.#animateQueryParticles(now);
     this.#animateQuantumMatter(now);
-
     if (this.#backend === 'webgl') {
       this.#material.uniforms.uWarp.value = warp;
-
-      /*
-        QUANTUM PARENT TRANSITION
-
-        Normal field:
-          parent particles retain their exact baseline appearance.
-
-        QUERY:
-          parent particles visually subdivide into microscopic
-          children instead of remaining as oversized bright nodes.
-      */
-      const quantumBlend =
-        Math.max(
-          0,
-          Math.min(
-            1,
-            this.#queryBlend
-          )
-        );
-
-      const parentPresence =
-        1 - quantumBlend * 0.90;
-
-      const parentScale =
-        1 - quantumBlend * 0.72;
-
-      this.#material.uniforms.uIntensity.value =
-        this.#modeCurrent[0] *
-        parentPresence;
-
-      this.#points.scale.setScalar(
-        this.#modeCurrent[1] *
-        parentScale
-      );
-
-      this.#points.rotation.z =
-        this.#modeCurrent[2];
+      const quantumBlend = Math.max(0, Math.min(1, this.#queryBlend));
+      const parentPresence = 1 - quantumBlend * 0.97;
+      const parentScale = 1 - quantumBlend * 0.82;
+      this.#material.uniforms.uIntensity.value = this.#modeCurrent[0] * parentPresence;
+      this.#points.scale.setScalar(this.#modeCurrent[1] * parentScale);
+      this.#points.rotation.z = this.#modeCurrent[2];
       if (this.#queryBlend > 0.001) {
-        /*
-          QUERY head stays stable by default.
-          User camera drag still works through #cameraTarget yaw/pitch,
-          so the head can be inspected from true side angles.
-        */
         this.#points.rotation.y *= 0.92;
         this.#points.rotation.x *= 0.92;
       } else if (!this.#reducedMotion && !this.#pointer.active) {
         this.#points.rotation.y += elapsed * 0.00009;
       }
-      if (!this.#reducedMotion && !this.#pointer.active && this.#stars) {
-        this.#stars.rotation.y += elapsed * 0.00005;
-      }
+      if (!this.#reducedMotion && !this.#pointer.active && this.#stars) this.#stars.rotation.y += elapsed * 0.00005;
       const camera = this.#cameraTarget;
       const [tx, ty, tz] = camera.target || [0, 0, 0];
       const desiredX = tx + Math.sin(camera.yaw) * camera.distance;
@@ -1882,31 +904,19 @@ export class UniverseRenderer {
     this.#raf = requestAnimationFrame(this.#frame);
   };
 
-  cancelTransition() {
-    this.#destinationReady = false;
-    return this.#transition.cancel(performance.now());
-  }
-
-  markDestinationReady() {
-    this.#destinationReady = true;
-    return this.#transition.update(performance.now(), true);
-  }
-
-  get backend() {
-    return this.#backend;
-  }
+  cancelTransition() { this.#destinationReady = false; return this.#transition.cancel(performance.now()); }
+  markDestinationReady() { this.#destinationReady = true; return this.#transition.update(performance.now(), true); }
+  get backend() { return this.#backend; }
 
   #teardownGpu() {
     cancelAnimationFrame(this.#raf);
     this.#unbindCanvasInput(this.#canvas);
     this.#canvas?.removeEventListener('webglcontextlost', this.#onContextLost);
     this.#clearHubObjects();
-    for (const object of this.#replayEffects) {
-      this.#scene?.remove(object);
-      object.geometry?.dispose();
-      object.material?.dispose();
-    }
+    for (const object of this.#replayEffects) { this.#scene?.remove(object); object.geometry?.dispose(); object.material?.dispose(); }
     this.#replayEffects = [];
+    this.#quantumPoints?.geometry?.dispose();
+    this.#quantumMaterial?.dispose();
     this.#points?.geometry?.dispose();
     this.#stars?.geometry?.dispose();
     this.#material?.dispose();
@@ -1914,16 +924,7 @@ export class UniverseRenderer {
     this.#renderer?.dispose();
     this.#renderer?.domElement?.remove();
     this.#canvas?.remove();
-    this.#renderer = null;
-    this.#scene = null;
-    this.#camera = null;
-    this.#points = null;
-    this.#stars = null;
-    this.#material = null;
-    this.#starMaterial = null;
-    this.#canvas = null;
-    this.#ctx = null;
-    this.#backend = 'none';
+    this.#renderer = null; this.#scene = null; this.#camera = null; this.#points = null; this.#stars = null; this.#material = null; this.#starMaterial = null; this.#quantumPoints = null; this.#quantumMaterial = null; this.#quantumParents = null; this.#quantumTargets = null; this.#quantumRoles = null; this.#quantumPhases = null; this.#quantumCount = 0; this.#canvas = null; this.#ctx = null; this.#backend = 'none';
   }
 
   destroy() {
