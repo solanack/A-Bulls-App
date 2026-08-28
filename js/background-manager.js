@@ -344,6 +344,7 @@
     defaultYouTubeUrls: DEFAULT_YOUTUBE_URLS,
     defaultTwitchUrl: DEFAULT_TWITCH_URL,
     migrateProfile(profile) {
+      if (!profile || typeof profile !== 'object') profile = {};
       profile.bg = profile.bg || {};
       profile.bg.menuType ||= profile.menuWall ? TYPES.IMAGE : TYPES.DEFAULT;
       profile.bg.gameType ||= profile.gameWall ? TYPES.IMAGE : TYPES.DEFAULT;
