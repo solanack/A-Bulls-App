@@ -160,12 +160,17 @@ export class QueryExperience {
   #apiBase;
   #controller = null;
   #voice = new AlienVoice();
+  #onExit;
+  #onKeyDown = (event) => {
+    if (event.key === "Escape") this.#onExit?.();
+  };
 
-  constructor({ host, apiBase = "" } = {}) {
+  constructor({ host, apiBase = "", onExit } = {}) {
     if (!(host instanceof Element))
       throw new TypeError("host element is required");
     this.#host = host;
     this.#apiBase = String(apiBase || location.origin).replace(/\/$/, "");
+    this.#onExit = typeof onExit === "function" ? onExit : null;
   }
 
   open() {
@@ -192,6 +197,9 @@ export class QueryExperience {
       event.preventDefault();
       void this.#query(input.value.trim());
     });
+    form.addEventListener("click", (event) => event.stopPropagation());
+    root.addEventListener("click", () => this.#onExit?.());
+    globalThis.addEventListener("keydown", this.#onKeyDown);
     globalThis.__ABULLS_QUERY_ACTIVE = true;
     globalThis.dispatchEvent(
       new CustomEvent("abulls:query-state", { detail: { active: true } }),
@@ -265,6 +273,7 @@ export class QueryExperience {
     const root = this.#root;
     this.#root = null;
     this.#input = null;
+    globalThis.removeEventListener("keydown", this.#onKeyDown);
     globalThis.__ABULLS_QUERY_ACTIVE = false;
     globalThis.dispatchEvent(
       new CustomEvent("abulls:query-state", { detail: { active: false } }),
