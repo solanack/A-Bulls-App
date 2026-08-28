@@ -1,0 +1,17 @@
+/* Particle Field is the primary product surface. Internal renderer diagnostics stay out of the default view. */
+.universe-overlay{display:none!important}
+.universe-stage{position:absolute;inset:0;overflow:hidden}
+.particle-field-fallback-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;background:#030307}
+.field-shell__chrome{z-index:30}
+.field-shell__commands{bottom:max(10px,env(safe-area-inset-bottom))}
+@media(max-width:760px){
+  .field-shell__chrome{padding:max(8px,env(safe-area-inset-top)) 8px max(8px,env(safe-area-inset-bottom));grid-template-rows:auto 1fr auto}
+  .field-shell__top{grid-template-columns:auto minmax(0,1fr);align-items:center}
+  .field-shell__brand{min-width:118px;max-width:118px;min-height:42px;padding:0 8px;border-radius:14px;font-size:9px}
+  .field-shell__search{min-width:0;height:42px;border-radius:14px;overflow:hidden}
+  .field-shell__search input{min-width:0;font-size:11px;text-overflow:ellipsis}
+  .field-shell__commands{align-self:end;max-width:calc(100vw - 16px);margin:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}
+  .field-shell__commands::-webkit-scrollbar{display:none}
+  .field-shell__command{min-height:40px;padding:0 12px;font-size:9px}
+  .field-shell__investigation{margin-bottom:54px}
+}
