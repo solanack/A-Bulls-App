@@ -64,7 +64,7 @@ jobs:
           grep -q 'guardIntelligenceRequest' workers/worker-vnext-entry.mjs
           grep -q 'fieldCommandRequest' js/experience-bootstrap.mjs
           grep -q 'universeObservationsForEvents' workers/intelligence-mesh-ingest.mjs
-          grep -q "const BUILD='particle-universe-immersive-1'" sw.js
+          grep -q "const BUILD='particle-universe-immersive-2'" sw.js
           grep -q 'worker-vnext-entry.mjs' workers/wrangler.toml
           grep -q 'reconstruct-worker-8.2.0.mjs' workers/wrangler.toml
           ! grep -Eiq 'Bull Invaders|bull-invaders|bull-invader-ship|pixi-8\.19\.0' index.html js/experience-entry.mjs js/field-shell.mjs js/product-registry.mjs sw.js
