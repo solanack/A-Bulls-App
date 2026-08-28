@@ -17,7 +17,14 @@ async function load(name,importer) {
   }
 }
 
+function preferStableMobileField(){
+  return globalThis.matchMedia?.('(pointer: coarse)').matches===true && Math.min(globalThis.innerWidth||9999,globalThis.screen?.width||9999)<=900;
+}
+
 export function loadThree(importer=path=>import(path)) {
+  // The mobile Particle Field uses the deterministic 2D renderer until the WebGL
+  // path is proven across Android GPUs. This prevents the center-line shader artifact.
+  if(preferStableMobileField())return Promise.resolve(null);
   return load('three',importer);
 }
 
@@ -25,10 +32,5 @@ export function loadMediabunny(importer=path=>import(path)) {
   return load('mediabunny',importer);
 }
 
-export function experienceDependencyAssets() {
-  return ASSETS;
-}
-
-export function experienceDependencyFallbackAssets() {
-  return FALLBACK_ASSETS;
-}
+export function experienceDependencyAssets() { return ASSETS; }
+export function experienceDependencyFallbackAssets() { return FALLBACK_ASSETS; }
