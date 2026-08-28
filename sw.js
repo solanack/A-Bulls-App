@@ -1,4 +1,4 @@
-const BUILD='particle-universe-immersive-1';
+const BUILD='particle-universe-immersive-2';
 const CACHE=`abullsapp-${BUILD}`;
 const CORE=[
   './','./index.html','./share.html','./privacy.html','./terms.html','./favicon.svg','./manifest.webmanifest',
