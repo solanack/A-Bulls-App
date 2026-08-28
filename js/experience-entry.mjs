@@ -331,6 +331,7 @@ async function setup() {
   queryExperience = new QueryExperience({
     host: document.body,
     apiBase: globalThis.BBRConfig?.apiBase || location.origin,
+    onExit: () => app?.shell?.setActive?.("explore"),
   });
   globalThis.addEventListener("abulls:field-mode", (event) => {
     const mode = String(event?.detail?.mode || "");
