@@ -2,7 +2,7 @@ import { resolveExperienceFlags } from './experience-feature-flags.mjs';
 import { createFieldShell } from './field-shell.mjs';
 import { searchRequest } from './universal-search.mjs';
 
-const TITLES=Object.freeze({intelligence:'INTELLIGENCE',replay:'TEMPORAL REPLAY',compare:'COMPARE','what-if':'WHAT IF',sequences:'MARKET SEQUENCES',trickster:'CREATE · TRICKSTER',evidence:'EVIDENCE'});
+const TITLES=Object.freeze({flight:'UNIVERSE FLIGHT',intelligence:'INTELLIGENCE',replay:'TEMPORAL REPLAY',compare:'COMPARE','what-if':'WHAT IF',sequences:'MARKET SEQUENCES',trickster:'CREATE · TRICKSTER',evidence:'EVIDENCE'});
 const text=value=>String(value==null?'':value).trim();
 const BASE58_RE=/^[1-9A-HJ-NP-Za-km-z]{32,88}$/;
 
@@ -25,6 +25,16 @@ export function fieldCommandRequest(command,context={}){
   });
 }
 
+function flightSurface(context={}){
+  const wrap=document.createElement('div');wrap.className='universe-flight-portal';
+  const frame=document.createElement('iframe');frame.className='universe-flight-portal__frame';frame.title='Playable Particle Universe Flight';frame.allow='fullscreen';
+  const query=new URLSearchParams();
+  const focus=text(context?.focusId||context?.investigationHub?.focusId||context?.query);
+  if(focus)query.set('destination',focus);
+  frame.src=`flight.html?v=particle-universe-z500${query.size?`&${query}`:''}`;
+  wrap.append(frame);return wrap;
+}
+
 export function bootstrapNextExperience({flags,host,adapters,serviceState='ready',onSearchRequest,onFieldCommand}){
   const resolvedFlags=resolveExperienceFlags(flags);
   if(!resolvedFlags.nextProductShellEnabled)return Object.freeze({mounted:false,reason:'feature-disabled',flags:resolvedFlags,destroy(){}});
@@ -37,6 +47,10 @@ export function bootstrapNextExperience({flags,host,adapters,serviceState='ready
   const routeCommand=(command,context={})=>{
     onFieldCommand?.(command,context);
     if(command==='explore'){shell.closeWorkspace();return;}
+    if(command==='flight'){
+      shell.mountWorkspace(flightSurface(context),{title:TITLES.flight,mode:'flight'});
+      return;
+    }
     const request=fieldCommandRequest(command,context);
     const hasFocus=Boolean(request.entityId);
     const source=context?.investigationHub?'field-investigation':'field-command';
