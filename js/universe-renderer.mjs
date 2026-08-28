@@ -234,8 +234,8 @@ export class UniverseRenderer {
     this.#quantumMaterial = new T.ShaderMaterial({
       transparent: true, depthWrite: false, vertexColors: true, blending: T.AdditiveBlending,
       uniforms: { uPixelRatio: { value: this.#renderer.getPixelRatio() }, uAlpha: { value: 0.0 } },
-      vertexShader: `attribute float aSize;uniform float uPixelRatio;varying vec3 vColor;void main(){vColor=color;vec4 mvPosition=modelViewMatrix*vec4(position,1.0);gl_PointSize=aSize*uPixelRatio*(165.0/max(12.0,-mvPosition.z));gl_Position=projectionMatrix*mvPosition;}`,
-      fragmentShader: `uniform float uAlpha;varying vec3 vColor;void main(){vec2 point=gl_PointCoord-vec2(0.5);float d=length(point);if(d>0.5)discard;float core=smoothstep(0.24,0.0,d);float halo=smoothstep(0.50,0.12,d);float alpha=max(core,halo*0.32)*uAlpha;gl_FragColor=vec4(vColor,alpha);}`
+      vertexShader: `attribute float aSize;uniform float uPixelRatio;varying vec3 vColor;void main(){vColor=color;vec4 mvPosition=modelViewMatrix*vec4(position,1.0);gl_PointSize=aSize*uPixelRatio*(118.0/max(12.0,-mvPosition.z));gl_Position=projectionMatrix*mvPosition;}`,
+      fragmentShader: `uniform float uAlpha;varying vec3 vColor;void main(){vec2 point=gl_PointCoord-vec2(0.5);float d=length(point);if(d>0.5)discard;float core=smoothstep(0.16,0.0,d);float halo=smoothstep(0.42,0.12,d);float alpha=max(core,halo*0.10)*uAlpha;gl_FragColor=vec4(vColor,alpha);}`
     });
     this.#quantumPoints = new T.Points(new T.BufferGeometry(), this.#quantumMaterial);
     this.#quantumPoints.visible = false;
@@ -416,7 +416,7 @@ export class UniverseRenderer {
       const tj = templateIndex * 3;
       const mx = templatePositions[tj];
       const my = templatePositions[tj + 1];
-      const mz = -templatePositions[tj + 2];
+      const mz = templatePositions[tj + 2];
       const anatomyRole = templateRoles[templateIndex];
       if (i < surfaceCount) {
         targets[j] = mx; targets[j + 1] = my; targets[j + 2] = mz;
@@ -425,7 +425,7 @@ export class UniverseRenderer {
         const inward = 0.28 + hash(i * 13.711 + 4.91) * 0.38;
         targets[j] = mx * inward;
         targets[j + 1] = my * (0.58 + hash(i * 5.173 + 8.2) * 0.25);
-        targets[j + 2] = mz * inward + 5.5;
+        targets[j + 2] = mz * inward - 7.0;
         flags[i] = 2;
       }
     }
@@ -567,6 +567,42 @@ export class UniverseRenderer {
     const templateCount = template.count;
     const hash = (value) => { const n = Math.sin(value * 12.9898 + 78.233) * 43758.5453123; return n - Math.floor(n); };
     const interiorFraction = 0.18;
+
+    const inEyeHole = (x, y, z) => {
+      if (z <= 6.0) return false;
+      const nx = x / 39.0;
+      const ny = y / 50.0;
+      const evalEye = (side) => {
+        const ex = side * 0.39;
+        const ey = 0.20;
+        const dx = nx - ex;
+        const dy = ny - ey;
+        const angle = side * 0.16;
+        const ca = Math.cos(angle);
+        const sa = Math.sin(angle);
+        const rx = dx * ca - dy * sa;
+        const ry = dx * sa + dy * ca;
+        return (rx / 0.36) ** 2 + (ry / 0.22) ** 2;
+      };
+      return Math.min(evalEye(-1), evalEye(1)) < 0.86;
+    };
+
+    const inNostrilHole = (x, y, z) => {
+      if (z <= 7.0) return false;
+      const nx = x / 39.0;
+      const ny = y / 50.0;
+      return -0.18 < ny && ny < -0.03 && 0.025 < Math.abs(nx) && Math.abs(nx) < 0.10;
+    };
+
+    const inMouthHole = (x, y, z) => {
+      if (z <= 7.0) return false;
+      const nx = x / 39.0;
+      const ny = y / 50.0;
+      return Math.abs(nx) < 0.22 && ny > -0.46 && ny < -0.37;
+    };
+
+    const sampleFor = (child, salt = 0) => Math.min(templateCount - 1, Math.floor(hash(child * 7.917 + 11.31 + salt) * templateCount));
+
     for (let child = 0; child < quantumCount; child += 1) {
       const j = child * 3;
       const parent = child % parentCount;
@@ -578,48 +614,43 @@ export class UniverseRenderer {
       colors[j] = parentColor.array[pj];
       colors[j + 1] = parentColor.array[pj + 1];
       colors[j + 2] = parentColor.array[pj + 2];
-      sizes[child] = 0.22 + hash(child * 2.371) * 0.28;
+      sizes[child] = 0.13 + hash(child * 2.371) * 0.15;
 
-      const sampleFor = (salt = 0) => Math.min(templateCount - 1, Math.floor(hash(child * 7.917 + 11.31 + salt) * templateCount));
-      let templateIndex = sampleFor(0);
+      let templateIndex = sampleFor(child, 0);
       let templateRole = templateRoles[templateIndex] || 1;
       let tj = templateIndex * 3;
       let tx = templatePositions[tj];
       let ty = templatePositions[tj + 1];
-      let tz = -templatePositions[tj + 2];
+      let tz = templatePositions[tj + 2];
 
-      /* Preserve the face as negative space by re-sampling any generic surface
-         point that projects into an eye, nostril, or mouth cavity. */
-      for (let attempt = 0; attempt < 7; attempt += 1) {
-        const nx = tx / 39.0;
-        const ny = ty / 50.0;
-        const front = tz > -6.0;
-        const eyeL = (((nx + 0.39) * Math.cos(-0.16) - (ny - 0.20) * Math.sin(-0.16)) / 0.34) ** 2 + (((nx + 0.39) * Math.sin(-0.16) + (ny - 0.20) * Math.cos(-0.16)) / 0.20) ** 2;
-        const eyeR = (((nx - 0.39) * Math.cos(0.16) - (ny - 0.20) * Math.sin(0.16)) / 0.34) ** 2 + (((nx - 0.39) * Math.sin(0.16) + (ny - 0.20) * Math.cos(0.16)) / 0.20) ** 2;
-        const eyeHole = front && Math.min(eyeL, eyeR) < 0.72;
-        const nostrilHole = front && Math.abs(nx) < 0.075 && ny > -0.16 && ny < -0.015;
-        const mouthHole = front && Math.abs(nx) < 0.22 && ny > -0.47 && ny < -0.385;
-        if (!(eyeHole || nostrilHole || mouthHole) || templateRole === 3 || templateRole === 4 || templateRole === 5) break;
-        templateIndex = sampleFor((attempt + 1) * 23.71);
+      for (let attempt = 0; attempt < 18; attempt += 1) {
+        const forbidden = inEyeHole(tx, ty, tz) || inNostrilHole(tx, ty, tz) || inMouthHole(tx, ty, tz);
+        if (!forbidden) break;
+        templateIndex = sampleFor(child, (attempt + 1) * 29.173);
         templateRole = templateRoles[templateIndex] || 1;
         tj = templateIndex * 3;
         tx = templatePositions[tj];
         ty = templatePositions[tj + 1];
-        tz = -templatePositions[tj + 2];
+        tz = templatePositions[tj + 2];
       }
 
       const interior = hash(child * 17.133 + 3.17) < interiorFraction;
       if (interior) {
-        const inward = 0.22 + hash(child * 9.731 + 1.91) * 0.40;
+        const inward = 0.18 + hash(child * 9.731 + 1.91) * 0.34;
         tx *= inward;
-        ty *= 0.54 + hash(child * 4.137 + 7.2) * 0.34;
-        tz = tz * inward + 7.5;
+        ty *= 0.52 + hash(child * 4.137 + 7.2) * 0.32;
+        tz = Math.min(-5.0, tz * inward - 8.0);
+        if (inEyeHole(tx, ty, 18) || inNostrilHole(tx, ty, 18) || inMouthHole(tx, ty, 18)) {
+          tx *= 0.55;
+          ty += 8.0;
+        }
         roles[child] = 2;
       } else if (templateRole === 5) {
         roles[child] = 3;
       } else {
         roles[child] = 1;
       }
+
       targets[j] = tx;
       targets[j + 1] = ty;
       targets[j + 2] = tz;
@@ -627,6 +658,7 @@ export class UniverseRenderer {
       phases[j + 1] = hash(child * 5.731) * Math.PI * 2;
       phases[j + 2] = hash(child * 11.917) * Math.PI * 2;
     }
+
     const geometry = new T.BufferGeometry();
     geometry.setAttribute('position', new T.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new T.BufferAttribute(colors, 3));
@@ -657,7 +689,7 @@ export class UniverseRenderer {
     const phases = this.#quantumPhases;
     const blend = Math.max(0, Math.min(1, this.#queryBlend));
     this.#quantumPoints.visible = blend > 0.001 || this.#queryActive;
-    this.#quantumMaterial.uniforms.uAlpha.value = Math.min(0.92, blend * 1.18);
+    this.#quantumMaterial.uniforms.uAlpha.value = Math.min(0.88, blend * 1.05);
     const morph = blend * blend * (3 - 2 * blend);
     const time = now * 0.001;
     const parentPositions = parentAttribute.array;
@@ -672,18 +704,18 @@ export class UniverseRenderer {
         const orbitA = time * 0.72 + phaseX;
         const orbitB = time * 0.49 + phaseY;
         const orbitC = time * 0.61 + phaseZ;
-        tx += Math.sin(orbitA) * 2.1 + Math.cos(orbitB) * 0.8;
-        ty += Math.sin(orbitB) * 1.6 + Math.cos(orbitC) * 0.6;
-        tz += Math.cos(orbitA) * 1.8 + Math.sin(orbitC) * 0.7;
+        tx += Math.sin(orbitA) * 1.8 + Math.cos(orbitB) * 0.7;
+        ty += Math.sin(orbitB) * 1.5 + Math.cos(orbitC) * 0.6;
+        tz += Math.cos(orbitA) * 1.6 + Math.sin(orbitC) * 0.6;
       } else {
-        tx += Math.sin(time * 1.31 + phaseX) * 0.09;
-        ty += Math.cos(time * 1.07 + phaseY) * 0.08;
-        tz += Math.sin(time * 0.91 + phaseZ) * 0.10;
+        tx += Math.sin(time * 1.31 + phaseX) * 0.07;
+        ty += Math.cos(time * 1.07 + phaseY) * 0.06;
+        tz += Math.sin(time * 0.91 + phaseZ) * 0.08;
       }
       if (role === 3) {
         const speech = Math.sin(time * 7.2 + phaseX);
-        ty += speech * 0.34;
-        tz += Math.abs(speech) * 0.12;
+        ty += speech * 0.22;
+        tz += Math.abs(speech) * 0.08;
       }
       positions[j] = px + (tx - px) * morph;
       positions[j + 1] = py + (ty - py) * morph;
@@ -875,8 +907,8 @@ export class UniverseRenderer {
     if (this.#backend === 'webgl') {
       this.#material.uniforms.uWarp.value = warp;
       const quantumBlend = Math.max(0, Math.min(1, this.#queryBlend));
-      const parentPresence = 1 - quantumBlend * 0.97;
-      const parentScale = 1 - quantumBlend * 0.82;
+      const parentPresence = 1 - quantumBlend * 0.995;
+      const parentScale = 1 - quantumBlend * 0.90;
       this.#material.uniforms.uIntensity.value = this.#modeCurrent[0] * parentPresence;
       this.#points.scale.setScalar(this.#modeCurrent[1] * parentScale);
       this.#points.rotation.z = this.#modeCurrent[2];
