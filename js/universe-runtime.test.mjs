@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createSyntheticUniverse } from './universe-synthetic-data.mjs';
 import { FrameBudgetController, initialUniverseQuality } from './universe-quality.mjs';
 import { HyperspaceTransition } from './universe-transition.mjs';
+import { hasRenderableUniverseSnapshot } from './universe-experience.mjs';
 
 test('synthetic data is deterministic and explicitly labeled', () => {
   const first = createSyntheticUniverse({ seed: 7, count: 12 });
@@ -10,6 +11,12 @@ test('synthetic data is deterministic and explicitly labeled', () => {
   assert.deepEqual(first.particles, second.particles);
   assert.match(first.samplingPolicy, /synthetic/);
   assert.equal(first.sources[0], 'synthetic-prototype');
+});
+
+test('empty live snapshots never replace the playable synthetic field', () => {
+  assert.equal(hasRenderableUniverseSnapshot({ particles: [] }), false);
+  assert.equal(hasRenderableUniverseSnapshot({ particles: [{ id: 'live-1' }] }), true);
+  assert.equal(hasRenderableUniverseSnapshot(null), false);
 });
 
 test('reduced motion selects non-canvas fallback', () => {

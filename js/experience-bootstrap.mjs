@@ -2,7 +2,7 @@ import { resolveExperienceFlags } from './experience-feature-flags.mjs';
 import { createFieldShell } from './field-shell.mjs';
 import { searchRequest } from './universal-search.mjs';
 
-const TITLES=Object.freeze({intelligence:'INTELLIGENCE',replay:'TEMPORAL REPLAY',compare:'COMPARE','what-if':'WHAT IF',sequences:'MARKET SEQUENCES',trickster:'CREATE · TRICKSTER',evidence:'EVIDENCE',games:'GAMES'});
+const TITLES=Object.freeze({intelligence:'INTELLIGENCE',replay:'TEMPORAL REPLAY',compare:'COMPARE','what-if':'WHAT IF',sequences:'MARKET SEQUENCES',trickster:'CREATE · TRICKSTER',evidence:'EVIDENCE'});
 const text=value=>String(value==null?'':value).trim();
 const BASE58_RE=/^[1-9A-HJ-NP-Za-km-z]{32,88}$/;
 
@@ -44,7 +44,6 @@ export function bootstrapNextExperience({flags,host,adapters,serviceState='ready
       if(hasFocus){mountAdapter('intelligence',{source:'field-investigation-create',request,investigationHub:context.investigationHub||null},TITLES.trickster);return;}
       mountAdapter('trickster',{source,request});return;
     }
-    if(command==='games'){mountAdapter('games',{source});return;}
     mountAdapter('intelligence',{source,request,investigationHub:context.investigationHub||null},TITLES[command]);
   };
   shell=createFieldShell({host,serviceState,onCommand:routeCommand,onSearch(value){const request=searchRequest(value);onSearchRequest?.(request);if(request.kind==='empty')return;mountAdapter('intelligence',{source:'field-search',request},'INTELLIGENCE');}});
