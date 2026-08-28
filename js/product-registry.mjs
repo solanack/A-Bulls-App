@@ -2,7 +2,7 @@ const PRODUCTS = Object.freeze([
   Object.freeze({
     id: 'universe',
     label: 'Universe',
-    description: 'Explore a truthful live window into Solana activity.',
+    description: 'Explore a truthful live window into Solana activity as an immersive playable data field.',
     tier: 'primary',
     order: 1,
     icon: 'orbit'
@@ -22,14 +22,6 @@ const PRODUCTS = Object.freeze([
     tier: 'primary',
     order: 3,
     icon: 'story'
-  }),
-  Object.freeze({
-    id: 'games',
-    label: 'Games',
-    description: 'Play Bull Invaders with the preserved Ranked and campaign rules.',
-    tier: 'primary',
-    order: 4,
-    icon: 'games'
   })
 ]);
 
