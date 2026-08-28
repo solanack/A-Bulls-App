@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
-    navigator.serviceWorker.register('sw.js?v=particle-universe', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('sw.js?v=particle-universe-z500-4', { updateViaCache: 'none' })
       .then(registration => registration.update())
       .catch(error => console.warn('[pwa]', error));
   }
