@@ -34,7 +34,7 @@ expect('immersive Universe runtime wired',/UniverseExperience/.test(entry)&&/uni
 expect('playable particle field shell present',/Playable Solana particle universe/.test(fieldShell));
 expect('field investigation routing present',/fieldCommandRequest/.test(bootstrap)&&/field-investigation-create/.test(bootstrap));
 expect('production request guard wired',/intelligence-request-guard/.test(await text('workers/worker-vnext-entry.mjs')));
-expect('Particle Universe PWA checkpoint',/particle-universe-immersive-1/.test(sw));
+expect('Particle Universe PWA checkpoint',/particle-universe-immersive-2/.test(sw));
 expect('Particle Universe shell assets cached',/experience-entry\.mjs/.test(sw)&&/universe\.css/.test(sw)&&/field-shell\.css/.test(sw));
 expect('NO INDEXED EVIDENCE truth state',/NO INDEXED EVIDENCE/.test(market)||/NO INDEXED EVIDENCE/.test(workspace));
 expect('Worker 8.2.0 reconstruction configured',/reconstruct-worker-8\.2\.0\.mjs/.test(wrangler));
