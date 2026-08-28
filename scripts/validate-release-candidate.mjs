@@ -14,7 +14,7 @@ async function text(path){return readFile(resolve(root,path),'utf8');}
 function run(label,command,args){const result=spawnSync(command,args,{cwd:root,stdio:'inherit',env:process.env});if(result.status!==0){fail(label);return false;}ok(label);return true;}
 function expect(label,condition){condition?ok(label):fail(label);}
 
-note(`A Bulls App release-candidate validation · Node ${process.version}`);
+note(`A Bulls App Particle Universe release-candidate validation · Node ${process.version}`);
 expect('Node 22 or newer',Number(process.versions.node.split('.')[0])>=22);
 
 const modules=[...await filesIn('js',name=>name.endsWith('.mjs')),...await filesIn('workers',name=>name.endsWith('.mjs')),...await filesIn('services/intelligence-bridge',name=>name.endsWith('.mjs'))];
@@ -25,19 +25,17 @@ for(const file of ['js/config.js','js/main.js','sw.js'])run(`syntax ${file}`,pro
 const tests=[...await filesIn('js',name=>name.endsWith('.test.mjs')),...await filesIn('workers',name=>name.endsWith('.test.mjs')),...await filesIn('services/intelligence-bridge',name=>name.endsWith('.test.mjs')),...await filesIn('scripts',name=>name.endsWith('.test.mjs')),...await filesIn('tests',name=>name.endsWith('.test.mjs'))];
 if(tests.length)run(`complete Node test suite (${tests.length} files)`,process.execPath,['--test',...tests]);else fail('no test files discovered');
 
-const [config,index,entry,bootstrap,workspace,market,sw,wrangler,runbook]=await Promise.all(['js/config.js','index.html','js/experience-entry.mjs','js/experience-bootstrap.mjs','js/intelligence-workspace-vnext.mjs','js/token-market-workspace.mjs','sw.js','workers/wrangler.toml','docs/CLOUDFLARE-RELEASE-CANDIDATE.md'].map(text));
+const [config,index,entry,bootstrap,fieldShell,registry,workspace,market,sw,wrangler,runbook]=await Promise.all(['js/config.js','index.html','js/experience-entry.mjs','js/experience-bootstrap.mjs','js/field-shell.mjs','js/product-registry.mjs','js/intelligence-workspace-vnext.mjs','js/token-market-workspace.mjs','sw.js','workers/wrangler.toml','docs/CLOUDFLARE-RELEASE-CANDIDATE.md'].map(text));
 expect('replacement shell enabled',/nextProductShellEnabled:\s*true/.test(config));
 expect('universe enabled in browser shell',/universeEnabled:\s*true/.test(config));
 expect('Trickster enabled in browser shell',/tricksterStudioEnabled:\s*true/.test(config));
-expect('replacement module loaded',/experience-entry\.mjs\?v=8/.test(index));
+expect('Particle Universe replacement module loaded',/experience-entry\.mjs\?v=particle-universe/.test(index));
+expect('immersive Universe runtime wired',/UniverseExperience/.test(entry)&&/universe\.start\(\)/.test(entry));
+expect('playable particle field shell present',/Playable Solana particle universe/.test(fieldShell));
 expect('field investigation routing present',/fieldCommandRequest/.test(bootstrap)&&/field-investigation-create/.test(bootstrap));
-expect('field hub cached',/field-investigation-hub/.test(sw));
-expect('field investigation trail cached',/field-investigation-trail/.test(sw));
-expect('field evidence scope cached',/field-evidence-scope/.test(sw));
 expect('production request guard wired',/intelligence-request-guard/.test(await text('workers/worker-vnext-entry.mjs')));
-expect('Trickster project store cached',/trickster-project-store/.test(sw));
-expect('Trickster share client cached',/trickster-share-client/.test(sw));
-expect('vNext-71 PWA checkpoint',/8\.7\.0-vnext-71/.test(sw));
+expect('Particle Universe PWA checkpoint',/particle-universe-immersive-1/.test(sw));
+expect('Particle Universe shell assets cached',/experience-entry\.mjs/.test(sw)&&/universe\.css/.test(sw)&&/field-shell\.css/.test(sw));
 expect('NO INDEXED EVIDENCE truth state',/NO INDEXED EVIDENCE/.test(market)||/NO INDEXED EVIDENCE/.test(workspace));
 expect('Worker 8.2.0 reconstruction configured',/reconstruct-worker-8\.2\.0\.mjs/.test(wrangler));
 expect('Trickster shares fail closed by default',/TRICKSTER_SHARE_ENABLED\s*=\s*"false"/.test(wrangler));
@@ -53,8 +51,10 @@ expect('Android/store handoff exists',await exists('docs/ANDROID-STORE-HANDOFF.m
 expect('production Wrangler example exists',await exists('workers/wrangler.production.example.toml'));
 expect('production config verifier exists',await exists('scripts/verify-production-config.mjs'));
 
-const retiredTargets=[index,config,entry,workspace,market,sw,wrangler].join('\n');
-expect('retired product guard',!/Ansem|Bullpen|ansem\.io|community-integrations|Solana Bang Bang|Claude of Duty|BBRLife|lifeView/i.test(retiredTargets));
+const canonicalTargets=[index,config,entry,bootstrap,fieldShell,registry,workspace,market,sw,wrangler].join('\n');
+expect('Bull Invaders absent from canonical Particle Universe graph',!/Bull Invaders|bull-invaders|bull-invader-ship|pixi-8\.19\.0/i.test(canonicalTargets));
+for(const removed of ['js/bull-invaders-host.mjs','js/bull-invaders-renderer-v2.js','js/bull-invaders.js','css/bull-invaders-vnext.css','assets/game/bull-invader-ship.webp'])expect(`${removed} absent`,!(await exists(removed)));
+expect('retired product guard',!/Ansem|Bullpen|ansem\.io|community-integrations|Solana Bang Bang|Claude of Duty|BBRLife|lifeView/i.test(canonicalTargets));
 expect('removed game directory absent',!(await exists('games')));
 for(const removed of ['js/ui.js','js/track.js','js/bull-intelligence.js','js/bull-vision.js'])expect(`${removed} absent`,!(await exists(removed)));
 
@@ -65,4 +65,4 @@ expect('production origins configured',/https:\/\/abullsapp\.com/.test(wrangler)
 expect('Cloudflare observability configured',/\[observability\]/.test(wrangler));
 
 if(failures.length){process.stderr.write(`\n${failures.length} release-candidate check(s) failed.\n`);process.exit(1);}
-note('\nRELEASE-CANDIDATE LOCAL VALIDATION PASSED');
+note('\nPARTICLE UNIVERSE RELEASE-CANDIDATE LOCAL VALIDATION PASSED');
