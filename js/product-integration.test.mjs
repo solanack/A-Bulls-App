@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { ProductAdapterRegistry } from './product-adapters.mjs';
 import { classifyPublicChainQuery, searchRequest } from './universal-search.mjs';
 
-test('adapter registry treats the persistent field as the shell, not a separate primary product', () => {
+test('adapter registry treats the persistent particle field as the shell, not a separate required adapter', () => {
   const registry = new ProductAdapterRegistry();
   registry.register('intelligence', { activate() {} });
   assert.equal(registry.readiness().ready, false);
-  assert.deepEqual(registry.readiness().missingPrimary, ['trickster','games']);
+  assert.deepEqual(registry.readiness().missingPrimary, ['trickster']);
 });
 
 test('adapter activation deactivates the previous product', () => {
