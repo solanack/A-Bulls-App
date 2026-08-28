@@ -2,13 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { primaryProducts, productById, productRegistry } from './product-registry.mjs';
 
-test('all four primary products are visible in locked order', () => {
+test('Particle Universe product graph exposes the three active primary products in locked order', () => {
   assert.deepEqual(primaryProducts().map(({ id }) => id), [
-    'universe','intelligence','trickster','games'
+    'universe','intelligence','trickster'
   ]);
 });
 
-test('removed LIFE product is unavailable', () => {
+test('removed arcade and LIFE products are unavailable', () => {
+  assert.equal(productById('games'), null);
   assert.equal(productById('life'), null);
 });
 
