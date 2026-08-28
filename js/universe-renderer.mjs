@@ -369,8 +369,8 @@ export class UniverseRenderer {
         uPixelRatio: { value: this.#renderer.getPixelRatio() },
         uAlpha: { value: 0 },
       },
-      vertexShader: `attribute float aSize;attribute float aLight;attribute float aDepth;uniform float uPixelRatio;varying vec3 vColor;varying float vAlpha;void main(){float shade=mix(0.30,1.08,aLight);vec3 shadowTint=vec3(0.62,0.74,0.92);vColor=color*shade*mix(shadowTint,vec3(1.0),aLight);vAlpha=mix(0.35,1.0,1.0-aDepth);vec4 mvPosition=modelViewMatrix*vec4(position,1.0);gl_PointSize=aSize*uPixelRatio*(94.0/max(12.0,-mvPosition.z));gl_Position=projectionMatrix*mvPosition;}`,
-      fragmentShader: `uniform float uAlpha;varying vec3 vColor;varying float vAlpha;void main(){vec2 p=gl_PointCoord-vec2(0.5);float d=length(p);if(d>0.5)discard;float core=smoothstep(0.19,0.03,d);float halo=smoothstep(0.42,0.18,d)*0.045;float alpha=max(core,halo)*uAlpha*vAlpha;gl_FragColor=vec4(vColor,alpha);}`,
+      vertexShader: `attribute float aSize;attribute float aLight;attribute float aDepth;uniform float uPixelRatio;varying vec3 vColor;varying float vAlpha;void main(){float shade=mix(0.54,1.18,aLight);vec3 organismTint=vec3(0.30,0.56,0.78);vec3 livingColor=mix(color,organismTint,0.44);vColor=min(vec3(1.0),livingColor*shade*1.36);vAlpha=mix(0.58,1.0,1.0-aDepth);vec4 mvPosition=modelViewMatrix*vec4(position,1.0);float projected=aSize*uPixelRatio*(236.0/max(12.0,-mvPosition.z));gl_PointSize=max(1.18*uPixelRatio,projected);gl_Position=projectionMatrix*mvPosition;}`,
+      fragmentShader: `uniform float uAlpha;varying vec3 vColor;varying float vAlpha;void main(){vec2 p=gl_PointCoord-vec2(0.5);float d=length(p);if(d>0.5)discard;float core=smoothstep(0.22,0.025,d);float halo=smoothstep(0.46,0.18,d)*0.12;float alpha=max(core,halo)*uAlpha*vAlpha;gl_FragColor=vec4(vColor,alpha);}`,
     });
     this.#quantumPoints = new T.Points(
       new T.BufferGeometry(),
