@@ -16,44 +16,35 @@ import { buildTricksterNarrationPlan } from "./trickster-narration-plan.mjs";
 import { applyExplicitEventStoryPriceSelection } from "./event-story-price-selection.mjs";
 import { loadThree } from "./experience-dependencies.mjs";
 import { QueryExperience } from "./query-experience.mjs";
-import {
-  createBullInvadersHost,
-  installBullInvadersNavigationBridge,
-} from "./bull-invaders-host.mjs";
 function node(tag, className, text) {
   const item = document.createElement(tag);
   if (className) item.className = className;
   if (text != null) item.textContent = text;
   return item;
 }
-function gamesPage(onOpen) {
+function gamesPage(onEnter) {
   const page = node("section", "product-home");
   const intro = node("div", "product-home__intro");
-  const copy = node("div");
-  copy.append(node("small", "", "FIELD MODE"), node("h1", "", "Games"));
   intro.append(
-    copy,
-    node(
-      "p",
-      "",
-      "Bull Invaders is the preserved arcade experience inside the Solana data field.",
-    ),
+    node("small", "", "FIELD MODE"),
+    node("h1", "", "Particle Universe"),
+    node("p", "", "The living Solana particle field is the playable universe."),
   );
   const body = node("div", "product-grid");
-  const invaders = node("button", "product-card product-card--featured");
-  invaders.type = "button";
-  invaders.append(
-    node("span", "product-card__index", "ONLY GAME"),
-    node("h2", "", "Bull Invaders"),
+  const enter = node("button", "product-card product-card--featured");
+  enter.type = "button";
+  enter.append(
+    node("span", "product-card__index", "LIVE FIELD"),
+    node("h2", "", "Enter the Universe"),
     node(
       "p",
       "",
-      "Ranked and 10-EPOCH campaign play with preserved scoring, hitboxes, physics and replay validation.",
+      "Explore, select, investigate, replay, compare and query living chain activity.",
     ),
-    node("span", "product-card__action", "ENTER BULL INVADERS →"),
+    node("span", "product-card__action", "ENTER PARTICLE UNIVERSE →"),
   );
-  invaders.addEventListener("click", () => onOpen?.());
-  body.append(invaders);
+  enter.addEventListener("click", () => onEnter?.());
+  body.append(enter);
   page.append(intro, body);
   return page;
 }
@@ -89,10 +80,7 @@ async function setup() {
   document.body.append(host);
   const instances = new Map(),
     adapters = new ProductAdapterRegistry();
-  let gameHost = null,
-    gameInitialized = false,
-    removeGameBridge = null,
-    tricksterFieldCleanup = null;
+  let tricksterFieldCleanup = null;
   const mount = (content, title, mode) => {
     if (content instanceof Element)
       app?.shell.mountWorkspace(content, { title, mode });
@@ -114,52 +102,6 @@ async function setup() {
     const studio = instances.get("trickster");
     studio?.loadEvidence(sanitized);
     bindTricksterField(studio);
-  }
-  function showGamesLanding() {
-    mount(gamesPage(openBullInvaders), "GAMES", "games");
-  }
-  function ensureBullInvadersHost() {
-    if (gameHost) return gameHost;
-    gameHost = createBullInvadersHost();
-    removeGameBridge = installBullInvadersNavigationBridge({
-      onExit: showGamesLanding,
-    });
-    gameHost
-      .querySelector("#startInvaders")
-      ?.addEventListener("click", async () => {
-        gameHost.classList.add("active");
-        document.getElementById("invadersGameView")?.classList.add("active");
-        try {
-          for (
-            let i = 0;
-            i < 40 && typeof globalThis.BullInvaders?.init !== "function";
-            i += 1
-          )
-            await new Promise((resolve) => setTimeout(resolve, 50));
-          bootInvaders();
-          await globalThis.BBRPlatform?.launch?.("bull-invaders");
-        } catch (error) {
-          console.error("[Bull Invaders launch]", error);
-          globalThis.toast?.("Bull Invaders could not start");
-        }
-      });
-    return gameHost;
-  }
-  function bootInvaders() {
-    globalThis.BBRRunMode?.init?.();
-    const ok = globalThis.BullInvaders?.init?.();
-    gameInitialized = ok !== false;
-    return ok;
-  }
-  function openBullInvaders() {
-    mount(ensureBullInvadersHost(), "BULL INVADERS", "games");
-    requestAnimationFrame(() => {
-      bootInvaders();
-      globalThis.dispatchEvent(new Event("resize"));
-      requestAnimationFrame(() =>
-        globalThis.dispatchEvent(new Event("resize")),
-      );
-    });
   }
   function intelligenceProduct(context = {}) {
     const mountNode = node("div", "intelligence-product-vnext"),
@@ -361,11 +303,9 @@ async function setup() {
   });
   adapters.register("games", {
     activate() {
-      return gamesPage(openBullInvaders);
+      return gamesPage(() => app?.shell?.closeWorkspace?.());
     },
-    deactivate() {
-      globalThis.BBRPlatform?.leaveGame?.()?.catch?.(() => {});
-    },
+    deactivate() {},
   });
   app = bootstrapNextExperience({
     flags,
@@ -443,13 +383,11 @@ async function setup() {
   globalThis.BBRNextExperience = Object.freeze({
     ...app,
     loadStory: openStory,
-    openBullInvaders,
     destroy() {
       tricksterFieldCleanup?.();
       tricksterFieldCleanup = null;
       queryExperience?.destroy();
       universe?.destroy();
-      removeGameBridge?.();
       app?.destroy?.();
     },
   });
