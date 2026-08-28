@@ -1,10 +1,23 @@
-import { ALIEN_HEAD_TEMPLATE } from './quantum/alien-head-template.mjs';
-import { LIVING_QUANTUM_ORGANISM, basisFromPoint, hash01, isFacialVoid, lightingForNormal } from './quantum/living-quantum-organism.mjs';
-import { destinationForEntity } from './universe-contracts.mjs';
-import { FrameBudgetController, initialUniverseQuality, qualityProfile } from './universe-quality.mjs';
-import { HyperspaceTransition } from './universe-transition.mjs';
-import { fieldReplayBurst, resolveFieldEffectPosition } from './field-replay-effects.mjs';
-import { fieldFocusForEntity, findFieldEntity } from './field-entity-focus.mjs';
+import { ALIEN_HEAD_TEMPLATE } from "./quantum/alien-head-template.mjs";
+import {
+  LIVING_QUANTUM_ORGANISM,
+  basisFromPoint,
+  hash01,
+  isFacialVoid,
+  lightingForNormal,
+} from "./quantum/living-quantum-organism.mjs";
+import { destinationForEntity } from "./universe-contracts.mjs";
+import {
+  FrameBudgetController,
+  initialUniverseQuality,
+  qualityProfile,
+} from "./universe-quality.mjs";
+import { HyperspaceTransition } from "./universe-transition.mjs";
+import {
+  fieldReplayBurst,
+  resolveFieldEffectPosition,
+} from "./field-replay-effects.mjs";
+import { fieldFocusForEntity, findFieldEntity } from "./field-entity-focus.mjs";
 
 const COLORS = Object.freeze({
   swap: [0.42, 0.18, 1],
@@ -13,83 +26,1339 @@ const COLORS = Object.freeze({
   staking: [0.3, 1, 0.54],
   program: [1, 0.72, 0.2],
   failure: [1, 0.2, 0.2],
-  unknown: [0.72, 0.72, 0.8]
+  unknown: [0.72, 0.72, 0.8],
 });
 const MODE_STYLE = Object.freeze({
   explore: [1, 1, 0],
   intelligence: [0.82, 1.08, 0.08],
   replay: [1.25, 1.18, 0.2],
   compare: [0.72, 1.12, -0.08],
-  'what-if': [0.9, 1.2, 0.12],
+  "what-if": [0.9, 1.2, 0.12],
   sequences: [1.15, 1.3, 0.16],
   trickster: [1.35, 1.12, 0.28],
   evidence: [0.6, 0.95, -0.12],
-  games: [1.45, 1.16, 0.35]
+  games: [1.45, 1.16, 0.35],
 });
-const REPLAY_COLOR = Object.freeze({ green: [0.18,1,0.42], red: [1,0.12,0.16], violet: [0.58,0.2,1], neutral: [0.8,0.84,1] });
-const CSS_COLOR = Object.freeze({ swap:'#7c4dff', transfer:'#3ad6f0', nft:'#ff5aa8', staking:'#4dff8a', program:'#ffc247', failure:'#ff4d4d', unknown:'#c8c8d4' });
+const REPLAY_COLOR = Object.freeze({
+  green: [0.18, 1, 0.42],
+  red: [1, 0.12, 0.16],
+  violet: [0.58, 0.2, 1],
+  neutral: [0.8, 0.84, 1],
+});
+const CSS_COLOR = Object.freeze({
+  swap: "#7c4dff",
+  transfer: "#3ad6f0",
+  nft: "#ff5aa8",
+  staking: "#4dff8a",
+  program: "#ffc247",
+  failure: "#ff4d4d",
+  unknown: "#c8c8d4",
+});
 
-function capabilitiesFromBrowser(){const c2=document.createElement('canvas'),c1=document.createElement('canvas');let w2=false,w=false;try{w2=Boolean(c2.getContext('webgl2'));}catch{}try{w=Boolean(c1.getContext('webgl')||c1.getContext('experimental-webgl'));}catch{}return{webgl2:w2,webgl:w||w2,webgpu:Boolean(globalThis.navigator?.gpu),deviceMemory:Number(globalThis.navigator?.deviceMemory??0),saveData:Boolean(globalThis.navigator?.connection?.saveData),reducedMotion:globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches??false};}
-function createStarfield(count=480,seed=42){let value=seed>>>0;const random=()=>{value+=0x6D2B79F5;let t=value;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};const positions=new Float32Array(count*3),sizes=new Float32Array(count);for(let i=0;i<count;i++){const radius=90+random()*170,angle=random()*Math.PI*2,vertical=(random()-.5)*150;positions[i*3]=Math.cos(angle)*radius;positions[i*3+1]=vertical;positions[i*3+2]=Math.sin(angle)*radius;sizes[i]=.35+random()*1.35;}return{positions,sizes,count};}
-function hostSize(host){const p=host.parentElement;return{width:Math.max(1,host.clientWidth||0,p?.clientWidth||0,globalThis.innerWidth||1),height:Math.max(1,host.clientHeight||0,p?.clientHeight||0,globalThis.innerHeight||1)};}
-function cssRgb([r,g,b],a=1){return`rgba(${Math.round(r*255)},${Math.round(g*255)},${Math.round(b*255)},${a})`;}
-
-export class UniverseRenderer {
-  #host;#snapshot;#three;#renderer;#scene;#camera;#points;#stars;#material;#starMaterial;#raf=0;#lastFrame=0;#quality;#transition=new HyperspaceTransition();#onSelect;#destroyed=false;#destinationReady=false;#mode='explore';#modeTarget=[1,1,0];#modeCurrent=[1,1,0];#onMode;#onReplay;#onTemporalReplay;#onMarketPhase;#onStoryScene;#replayEffects=[];#phaseEffect=null;#phaseUntil=0;#storyField=null;#cameraTarget={distance:125,yaw:.4,pitch:.18,target:[0,0,0]};#investigationHub=null;#hubObjects=[];#backend='none';#canvas=null;#ctx=null;#visible=[];#starfield=createStarfield();#pointer={active:false,x:0,y:0,moved:false};#queryActive=Boolean(globalThis.__ABULLS_QUERY_ACTIVE);#queryBlend=0;#queryBasePositions=null;#queryTargets=null;#queryMouth=null;#querySurfaceFlags=null;#quantumPoints=null;#quantumMaterial=null;#quantumParents=null;#quantumTargets=null;#quantumRoles=null;#quantumPhases=null;#quantumCount=0;#quantumLighting=null;#quantumDepth=null;#resizeObserver=null;#reducedMotion=false;#autoSpin=.00042;
-  #onQueryState=(event)=>this.setQueryActive(Boolean(event?.detail?.active));
-
-  constructor({host,snapshot,THREE,onSelect,capabilities=capabilitiesFromBrowser()}){if(!(host instanceof Element))throw new TypeError('host element is required');this.#host=host;this.#snapshot=snapshot;this.#three=THREE;this.#onSelect=onSelect;this.#reducedMotion=Boolean(capabilities.reducedMotion);const tier=initialUniverseQuality(capabilities);this.#quality=new FrameBudgetController(tier,capabilities);this.#onMode=(e)=>this.setMode(e?.detail?.mode);this.#onReplay=(e)=>this.#queueReplayEffects(e?.detail?.effects);this.#onTemporalReplay=(e)=>this.#queueReplayEffects(fieldReplayBurst(e?.detail?.events||[]));this.#onMarketPhase=(e)=>{const effect=e?.detail?.effect;if(!effect)return;this.#phaseEffect=effect;this.#phaseUntil=performance.now()+3600;this.setMode('sequences');};this.#onStoryScene=(e)=>{const state=e?.detail;if(!state?.camera||!state?.field)return;this.#storyField=state.field;this.#cameraTarget={distance:Number(state.camera.distance)||125,yaw:Number(state.camera.yaw)||0,pitch:Number(state.camera.pitch)||0,target:[0,0,0]};this.setMode('trickster');};globalThis.addEventListener('abulls:field-mode',this.#onMode);globalThis.addEventListener('abulls:query-state',this.#onQueryState);globalThis.addEventListener('abulls:field-replay-events',this.#onReplay);globalThis.addEventListener('abulls:temporal-replay-events',this.#onTemporalReplay);globalThis.addEventListener('abulls:field-market-phase',this.#onMarketPhase);globalThis.addEventListener('abulls:field-story-scene',this.#onStoryScene);if(THREE){try{this.#mountThree();return;}catch{this.#teardownGpu();}}this.#mountCanvas();}
-
-  #bindCanvasInput(canvas){canvas.addEventListener('pointerdown',this.#onPointerDown);canvas.addEventListener('pointermove',this.#onPointerMove);canvas.addEventListener('pointerup',this.#onPointerUp);canvas.addEventListener('pointercancel',this.#onPointerUp);canvas.addEventListener('wheel',this.#onWheel,{passive:false});canvas.addEventListener('click',this.#onClick);globalThis.addEventListener('pointerup',this.#onGlobalPointerUp);globalThis.addEventListener('pointercancel',this.#onGlobalPointerUp);document.addEventListener('visibilitychange',this.#onVisibility);}
-  #unbindCanvasInput(canvas){canvas?.removeEventListener('pointerdown',this.#onPointerDown);canvas?.removeEventListener('pointermove',this.#onPointerMove);canvas?.removeEventListener('pointerup',this.#onPointerUp);canvas?.removeEventListener('pointercancel',this.#onPointerUp);canvas?.removeEventListener('wheel',this.#onWheel);canvas?.removeEventListener('click',this.#onClick);globalThis.removeEventListener('pointerup',this.#onGlobalPointerUp);globalThis.removeEventListener('pointercancel',this.#onGlobalPointerUp);document.removeEventListener('visibilitychange',this.#onVisibility);}
-  #observeHost(){this.#resizeObserver?.disconnect();if(typeof ResizeObserver==='function'){this.#resizeObserver=new ResizeObserver(()=>this.#resize());this.#resizeObserver.observe(this.#host);if(this.#host.parentElement)this.#resizeObserver.observe(this.#host.parentElement);}globalThis.addEventListener('resize',this.#resize);globalThis.visualViewport?.addEventListener('resize',this.#resize);}
-
-  #mountThree(){const T=this.#three,p=this.#quality.profile,canvas=document.createElement('canvas');canvas.className='universe-canvas';canvas.setAttribute('aria-label','Interactive Solana activity field');this.#host.append(canvas);const attrs={alpha:true,antialias:false,powerPreference:'high-performance',premultipliedAlpha:false};let context=null;try{context=canvas.getContext('webgl2',attrs);}catch{}if(!context){try{context=canvas.getContext('webgl',attrs)||canvas.getContext('experimental-webgl',attrs);}catch{}}if(!context)throw new Error('webgl-unavailable');this.#canvas=canvas;this.#renderer=new T.WebGLRenderer({canvas,context,antialias:false,alpha:true,powerPreference:'high-performance'});this.#renderer.setClearColor(0x000000,0);this.#renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,p.pixelRatio));this.#scene=new T.Scene();this.#camera=new T.PerspectiveCamera(55,1,.1,700);this.#camera.position.set(0,18,125);
-    this.#material=new T.ShaderMaterial({transparent:true,depthWrite:false,vertexColors:true,blending:T.AdditiveBlending,uniforms:{uPixelRatio:{value:this.#renderer.getPixelRatio()},uWarp:{value:0},uIntensity:{value:1}},vertexShader:`attribute float aSize;uniform float uPixelRatio;uniform float uWarp;uniform float uIntensity;varying vec3 vColor;void main(){vColor=color*uIntensity;vec3 warped=position;float depthSign=position.z>=0.0?1.0:-1.0;warped.z+=depthSign*uWarp*(25.0+abs(position.z)*2.2);vec4 mvPosition=modelViewMatrix*vec4(warped,1.0);gl_PointSize=aSize*uPixelRatio*(210.0/max(12.0,-mvPosition.z));gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`varying vec3 vColor;void main(){vec2 p=gl_PointCoord-vec2(0.5);float d=length(p);float core=smoothstep(0.18,0.0,d);float halo=smoothstep(0.5,0.12,d);float alpha=max(core,halo*0.55);gl_FragColor=vec4(vColor,alpha);}`});
-    this.#starMaterial=new T.PointsMaterial({color:0xcfd6e6,size:1.15,transparent:true,opacity:.42,depthWrite:false,blending:T.AdditiveBlending,sizeAttenuation:true});const sg=new T.BufferGeometry();sg.setAttribute('position',new T.BufferAttribute(this.#starfield.positions,3));this.#stars=new T.Points(sg,this.#starMaterial);this.#scene.add(this.#stars);this.#points=new T.Points(this.#geometryForSnapshot(this.#snapshot),this.#material);this.#scene.add(this.#points);
-    this.#quantumMaterial=new T.ShaderMaterial({transparent:true,depthWrite:false,vertexColors:true,blending:T.NormalBlending,uniforms:{uPixelRatio:{value:this.#renderer.getPixelRatio()},uAlpha:{value:0}},vertexShader:`attribute float aSize;attribute float aLight;attribute float aDepth;uniform float uPixelRatio;varying vec3 vColor;varying float vAlpha;void main(){float shade=mix(0.30,1.08,aLight);vec3 shadowTint=vec3(0.62,0.74,0.92);vColor=color*shade*mix(shadowTint,vec3(1.0),aLight);vAlpha=mix(0.35,1.0,1.0-aDepth);vec4 mvPosition=modelViewMatrix*vec4(position,1.0);gl_PointSize=aSize*uPixelRatio*(94.0/max(12.0,-mvPosition.z));gl_Position=projectionMatrix*mvPosition;}`,fragmentShader:`uniform float uAlpha;varying vec3 vColor;varying float vAlpha;void main(){vec2 p=gl_PointCoord-vec2(0.5);float d=length(p);if(d>0.5)discard;float core=smoothstep(0.19,0.03,d);float halo=smoothstep(0.42,0.18,d)*0.045;float alpha=max(core,halo)*uAlpha*vAlpha;gl_FragColor=vec4(vColor,alpha);}`});
-    this.#quantumPoints=new T.Points(new T.BufferGeometry(),this.#quantumMaterial);this.#quantumPoints.visible=false;this.#quantumPoints.frustumCulled=false;this.#scene.add(this.#quantumPoints);this.#backend='webgl';this.#bindCanvasInput(canvas);this.#observeHost();canvas.addEventListener('webglcontextlost',this.#onContextLost,{passive:false});this.#resize();this.#lastFrame=performance.now();this.#raf=requestAnimationFrame(this.#frame);}
-
-  #mountCanvas(){const canvas=document.createElement('canvas');canvas.className='universe-canvas';canvas.setAttribute('aria-label','Interactive Solana activity field');this.#host.append(canvas);this.#canvas=canvas;this.#ctx=canvas.getContext('2d',{alpha:true});this.#backend='canvas';this.#visible=this.#snapshot.particles.slice(0,this.#quality.profile.particleLimit);this.#bindCanvasInput(canvas);this.#observeHost();this.#resize();this.#lastFrame=performance.now();this.#raf=requestAnimationFrame(this.#frame);}
-  #onContextLost=(event)=>{event.preventDefault();if(this.#destroyed||this.#backend!=='webgl')return;this.#teardownGpu();this.#mountCanvas();};
-  #geometryForSnapshot(snapshot){const T=this.#three,visible=snapshot.particles.slice(0,this.#quality.profile.particleLimit),positions=new Float32Array(visible.length*3),colors=new Float32Array(visible.length*3),sizes=new Float32Array(visible.length);visible.forEach((e,i)=>{positions.set(e.position,i*3);colors.set(COLORS[e.category]??COLORS.unknown,i*3);sizes[i]=1.6+e.magnitudeBand*4.6;});const g=new T.BufferGeometry();g.setAttribute('position',new T.BufferAttribute(positions,3));g.setAttribute('color',new T.BufferAttribute(colors,3));g.setAttribute('aSize',new T.BufferAttribute(sizes,1));g.userData.entities=visible;this.#visible=visible;return g;}
-
-  #queueReplayEffects(effects){if(!Array.isArray(effects)||!effects.length)return;const now=performance.now(),particles=this.#points?.geometry?.userData?.entities||this.#visible||this.#snapshot?.particles||[];if(this.#backend==='webgl'&&this.#scene){const T=this.#three;for(const effect of effects.slice(0,32)){const color=REPLAY_COLOR[effect.hue]??REPLAY_COLOR.neutral,resolved=resolveFieldEffectPosition(effect,particles),[ax,ay,az]=resolved.position,g=new T.BufferGeometry();let object;if(effect.kind==='lightning'){const v=[];for(let i=0;i<5;i++){const jitter=(i===0||i===4)?0:(i%2===0?1:-1)*(2+effect.intensity*4);v.push(ax+jitter,ay+12-i*6,az+(i%2?2:-2)*effect.intensity);}g.setAttribute('position',new T.Float32BufferAttribute(v,3));object=new T.Line(g,new T.LineBasicMaterial({color:new T.Color(...color),transparent:true,opacity:effect.simulation?.32:.95,blending:T.AdditiveBlending}));}else{g.setAttribute('position',new T.Float32BufferAttribute([ax,ay,az],3));object=new T.Points(g,new T.PointsMaterial({color:new T.Color(...color),size:5+effect.intensity*12,transparent:true,opacity:effect.simulation?.26:.85,blending:T.AdditiveBlending,depthWrite:false}));}object.userData={born:now,life:450+effect.intensity*950,simulation:Boolean(effect.simulation),hue:effect.hue,intensity:effect.intensity,kind:effect.kind,position:resolved.position};this.#scene.add(object);this.#replayEffects.push(object);}return;}for(const effect of effects.slice(0,32)){const resolved=resolveFieldEffectPosition(effect,particles);this.#replayEffects.push({userData:{born:now,life:450+effect.intensity*950,hue:effect.hue,intensity:effect.intensity,kind:effect.kind,position:resolved.position,simulation:Boolean(effect.simulation)}});}}
-  #animateReplayEffects(now){for(let i=this.#replayEffects.length-1;i>=0;i--){const o=this.#replayEffects[i],progress=(now-o.userData.born)/o.userData.life;if(progress>=1){if(this.#backend==='webgl'){this.#scene?.remove(o);o.geometry?.dispose();o.material?.dispose();}this.#replayEffects.splice(i,1);continue;}if(this.#backend==='webgl'&&o.material){o.material.opacity=(o.userData.simulation?.32:.95)*(1-progress);o.scale.setScalar(1+progress*(o.isPoints?2.5:.35));if(o.userData.simulation)o.rotation.z=progress*.16;}}}
-
-  #clearHubObjects(){for(const o of this.#hubObjects){this.#scene?.remove(o);o.geometry?.dispose();o.material?.dispose();}this.#hubObjects=[];}
-  setInvestigationHub(hub){this.#investigationHub=hub||null;this.#clearHubObjects();if(!hub?.focusId)return hub||false;const entities=this.#points?.geometry?.userData?.entities||this.#visible||[],byId=new Map(entities.map(e=>[String(e.id),e])),focus=byId.get(String(hub.focusId));if(focus)this.focusEntity(focus);return hub;}
-  clearInvestigationHub(){this.#investigationHub=null;this.#clearHubObjects();return true;}
-  focusEntity(entity){if(!entity)return false;const focus=fieldFocusForEntity(entity);this.#cameraTarget={distance:focus.distance,yaw:this.#cameraTarget.yaw,pitch:this.#cameraTarget.pitch,target:[...focus.target]};return focus;}
-  focusRequest(request={}){const particles=this.#points?.geometry?.userData?.entities||this.#visible||this.#snapshot?.particles||[],entity=findFieldEntity(particles,request);return entity?this.focusEntity(entity):false;}
-  clearFocus(){this.#cameraTarget={distance:125,yaw:this.#cameraTarget.yaw,pitch:this.#cameraTarget.pitch,target:[0,0,0]};}
-
-  #buildQueryTargets(count,source){const targets=new Float32Array(count*3),mouth=new Uint8Array(count),flags=new Uint8Array(count),template=ALIEN_HEAD_TEMPLATE,tp=template?.positions,tr=template?.roles,tc=Number(template?.count)||0;if(!tp||!tr||tc<100)throw new Error('Quantum alien head template is unavailable');const surfaceCount=Math.floor(count*.72);for(let i=0;i<count;i++){const j=i*3,idx=Math.min(tc-1,Math.floor(hash01(i*7.137+19.31)*tc)),tj=idx*3,mx=tp[tj],my=tp[tj+1],mz=tp[tj+2],role=tr[idx];if(i<surfaceCount){targets[j]=mx;targets[j+1]=my;targets[j+2]=mz;if(role===5){flags[i]=3;mouth[i]=1;}else flags[i]=1;}else{const inward=.28+hash01(i*13.711+4.91)*.38;targets[j]=mx*inward;targets[j+1]=my*(.58+hash01(i*5.173+8.2)*.25);targets[j+2]=mz*inward;flags[i]=2;}}this.#queryTargets=targets;this.#queryMouth=mouth;this.#querySurfaceFlags=flags;if(source)this.#queryBasePositions=new Float32Array(source);}
-  #updateQueryBlend(elapsed){const target=this.#queryActive?1:0,s=1-Math.exp(-Math.max(1,elapsed)/260);this.#queryBlend+=(target-this.#queryBlend)*s;if(!this.#queryActive&&this.#queryBlend<.0005)this.#queryBlend=0;}
-  #canvasQueryPosition(entity,index,now){const original=entity?.position||[0,0,0];if(this.#queryBlend<=.0001)return original;const count=this.#visible?.length||0;if(!this.#queryTargets||this.#queryTargets.length!==count*3)this.#buildQueryTargets(count,null);const j=index*3,t=this.#queryTargets;if(!t||j+2>=t.length)return original;const blend=this.#queryBlend;return[original[0]+(t[j]-original[0])*blend,original[1]+(t[j+1]-original[1])*blend,original[2]+(t[j+2]-original[2])*blend];}
-  setQueryActive(active){this.#queryActive=Boolean(active);if(this.#queryActive){this.#queryBasePositions=null;this.#queryTargets=null;this.#queryMouth=null;this.#querySurfaceFlags=null;this.#quantumTargets=null;this.#quantumParents=null;this.#quantumRoles=null;this.#quantumPhases=null;this.#quantumLighting=null;this.#quantumDepth=null;this.#quantumCount=0;this.clearFocus();this.#cameraTarget={distance:125,yaw:0,pitch:0,target:[0,0,0]};}return this.#queryActive;}
-  #animateQueryParticles(now){if(this.#backend!=='webgl'||!this.#points?.geometry)return;const a=this.#points.geometry.getAttribute('position');if(!a?.array)return;const positions=a.array,count=a.count;if(!this.#queryBasePositions||this.#queryBasePositions.length!==positions.length||!this.#queryTargets||this.#queryTargets.length!==positions.length)this.#buildQueryTargets(count,positions);if(this.#queryBlend<.0005&&!this.#queryActive){if(this.#queryBasePositions){positions.set(this.#queryBasePositions);a.needsUpdate=true;}this.#queryBasePositions=null;this.#queryTargets=null;return;}const blend=this.#queryBlend,base=this.#queryBasePositions,target=this.#queryTargets;for(let i=0;i<count;i++){const j=i*3;positions[j]=base[j]+(target[j]-base[j])*blend;positions[j+1]=base[j+1]+(target[j+1]-base[j+1])*blend;positions[j+2]=base[j+2]+(target[j+2]-base[j+2])*blend;}a.needsUpdate=true;}
-
-  #buildQuantumMatter(){if(this.#backend!=='webgl'||!this.#points?.geometry||!this.#quantumPoints)return false;const T=this.#three,parentGeom=this.#points.geometry,parentPos=parentGeom.getAttribute('position'),parentColor=parentGeom.getAttribute('color');if(!parentPos?.array||!parentColor?.array||parentPos.count<1)return false;const parentCount=parentPos.count,memory=Number(globalThis.navigator?.deviceMemory||4),budget=memory>=8?LIVING_QUANTUM_ORGANISM.pointBudget.high:memory>=4?LIVING_QUANTUM_ORGANISM.pointBudget.normal:LIVING_QUANTUM_ORGANISM.pointBudget.low,childrenPerParent=Math.max(12,Math.min(72,Math.ceil(budget/parentCount))),count=parentCount*childrenPerParent,positions=new Float32Array(count*3),colors=new Float32Array(count*3),sizes=new Float32Array(count),parents=new Uint32Array(count),targets=new Float32Array(count*3),roles=new Uint8Array(count),phases=new Float32Array(count*3),lights=new Float32Array(count),depths=new Float32Array(count),template=ALIEN_HEAD_TEMPLATE,tp=template.positions,tr=template.roles,tc=template.count,layerCfg=LIVING_QUANTUM_ORGANISM.layers;for(let child=0;child<count;child++){const j=child*3,parent=child%parentCount,pj=parent*3;parents[child]=parent;positions[j]=parentPos.array[pj];positions[j+1]=parentPos.array[pj+1];positions[j+2]=parentPos.array[pj+2];const r=parentColor.array[pj],g=parentColor.array[pj+1],b=parentColor.array[pj+2];const idx=Math.min(tc-1,Math.floor(hash01(child*7.917+11.31)*tc)),tj=idx*3,role=tr[idx]||1;let sx=tp[tj],sy=tp[tj+1],sz=tp[tj+2];const basis=basisFromPoint(sx,sy,sz),q=hash01(child*17.133+3.17);let layer='dermal',depth=0;if(q>=layerCfg.dermal&&q<layerCfg.dermal+layerCfg.subdermal){layer='subdermal';depth=.32+.36*hash01(child*2.23);}else if(q>=layerCfg.dermal+layerCfg.subdermal){layer='core';depth=.72+.24*hash01(child*4.91);}const a=(hash01(child*3.41)-.5),bb=(hash01(child*5.77)-.5);const spread=layer==='dermal'?1.35:layer==='subdermal'?1.9:2.6;let tx=sx+basis.t[0]*a*spread+basis.b[0]*bb*spread-basis.n[0]*depth*8,ty=sy+basis.t[1]*a*spread+basis.b[1]*bb*spread-basis.n[1]*depth*8,tz=sz+basis.t[2]*a*spread+basis.b[2]*bb*spread-basis.n[2]*depth*8;if(layer==='core'){tx*=.56+.12*hash01(child*8.17);ty*=.72+.12*hash01(child*9.61);tz*=.56+.12*hash01(child*10.33);}for(let attempt=0;attempt<8&&isFacialVoid(tx,ty,tz);attempt++){tx+=basis.t[0]*(2.8+attempt*.5);ty+=basis.b[1]*(1.8+attempt*.3);tz-=Math.abs(basis.n[2])*(2.2+attempt*.3);}if(isFacialVoid(tx,ty,tz)){tz=-Math.abs(tz)-8;}const light=lightingForNormal(basis.n[0],basis.n[1],basis.n[2],depth);const identity=.78+.22*light;colors[j]=Math.min(1,r*identity);colors[j+1]=Math.min(1,g*identity);colors[j+2]=Math.min(1,b*identity);sizes[child]=layer==='dermal'?.12+hash01(child*2.371)*.10:layer==='subdermal'?.09+hash01(child*2.371)*.08:.07+hash01(child*2.371)*.06;targets[j]=tx;targets[j+1]=ty;targets[j+2]=tz;roles[child]=layer==='dermal'?(role===5?3:1):layer==='subdermal'?2:4;phases[j]=hash01(child*3.117)*Math.PI*2;phases[j+1]=hash01(child*5.731)*Math.PI*2;phases[j+2]=hash01(child*11.917)*Math.PI*2;lights[child]=light;depths[child]=depth;}
-    const geom=new T.BufferGeometry();geom.setAttribute('position',new T.BufferAttribute(positions,3));geom.setAttribute('color',new T.BufferAttribute(colors,3));geom.setAttribute('aSize',new T.BufferAttribute(sizes,1));geom.setAttribute('aLight',new T.BufferAttribute(lights,1));geom.setAttribute('aDepth',new T.BufferAttribute(depths,1));this.#quantumPoints.geometry?.dispose();this.#quantumPoints.geometry=geom;this.#quantumPoints.rotation.y=LIVING_QUANTUM_ORGANISM.orientationY;this.#quantumParents=parents;this.#quantumTargets=targets;this.#quantumRoles=roles;this.#quantumPhases=phases;this.#quantumLighting=lights;this.#quantumDepth=depths;this.#quantumCount=count;return true;}
-
-  #animateQuantumMatter(now){if(this.#backend!=='webgl'||!this.#quantumPoints||!this.#quantumMaterial)return;if(this.#queryActive&&(!this.#quantumCount||!this.#quantumTargets||!this.#quantumParents))this.#buildQuantumMatter();if(!this.#quantumCount||!this.#quantumTargets||!this.#quantumParents||!this.#quantumRoles||!this.#quantumPhases){this.#quantumPoints.visible=false;return;}const attr=this.#quantumPoints.geometry.getAttribute('position'),parentAttr=this.#points?.geometry?.getAttribute('position');if(!attr?.array||!parentAttr?.array){this.#quantumPoints.visible=false;return;}const positions=attr.array,parents=this.#quantumParents,targets=this.#quantumTargets,roles=this.#quantumRoles,phases=this.#quantumPhases,blend=Math.max(0,Math.min(1,this.#queryBlend)),morph=blend*blend*(3-2*blend),time=now*.001,parentPositions=parentAttr.array;this.#quantumPoints.visible=blend>.001||this.#queryActive;this.#quantumMaterial.uniforms.uAlpha.value=Math.min(LIVING_QUANTUM_ORGANISM.shader.alpha,blend*.94);for(let child=0;child<this.#quantumCount;child++){const j=child*3,pj=parents[child]*3,px=parentPositions[pj],py=parentPositions[pj+1],pz=parentPositions[pj+2];let tx=targets[j],ty=targets[j+1],tz=targets[j+2];const role=roles[child],px1=phases[j],py1=phases[j+1],pz1=phases[j+2];if(role===2){tx+=Math.sin(time*.55+px1)*.55;ty+=Math.cos(time*.43+py1)*.45;tz+=Math.sin(time*.61+pz1)*.60;}else if(role===4){tx+=Math.sin(time*.31+px1)*1.15;ty+=Math.cos(time*.27+py1)*.85;tz+=Math.sin(time*.37+pz1)*1.25;}else{tx+=Math.sin(time*.91+px1)*.07;ty+=Math.cos(time*.83+py1)*.06;tz+=Math.sin(time*.77+pz1)*.08;}if(role===3){const speech=Math.sin(time*6.8+px1);ty+=speech*.22;tz+=Math.abs(speech)*.08;}positions[j]=px+(tx-px)*morph;positions[j+1]=py+(ty-py)*morph;positions[j+2]=pz+(tz-pz)*morph;}attr.needsUpdate=true;this.#quantumPoints.scale.copy(this.#points.scale);this.#quantumPoints.rotation.x=this.#points.rotation.x;this.#quantumPoints.rotation.z=this.#points.rotation.z;}
-
-  setMode(mode='explore'){this.#mode=Object.hasOwn(MODE_STYLE,mode)?mode:'explore';this.#modeTarget=[...MODE_STYLE[this.#mode]];if(this.#mode!=='trickster'){this.#storyField=null;if(this.#mode==='explore'&&!this.#investigationHub)this.clearFocus();}return this.#mode;}
-  updateSnapshot(snapshot){if(!snapshot?.particles)throw new TypeError('valid snapshot is required');this.#snapshot=snapshot;this.#visible=snapshot.particles.slice(0,this.#quality.profile.particleLimit);if(this.#backend==='webgl'&&this.#points){const prev=this.#points.geometry;this.#points.geometry=this.#geometryForSnapshot(snapshot);prev.dispose();this.#quantumTargets=null;this.#quantumParents=null;this.#quantumRoles=null;this.#quantumPhases=null;this.#quantumCount=0;return;}}
-  #resize=()=>{const{width,height}=hostSize(this.#host);if(this.#backend==='webgl'&&this.#renderer){this.#renderer.setSize(width,height,false);this.#camera.aspect=width/height;this.#camera.updateProjectionMatrix();if(this.#quantumMaterial)this.#quantumMaterial.uniforms.uPixelRatio.value=this.#renderer.getPixelRatio();return;}if(this.#backend==='canvas'&&this.#canvas&&this.#ctx){const ratio=Math.min(globalThis.devicePixelRatio||1,2);this.#canvas.width=Math.floor(width*ratio);this.#canvas.height=Math.floor(height*ratio);this.#canvas.style.width=`${width}px`;this.#canvas.style.height=`${height}px`;this.#ctx.setTransform(ratio,0,0,ratio,0,0);}};
-  #onPointerDown=(e)=>{this.#pointer={active:true,x:e.clientX,y:e.clientY,moved:false,id:e.pointerId};e.currentTarget.setPointerCapture?.(e.pointerId);};#onPointerMove=(e)=>{if(!this.#pointer.active)return;const dx=e.clientX-this.#pointer.x,dy=e.clientY-this.#pointer.y;if(Math.abs(dx)+Math.abs(dy)>4)this.#pointer.moved=true;this.#cameraTarget.yaw+=dx*.005;this.#cameraTarget.pitch=Math.max(-.9,Math.min(.9,this.#cameraTarget.pitch+dy*.004));this.#pointer.x=e.clientX;this.#pointer.y=e.clientY;};#onPointerUp=(e)=>{this.#pointer.active=false;e.currentTarget.releasePointerCapture?.(e.pointerId);};#onGlobalPointerUp=()=>{this.#pointer.active=false;};#onVisibility=()=>{if(document.hidden)this.#pointer.active=false;};#onWheel=(e)=>{e.preventDefault();this.#cameraTarget.distance=Math.max(48,Math.min(260,this.#cameraTarget.distance+e.deltaY*.08));};#onClick=(e)=>{if(this.#pointer.moved)return;if(this.#backend==='webgl')this.#pickWebgl(e);else this.#pickCanvas(e);};
-  #pickWebgl(event){const T=this.#three,rect=this.#renderer.domElement.getBoundingClientRect(),pointer=new T.Vector2(((event.clientX-rect.left)/rect.width)*2-1,-((event.clientY-rect.top)/rect.height)*2+1),ray=new T.Raycaster();ray.params.Points={threshold:2.8};ray.setFromCamera(pointer,this.#camera);const hit=ray.intersectObject(this.#points,false)[0];if(!hit)return;const entity=this.#points.geometry.userData.entities[hit.index];if(entity)this.#selectEntity(entity);}
-  #projectPoint(position,width,height){const cam=this.#cameraTarget,[tx,ty,tz]=cam.target||[0,0,0];let x=position[0]-tx,y=position[1]-ty,z=position[2]-tz;const cy=Math.cos(cam.yaw),sy=Math.sin(cam.yaw),x1=x*cy-z*sy,z1=x*sy+z*cy,cp=Math.cos(cam.pitch),sp=Math.sin(cam.pitch),y1=y*cp-z1*sp,z2=y*sp+z1*cp,depth=z2+cam.distance,scale=(Math.min(width,height)*.92)/Math.max(18,depth);return{x:width/2+x1*scale,y:height/2-y1*scale,depth,scale};}
-  #pickCanvas(event){const rect=this.#canvas.getBoundingClientRect(),px=event.clientX-rect.left,py=event.clientY-rect.top;let best=null,bestDist=18;for(const e of this.#visible){const p=this.#projectPoint(e.position,rect.width,rect.height),d=Math.hypot(p.x-px,p.y-py);if(p.depth>=8&&d<bestDist){best=e;bestDist=d;}}if(best)this.#selectEntity(best);}
-  #selectEntity(entity){this.focusEntity(entity);this.#destinationReady=false;this.#transition.start(entity);this.#onSelect?.(entity,destinationForEntity(entity),this.#transition);}
-  #drawCanvas(now,warp){const ctx=this.#ctx,{width,height}=hostSize(this.#host);ctx.clearRect(0,0,width,height);ctx.save();ctx.globalCompositeOperation='lighter';for(let i=0;i<this.#visible.length;i++){const e=this.#visible[i],pos=this.#canvasQueryPosition(e,i,now),p=this.#projectPoint(pos,width,height);if(p.depth<6)continue;const color=COLORS[e.category]??COLORS.unknown,size=Math.max(1.2,(1.4+e.magnitudeBand*4.2)*(90/p.depth)*this.#modeCurrent[1]),alpha=Math.max(.18,Math.min(.95,(22/p.depth)*this.#modeCurrent[0]));ctx.fillStyle=cssRgb(color,alpha);ctx.beginPath();ctx.arc(p.x+warp*(pos[0]*.4),p.y,size*.45,0,Math.PI*2);ctx.fill();}ctx.restore();}
-
-  #frame=(now)=>{if(this.#destroyed)return;const elapsed=now-this.#lastFrame;this.#lastFrame=now;this.#quality.sample(elapsed);const transition=this.#transition.update(now,this.#destinationReady),warp=transition.state==='accelerating'?Math.min(1,Math.max(0,(transition.elapsed-350)/900)):transition.state==='whiteout'?1:0;if(this.#phaseEffect&&now>=this.#phaseUntil)this.#phaseEffect=null;const phase=this.#phaseEffect,story=this.#storyField,target=[this.#modeTarget[0]*(phase?.intensity??story?.intensity??1),this.#modeTarget[1]*(phase?.scale??story?.scale??1),this.#modeTarget[2]+(phase?.rotation??0)];for(let i=0;i<3;i++)this.#modeCurrent[i]+=(target[i]-this.#modeCurrent[i])*.045;if(!this.#reducedMotion&&!this.#pointer.active&&!this.#queryActive&&this.#queryBlend<.02)this.#cameraTarget.yaw+=elapsed*this.#autoSpin*Math.max(.7,this.#modeCurrent[0]||1);this.#animateReplayEffects(now);this.#updateQueryBlend(elapsed);this.#animateQueryParticles(now);this.#animateQuantumMatter(now);if(this.#backend==='webgl'){this.#material.uniforms.uWarp.value=warp;const qb=Math.max(0,Math.min(1,this.#queryBlend));this.#material.uniforms.uIntensity.value=this.#modeCurrent[0]*(1-qb*.995);this.#points.scale.setScalar(this.#modeCurrent[1]*(1-qb*.88));this.#points.rotation.z=this.#modeCurrent[2];if(qb>.001){this.#points.rotation.y*=.92;this.#points.rotation.x*=.92;}else if(!this.#reducedMotion&&!this.#pointer.active)this.#points.rotation.y+=elapsed*.00009;if(!this.#reducedMotion&&!this.#pointer.active&&this.#stars)this.#stars.rotation.y+=elapsed*.00005;const c=this.#cameraTarget,[tx,ty,tz]=c.target||[0,0,0],desiredX=tx+Math.sin(c.yaw)*c.distance,desiredY=ty+Math.sin(c.pitch)*c.distance,desiredZ=tz+Math.cos(c.yaw)*c.distance,follow=this.#pointer.active?.22:.16;this.#camera.position.x+=(desiredX-this.#camera.position.x)*follow;this.#camera.position.y+=(desiredY-this.#camera.position.y)*follow;this.#camera.position.z+=(desiredZ-this.#camera.position.z)*follow;this.#camera.lookAt(tx,ty,tz);this.#renderer.render(this.#scene,this.#camera);}else this.#drawCanvas(now,warp);this.#raf=requestAnimationFrame(this.#frame);};
-
-  cancelTransition(){this.#destinationReady=false;return this.#transition.cancel(performance.now());}markDestinationReady(){this.#destinationReady=true;return this.#transition.update(performance.now(),true);}get backend(){return this.#backend;}
-  #teardownGpu(){cancelAnimationFrame(this.#raf);this.#unbindCanvasInput(this.#canvas);this.#canvas?.removeEventListener('webglcontextlost',this.#onContextLost);this.#clearHubObjects();for(const o of this.#replayEffects){this.#scene?.remove(o);o.geometry?.dispose();o.material?.dispose();}this.#replayEffects=[];this.#quantumPoints?.geometry?.dispose();this.#quantumMaterial?.dispose();this.#points?.geometry?.dispose();this.#stars?.geometry?.dispose();this.#material?.dispose();this.#starMaterial?.dispose();this.#renderer?.dispose();this.#renderer?.domElement?.remove();this.#canvas?.remove();this.#renderer=null;this.#scene=null;this.#camera=null;this.#points=null;this.#stars=null;this.#material=null;this.#starMaterial=null;this.#quantumPoints=null;this.#quantumMaterial=null;this.#canvas=null;this.#ctx=null;this.#backend='none';}
-  destroy(){this.#destroyed=true;cancelAnimationFrame(this.#raf);this.#resizeObserver?.disconnect();globalThis.removeEventListener('resize',this.#resize);globalThis.visualViewport?.removeEventListener('resize',this.#resize);globalThis.removeEventListener('abulls:field-mode',this.#onMode);globalThis.removeEventListener('abulls:query-state',this.#onQueryState);globalThis.removeEventListener('abulls:field-replay-events',this.#onReplay);globalThis.removeEventListener('abulls:temporal-replay-events',this.#onTemporalReplay);globalThis.removeEventListener('abulls:field-market-phase',this.#onMarketPhase);globalThis.removeEventListener('abulls:field-story-scene',this.#onStoryScene);this.#teardownGpu();}
+function capabilitiesFromBrowser() {
+  const c2 = document.createElement("canvas"),
+    c1 = document.createElement("canvas");
+  let w2 = false,
+    w = false;
+  try {
+    w2 = Boolean(c2.getContext("webgl2"));
+  } catch {}
+  try {
+    w = Boolean(c1.getContext("webgl") || c1.getContext("experimental-webgl"));
+  } catch {}
+  return {
+    webgl2: w2,
+    webgl: w || w2,
+    webgpu: Boolean(globalThis.navigator?.gpu),
+    deviceMemory: Number(globalThis.navigator?.deviceMemory ?? 0),
+    saveData: Boolean(globalThis.navigator?.connection?.saveData),
+    reducedMotion:
+      globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ??
+      false,
+  };
+}
+function createStarfield(count = 480, seed = 42) {
+  let value = seed >>> 0;
+  const random = () => {
+    value += 0x6d2b79f5;
+    let t = value;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const positions = new Float32Array(count * 3),
+    sizes = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const radius = 90 + random() * 170,
+      angle = random() * Math.PI * 2,
+      vertical = (random() - 0.5) * 150;
+    positions[i * 3] = Math.cos(angle) * radius;
+    positions[i * 3 + 1] = vertical;
+    positions[i * 3 + 2] = Math.sin(angle) * radius;
+    sizes[i] = 0.35 + random() * 1.35;
+  }
+  return { positions, sizes, count };
+}
+function hostSize(host) {
+  const p = host.parentElement;
+  return {
+    width: Math.max(
+      1,
+      host.clientWidth || 0,
+      p?.clientWidth || 0,
+      globalThis.innerWidth || 1,
+    ),
+    height: Math.max(
+      1,
+      host.clientHeight || 0,
+      p?.clientHeight || 0,
+      globalThis.innerHeight || 1,
+    ),
+  };
+}
+function cssRgb([r, g, b], a = 1) {
+  return `rgba(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)},${a})`;
 }
 
-export const UniverseCategoryColor=CSS_COLOR;
+export class UniverseRenderer {
+  #host;
+  #snapshot;
+  #three;
+  #renderer;
+  #scene;
+  #camera;
+  #points;
+  #stars;
+  #material;
+  #starMaterial;
+  #raf = 0;
+  #lastFrame = 0;
+  #quality;
+  #transition = new HyperspaceTransition();
+  #onSelect;
+  #destroyed = false;
+  #destinationReady = false;
+  #mode = "explore";
+  #modeTarget = [1, 1, 0];
+  #modeCurrent = [1, 1, 0];
+  #onMode;
+  #onReplay;
+  #onTemporalReplay;
+  #onMarketPhase;
+  #onStoryScene;
+  #replayEffects = [];
+  #phaseEffect = null;
+  #phaseUntil = 0;
+  #storyField = null;
+  #cameraTarget = { distance: 125, yaw: 0.4, pitch: 0.18, target: [0, 0, 0] };
+  #investigationHub = null;
+  #hubObjects = [];
+  #backend = "none";
+  #canvas = null;
+  #ctx = null;
+  #visible = [];
+  #starfield = createStarfield();
+  #pointer = { active: false, x: 0, y: 0, moved: false };
+  #queryActive = Boolean(globalThis.__ABULLS_QUERY_ACTIVE);
+  #queryBlend = 0;
+  #queryBasePositions = null;
+  #queryTargets = null;
+  #queryMouth = null;
+  #querySurfaceFlags = null;
+  #quantumPoints = null;
+  #quantumMaterial = null;
+  #quantumParents = null;
+  #quantumTargets = null;
+  #quantumRoles = null;
+  #quantumPhases = null;
+  #quantumCount = 0;
+  #quantumLighting = null;
+  #quantumDepth = null;
+  #queryFeatures = null;
+  #queryFeatureMaterials = [];
+  #queryMouthMesh = null;
+  #speechLevel = 0;
+  #resizeObserver = null;
+  #reducedMotion = false;
+  #autoSpin = 0.00042;
+  #onQueryState = (event) =>
+    this.setQueryActive(Boolean(event?.detail?.active));
+  #onQuerySpeech = (event) => {
+    this.#speechLevel = event?.detail?.active
+      ? Math.max(0, Math.min(1, Number(event?.detail?.level) || 0))
+      : 0;
+  };
+
+  constructor({
+    host,
+    snapshot,
+    THREE,
+    onSelect,
+    capabilities = capabilitiesFromBrowser(),
+  }) {
+    if (!(host instanceof Element))
+      throw new TypeError("host element is required");
+    this.#host = host;
+    this.#snapshot = snapshot;
+    this.#three = THREE;
+    this.#onSelect = onSelect;
+    this.#reducedMotion = Boolean(capabilities.reducedMotion);
+    const tier = initialUniverseQuality(capabilities);
+    this.#quality = new FrameBudgetController(tier, capabilities);
+    this.#onMode = (e) => this.setMode(e?.detail?.mode);
+    this.#onReplay = (e) => this.#queueReplayEffects(e?.detail?.effects);
+    this.#onTemporalReplay = (e) =>
+      this.#queueReplayEffects(fieldReplayBurst(e?.detail?.events || []));
+    this.#onMarketPhase = (e) => {
+      const effect = e?.detail?.effect;
+      if (!effect) return;
+      this.#phaseEffect = effect;
+      this.#phaseUntil = performance.now() + 3600;
+      this.setMode("sequences");
+    };
+    this.#onStoryScene = (e) => {
+      const state = e?.detail;
+      if (!state?.camera || !state?.field) return;
+      this.#storyField = state.field;
+      this.#cameraTarget = {
+        distance: Number(state.camera.distance) || 125,
+        yaw: Number(state.camera.yaw) || 0,
+        pitch: Number(state.camera.pitch) || 0,
+        target: [0, 0, 0],
+      };
+      this.setMode("trickster");
+    };
+    globalThis.addEventListener("abulls:field-mode", this.#onMode);
+    globalThis.addEventListener("abulls:query-state", this.#onQueryState);
+    globalThis.addEventListener("abulls:query-speech", this.#onQuerySpeech);
+    globalThis.addEventListener("abulls:field-replay-events", this.#onReplay);
+    globalThis.addEventListener(
+      "abulls:temporal-replay-events",
+      this.#onTemporalReplay,
+    );
+    globalThis.addEventListener(
+      "abulls:field-market-phase",
+      this.#onMarketPhase,
+    );
+    globalThis.addEventListener("abulls:field-story-scene", this.#onStoryScene);
+    if (THREE) {
+      try {
+        this.#mountThree();
+        return;
+      } catch {
+        this.#teardownGpu();
+      }
+    }
+    this.#mountCanvas();
+  }
+
+  #bindCanvasInput(canvas) {
+    canvas.addEventListener("pointerdown", this.#onPointerDown);
+    canvas.addEventListener("pointermove", this.#onPointerMove);
+    canvas.addEventListener("pointerup", this.#onPointerUp);
+    canvas.addEventListener("pointercancel", this.#onPointerUp);
+    canvas.addEventListener("wheel", this.#onWheel, { passive: false });
+    canvas.addEventListener("click", this.#onClick);
+    globalThis.addEventListener("pointerup", this.#onGlobalPointerUp);
+    globalThis.addEventListener("pointercancel", this.#onGlobalPointerUp);
+    document.addEventListener("visibilitychange", this.#onVisibility);
+  }
+  #unbindCanvasInput(canvas) {
+    canvas?.removeEventListener("pointerdown", this.#onPointerDown);
+    canvas?.removeEventListener("pointermove", this.#onPointerMove);
+    canvas?.removeEventListener("pointerup", this.#onPointerUp);
+    canvas?.removeEventListener("pointercancel", this.#onPointerUp);
+    canvas?.removeEventListener("wheel", this.#onWheel);
+    canvas?.removeEventListener("click", this.#onClick);
+    globalThis.removeEventListener("pointerup", this.#onGlobalPointerUp);
+    globalThis.removeEventListener("pointercancel", this.#onGlobalPointerUp);
+    document.removeEventListener("visibilitychange", this.#onVisibility);
+  }
+  #observeHost() {
+    this.#resizeObserver?.disconnect();
+    if (typeof ResizeObserver === "function") {
+      this.#resizeObserver = new ResizeObserver(() => this.#resize());
+      this.#resizeObserver.observe(this.#host);
+      if (this.#host.parentElement)
+        this.#resizeObserver.observe(this.#host.parentElement);
+    }
+    globalThis.addEventListener("resize", this.#resize);
+    globalThis.visualViewport?.addEventListener("resize", this.#resize);
+  }
+
+  #mountThree() {
+    const T = this.#three,
+      p = this.#quality.profile,
+      canvas = document.createElement("canvas");
+    canvas.className = "universe-canvas";
+    canvas.setAttribute("aria-label", "Interactive Solana activity field");
+    this.#host.append(canvas);
+    const attrs = {
+      alpha: true,
+      antialias: false,
+      powerPreference: "high-performance",
+      premultipliedAlpha: false,
+    };
+    let context = null;
+    try {
+      context = canvas.getContext("webgl2", attrs);
+    } catch {}
+    if (!context) {
+      try {
+        context =
+          canvas.getContext("webgl", attrs) ||
+          canvas.getContext("experimental-webgl", attrs);
+      } catch {}
+    }
+    if (!context) throw new Error("webgl-unavailable");
+    this.#canvas = canvas;
+    this.#renderer = new T.WebGLRenderer({
+      canvas,
+      context,
+      antialias: false,
+      alpha: true,
+      powerPreference: "high-performance",
+    });
+    this.#renderer.setClearColor(0x000000, 0);
+    this.#renderer.setPixelRatio(
+      Math.min(globalThis.devicePixelRatio || 1, p.pixelRatio),
+    );
+    this.#scene = new T.Scene();
+    this.#camera = new T.PerspectiveCamera(55, 1, 0.1, 700);
+    this.#camera.position.set(0, 18, 125);
+    this.#material = new T.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      vertexColors: true,
+      blending: T.AdditiveBlending,
+      uniforms: {
+        uPixelRatio: { value: this.#renderer.getPixelRatio() },
+        uWarp: { value: 0 },
+        uIntensity: { value: 1 },
+      },
+      vertexShader: `attribute float aSize;uniform float uPixelRatio;uniform float uWarp;uniform float uIntensity;varying vec3 vColor;void main(){vColor=color*uIntensity;vec3 warped=position;float depthSign=position.z>=0.0?1.0:-1.0;warped.z+=depthSign*uWarp*(25.0+abs(position.z)*2.2);vec4 mvPosition=modelViewMatrix*vec4(warped,1.0);gl_PointSize=aSize*uPixelRatio*(184.0/max(12.0,-mvPosition.z));gl_Position=projectionMatrix*mvPosition;}`,
+      fragmentShader: `varying vec3 vColor;void main(){vec2 p=gl_PointCoord-vec2(0.5);float d=length(p);if(d>0.5)discard;float core=smoothstep(0.16,0.0,d);float halo=smoothstep(0.42,0.16,d);float alpha=max(core,halo*0.28);gl_FragColor=vec4(vColor,alpha);}`,
+    });
+    this.#starMaterial = new T.PointsMaterial({
+      color: 0xcfd6e6,
+      size: 1.15,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+      blending: T.AdditiveBlending,
+      sizeAttenuation: true,
+    });
+    const sg = new T.BufferGeometry();
+    sg.setAttribute(
+      "position",
+      new T.BufferAttribute(this.#starfield.positions, 3),
+    );
+    this.#stars = new T.Points(sg, this.#starMaterial);
+    this.#scene.add(this.#stars);
+    this.#points = new T.Points(
+      this.#geometryForSnapshot(this.#snapshot),
+      this.#material,
+    );
+    this.#scene.add(this.#points);
+    this.#quantumMaterial = new T.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      vertexColors: true,
+      blending: T.NormalBlending,
+      uniforms: {
+        uPixelRatio: { value: this.#renderer.getPixelRatio() },
+        uAlpha: { value: 0 },
+      },
+      vertexShader: `attribute float aSize;attribute float aLight;attribute float aDepth;uniform float uPixelRatio;varying vec3 vColor;varying float vAlpha;void main(){float shade=mix(0.54,1.18,aLight);vec3 organismTint=vec3(0.30,0.56,0.78);vec3 livingColor=mix(color,organismTint,0.44);vColor=min(vec3(1.0),livingColor*shade*1.36);vAlpha=mix(0.58,1.0,1.0-aDepth);vec4 mvPosition=modelViewMatrix*vec4(position,1.0);float projected=aSize*uPixelRatio*(236.0/max(12.0,-mvPosition.z));gl_PointSize=max(1.18*uPixelRatio,projected);gl_Position=projectionMatrix*mvPosition;}`,
+      fragmentShader: `uniform float uAlpha;varying vec3 vColor;varying float vAlpha;void main(){vec2 p=gl_PointCoord-vec2(0.5);float d=length(p);if(d>0.5)discard;float core=smoothstep(0.22,0.025,d);float halo=smoothstep(0.46,0.18,d)*0.12;float alpha=max(core,halo)*uAlpha*vAlpha;gl_FragColor=vec4(vColor,alpha);}`,
+    });
+    this.#quantumPoints = new T.Points(
+      new T.BufferGeometry(),
+      this.#quantumMaterial,
+    );
+    this.#quantumPoints.visible = false;
+    this.#quantumPoints.frustumCulled = false;
+    this.#scene.add(this.#quantumPoints);
+    this.#buildQueryFeatures();
+    this.#backend = "webgl";
+    this.#bindCanvasInput(canvas);
+    this.#observeHost();
+    canvas.addEventListener("webglcontextlost", this.#onContextLost, {
+      passive: false,
+    });
+    this.#resize();
+    this.#lastFrame = performance.now();
+    this.#raf = requestAnimationFrame(this.#frame);
+  }
+
+  #mountCanvas() {
+    const canvas = document.createElement("canvas");
+    canvas.className = "universe-canvas";
+    canvas.setAttribute("aria-label", "Interactive Solana activity field");
+    this.#host.append(canvas);
+    this.#canvas = canvas;
+    this.#ctx = canvas.getContext("2d", { alpha: true });
+    this.#backend = "canvas";
+    this.#visible = this.#snapshot.particles.slice(
+      0,
+      this.#quality.profile.particleLimit,
+    );
+    this.#bindCanvasInput(canvas);
+    this.#observeHost();
+    this.#resize();
+    this.#lastFrame = performance.now();
+    this.#raf = requestAnimationFrame(this.#frame);
+  }
+  #onContextLost = (event) => {
+    event.preventDefault();
+    if (this.#destroyed || this.#backend !== "webgl") return;
+    this.#teardownGpu();
+    this.#mountCanvas();
+  };
+  #geometryForSnapshot(snapshot) {
+    const T = this.#three,
+      visible = snapshot.particles.slice(
+        0,
+        this.#quality.profile.particleLimit,
+      ),
+      positions = new Float32Array(visible.length * 3),
+      colors = new Float32Array(visible.length * 3),
+      sizes = new Float32Array(visible.length);
+    visible.forEach((e, i) => {
+      positions.set(e.position, i * 3);
+      colors.set(COLORS[e.category] ?? COLORS.unknown, i * 3);
+      sizes[i] = 1.6 + e.magnitudeBand * 4.6;
+    });
+    const g = new T.BufferGeometry();
+    g.setAttribute("position", new T.BufferAttribute(positions, 3));
+    g.setAttribute("color", new T.BufferAttribute(colors, 3));
+    g.setAttribute("aSize", new T.BufferAttribute(sizes, 1));
+    g.userData.entities = visible;
+    this.#visible = visible;
+    return g;
+  }
+
+  #queueReplayEffects(effects) {
+    if (!Array.isArray(effects) || !effects.length) return;
+    const now = performance.now(),
+      particles =
+        this.#points?.geometry?.userData?.entities ||
+        this.#visible ||
+        this.#snapshot?.particles ||
+        [];
+    if (this.#backend === "webgl" && this.#scene) {
+      const T = this.#three;
+      for (const effect of effects.slice(0, 32)) {
+        const color = REPLAY_COLOR[effect.hue] ?? REPLAY_COLOR.neutral,
+          resolved = resolveFieldEffectPosition(effect, particles),
+          [ax, ay, az] = resolved.position,
+          g = new T.BufferGeometry();
+        let object;
+        if (effect.kind === "lightning") {
+          const v = [];
+          for (let i = 0; i < 5; i++) {
+            const jitter =
+              i === 0 || i === 4
+                ? 0
+                : (i % 2 === 0 ? 1 : -1) * (2 + effect.intensity * 4);
+            v.push(
+              ax + jitter,
+              ay + 12 - i * 6,
+              az + (i % 2 ? 2 : -2) * effect.intensity,
+            );
+          }
+          g.setAttribute("position", new T.Float32BufferAttribute(v, 3));
+          object = new T.Line(
+            g,
+            new T.LineBasicMaterial({
+              color: new T.Color(...color),
+              transparent: true,
+              opacity: effect.simulation ? 0.32 : 0.95,
+              blending: T.AdditiveBlending,
+            }),
+          );
+        } else {
+          g.setAttribute(
+            "position",
+            new T.Float32BufferAttribute([ax, ay, az], 3),
+          );
+          object = new T.Points(
+            g,
+            new T.PointsMaterial({
+              color: new T.Color(...color),
+              size: 5 + effect.intensity * 12,
+              transparent: true,
+              opacity: effect.simulation ? 0.26 : 0.85,
+              blending: T.AdditiveBlending,
+              depthWrite: false,
+            }),
+          );
+        }
+        object.userData = {
+          born: now,
+          life: 450 + effect.intensity * 950,
+          simulation: Boolean(effect.simulation),
+          hue: effect.hue,
+          intensity: effect.intensity,
+          kind: effect.kind,
+          position: resolved.position,
+        };
+        this.#scene.add(object);
+        this.#replayEffects.push(object);
+      }
+      return;
+    }
+    for (const effect of effects.slice(0, 32)) {
+      const resolved = resolveFieldEffectPosition(effect, particles);
+      this.#replayEffects.push({
+        userData: {
+          born: now,
+          life: 450 + effect.intensity * 950,
+          hue: effect.hue,
+          intensity: effect.intensity,
+          kind: effect.kind,
+          position: resolved.position,
+          simulation: Boolean(effect.simulation),
+        },
+      });
+    }
+  }
+  #animateReplayEffects(now) {
+    for (let i = this.#replayEffects.length - 1; i >= 0; i--) {
+      const o = this.#replayEffects[i],
+        progress = (now - o.userData.born) / o.userData.life;
+      if (progress >= 1) {
+        if (this.#backend === "webgl") {
+          this.#scene?.remove(o);
+          o.geometry?.dispose();
+          o.material?.dispose();
+        }
+        this.#replayEffects.splice(i, 1);
+        continue;
+      }
+      if (this.#backend === "webgl" && o.material) {
+        o.material.opacity =
+          (o.userData.simulation ? 0.32 : 0.95) * (1 - progress);
+        o.scale.setScalar(1 + progress * (o.isPoints ? 2.5 : 0.35));
+        if (o.userData.simulation) o.rotation.z = progress * 0.16;
+      }
+    }
+  }
+
+  #clearHubObjects() {
+    for (const o of this.#hubObjects) {
+      this.#scene?.remove(o);
+      o.geometry?.dispose();
+      o.material?.dispose();
+    }
+    this.#hubObjects = [];
+  }
+  setInvestigationHub(hub) {
+    this.#investigationHub = hub || null;
+    this.#clearHubObjects();
+    if (!hub?.focusId) return hub || false;
+    const entities =
+        this.#points?.geometry?.userData?.entities || this.#visible || [],
+      byId = new Map(entities.map((e) => [String(e.id), e])),
+      focus = byId.get(String(hub.focusId));
+    if (focus) this.focusEntity(focus);
+    return hub;
+  }
+  clearInvestigationHub() {
+    this.#investigationHub = null;
+    this.#clearHubObjects();
+    return true;
+  }
+  focusEntity(entity) {
+    if (!entity) return false;
+    const focus = fieldFocusForEntity(entity);
+    this.#cameraTarget = {
+      distance: focus.distance,
+      yaw: this.#cameraTarget.yaw,
+      pitch: this.#cameraTarget.pitch,
+      target: [...focus.target],
+    };
+    return focus;
+  }
+  focusRequest(request = {}) {
+    const particles =
+        this.#points?.geometry?.userData?.entities ||
+        this.#visible ||
+        this.#snapshot?.particles ||
+        [],
+      entity = findFieldEntity(particles, request);
+    return entity ? this.focusEntity(entity) : false;
+  }
+  clearFocus() {
+    this.#cameraTarget = {
+      distance: 125,
+      yaw: this.#cameraTarget.yaw,
+      pitch: this.#cameraTarget.pitch,
+      target: [0, 0, 0],
+    };
+  }
+
+  #buildQueryTargets(count, source) {
+    const targets = new Float32Array(count * 3),
+      mouth = new Uint8Array(count),
+      flags = new Uint8Array(count),
+      template = ALIEN_HEAD_TEMPLATE,
+      tp = template?.positions,
+      tr = template?.roles,
+      tc = Number(template?.count) || 0;
+    if (!tp || !tr || tc < 100)
+      throw new Error("Quantum alien head template is unavailable");
+    const surfaceCount = Math.floor(count * 0.72);
+    for (let i = 0; i < count; i++) {
+      const j = i * 3,
+        idx = Math.min(tc - 1, Math.floor(hash01(i * 7.137 + 19.31) * tc)),
+        tj = idx * 3,
+        mx = tp[tj],
+        rawY = tp[tj + 1],
+        my = rawY > 36 ? 36 + (1 - Math.exp(-(rawY - 36) / 7)) * 11 : rawY,
+        mz = tp[tj + 2],
+        role = tr[idx];
+      if (i < surfaceCount) {
+        targets[j] = mx;
+        targets[j + 1] = my;
+        targets[j + 2] = mz;
+        if (role === 5) {
+          flags[i] = 3;
+          mouth[i] = 1;
+        } else flags[i] = 1;
+      } else {
+        const inward = 0.28 + hash01(i * 13.711 + 4.91) * 0.38;
+        targets[j] = mx * inward;
+        targets[j + 1] = my * (0.58 + hash01(i * 5.173 + 8.2) * 0.25);
+        targets[j + 2] = mz * inward;
+        flags[i] = 2;
+      }
+    }
+    this.#queryTargets = targets;
+    this.#queryMouth = mouth;
+    this.#querySurfaceFlags = flags;
+    if (source) this.#queryBasePositions = new Float32Array(source);
+  }
+  #updateQueryBlend(elapsed) {
+    const target = this.#queryActive ? 1 : 0,
+      s =
+        1 - Math.exp(-Math.max(1, elapsed) / (this.#reducedMotion ? 260 : 760));
+    this.#queryBlend += (target - this.#queryBlend) * s;
+    if (!this.#queryActive && this.#queryBlend < 0.0005) this.#queryBlend = 0;
+  }
+  #canvasQueryPosition(entity, index, now) {
+    const original = entity?.position || [0, 0, 0];
+    if (this.#queryBlend <= 0.0001) return original;
+    const count = this.#visible?.length || 0;
+    if (!this.#queryTargets || this.#queryTargets.length !== count * 3)
+      this.#buildQueryTargets(count, null);
+    const j = index * 3,
+      t = this.#queryTargets;
+    if (!t || j + 2 >= t.length) return original;
+    const blend = this.#queryBlend;
+    return [
+      original[0] + (t[j] - original[0]) * blend,
+      original[1] + (t[j + 1] - original[1]) * blend,
+      original[2] + (t[j + 2] - original[2]) * blend,
+    ];
+  }
+  setQueryActive(active) {
+    this.#queryActive = Boolean(active);
+    if (this.#queryActive) {
+      this.#queryBasePositions = null;
+      this.#queryTargets = null;
+      this.#queryMouth = null;
+      this.#querySurfaceFlags = null;
+      this.#quantumTargets = null;
+      this.#quantumParents = null;
+      this.#quantumRoles = null;
+      this.#quantumPhases = null;
+      this.#quantumLighting = null;
+      this.#quantumDepth = null;
+      this.#quantumCount = 0;
+      this.clearFocus();
+      this.#cameraTarget = {
+        distance: this.#queryCameraDistance(),
+        yaw: 0,
+        pitch: 0,
+        target: [0, 1, 0],
+      };
+    }
+    return this.#queryActive;
+  }
+  #animateQueryParticles(now) {
+    if (this.#backend !== "webgl" || !this.#points?.geometry) return;
+    const a = this.#points.geometry.getAttribute("position");
+    if (!a?.array) return;
+    const positions = a.array,
+      count = a.count;
+    if (
+      !this.#queryBasePositions ||
+      this.#queryBasePositions.length !== positions.length ||
+      !this.#queryTargets ||
+      this.#queryTargets.length !== positions.length
+    )
+      this.#buildQueryTargets(count, positions);
+    if (this.#queryBlend < 0.0005 && !this.#queryActive) {
+      if (this.#queryBasePositions) {
+        positions.set(this.#queryBasePositions);
+        a.needsUpdate = true;
+      }
+      this.#queryBasePositions = null;
+      this.#queryTargets = null;
+      return;
+    }
+    const blend = this.#queryBlend,
+      morph = blend * blend * (3 - 2 * blend),
+      base = this.#queryBasePositions,
+      target = this.#queryTargets;
+    for (let i = 0; i < count; i++) {
+      const j = i * 3,
+        phase = hash01(i * 9.731 + 2.17),
+        angle = morph * (2.4 + phase * 4.8),
+        cosine = Math.cos(angle),
+        sine = Math.sin(angle),
+        bx = base[j],
+        bz = base[j + 2],
+        rx = bx * cosine - bz * sine,
+        rz = bx * sine + bz * cosine,
+        swarm = Math.sin(Math.PI * morph) * (5 + phase * 17);
+      positions[j] =
+        rx +
+        (target[j] - rx) * morph +
+        Math.cos(angle * 1.7 + phase * 6.28) * swarm;
+      positions[j + 1] =
+        base[j + 1] +
+        (target[j + 1] - base[j + 1]) * morph +
+        Math.sin(angle * 2.1 + phase * 8) * swarm * 0.42;
+      positions[j + 2] =
+        rz +
+        (target[j + 2] - rz) * morph +
+        Math.sin(angle * 1.7 + phase * 6.28) * swarm;
+    }
+    a.needsUpdate = true;
+  }
+
+  #buildQuantumMatter() {
+    if (
+      this.#backend !== "webgl" ||
+      !this.#points?.geometry ||
+      !this.#quantumPoints
+    )
+      return false;
+    const T = this.#three,
+      parentGeom = this.#points.geometry,
+      parentPos = parentGeom.getAttribute("position"),
+      parentColor = parentGeom.getAttribute("color");
+    if (!parentPos?.array || !parentColor?.array || parentPos.count < 1)
+      return false;
+    const parentCount = parentPos.count,
+      memory = Number(globalThis.navigator?.deviceMemory || 4),
+      budget =
+        memory >= 8
+          ? LIVING_QUANTUM_ORGANISM.pointBudget.high
+          : memory >= 4
+            ? LIVING_QUANTUM_ORGANISM.pointBudget.normal
+            : LIVING_QUANTUM_ORGANISM.pointBudget.low,
+      childrenPerParent = Math.max(
+        12,
+        Math.min(72, Math.ceil(budget / parentCount)),
+      ),
+      count = parentCount * childrenPerParent,
+      positions = new Float32Array(count * 3),
+      colors = new Float32Array(count * 3),
+      sizes = new Float32Array(count),
+      parents = new Uint32Array(count),
+      targets = new Float32Array(count * 3),
+      roles = new Uint8Array(count),
+      phases = new Float32Array(count * 3),
+      lights = new Float32Array(count),
+      depths = new Float32Array(count),
+      template = ALIEN_HEAD_TEMPLATE,
+      tp = template.positions,
+      tr = template.roles,
+      tc = template.count,
+      layerCfg = LIVING_QUANTUM_ORGANISM.layers;
+    for (let child = 0; child < count; child++) {
+      const j = child * 3,
+        parent = child % parentCount,
+        pj = parent * 3;
+      parents[child] = parent;
+      positions[j] = parentPos.array[pj];
+      positions[j + 1] = parentPos.array[pj + 1];
+      positions[j + 2] = parentPos.array[pj + 2];
+      const r = parentColor.array[pj],
+        g = parentColor.array[pj + 1],
+        b = parentColor.array[pj + 2];
+      const idx = Math.min(
+          tc - 1,
+          Math.floor(hash01(child * 7.917 + 11.31) * tc),
+        ),
+        tj = idx * 3,
+        role = tr[idx] || 1;
+      let sx = tp[tj],
+        sy = tp[tj + 1],
+        sz = tp[tj + 2];
+      const basis = basisFromPoint(sx, sy, sz),
+        q = hash01(child * 17.133 + 3.17);
+      let layer = "dermal",
+        depth = 0;
+      if (q >= layerCfg.dermal && q < layerCfg.dermal + layerCfg.subdermal) {
+        layer = "subdermal";
+        depth = 0.32 + 0.36 * hash01(child * 2.23);
+      } else if (q >= layerCfg.dermal + layerCfg.subdermal) {
+        layer = "core";
+        depth = 0.72 + 0.24 * hash01(child * 4.91);
+      }
+      const a = hash01(child * 3.41) - 0.5,
+        bb = hash01(child * 5.77) - 0.5;
+      const spread =
+        layer === "dermal" ? 1.35 : layer === "subdermal" ? 1.9 : 2.6;
+      let tx =
+          sx +
+          basis.t[0] * a * spread +
+          basis.b[0] * bb * spread -
+          basis.n[0] * depth * 8,
+        ty =
+          sy +
+          basis.t[1] * a * spread +
+          basis.b[1] * bb * spread -
+          basis.n[1] * depth * 8,
+        tz =
+          sz +
+          basis.t[2] * a * spread +
+          basis.b[2] * bb * spread -
+          basis.n[2] * depth * 8;
+      if (layer === "core") {
+        tx *= 0.56 + 0.12 * hash01(child * 8.17);
+        ty *= 0.72 + 0.12 * hash01(child * 9.61);
+        tz *= 0.56 + 0.12 * hash01(child * 10.33);
+      }
+      for (
+        let attempt = 0;
+        attempt < 8 && isFacialVoid(tx, ty, tz);
+        attempt++
+      ) {
+        tx += basis.t[0] * (2.8 + attempt * 0.5);
+        ty += basis.b[1] * (1.8 + attempt * 0.3);
+        tz -= Math.abs(basis.n[2]) * (2.2 + attempt * 0.3);
+      }
+      if (isFacialVoid(tx, ty, tz)) {
+        tz = -Math.abs(tz) - 8;
+      }
+      const light = lightingForNormal(
+        basis.n[0],
+        basis.n[1],
+        basis.n[2],
+        depth,
+      );
+      const identity = 0.78 + 0.22 * light;
+      colors[j] = Math.min(1, r * identity);
+      colors[j + 1] = Math.min(1, g * identity);
+      colors[j + 2] = Math.min(1, b * identity);
+      sizes[child] =
+        layer === "dermal"
+          ? 0.12 + hash01(child * 2.371) * 0.1
+          : layer === "subdermal"
+            ? 0.09 + hash01(child * 2.371) * 0.08
+            : 0.07 + hash01(child * 2.371) * 0.06;
+      targets[j] = tx;
+      targets[j + 1] = ty;
+      targets[j + 2] = tz;
+      roles[child] =
+        layer === "dermal"
+          ? role === 5
+            ? 3
+            : 1
+          : layer === "subdermal"
+            ? 2
+            : 4;
+      phases[j] = hash01(child * 3.117) * Math.PI * 2;
+      phases[j + 1] = hash01(child * 5.731) * Math.PI * 2;
+      phases[j + 2] = hash01(child * 11.917) * Math.PI * 2;
+      lights[child] = light;
+      depths[child] = depth;
+    }
+    const geom = new T.BufferGeometry();
+    geom.setAttribute("position", new T.BufferAttribute(positions, 3));
+    geom.setAttribute("color", new T.BufferAttribute(colors, 3));
+    geom.setAttribute("aSize", new T.BufferAttribute(sizes, 1));
+    geom.setAttribute("aLight", new T.BufferAttribute(lights, 1));
+    geom.setAttribute("aDepth", new T.BufferAttribute(depths, 1));
+    this.#quantumPoints.geometry?.dispose();
+    this.#quantumPoints.geometry = geom;
+    this.#quantumPoints.rotation.y = LIVING_QUANTUM_ORGANISM.orientationY;
+    this.#quantumParents = parents;
+    this.#quantumTargets = targets;
+    this.#quantumRoles = roles;
+    this.#quantumPhases = phases;
+    this.#quantumLighting = lights;
+    this.#quantumDepth = depths;
+    this.#quantumCount = count;
+    return true;
+  }
+
+  #animateQuantumMatter(now) {
+    if (
+      this.#backend !== "webgl" ||
+      !this.#quantumPoints ||
+      !this.#quantumMaterial
+    )
+      return;
+    if (
+      this.#queryActive &&
+      (!this.#quantumCount || !this.#quantumTargets || !this.#quantumParents)
+    )
+      this.#buildQuantumMatter();
+    if (
+      !this.#quantumCount ||
+      !this.#quantumTargets ||
+      !this.#quantumParents ||
+      !this.#quantumRoles ||
+      !this.#quantumPhases
+    ) {
+      this.#quantumPoints.visible = false;
+      return;
+    }
+    const attr = this.#quantumPoints.geometry.getAttribute("position"),
+      parentAttr = this.#points?.geometry?.getAttribute("position");
+    if (!attr?.array || !parentAttr?.array) {
+      this.#quantumPoints.visible = false;
+      return;
+    }
+    const positions = attr.array,
+      parents = this.#quantumParents,
+      targets = this.#quantumTargets,
+      roles = this.#quantumRoles,
+      phases = this.#quantumPhases,
+      blend = Math.max(0, Math.min(1, this.#queryBlend)),
+      morph = blend * blend * (3 - 2 * blend),
+      time = now * 0.001,
+      parentPositions = parentAttr.array;
+    this.#quantumPoints.visible = blend > 0.001 || this.#queryActive;
+    this.#quantumMaterial.uniforms.uAlpha.value = Math.min(
+      LIVING_QUANTUM_ORGANISM.shader.alpha,
+      blend * 0.94,
+    );
+    for (let child = 0; child < this.#quantumCount; child++) {
+      const j = child * 3,
+        pj = parents[child] * 3,
+        px = parentPositions[pj],
+        py = parentPositions[pj + 1],
+        pz = parentPositions[pj + 2];
+      let tx = targets[j],
+        ty = targets[j + 1],
+        tz = targets[j + 2];
+      const role = roles[child],
+        px1 = phases[j],
+        py1 = phases[j + 1],
+        pz1 = phases[j + 2];
+      if (role === 2) {
+        tx += Math.sin(time * 0.55 + px1) * 0.55;
+        ty += Math.cos(time * 0.43 + py1) * 0.45;
+        tz += Math.sin(time * 0.61 + pz1) * 0.6;
+      } else if (role === 4) {
+        tx += Math.sin(time * 0.31 + px1) * 1.15;
+        ty += Math.cos(time * 0.27 + py1) * 0.85;
+        tz += Math.sin(time * 0.37 + pz1) * 1.25;
+      } else {
+        tx += Math.sin(time * 0.91 + px1) * 0.07;
+        ty += Math.cos(time * 0.83 + py1) * 0.06;
+        tz += Math.sin(time * 0.77 + pz1) * 0.08;
+      }
+      if (role === 3) {
+        const speech = Math.sin(time * 6.8 + px1);
+        ty += speech * 0.22;
+        tz += Math.abs(speech) * 0.08;
+      }
+      positions[j] = px + (tx - px) * morph;
+      positions[j + 1] = py + (ty - py) * morph;
+      positions[j + 2] = pz + (tz - pz) * morph;
+    }
+    attr.needsUpdate = true;
+    this.#quantumPoints.scale.setScalar(this.#modeCurrent[1]);
+    this.#quantumPoints.rotation.x = 0;
+    this.#quantumPoints.rotation.z = 0;
+  }
+
+  #buildQueryFeatures() {
+    const T = this.#three;
+    if (!T || !this.#scene || this.#queryFeatures) return;
+    const group = new T.Group();
+    const material = () => {
+      const item = new T.MeshBasicMaterial({
+        color: 0x000001,
+        transparent: true,
+        opacity: 0,
+        depthTest: true,
+        depthWrite: false,
+      });
+      this.#queryFeatureMaterials.push(item);
+      return item;
+    };
+    const eyeGeometry = new T.SphereGeometry(1, 36, 22);
+    for (const side of [-1, 1]) {
+      const eye = new T.Mesh(eyeGeometry, material());
+      eye.position.set(side * 15.1, 10.1, 34.4);
+      eye.scale.set(11.9, 8.1, 2.0);
+      eye.rotation.z = side * -0.16;
+      group.add(eye);
+    }
+    const mouth = new T.Mesh(new T.SphereGeometry(1, 32, 16), material());
+    mouth.position.set(0, -20.8, 36.1);
+    mouth.scale.set(7.4, 0.72, 1.15);
+    group.add(mouth);
+    this.#queryMouthMesh = mouth;
+    this.#queryFeatures = group;
+    this.#scene.add(group);
+  }
+
+  #animateQueryFeatures() {
+    if (!this.#queryFeatures) return;
+    const blend = Math.max(0, Math.min(1, this.#queryBlend));
+    this.#queryFeatures.visible = blend > 0.18;
+    for (const material of this.#queryFeatureMaterials)
+      material.opacity = Math.max(0, Math.min(0.98, (blend - 0.2) * 1.55));
+    if (this.#queryMouthMesh) {
+      this.#queryMouthMesh.scale.y = 0.72 + this.#speechLevel * 1.45;
+      this.#queryMouthMesh.position.y = -20.8 - this.#speechLevel * 0.55;
+    }
+  }
+
+  #queryCameraDistance() {
+    const { width, height } = hostSize(this.#host);
+    const aspect = Math.max(0.35, width / height);
+    const vertical = 60 / Math.tan((55 * Math.PI) / 360);
+    const horizontalFov =
+      2 * Math.atan(Math.tan((55 * Math.PI) / 360) * aspect);
+    const horizontal = 43 / Math.tan(horizontalFov / 2);
+    return Math.max(130, Math.min(190, Math.max(vertical, horizontal) + 18));
+  }
+
+  setMode(mode = "explore") {
+    this.#mode = Object.hasOwn(MODE_STYLE, mode) ? mode : "explore";
+    this.#modeTarget = [...MODE_STYLE[this.#mode]];
+    if (this.#mode !== "trickster") {
+      this.#storyField = null;
+      if (this.#mode === "explore" && !this.#investigationHub)
+        this.clearFocus();
+    }
+    return this.#mode;
+  }
+  updateSnapshot(snapshot) {
+    if (!snapshot?.particles) throw new TypeError("valid snapshot is required");
+    this.#snapshot = snapshot;
+    this.#visible = snapshot.particles.slice(
+      0,
+      this.#quality.profile.particleLimit,
+    );
+    if (this.#backend === "webgl" && this.#points) {
+      const prev = this.#points.geometry;
+      this.#points.geometry = this.#geometryForSnapshot(snapshot);
+      prev.dispose();
+      this.#quantumTargets = null;
+      this.#quantumParents = null;
+      this.#quantumRoles = null;
+      this.#quantumPhases = null;
+      this.#quantumCount = 0;
+      return;
+    }
+  }
+  #resize = () => {
+    const { width, height } = hostSize(this.#host);
+    if (this.#backend === "webgl" && this.#renderer) {
+      this.#renderer.setSize(width, height, false);
+      this.#camera.aspect = width / height;
+      this.#camera.updateProjectionMatrix();
+      if (this.#queryActive)
+        this.#cameraTarget.distance = this.#queryCameraDistance();
+      if (this.#quantumMaterial)
+        this.#quantumMaterial.uniforms.uPixelRatio.value =
+          this.#renderer.getPixelRatio();
+      return;
+    }
+    if (this.#backend === "canvas" && this.#canvas && this.#ctx) {
+      const ratio = Math.min(globalThis.devicePixelRatio || 1, 2);
+      this.#canvas.width = Math.floor(width * ratio);
+      this.#canvas.height = Math.floor(height * ratio);
+      this.#canvas.style.width = `${width}px`;
+      this.#canvas.style.height = `${height}px`;
+      this.#ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
+  };
+  #onPointerDown = (e) => {
+    this.#pointer = {
+      active: true,
+      x: e.clientX,
+      y: e.clientY,
+      moved: false,
+      id: e.pointerId,
+    };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  #onPointerMove = (e) => {
+    if (!this.#pointer.active) return;
+    const dx = e.clientX - this.#pointer.x,
+      dy = e.clientY - this.#pointer.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) this.#pointer.moved = true;
+    this.#cameraTarget.yaw += dx * 0.005;
+    this.#cameraTarget.pitch = Math.max(
+      -0.9,
+      Math.min(0.9, this.#cameraTarget.pitch + dy * 0.004),
+    );
+    this.#pointer.x = e.clientX;
+    this.#pointer.y = e.clientY;
+  };
+  #onPointerUp = (e) => {
+    this.#pointer.active = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
+  #onGlobalPointerUp = () => {
+    this.#pointer.active = false;
+  };
+  #onVisibility = () => {
+    if (document.hidden) this.#pointer.active = false;
+  };
+  #onWheel = (e) => {
+    e.preventDefault();
+    this.#cameraTarget.distance = Math.max(
+      48,
+      Math.min(260, this.#cameraTarget.distance + e.deltaY * 0.08),
+    );
+  };
+  #onClick = (e) => {
+    if (this.#pointer.moved) return;
+    if (this.#backend === "webgl") this.#pickWebgl(e);
+    else this.#pickCanvas(e);
+  };
+  #pickWebgl(event) {
+    const T = this.#three,
+      rect = this.#renderer.domElement.getBoundingClientRect(),
+      pointer = new T.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      ),
+      ray = new T.Raycaster();
+    ray.params.Points = { threshold: 2.8 };
+    ray.setFromCamera(pointer, this.#camera);
+    const hit = ray.intersectObject(this.#points, false)[0];
+    if (!hit) return;
+    const entity = this.#points.geometry.userData.entities[hit.index];
+    if (entity) this.#selectEntity(entity);
+  }
+  #projectPoint(position, width, height) {
+    const cam = this.#cameraTarget,
+      [tx, ty, tz] = cam.target || [0, 0, 0];
+    let x = position[0] - tx,
+      y = position[1] - ty,
+      z = position[2] - tz;
+    const cy = Math.cos(cam.yaw),
+      sy = Math.sin(cam.yaw),
+      x1 = x * cy - z * sy,
+      z1 = x * sy + z * cy,
+      cp = Math.cos(cam.pitch),
+      sp = Math.sin(cam.pitch),
+      y1 = y * cp - z1 * sp,
+      z2 = y * sp + z1 * cp,
+      depth = z2 + cam.distance,
+      scale = (Math.min(width, height) * 0.92) / Math.max(18, depth);
+    return {
+      x: width / 2 + x1 * scale,
+      y: height / 2 - y1 * scale,
+      depth,
+      scale,
+    };
+  }
+  #pickCanvas(event) {
+    const rect = this.#canvas.getBoundingClientRect(),
+      px = event.clientX - rect.left,
+      py = event.clientY - rect.top;
+    let best = null,
+      bestDist = 18;
+    for (const e of this.#visible) {
+      const p = this.#projectPoint(e.position, rect.width, rect.height),
+        d = Math.hypot(p.x - px, p.y - py);
+      if (p.depth >= 8 && d < bestDist) {
+        best = e;
+        bestDist = d;
+      }
+    }
+    if (best) this.#selectEntity(best);
+  }
+  #selectEntity(entity) {
+    this.focusEntity(entity);
+    this.#destinationReady = false;
+    this.#transition.start(entity);
+    this.#onSelect?.(entity, destinationForEntity(entity), this.#transition);
+  }
+  #drawCanvas(now, warp) {
+    const ctx = this.#ctx,
+      { width, height } = hostSize(this.#host);
+    ctx.clearRect(0, 0, width, height);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = 0; i < this.#visible.length; i++) {
+      const e = this.#visible[i],
+        pos = this.#canvasQueryPosition(e, i, now),
+        p = this.#projectPoint(pos, width, height);
+      if (p.depth < 6) continue;
+      const color = COLORS[e.category] ?? COLORS.unknown,
+        size = Math.max(
+          1.2,
+          (1.4 + e.magnitudeBand * 4.2) * (90 / p.depth) * this.#modeCurrent[1],
+        ),
+        alpha = Math.max(
+          0.18,
+          Math.min(0.95, (22 / p.depth) * this.#modeCurrent[0]),
+        );
+      ctx.fillStyle = cssRgb(color, alpha);
+      ctx.beginPath();
+      ctx.arc(p.x + warp * (pos[0] * 0.4), p.y, size * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  #frame = (now) => {
+    if (this.#destroyed) return;
+    const elapsed = now - this.#lastFrame;
+    this.#lastFrame = now;
+    this.#quality.sample(elapsed);
+    const transition = this.#transition.update(now, this.#destinationReady),
+      warp =
+        transition.state === "accelerating"
+          ? Math.min(1, Math.max(0, (transition.elapsed - 350) / 900))
+          : transition.state === "whiteout"
+            ? 1
+            : 0;
+    if (this.#phaseEffect && now >= this.#phaseUntil) this.#phaseEffect = null;
+    const phase = this.#phaseEffect,
+      story = this.#storyField,
+      target = [
+        this.#modeTarget[0] * (phase?.intensity ?? story?.intensity ?? 1),
+        this.#modeTarget[1] * (phase?.scale ?? story?.scale ?? 1),
+        this.#modeTarget[2] + (phase?.rotation ?? 0),
+      ];
+    for (let i = 0; i < 3; i++)
+      this.#modeCurrent[i] += (target[i] - this.#modeCurrent[i]) * 0.045;
+    if (
+      !this.#reducedMotion &&
+      !this.#pointer.active &&
+      !this.#queryActive &&
+      this.#queryBlend < 0.02
+    )
+      this.#cameraTarget.yaw +=
+        elapsed * this.#autoSpin * Math.max(0.7, this.#modeCurrent[0] || 1);
+    this.#animateReplayEffects(now);
+    this.#updateQueryBlend(elapsed);
+    this.#animateQueryParticles(now);
+    this.#animateQuantumMatter(now);
+    this.#animateQueryFeatures();
+    if (this.#backend === "webgl") {
+      this.#material.uniforms.uWarp.value = warp;
+      const qb = Math.max(0, Math.min(1, this.#queryBlend));
+      this.#material.uniforms.uIntensity.value =
+        this.#modeCurrent[0] * (1 - qb * 0.995);
+      this.#points.scale.setScalar(this.#modeCurrent[1] * (1 - qb * 0.88));
+      this.#points.rotation.z = this.#modeCurrent[2];
+      if (qb > 0.001) {
+        this.#points.rotation.y *= 0.92;
+        this.#points.rotation.x *= 0.92;
+      } else if (!this.#reducedMotion && !this.#pointer.active)
+        this.#points.rotation.y += elapsed * 0.00009;
+      if (!this.#reducedMotion && !this.#pointer.active && this.#stars)
+        this.#stars.rotation.y += elapsed * 0.00005;
+      const c = this.#cameraTarget,
+        [tx, ty, tz] = c.target || [0, 0, 0],
+        desiredX = tx + Math.sin(c.yaw) * c.distance,
+        desiredY = ty + Math.sin(c.pitch) * c.distance,
+        desiredZ = tz + Math.cos(c.yaw) * c.distance,
+        follow = this.#pointer.active ? 0.22 : 0.16;
+      this.#camera.position.x += (desiredX - this.#camera.position.x) * follow;
+      this.#camera.position.y += (desiredY - this.#camera.position.y) * follow;
+      this.#camera.position.z += (desiredZ - this.#camera.position.z) * follow;
+      this.#camera.lookAt(tx, ty, tz);
+      this.#renderer.render(this.#scene, this.#camera);
+    } else this.#drawCanvas(now, warp);
+    this.#raf = requestAnimationFrame(this.#frame);
+  };
+
+  cancelTransition() {
+    this.#destinationReady = false;
+    return this.#transition.cancel(performance.now());
+  }
+  markDestinationReady() {
+    this.#destinationReady = true;
+    return this.#transition.update(performance.now(), true);
+  }
+  get backend() {
+    return this.#backend;
+  }
+  #teardownGpu() {
+    cancelAnimationFrame(this.#raf);
+    this.#unbindCanvasInput(this.#canvas);
+    this.#canvas?.removeEventListener("webglcontextlost", this.#onContextLost);
+    this.#clearHubObjects();
+    for (const o of this.#replayEffects) {
+      this.#scene?.remove(o);
+      o.geometry?.dispose();
+      o.material?.dispose();
+    }
+    this.#replayEffects = [];
+    this.#quantumPoints?.geometry?.dispose();
+    this.#quantumMaterial?.dispose();
+    this.#queryFeatures?.traverse?.((node) => node.geometry?.dispose?.());
+    for (const material of this.#queryFeatureMaterials) material.dispose?.();
+    this.#points?.geometry?.dispose();
+    this.#stars?.geometry?.dispose();
+    this.#material?.dispose();
+    this.#starMaterial?.dispose();
+    this.#renderer?.dispose();
+    this.#renderer?.domElement?.remove();
+    this.#canvas?.remove();
+    this.#renderer = null;
+    this.#scene = null;
+    this.#camera = null;
+    this.#points = null;
+    this.#stars = null;
+    this.#material = null;
+    this.#starMaterial = null;
+    this.#quantumPoints = null;
+    this.#quantumMaterial = null;
+    this.#queryFeatures = null;
+    this.#queryFeatureMaterials = [];
+    this.#queryMouthMesh = null;
+    this.#canvas = null;
+    this.#ctx = null;
+    this.#backend = "none";
+  }
+  destroy() {
+    this.#destroyed = true;
+    cancelAnimationFrame(this.#raf);
+    this.#resizeObserver?.disconnect();
+    globalThis.removeEventListener("resize", this.#resize);
+    globalThis.visualViewport?.removeEventListener("resize", this.#resize);
+    globalThis.removeEventListener("abulls:field-mode", this.#onMode);
+    globalThis.removeEventListener("abulls:query-state", this.#onQueryState);
+    globalThis.removeEventListener("abulls:query-speech", this.#onQuerySpeech);
+    globalThis.removeEventListener(
+      "abulls:field-replay-events",
+      this.#onReplay,
+    );
+    globalThis.removeEventListener(
+      "abulls:temporal-replay-events",
+      this.#onTemporalReplay,
+    );
+    globalThis.removeEventListener(
+      "abulls:field-market-phase",
+      this.#onMarketPhase,
+    );
+    globalThis.removeEventListener(
+      "abulls:field-story-scene",
+      this.#onStoryScene,
+    );
+    this.#teardownGpu();
+  }
+}
+
+export const UniverseCategoryColor = CSS_COLOR;

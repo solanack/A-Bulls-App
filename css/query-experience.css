@@ -2,9 +2,9 @@
   position: fixed;
   inset: 0;
   z-index: 80;
-  pointer-events: none;
+  pointer-events: auto;
   opacity: 0;
-  transition: opacity 180ms ease;
+  transition: opacity 360ms ease;
 }
 
 .query-experience.is-active {
@@ -14,71 +14,57 @@
 .query-experience__form {
   position: absolute;
   left: 50%;
-  bottom: max(118px, 14vh);
+  bottom: max(36px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  width: min(88vw, 680px);
-  display: flex;
-  gap: 8px;
+  width: min(86vw, 590px);
   pointer-events: auto;
 }
 
 .query-experience__form input {
-  flex: 1;
-  min-width: 0;
-  height: 48px;
-  padding: 0 16px;
-  border: 1px solid rgba(255,255,255,.24);
-  border-radius: 14px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 49px;
+  padding: 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
   outline: none;
-  background: rgba(5,6,11,.72);
-  backdrop-filter: blur(12px);
+  background: rgba(3, 4, 9, 0.64);
   color: #fff;
-  font: inherit;
-  box-shadow: 0 0 30px rgba(130,90,255,.12);
+  font:
+    500 14px/1.2 Manrope,
+    sans-serif;
+  letter-spacing: 0.02em;
+  text-align: center;
+  box-shadow:
+    0 0 36px rgba(128, 102, 255, 0.1),
+    inset 0 0 20px rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(8px);
 }
 
 .query-experience__form input:focus {
-  border-color: rgba(255,255,255,.52);
+  border-color: rgba(255, 255, 255, 0.62);
+}
+.query-experience__form input:disabled {
+  opacity: 0.62;
 }
 
-.query-experience__submit {
-  height: 48px;
-  padding: 0 17px;
-  border: 1px solid rgba(255,255,255,.24);
-  border-radius: 14px;
-  background: rgba(8,9,15,.78);
-  color: #fff;
-  font: inherit;
-  cursor: pointer;
-}
-
-.query-experience__back {
-  position: absolute;
-  left: 50%;
-  bottom: max(78px, 9vh);
-  transform: translateX(-50%);
-  padding: 7px 12px;
-  border: 0;
-  background: transparent;
-  color: rgba(255,255,255,.58);
-  font: inherit;
-  font-size: 11px;
-  letter-spacing: .12em;
-  pointer-events: auto;
-  cursor: pointer;
+.field-shell[data-mode="query"] .field-shell__chrome,
+.field-shell[data-mode="query"] .field-shell__workspace {
+  display: none !important;
 }
 
 @media (max-width: 620px) {
   .query-experience__form {
     width: 90vw;
+    bottom: max(24px, env(safe-area-inset-bottom));
   }
-
   .query-experience__form input {
-    font-size: 14px;
+    font-size: 16px;
   }
+}
 
-  .query-experience__submit {
-    padding: 0 12px;
-    font-size: 12px;
+@media (prefers-reduced-motion: reduce) {
+  .query-experience {
+    transition-duration: 1ms;
   }
 }
