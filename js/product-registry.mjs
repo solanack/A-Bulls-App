@@ -22,14 +22,6 @@ const PRODUCTS = Object.freeze([
     tier: 'primary',
     order: 3,
     icon: 'story'
-  }),
-  Object.freeze({
-    id: 'games',
-    label: 'Games',
-    description: 'Play Bull Invaders with the preserved Ranked and campaign rules.',
-    tier: 'primary',
-    order: 4,
-    icon: 'games'
   })
 ]);
 
