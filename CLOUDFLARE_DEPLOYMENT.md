@@ -29,12 +29,12 @@ cd ~/storage/downloads
 unzip A-Bulls-App-Template-Alien-Cloudflare-Ready.zip -d ~/A-Bulls-App
 cd ~/A-Bulls-App
 npm ci
-npx wrangler login
+npx wrangler login --device
 npm run build
 npx wrangler deploy
 ```
 
-If Wrangler is already authenticated, skip `npx wrangler login`.
+If Wrangler is already authenticated, skip the login command. Device login is used because it avoids Termux browser callback problems.
 
 Wrangler prints the temporary `workers.dev` URL after deployment. Keep that URL for the preview checks below. This command deploys only `a-bulls-app-frontend`; it does not deploy or modify the existing intelligence Worker.
 
