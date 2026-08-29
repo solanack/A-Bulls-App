@@ -84,7 +84,9 @@ export class FieldQueryOrganism {
         tx: to[0], ty: to[1], tz: to[2],
         fx: from[0], fy: from[1], fz: from[2],
         phase: hash01(index * 6.17) * TAU,
-        hue: hash01(index * 9.31)
+        hue: hash01(index * 9.31),
+        layer: hash01(index * 17.13 + 3.17) < 0.78 ? 1 : hash01(index * 17.13 + 3.17) < 0.94 ? 2 : 3,
+        amp: 0.016 + hash01(index * 4.21) * 0.028
       };
     });
     this.#canvas = document.createElement('canvas');
@@ -135,16 +137,34 @@ export class FieldQueryOrganism {
     ctx.fillStyle = '#030307';
     ctx.fillRect(0, 0, width, height);
     const t = now * 0.001;
+    const lungs = 0.5 + 0.5 * Math.sin(t * 0.62);
+    const pulse = 1 + lungs * 0.045 * this.#blend;
+    const yaw = Math.sin(t * 0.11) * 0.12 * this.#blend;
+    const cy = Math.cos(yaw);
+    const sy = Math.sin(yaw);
     for (const point of this.#points) {
-      const swirl = Math.sin(t * 0.55 + point.phase) * 0.018 * (1 - this.#blend);
-      const breath = Math.sin(t * 0.8 + point.phase) * 0.012 * this.#blend;
-      const x = point.fx + (point.tx - point.fx) * this.#blend + swirl;
-      const y = point.fy + (point.ty - point.fy) * this.#blend + breath;
-      const z = point.fz + (point.tz - point.fz) * this.#blend;
-      const drawn = this.#project(x, y, z, width, height);
-      const shade = 0.35 + this.#blend * 0.45 + point.hue * 0.2;
-      ctx.fillStyle = `rgba(${Math.floor(90 + shade * 80)}, ${Math.floor(170 + shade * 60)}, ${Math.floor(210 + shade * 40)}, ${0.28 + this.#blend * 0.55})`;
-      ctx.fillRect(drawn.px, drawn.py, drawn.size, drawn.size);
+      const form = this.#blend;
+      const fieldSwirl = Math.sin(t * 0.55 + point.phase) * 0.028 * (1 - form);
+      const live = form * point.amp;
+      const flowA = Math.sin(t * (0.55 + point.layer * 0.08) + point.phase);
+      const flowB = Math.cos(t * (0.37 + point.layer * 0.05) + point.phase * 1.73);
+      const radial = Math.sin(t * 0.29 + point.phase * 0.61) * (point.layer === 1 ? 0.35 : point.layer === 2 ? 0.7 : 1.15);
+      let x = point.fx + (point.tx - point.fx) * form + fieldSwirl;
+      let y = point.fy + (point.ty - point.fy) * form;
+      let z = point.fz + (point.tz - point.fz) * form;
+      x += flowA * live + point.tx * lungs * 0.012 * form;
+      y += flowB * live * 0.85 + lungs * 0.01 * form;
+      z += radial * live;
+      x *= pulse;
+      y *= pulse;
+      z *= pulse;
+      const rx = x * cy + z * sy;
+      const rz = z * cy - x * sy;
+      const drawn = this.#project(rx, y, rz, width, height);
+      const glow = 0.32 + form * 0.4 + point.hue * 0.22 + lungs * 0.12 * form;
+      const alpha = (0.22 + form * 0.5) * (point.layer === 1 ? 1 : point.layer === 2 ? 0.82 : 0.62);
+      ctx.fillStyle = `rgba(${Math.floor(80 + glow * 90)}, ${Math.floor(150 + glow * 80)}, ${Math.floor(200 + glow * 50)}, ${alpha})`;
+      ctx.fillRect(drawn.px, drawn.py, drawn.size * (0.85 + lungs * 0.25), drawn.size * (0.85 + lungs * 0.25));
     }
     this.#raf = requestAnimationFrame(this.#frame);
   };
