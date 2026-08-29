@@ -8,8 +8,10 @@ import type {
   FocusedParticle,
   GalaxyDefinition,
   GalaxyId,
+  EvidenceRecord,
   IntelligenceResult,
   OrganismState,
+  ReplayState,
 } from "./types";
 import {
   DEFAULT_GALAXY_ID,
@@ -19,6 +21,12 @@ import {
 } from "./galaxies";
 import { speakText, unlockSpeech, type VoiceHandle } from "./voice";
 import { resolvePublicIdentifier } from "@/lib/intelligence";
+import {
+  createReplayState,
+  evidenceForParticle,
+  stepReplayCursor,
+  visibleReplayCount,
+} from "./replay";
 
 export type FieldOSListener = (event: {
   mode: FieldMode;
@@ -30,6 +38,8 @@ export type FieldOSListener = (event: {
   focus: FocusedParticle | null;
   galaxy: GalaxyDefinition;
   galaxies: readonly GalaxyDefinition[];
+  replay: ReplayState;
+  evidence: EvidenceRecord | null;
 }) => void;
 
 export class FieldOS {
@@ -44,6 +54,8 @@ export class FieldOS {
   volume = 0.92;
   focus: FocusedParticle | null = null;
   galaxy: GalaxyDefinition = getGalaxy(DEFAULT_GALAXY_ID);
+  replay: ReplayState;
+  evidence: EvidenceRecord | null = null;
   #cameraSnapshot: CameraState | null = null;
   #voice: VoiceHandle | null = null;
   #listener: FieldOSListener | null = null;
@@ -55,6 +67,7 @@ export class FieldOS {
     const budget = deviceBudget();
     const snapshot = createGalaxySnapshot(this.galaxy, budget.field);
     this.field = new ParticleFieldRenderer(host, snapshot);
+    this.replay = createReplayState(snapshot);
     this.field.onFocus = (particle) => {
       this.focus = particle
         ? {
@@ -63,8 +76,21 @@ export class FieldOS {
             cosmicKind: particle.cosmicKind,
             originGalaxyId: particle.originGalaxyId,
             category: particle.category,
+            observedAt: particle.observedAt,
+            verificationState: particle.verificationState,
+            magnitudeBand: particle.magnitudeBand,
           }
         : null;
+      this.evidence = particle ? evidenceForParticle(this.field.snapshot, particle) : null;
+      this.#emit();
+    };
+    this.field.onReplayTick = (cursor, playing) => {
+      this.replay = {
+        ...this.replay,
+        cursor,
+        status: playing ? "playing" : cursor >= 1 ? "complete" : "paused",
+        visibleEventCount: visibleReplayCount(this.field.snapshot, cursor),
+      };
       this.#emit();
     };
     this.muted = globalThis.localStorage?.getItem("abulls-mute") === "1";
@@ -82,6 +108,8 @@ export class FieldOS {
       focus: this.focus,
       galaxy: this.galaxy,
       galaxies: GALAXIES,
+      replay: this.replay,
+      evidence: this.evidence,
     });
   }
 
@@ -96,6 +124,8 @@ export class FieldOS {
     this.field.setSnapshot(snapshot);
     this.galaxy = nextGalaxy;
     this.focus = null;
+    this.evidence = null;
+    this.replay = createReplayState(snapshot);
     this.mode = "explore";
     this.result = null;
     this.#emit();
@@ -113,8 +143,73 @@ export class FieldOS {
       return;
     }
     if (this.queryActive) void this.returnToField();
+    if (mode === "replay") {
+      this.enterReplay();
+      return;
+    }
+    if (mode === "evidence") {
+      this.field.setReplay({ active: true, playing: false, cursor: this.replay.cursor });
+      this.replay = { ...this.replay, active: true, status: "paused" };
+      this.mode = "evidence";
+      this.#emit();
+      return;
+    }
+    if (this.replay.active) {
+      this.field.setReplay({ active: false, cursor: 1, playing: false });
+      this.replay = { ...this.replay, active: false, status: "paused", cursor: 1 };
+    }
     this.mode = mode;
     this.#emit();
+  }
+
+  enterReplay() {
+    if (this.queryActive) return;
+    const cursor = this.replay.active ? this.replay.cursor : 0;
+    this.mode = "replay";
+    this.replay = {
+      ...this.replay,
+      active: true,
+      status: "paused",
+      cursor,
+      visibleEventCount: visibleReplayCount(this.field.snapshot, cursor),
+    };
+    this.field.setReplay({ active: true, cursor, playing: false });
+    this.field.clearFocus();
+    this.#emit();
+  }
+
+  toggleReplay() {
+    if (!this.replay.active) this.enterReplay();
+    const restart = this.replay.cursor >= 1;
+    const cursor = restart ? 0 : this.replay.cursor;
+    const playing = this.replay.status !== "playing";
+    this.replay = {
+      ...this.replay,
+      active: true,
+      cursor,
+      status: playing ? "playing" : "paused",
+      visibleEventCount: visibleReplayCount(this.field.snapshot, cursor),
+    };
+    this.field.setReplay({ active: true, cursor, playing });
+    this.#emit();
+  }
+
+  seekReplay(cursor: number) {
+    const safeCursor = Math.min(1, Math.max(0, cursor));
+    this.replay = {
+      ...this.replay,
+      active: true,
+      status: "paused",
+      cursor: safeCursor,
+      visibleEventCount: visibleReplayCount(this.field.snapshot, safeCursor),
+    };
+    this.field.setReplay({ active: true, cursor: safeCursor, playing: false });
+    this.field.clearFocus();
+    this.#emit();
+  }
+
+  stepReplay(direction: -1 | 1) {
+    this.seekReplay(stepReplayCursor(this.field.snapshot, this.replay.cursor, direction));
   }
 
   async enterQuery() {
@@ -123,6 +218,8 @@ export class FieldOS {
     this.queryActive = true;
     this.organismState = "idle";
     this.focus = null;
+    this.evidence = null;
+    this.field.setReplay({ active: false, cursor: 1, playing: false });
     this.#cameraSnapshot = this.field.snapshotCamera();
     this.field.setQueryActive(true);
     this.organism?.destroy();
