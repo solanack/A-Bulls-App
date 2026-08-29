@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FileSearch, Orbit, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX, X } from "lucide-react";
 import type { FieldOS } from "@/lib/field/field-os";
+import type { UniverseDataStatus } from "@/lib/universe-data/contracts";
 import { COSMOLOGY_RULES, GALAXIES, getGalaxy } from "@/lib/field/galaxies";
 import {
   DOCK,
@@ -51,6 +52,12 @@ export function AppShell() {
   const [starmapOpen, setStarmapOpen] = useState(false);
   const [replay, setReplay] = useState<ReplayState | null>(null);
   const [evidence, setEvidence] = useState<EvidenceRecord | null>(null);
+  const [dataStatus, setDataStatus] = useState<UniverseDataStatus>({
+    store: "memory-fallback",
+    coverage: "degraded",
+    circuitBreaker: null,
+    disclosure: "Checking indexed universe coverage.",
+  });
 
   useEffect(() => {
     const host = hostRef.current;
@@ -70,6 +77,7 @@ export function AppShell() {
         setGalaxies(event.galaxies);
         setReplay(event.replay);
         setEvidence(event.evidence);
+        setDataStatus(event.dataStatus);
       });
       osRef.current = os;
     });
@@ -149,6 +157,14 @@ export function AppShell() {
           <span>{galaxy.name}</span>
           <small>ORIGIN MAP</small>
         </button>
+        <p
+          className="field-shell__data-status"
+          data-coverage={dataStatus.coverage}
+          title={dataStatus.disclosure}
+        >
+          <span>{dataStatus.store === "d1" ? "INDEXED" : "PROTOTYPE"}</span>
+          {dataStatus.coverage.toUpperCase()}
+        </p>
         <p className="field-shell__tag">
           <strong>{galaxy.name.toUpperCase()} · THE BLOCKCHAIN IS ALIVE</strong>
           {MODE_HINT[mode]}
@@ -283,6 +299,7 @@ export function AppShell() {
           {mode === "replay" && replay ? (
             <ReplayPanel
               replay={replay}
+              dataStatus={dataStatus}
               onToggle={() => osRef.current?.toggleReplay()}
               onSeek={(cursor) => osRef.current?.seekReplay(cursor)}
               onStep={(direction) => osRef.current?.stepReplay(direction)}
@@ -303,12 +320,14 @@ export function AppShell() {
 
 function ReplayPanel({
   replay,
+  dataStatus,
   onToggle,
   onSeek,
   onStep,
   onEvidence,
 }: {
   replay: ReplayState;
+  dataStatus: UniverseDataStatus;
   onToggle: () => void;
   onSeek: (cursor: number) => void;
   onStep: (direction: -1 | 1) => void;
@@ -342,6 +361,12 @@ function ReplayPanel({
         <p><b>POLICY</b> {replay.samplingPolicy}</p>
         <button type="button" onClick={onEvidence}>INSPECT EVIDENCE</button>
       </div>
+      <p className="replay-panel__data"><b>DATA SPINE</b> {dataStatus.disclosure}</p>
+      {dataStatus.circuitBreaker ? (
+        <p className="replay-panel__data">
+          <b>PROVIDER BUDGET</b> {dataStatus.circuitBreaker.unitsSpent.toLocaleString()} / {Math.floor(dataStatus.circuitBreaker.monthlyLimit * dataStatus.circuitBreaker.circuitBreakerRatio).toLocaleString()} guarded units
+        </p>
+      ) : null}
       <p className="replay-panel__instruction">Tap any revealed particle to load its evidence receipt.</p>
     </article>
   );
