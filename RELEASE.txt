@@ -1,0 +1,3 @@
+A BULLS APP — PAGES 8.8.0-vnext-73
+Desktop field now auto-orbits like mobile. Bull Invaders boots after the loadout is on screen.
+index.html is at ZIP root. Worker 8.2.0-vnext-71 is unchanged.

@@ -3,455 +3,61 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-  <meta name="theme-color" content="#171820"/>
-  <meta name="bbrs-build" content="8.5.0"/>
+  <meta name="theme-color" content="#030307"/>
+  <meta name="bbrs-build" content="8.8.0-vnext-73"/>
   <title>A Bulls App</title>
-  <meta name="description" content="A refined experiential Solana arcade with Bull Invaders and interactive read-only analytics."/>
-  <link rel="manifest" href="manifest.webmanifest?v=8.5.0"/>
+  <meta name="description" content="Explore, investigate, replay, compare and turn verified Solana activity into interactive data stories."/>
+  <link rel="manifest" href="manifest.webmanifest?v=8.8.0-vnext-73"/>
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png"/>
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;family=Sora:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="css/styles.css?v=8.5.0"/>
-  <link rel="stylesheet" href="css/track.css?v=8.5.0"/>
-  <link rel="stylesheet" href="css/dusk-atelier.css?v=8.5.0"/>
-  <style>
-    .claude-arcade-link{display:flex;align-items:center;gap:10px;text-decoration:none}
-    .claude-arcade-link .nav-live-chip{margin-left:auto}
-    .feature-card--claude{background:linear-gradient(145deg,#32343f,#23242d);color:#f3f1f4;text-decoration:none}
-    .feature-card--claude .claude-mark{display:grid;place-items:center;min-height:92px;font:600 34px/.9 Sora,Manrope,system-ui,sans-serif;color:#f3f1f4}
-    .feature-card--claude .claude-mark span{color:#d6a0a8}
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="css/styles.css?v=8.8.0-vnext-73"/>
+  <link rel="stylesheet" href="css/dusk-atelier.css?v=8.8.0-vnext-73"/>
+  <link rel="stylesheet" href="css/product-shell-vnext.css?v=8.8.0-vnext-73"/>
+  <link rel="stylesheet" href="css/universe.css?v=8.8.0-vnext-73"/>
+  <link rel="stylesheet" href="css/field-shell.css?v=8.8.0-vnext-73"/>
+  <link rel="stylesheet" href="css/trickster-studio.css?v=8.8.0-vnext-73"/>
+  <link rel="stylesheet" href="css/trickster-simulation.css?v=8.8.0-vnext-73"/>
+  <link rel="stylesheet" href="css/intelligence-workspace-vnext.css?v=8.8.0-vnext-73"/>
+  <link rel="stylesheet" href="css/intelligence-event-inspector.css?v=8.8.0-vnext-73"/>
+  <link rel="stylesheet" href="css/token-market-workspace.css?v=8.8.0-vnext-73"/>
+  <link rel="stylesheet" href="css/market-sequence-discovery.css?v=8.8.0-vnext-73"/>
+  <link rel="stylesheet" href="css/bull-invaders-vnext.css?v=8.8.0-vnext-73"/>
 </head>
 <body class="dusk-atelier-direction">
-<div class="opening-sequence" id="openingSequence" aria-label="A Bulls App opening sequence">
-  <video class="opening-video" id="openingVideo" src="assets/opening/opening-sequence.mp4" autoplay muted playsinline preload="auto"></video>
-  <span class="opening-art-backdrop opening-art-backdrop-title" aria-hidden="true"></span>
-  <img class="opening-fade-card opening-fade-title" id="openingFadeTitle" src="assets/opening/opening-fade-1-title.jpg" alt="A Bulls App" decoding="async"/>
-  <span class="opening-art-backdrop opening-art-backdrop-studio" aria-hidden="true"></span>
-  <img class="opening-fade-card opening-fade-studio" id="openingFadeStudio" src="assets/opening/opening-fade-2-studio.png" alt="ImADingDong Productions" decoding="async"/>
-</div>
-<div class="service-status-banner" id="serviceStatusBanner" hidden role="status" aria-live="polite">
-  <span class="service-status-dot" aria-hidden="true"></span>
-  <span id="serviceStatusText">Data service connection is degraded.</span>
-</div>
-<div id="app">
-  <div id="shell">
-    <header class="topbar">
-      <button class="menu-btn" id="menuBtn" type="button">☰</button>
-      <button class="home-btn" id="homeBtn" type="button" aria-label="Return to landing page" title="Landing page">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.2 12 3l9 8.2M5.7 9.2V21h12.6V9.2M9.4 21v-6.8h5.2V21"/></svg>
-      </button>
-      <button class="back-btn" id="backBtn" type="button" aria-label="Return to previous screen" title="Back" disabled>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7M8 12h11"/></svg>
-      </button>
-      <div class="brand">
-        <b>A BULLS APP</b>
-        <small id="viewLabel">Home</small>
-      </div>
-    </header>
-
-    <nav class="drawer" id="drawer" aria-label="Main menu">
-      <div class="drawer-welcome"><span class="season-chip">EPOCH 01</span><b>THE ARCADE IS LIVE</b></div>
-      <div class="nav-group nav-group--profile">
-        <button type="button" class="nav-item nav-priority" data-view="profile"><span class="nav-glyph" aria-hidden="true">♉</span><span class="nav-label">Profile</span></button>
-      </div>
-      <div class="nav-group nav-group--arcade" data-group="games">
-        <button type="button" class="nav-parent nav-priority" id="navGamesParent" aria-expanded="false" aria-controls="navGamesSub"><span class="nav-glyph" aria-hidden="true">▶</span><span class="nav-label">Bull Invaders</span><span class="nav-live-chip">LIVE</span><span class="nav-chevron" aria-hidden="true"></span></button>
-        <div class="nav-sub" id="navGamesSub">
-          <div class="nav-game-sub nav-game-sub--direct is-open" id="navInvadersSub">
-            <div class="play-box play-box--invaders">
-              <div class="play-box-kicker">STAMPede CONTROL</div>
-              <div class="play-box-title">Play Now</div>
-              <div class="play-box-stats"><div class="play-stat"><span class="play-stat-label">Missions</span><b id="drawerInvaderRuns">0</b></div><div class="play-stat"><span class="play-stat-label">Best</span><b id="drawerInvaderBest">0</b></div><div class="play-stat"><span class="play-stat-label">Levels</span><b>190</b></div></div>
-              <div class="campaign-loadout" aria-label="EPOCH campaign loadout">
-                <div class="campaign-ship-preview"><img id="selectedShipPreview" src="assets/v7/player-ship.webp" alt="Black Bull player ship"/></div>
-                <label id="epochSelectField" hidden><span>Storyline</span><select id="epochSelect" aria-label="Select unlocked EPOCH"></select></label>
-                <label><span>Player ship</span><select id="shipSelect" aria-label="Select unlocked player ship"></select></label>
-                <article class="epoch-sector-card" id="epochSectorCard"><span id="epochSectorCode">EPOCH 01</span><b id="epochSectorName">Genesis Grid</b><small id="epochSectorTag">Green-cyan validator lanes awaken.</small></article>
-                <div class="campaign-progress" aria-hidden="true"><i id="epochUnlockProgress"></i></div>
-                <small id="campaignStatus">0/10 EPOCHS cleared</small>
-                <b id="campaignNextUnlock">Clear EPOCH 1 to unlock Eclipse Crown</b>
-              </div>
-              <div class="run-mode-selector" role="radiogroup" aria-label="Run mode"><label><input type="radio" name="invaderMode" value="ranked" checked/><span><b>Ranked</b></span></label><label><input type="radio" name="invaderMode" value="arcade"/><span><b>Campaign</b></span></label></div>
-              <label class="play-control-hand" for="controlHand"><span><b>Control hand</b><small>Moves combat buttons to your chosen thumb</small></span><select id="controlHand"><option value="left">Left hand</option><option value="right">Right hand</option></select></label>
-              <label class="play-record-toggle" for="recordRunToggle"><span><b>Record next run</b><small>Off by default · one memory-only session</small></span><input type="checkbox" id="recordRunToggle"/></label>
-              <button type="button" id="startInvaders" class="primary play-now-btn">START THE STAMPEDE</button>
-            </div>
-            <button type="button" class="nav-item nav-child" data-view="invaderStats"><span class="nav-label">Mission Statistics</span></button>
-            <button type="button" class="nav-item nav-child" data-view="invaderLeaderboard"><span class="nav-label">Leaderboard</span></button>
-          </div>
-        </div>
-      </div>
-      <a class="nav-item claude-arcade-link" href="games/claude-of-duty/index.html"><span class="nav-glyph" aria-hidden="true">⌖</span><span class="nav-label">Solana Bang Bang</span><span class="nav-live-chip">MAZE</span></a>
-      <button type="button" class="nav-item" id="navIntelligenceButton" data-view="intelligence"><span class="nav-glyph" aria-hidden="true">⌗</span><span class="nav-label">Analytics</span></button>
-      <button type="button" class="nav-item nav-life" data-view="life"><span class="nav-glyph" aria-hidden="true">◇</span><span class="nav-label">LIFE</span></button>
-      <button type="button" class="nav-item" data-view="help"><span class="nav-glyph" aria-hidden="true">?</span><span class="nav-label">Help</span></button>
-      <div class="nav-ecosystem" aria-label="A Bulls App ecosystem links">
-        <small>ECOSYSTEM</small>
-        <div>
-          <a href="https://kimji.fun/" target="_blank" rel="noopener noreferrer"><span>KIMJI</span><b aria-hidden="true">↗</b></a>
-          <a href="https://ansem.io/" target="_blank" rel="noopener noreferrer"><span>ANSEM.IO</span><b aria-hidden="true">↗</b></a>
-          <a href="https://thebulls.live/" target="_blank" rel="noopener noreferrer"><span>THE BULLS</span><b aria-hidden="true">↗</b></a>
-        </div>
-      </div>
-      <div class="build-stamp">PAGES 8.5.0 • WORKER 8.0.5</div>
-    </nav>
-    <div class="backdrop" id="backdrop"></div>
-
-    <main id="views">
-      <!-- HOME -->
-      <section class="view active" id="homeView">
-        <div class="landing-background-stack">
-          <img id="landingDefaultImage" class="landing-layer landing-default-layer" src="assets/opening/menu-bull-solana.webp" alt="A Bulls App arcade environment" decoding="async"/>
-          <div id="menuMediaLayer" class="landing-layer game-media-layer menu-media-layer">
-            <img id="menuImageBackground" class="game-media" hidden alt=""/>
-            <video id="menuVideoBackground" class="game-media" hidden muted playsinline loop></video>
-            <div class="stream-background" id="menuMediaScene" hidden aria-label="Interactive landing-page media player"><div id="menuMediaPlayerHost"></div></div>
-          </div>
-          <img id="landingUploadedImage" class="landing-layer landing-upload-layer" alt="" hidden decoding="async"/>
-        </div>
-      </section>
-      <!-- ANALYTICS CENTER -->
-      <section class="view control-center-pane" id="trackView">
-        <div class="page wallet-page">
-          <section class="panel control-center-master" id="intelligencePanel" aria-labelledby="analyticsHeading">
-            <div class="section-title"><h2 id="analyticsHeading">Analytics</h2><small id="ansemLiveStatus">Loading cached data…</small></div>
-            <div class="analytics-switch" role="tablist" aria-label="Analytics views">
-              <button class="tab active" type="button" role="tab" aria-selected="true" data-analytics-target="bullIntelligencePanel">$ANSEM Analytics</button>
-              <button class="tab" type="button" role="tab" aria-selected="false" data-analytics-target="ansemIoPanel">Ansem.io</button>
-              <button class="tab" type="button" role="tab" aria-selected="false" data-analytics-target="nftAnalysisPanel">Bullpen Analytics</button>
-            </div>
-            <div class="disclosure-body control-center-master-body intelligence-hub">
-              <section class="analytics-pane nft-subsection active" id="bullIntelligencePanel">
-                <div class="analytics-update-row"><time id="ansemUpdated">Last updated —</time><button class="secondary" id="ansemRefresh" type="button">Refresh</button></div>
-                <section class="trader-signal-grid" aria-label="$ANSEM market health">
-                  <article class="signal-card signal-card--primary"><small>Top 10 Holder Concentration</small><strong id="ansemTop10Concentration">—</strong></article>
-                  <article class="signal-card"><small>Total Holders</small><strong id="ansemHolderCount">—</strong></article>
-                  <article class="signal-card"><small>Liquidity Depth</small><strong id="ansemLiquidityDepth">—</strong></article>
-                  <article class="signal-card"><small>Price</small><strong id="ansemPrice">—</strong><span id="ansemChange">—</span></article>
-                  <article class="signal-card"><small>24H Volume</small><strong id="ansemVolume24h">—</strong><span id="ansemVolumeMomentum">—</span></article>
-                  <article class="signal-card"><small>24H Transactions</small><strong id="ansemTransactions24h">—</strong><span id="ansemTransactionMomentum">—</span></article>
-                </section>
-                <div class="analytics-source-row"><span id="ansemFreshnessTag" class="status-pill">CACHED</span><a class="secondary" id="ansemDexLink" href="#" target="_blank" rel="noopener noreferrer">Open Market Source ↗</a></div>
-                <details class="data-disclosure panel wallet-analytics" id="walletAnalyticsPanel" open><summary><span>Public Wallet Analysis</span></summary><div class="disclosure-body">
-                  <div class="wallet-loading" id="trackLoading" hidden aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-                  <div class="range-tabs tabs" id="trackRangeTabs" aria-label="Wallet history range"><button class="tab active" data-range="24h" type="button">24H</button><button class="tab" data-range="7d" type="button">7D</button><button class="tab" data-range="30d" type="button">30D</button><button class="tab" data-range="90d" type="button">90D</button><button class="tab" data-range="all" type="button">ALL</button></div>
-                  <span class="status-pill visually-hidden" id="trackLiveStatus">Public lookup</span><p class="phase" id="trackPhase" aria-live="polite"></p>
-                  <div class="metric-grid" id="trackSnapshot"></div><div class="holdings-list" id="trackHoldings"></div><div class="metric-grid" id="trackFlowMetrics"></div><div id="trackFlow"></div><div class="metric-grid" id="trackAnsem"></div><p id="trackAnsemNote" class="notice"></p><div class="metric-grid" id="trackBehavior"></div><div class="wallet-timeline" id="trackTimeline"></div><div class="metric-grid" id="trackFees"></div>
-                  <details class="data-disclosure wallet-transaction-disclosure"><summary><span>Transaction History</span></summary><div class="disclosure-body"><div id="trackFeed"><p class="notice">No transactions loaded.</p></div></div></details>
-                  <a class="rent-incinerator-link" href="https://sol-incinerator.com/" target="_blank" rel="noopener noreferrer" aria-label="Open SOL Incinerator for locked rent">
-                    <div class="rent-incinerator-head"><span>Locked Rent</span><b>OPEN SOL INCINERATOR ↗</b></div>
-                    <div class="metric-grid" id="trackRent"></div><div class="rent-sol-total"><small>Estimated unclaimed SOL</small><b id="rentSolAmount">0 SOL</b></div>
-                  </a>
-                </div></details>
-              </section>
-              <section class="analytics-pane nft-subsection" id="ansemIoPanel" hidden>
-                <section class="ansem-protocol-grid" aria-label="Ansem.io protocol snapshot">
-                  <article><small>PROJECTS LAUNCHED</small><strong>1,153</strong></article>
-                  <article><small>AIRDROPPED TO HOLDERS</small><strong>23.2B</strong></article>
-                  <article><small>VOLUME TRADED</small><strong>$334.09M</strong></article>
-                </section>
-                <div class="collection-window-head"><b>TOP 10 CURATED TOKENS</b><a href="https://ansem.io/z500" target="_blank" rel="noopener noreferrer">ANSEM.IO ↗</a></div>
-                <div class="curated-token-list" id="ansemCuratedTokens">
-                    <div class="curated-token-row"><span class="curated-rank">1</span><div><b>Bullshit Coin</b><small>$BULLSHIT</small></div><span class="tier-badge tier-gold">GOLD</span></div>
-                    <div class="curated-token-row"><span class="curated-rank">2</span><div><b>dogwifpants</b><small>$PANTS</small></div><span class="tier-badge tier-diamond">DIAMOND</span></div>
-                    <div class="curated-token-row"><span class="curated-rank">3</span><div><b>BULLS'S EYE</b><small>$EYE</small></div><span class="tier-badge tier-diamond">DIAMOND</span></div>
-                    <div class="curated-token-row"><span class="curated-rank">4</span><div><b>RETURN TO MEMES</b><small>$RTM</small></div><span class="tier-badge tier-gold">GOLD</span></div>
-                    <div class="curated-token-row"><span class="curated-rank">5</span><div><b>Z</b><small>$Z</small></div><span class="tier-badge tier-diamond">DIAMOND</span></div>
-                    <div class="curated-token-row"><span class="curated-rank">6</span><div><b>Yes, This is Dog</b><small>$YESDOG</small></div><span class="tier-badge tier-gold">GOLD</span></div>
-                    <div class="curated-token-row"><span class="curated-rank">7</span><div><b>Magic Internet Money</b><small>$MIM</small></div><span class="tier-badge tier-gold">GOLD</span></div>
-                    <div class="curated-token-row"><span class="curated-rank">8</span><div><b>The Black Baby Bull</b><small>$BABYANSEM</small></div><span class="tier-badge tier-gold">GOLD</span></div>
-                    <div class="curated-token-row"><span class="curated-rank">9</span><div><b>kimchi</b><small>$KIMICHI</small></div><span class="tier-badge tier-gold">GOLD</span></div>
-                    <div class="curated-token-row"><span class="curated-rank">10</span><div><b>ANSEM6900</b><small>$ANSEM6900</small></div><span class="tier-badge tier-gold">GOLD</span></div>
-                </div>
-              </section>
-              <section class="analytics-pane nft-subsection" id="nftAnalysisPanel" hidden>
-                <section class="ecosystem-analytics-grid" id="nftEcosystemStats" aria-live="polite">
-                  <article class="ecosystem-stat-card ecosystem-stat-card--kimji"><div class="ecosystem-card-head"><span class="ecosystem-source-mark">K</span><b>KIMJI STAKING</b></div><strong id="kimjiStakedTotal">—</strong><small>BULLPEN NFTS STAKED</small><time id="kimjiStakedUpdated">Syncing…</time><a href="https://kimji.fun/" target="_blank" rel="noopener noreferrer">VIEW KIMJI ↗</a></article>
-                  <article class="ecosystem-stat-card ecosystem-stat-card--buybacks"><div class="ecosystem-card-head"><span class="ecosystem-source-mark">B</span><b>RECENT BUYBACKS</b></div><div class="buyback-stat-grid"><div><strong id="buybackAnsemTotal">—</strong><small>$ANSEM BOUGHT</small></div><div><strong id="buybackCurrentUsd">—</strong><small>CURRENT USD VALUE</small></div><div><strong id="buybackTotalToDate">—</strong><small>TOTAL BUYBACKS TO DATE</small></div></div><time id="buybackUpdated">Syncing…</time><a href="https://thebulls.live/live" target="_blank" rel="noopener noreferrer">VIEW SOURCE ↗</a></article>
-                </section>
-                <div class="collection-window-head"><div><b>Collection Market Windows</b></div><div><button class="secondary" id="refreshNftEcosystem" type="button">Refresh Buybacks</button><button class="secondary" id="refreshNftCollection" type="button">Refresh Market</button></div></div>
-                <div class="nft-window-grid" id="nftCollectionStats"><p class="notice">Loading collection stats…</p></div>
-              </section>
-            </div>
-          </section>
-        </div>
-      </section>
-      <!-- LIFE -->
-      <section class="view control-center-pane" id="lifeView">
-        <div class="page life-page">
-          <section class="panel life-hero" aria-labelledby="lifeHeading">
-            <div class="section-title"><div><h1 id="lifeHeading">LIFE</h1></div><span class="status-pill">READ ONLY</span></div>
-            <div class="life-input-row">
-              <input class="input" id="lifeWalletInput" placeholder="Public Solana wallet" autocomplete="off" spellcheck="false" aria-label="Public Solana wallet address for LIFE"/>
-              <select id="lifeRange" aria-label="LIFE trading history range"><option value="30d">30 days</option><option value="90d" selected>90 days</option><option value="all">Available history</option></select>
-              <button class="primary" id="lifeAnalyze" type="button">REFLECT</button>
-            </div>
-            <p class="phase" id="lifePhase" aria-live="polite"></p>
-          </section>
-          <section class="life-context-grid" id="lifeContext" aria-label="Trading activity context"></section>
-          <section class="panel life-questions-card" aria-labelledby="lifeQuestionsHeading">
-            <div class="section-title"><h2 id="lifeQuestionsHeading">For You</h2></div>
-            <div id="lifeQuestions" aria-live="polite"><p class="notice"></p></div>
-          </section>
-          <p class="life-disclaimer">Reflective entertainment based only on public trading activity. Not medical, psychological, legal, or financial advice.</p>
-        </div>
-      </section>
-      <!-- PROFILE -->
-      <section class="view" id="profileView">
-        <div class="page profile-community-page">
-          <section class="profile-welcome-row" aria-label="Profile summary">
-            <div><span class="season-chip">PLAYER PROFILE</span><h1>Profile</h1></div>
-            <div class="profile-community-counts"><div><small>BEST</small><b id="profileBestScore">0</b></div><div><small>MISSIONS</small><b id="profileRunCount">0</b></div></div>
-          </section>
-
-          <div class="profile-hub panel">
-            <div class="profile-banner" id="profileBanner"><button class="profile-media-button profile-media-button--icon" id="uploadProfileBanner" type="button" aria-label="Edit profile banner" title="Edit banner"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16.8-.8 4 4-.8L18.6 8.6l-3.2-3.2L4 16.8ZM13.8 7l3.2 3.2M15.4 5.4l1.8-1.8a1.6 1.6 0 0 1 2.2 0l1 1a1.6 1.6 0 0 1 0 2.2l-1.8 1.8"/></svg></button></div>
-            <div class="profile-identity-row">
-              <button class="profile-avatar-button" id="uploadProfileAvatar" type="button" aria-label="Change profile image"><img id="profileAvatar" src="assets/profile-fallback.svg" alt="Profile"/></button>
-              <div><h1 id="profileDisplayName">Your Bull Profile</h1><a class="profile-x-link" id="profileXLink" href="https://x.com/" target="_blank" rel="noopener noreferrer" hidden></a></div>
-            </div>
-            <input id="profileAvatarFile" type="file" accept="image/*" hidden/><input id="profileBannerFile" type="file" accept="image/*" hidden/>
-          </div>
-
-          <div class="profile-disclosure-stack">
-            <details class="panel profile-disclosure" id="startJourneyPanel" open>
-              <summary><span>Wallet</span></summary>
-              <div class="profile-disclosure-body">
-                <div class="profile-journey"><input class="input" id="walletInput" placeholder="Public Solana wallet" autocomplete="off" spellcheck="false" aria-label="Public Solana wallet address"/><button class="primary" id="trackAnalyze" type="button">ANALYZE WALLET</button><span class="journey-status visually-hidden" id="journeyStatus" aria-live="polite"></span></div>
-              </div>
-            </details>
-
-            <details class="panel profile-disclosure">
-              <summary><span>Identity</span></summary>
-              <div class="profile-disclosure-body">
-                <div class="google-auth-panel">
-                  <span class="status-pill visually-hidden" id="googleAuthStatus">CHECKING</span>
-                  <div id="googleSignInButton" class="google-button-host"></div>
-                  <button id="googleOpenChrome" class="secondary google-chrome-fallback" type="button" hidden>OPEN SIGN-IN IN CHROME</button>
-                  <div id="googleUserCard" class="google-user-card google-user-card--signout" hidden><button id="googleSignOut" class="secondary" type="button">Sign out</button></div>
-                  <p id="googleAuthNotice" class="notice" hidden></p>
-                </div>
-                <div class="profile-editor-card" id="profileEditorCard">
-                  <label class="profile-field"><span>Display name</span><input class="input" id="profileNameInput" maxlength="50" autocomplete="nickname" placeholder="Bull member"/></label>
-                  <label class="profile-field"><span>X/Twitter handle</span><div class="profile-handle-input"><span>@</span><input class="input" id="profileXHandleInput" maxlength="15" autocomplete="off" placeholder="your_x_handle"/></div></label>
-                  <button class="primary" id="saveProfile" type="button">SAVE PROFILE</button>
-                </div>
-              </div>
-            </details>
-
-            <details class="panel profile-disclosure">
-              <summary><span>Best Run</span></summary>
-              <div class="profile-disclosure-body">
-                <div class="profile-performance-card" id="profilePerformanceCard" hidden>
-                  <div class="profile-stat-grid" id="profileStatGrid"></div>
-                  <p class="notice" id="profileFirstRunNotice" hidden></p>
-                  <button class="secondary profile-edit-again" id="editProfileAgain" type="button">EDIT PROFILE</button>
-                </div>
-              </div>
-            </details>
-
-            <details class="panel profile-disclosure" id="makeItYoursPanel">
-              <summary><span>Make It Yours</span></summary>
-              <div class="profile-disclosure-body">
-                <section class="theme-customizer" aria-labelledby="themeCustomizerTitle">
-                  <div class="settings-row"><b id="themeCustomizerTitle">App Theme</b><button class="secondary theme-reset" id="themeReset" type="button">RESET</button></div>
-                  <label class="theme-range"><span>Color <b id="themeHueValue">140°</b></span><input type="range" id="themeHue" min="0" max="360" value="140"/></label>
-                  <label class="theme-range"><span>Intensity <b id="themeSaturationValue">34%</b></span><input type="range" id="themeSaturation" min="0" max="100" value="34"/></label>
-                  <label class="theme-range"><span>Brightness <b id="themeLightnessValue">70%</b></span><input type="range" id="themeLightness" min="35" max="85" value="70"/></label>
-                  <label class="theme-range"><span>Panel Tint <b id="themePanelHueValue">275°</b></span><input type="range" id="themePanelHue" min="0" max="360" value="275"/></label>
-                </section>
-                <nav class="settings-quick-nav profile-settings-nav" aria-label="Customize app">
-                  <button type="button" data-settings-view="imageSettings"><span>▧</span><b>Image</b></button>
-                  <button type="button" data-settings-view="youtubeSettings"><span>▶</span><b>YouTube</b></button>
-                  <button type="button" data-settings-view="twitchSettings"><span>●</span><b>Twitch</b></button>
-                  <button type="button" data-settings-view="audioSettings"><span>♫</span><b>Audio</b></button>
-                </nav>
-              </div>
-            </details>
-          </div>
-        </div>
-      </section>
-      <!-- PROFILE CUSTOMIZATION DETAIL VIEWS -->
-<section class="view control-center-pane settings-detail-view" id="imageSettingsView">
-        <div class="page">
-          <section class="panel settings-detail-card" id="imageMediaPanel" aria-labelledby="imageSettingsTitle">
-            <div class="settings-detail-heading"><span aria-hidden="true">▧</span><div><small>MAKE IT YOURS</small><h2 id="imageSettingsTitle">Images &amp; Local Video</h2></div><span class="status-pill" id="gameWallPill">DEFAULT</span></div>
-            <div class="media-subhead"><span>Landing Page</span><span class="status-pill" id="menuWallPill">DEFAULT</span></div>
-            <button class="upload-btn" id="uploadMenuWall" type="button">📷 Upload Menu Image</button>
-            <input type="file" id="menuWallFile" accept="image/*,image/gif" hidden/>
-            <button type="button" id="clearMenuWall" class="secondary media-action">REMOVE MENU IMAGE</button>
-            <p id="menuWallStatus" class="notice" hidden>Using default bull art</p>
-            <div class="media-subhead media-subhead--spaced"><span>Shared Background</span></div>
-            <div class="media-option-grid">
-              <button class="upload-btn" id="uploadGameWall" type="button">📷 Upload Game Image / GIF</button>
-              <input type="file" id="gameWallFile" accept="image/*,image/gif" hidden/>
-              <button type="button" id="uploadGameVideo" class="upload-btn">🎞 Upload MP4 / WebM</button>
-              <input type="file" id="gameVideoFile" accept="video/mp4,video/webm,.mp4,.webm" hidden/>
-            </div>
-            <label class="toggle-row"><span><b>Fit uploaded backgrounds</b></span><input type="checkbox" id="backgroundFitToggle" checked/></label>
-            <button type="button" id="clearGameBg" class="secondary media-action">REMOVE GAME BACKGROUND</button>
-            <p id="gameWallStatus" class="notice" hidden>Default game background</p>
-          </section>
-        </div>
-      </section>
-
-      <section class="view control-center-pane settings-detail-view" id="youtubeSettingsView">
-        <div class="page">
-          <section class="panel settings-detail-card youtube-settings" id="youtubeMediaPanel" aria-labelledby="youtubeSettingsTitle">
-            <div class="settings-detail-heading"><span aria-hidden="true">▶</span><div><small>MAKE IT YOURS</small><h2 id="youtubeSettingsTitle">YouTube</h2></div></div>
-            <label class="eyebrow" for="youtubeUrlsInput">YouTube Videos &amp; Playlists</label>
-            <textarea class="input" id="youtubeUrlsInput" rows="5" placeholder="Paste up to 12 YouTube video or playlist links — one per line"></textarea>
-            <label class="toggle-row youtube-play-now"><span><b>Random playback</b></span><input type="checkbox" id="youtubeRandomMode"/></label>
-            <button type="button" id="youtubePlayNow" class="primary media-action">SAVE &amp; PLAY NOW</button>
-            <p id="youtubeListStatus" class="notice" hidden>Built-in video ready.</p>
-          </section>
-        </div>
-      </section>
-
-      <section class="view control-center-pane settings-detail-view" id="twitchSettingsView">
-        <div class="page">
-          <section class="panel settings-detail-card" id="twitchMediaPanel" aria-labelledby="twitchSettingsTitle">
-            <div class="settings-detail-heading"><span aria-hidden="true">●</span><div><small>MAKE IT YOURS</small><h2 id="twitchSettingsTitle">Twitch</h2></div></div>
-            <label class="eyebrow" for="twitchUrlInput">Twitch Channel or Video</label>
-            <input class="input" id="twitchUrlInput" type="url" value="https://www.twitch.tv/fazebanks/v/2839051235?sr=a" placeholder="https://www.twitch.tv/channel or /channel/v/123"/>
-            <button type="button" id="saveTwitch" class="primary media-action">USE TWITCH ON LANDING PAGE</button>
-            <button type="button" id="playTwitch" class="secondary media-action">PLAY TWITCH NOW</button>
-            <button type="button" id="removeTwitchBackground" class="secondary media-action">REMOVE TWITCH &amp; RESTORE LANDING</button>
-            <p id="twitchStatus" class="notice" hidden>Mobile browsers require one tap before Twitch can play.</p>
-          </section>
-        </div>
-      </section>
-
-      <section class="view control-center-pane settings-detail-view" id="audioSettingsView">
-        <div class="page">
-          <section class="panel settings-detail-card" id="audioControlsPanel" aria-labelledby="audioSettingsTitle">
-            <div class="settings-detail-heading"><span aria-hidden="true">♫</span><div><small>MAKE IT YOURS</small><h2 id="audioSettingsTitle">Audio &amp; Haptics</h2></div></div>
-            <label class="toggle-row"><span><b>Master audio</b></span><input type="checkbox" id="audioMasterOn" checked/></label>
-            <label class="range-label" for="audioMasterVol">Master volume <span id="audioMasterVolLbl">70%</span></label>
-            <input type="range" id="audioMasterVol" min="0" max="100" value="70"/>
-            <label class="toggle-row"><span><b>Media audio</b></span><input type="checkbox" id="mediaAudioOn"/></label>
-            <label class="toggle-row"><span><b>Music</b></span><input type="checkbox" id="audioMusicOn" checked/></label>
-            <label class="toggle-row"><span><b>Sound effects</b></span><input type="checkbox" id="audioSfxOn" checked/></label>
-            <label class="toggle-row"><span><b>Vibration</b></span><input type="checkbox" id="vibrationOn" checked/></label>
-            <label class="toggle-row"><span><b>Reduced motion</b><small>Shorter reveals and lighter particles</small></span><input type="checkbox" id="reducedMotionToggle"/></label>
-            <label class="toggle-row"><span><b>Colorblind-safe palette</b><small>Higher contrast projectile distinctions</small></span><input type="checkbox" id="colorblindPaletteToggle"/></label>
-            <button type="button" id="resetData" class="danger-button">Reset Local Data</button>
-          </section>
-        </div>
-      </section>
-
-      <!-- HELP -->
-      <section class="view" id="helpView">
-        <div class="page visual-help-page">
-          <div class="section-title"><h2>HOW TO PLAY</h2></div>
-          <div class="visual-help-grid" aria-label="Visual controls">
-            <article><span aria-hidden="true">☝</span><b>DRAG</b></article>
-            <article><span aria-hidden="true">✦</span><b>AUTO FIRE</b></article>
-            <article><span aria-hidden="true">🚀</span><b>ROCKET</b></article>
-            <article><span aria-hidden="true">⬡</span><b>POWER</b></article>
-            <article><span aria-hidden="true">Ⅱ</span><b>PAUSE</b></article>
-            <article><span aria-hidden="true">⌂</span><b>HOME</b></article>
-          </div>
-          <div class="legal-link-grid"><a class="secondary" href="privacy.html">PRIVACY</a><a class="secondary" href="terms.html">TERMS</a></div>
-        </div>
-      </section>
-
-      <!-- BULL INVADERS SUPPORT PAGES -->
-      <section class="view" id="invaderStatsView"><div class="page community-board-page"><div class="board-hero"><span class="season-chip">MISSION BOARD</span><h1>Your run story.</h1></div><div id="invaderStatsGrid"></div></div></section>
-      <section class="view" id="invaderLeaderboardView"><div class="page community-board-page"><div class="board-hero"><span class="season-chip">MISSION RANKS</span><h1>Climb the board.</h1></div><div id="invaderRankList"></div></div></section>
-
-      <!-- BULL INVADERS GAME -->
-      
-
-      <section class="view" id="invadersGameView">
-        <div class="game-wrap invaders-wrap">
-          <div class="game-head invaders-game-head">
-            <b>BULL INVADERS</b>
-            <div class="hud invader-head-hud" aria-label="Score, level, and lives">
-              <div><small>Score</small><b id="invaderScore">0</b></div>
-              <div><small>Level</small><b id="invaderLevel">1/19</b></div>
-              <div><small>Lives</small><b id="invaderLives">♥♥♥</b></div>
-              <div><small>Mode</small><b id="invaderModeHud">RANKED</b></div>
-            </div>
-            <span id="invaderBossName" hidden>BEAR WAVE</span>
-            <div class="game-head-actions"><span class="recording-live" id="invaderRecordingLive" hidden aria-live="polite">● REC</span><button id="pauseInvaders" type="button">PAUSE</button><button id="exitInvaders" type="button">EXIT</button></div>
-          </div>
-          <div class="area" id="invadersArea">
-            <div class="game-media-layer" id="invadersMediaLayer">
-              <img id="invadersImageBackground" class="game-media" hidden alt=""/>
-              <video id="invadersVideoBackground" class="game-media" hidden muted playsinline loop></video>
-              <div class="stream-background" id="invadersMediaScene" hidden><div id="invadersMediaPlayerHost"></div></div>
-            </div>
-            <canvas id="invadersCanvas"></canvas>
-            <button class="media-sound game-utility-hidden" id="invadersMediaSound" type="button" hidden disabled aria-hidden="true" tabindex="-1">🔇 MEDIA</button>
-            <div class="media-status game-utility-hidden" id="invadersMediaStatus" hidden aria-hidden="true"></div>
-            <div class="invader-action-stack" aria-label="Special weapons and stored powerups">
-              <div class="rocket-controls"><button id="invaderRocketButton" class="rocket-button" type="button"><span>🚀</span><b>SPECIAL ROCKET</b><small id="invaderRocketCount">3</small></button></div>
-              <div class="power-controls"><button id="invaderPowerSlot" class="power-slot power-slot--empty power-magazine" type="button" disabled><img id="invaderPowerAsset" alt="" hidden width="36" height="36"/><span id="invaderPowerLabel">EMPTY · 0/4</span><span class="power-magazine-cells" id="invaderPowerCells" aria-hidden="true"><i></i><i></i><i></i><i></i></span></button></div>
-            </div>
-            <div class="touch-hint">HOLD + DRAG TO MOVE • AUTO-FIRE WHILE HELD</div>
-            <div class="overlay invader-result-overlay" id="invadersOver" role="dialog" aria-modal="true" aria-labelledby="invadersOverTitle">
-              <div class="result-stage">
-                <div class="eyebrow" id="invadersOverEyebrow">RUN ENDED</div>
-                <h2 id="invadersOverTitle">YOU'RE REKT</h2>
-                <div class="result-stat-grid">
-                  <div class="stat"><small>Score</small><b id="invaderFinalScore">0</b></div>
-                  <div class="stat"><small>Time</small><b id="invaderFinalTime">0:00</b></div>
-                  <div class="stat"><small>Grade</small><b id="invaderFinalGrade">D</b></div>
-                  <div class="stat"><small>Kills</small><b id="invaderFinalKills">0</b></div>
-                  <div class="stat result-level-stat"><small>Sector</small><b id="invaderFinalLevel">1/19</b></div>
-                </div>
-                <article class="ship-unlock-stage" id="shipUnlockStage" hidden><span>CRAFT SYNCED</span><img id="shipUnlockImage" alt="Active player craft"/><b id="shipUnlockName"></b><small id="shipUnlockTag"></small></article>
-                <article class="epoch-bridge-stage" id="epochBridgeStage" hidden><span id="epochBridgeCode">NEXT EPOCH</span><b id="epochBridgeName"></b><small id="epochBridgeTag"></small><i aria-hidden="true"></i></article>
-                <button class="primary result-primary" id="invaderAgain" type="button">RUN IT BACK</button>
-                <button class="secondary result-secondary" id="invaderSecondaryAction" type="button" hidden>SKIP TO NEXT EPOCH</button>
-                <div class="recording-actions" id="invaderRecordingActions" hidden><button class="primary share-session-button" id="invaderShareSession" type="button">SHARE VIDEO</button><button class="secondary save-session-button" id="invaderSaveSession" type="button">SAVE VIDEO</button></div>
-                <p class="recording-result-status" id="invaderRecordingStatus" hidden aria-live="polite"></p>
-                <div class="game-over-secondary-row"><button class="secondary share-card-button" id="invaderShareCard" type="button">Share Score</button><button class="secondary listen-button" id="invaderListen" type="button"><svg class="youtube-logo" viewBox="0 0 24 17" aria-hidden="true"><path d="M23.5 2.7A3 3 0 0 0 21.4.6C19.5 0 12 0 12 0S4.5 0 2.6.6A3 3 0 0 0 .5 2.7 31 31 0 0 0 0 8.5a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1C4.5 17 12 17 12 17s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1 31 31 0 0 0 .5-5.8 31 31 0 0 0-.5-5.8Z"/><path class="youtube-logo-play" d="m9.6 12.1 6.3-3.6-6.3-3.6Z"/></svg><span>Still Listening?</span></button></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-  </div>
-  <div class="youtube-listening-bar" id="youtubeListeningBar" hidden>
-    <div><b>YOUTUBE CONTINUES</b></div>
-    <button id="youtubeListenerToggle" type="button">PAUSE</button>
-    <button id="youtubeListenerStop" type="button">STOP</button>
-  </div>
-  <div class="youtube-sound-gate" id="youtubeSoundGate" hidden role="dialog" aria-live="assertive" aria-label="Start media playback">
-    <div><b id="mediaGateTitle">MEDIA IS READY</b><small id="youtubeSoundGateCopy">Your browser requires one tap to start playback with sound.</small></div>
-    <button id="youtubeSoundGateButton" type="button">PLAY WITH SOUND</button>
-  </div>
-  <div class="toast" id="toast"></div>
-</div>
-
-<script src="js/opening-sequence.js?v=8.5.0"></script>
-<script src="js/config.js?v=8.5.0"></script>
-<script src="js/api-client.js?v=8.5.0"></script>
-<script src="js/storage.js?v=8.5.0"></script>
-<script src="js/core.js?v=8.5.0"></script>
-<script src="js/background-manager.js?v=8.5.0"></script>
-<script src="js/audio-manager.js?v=8.5.0"></script>
-<script src="js/v7-art-system.js?v=8.5.0"></script>
-<script src="js/dusk-interactions.js?v=8.5.0"></script>
-<script src="js/run-recorder.js?v=8.5.0"></script>
-<script src="js/share-card.js?v=8.5.0"></script>
-<script src="js/leaderboard.js?v=8.5.0"></script>
-<script src="js/run-mode.js?v=8.5.0"></script>
-<script src="vendor/pixi-8.19.0.min.js?v=8.5.0"></script>
-<script src="js/bull-invaders-renderer-v2.js?v=8.5.0"></script>
-<script src="js/bull-invaders.js?v=8.5.0"></script>
-<script src="js/profile-manager.js?v=8.5.0"></script>
-<script src="js/ui.js?v=8.5.0"></script>
-<script src="js/track-formatters.js?v=8.5.0"></script>
-<script src="js/track.js?v=8.5.0"></script>
-<script src="js/life.js?v=8.5.0"></script>
-<script src="js/theme-customizer.js?v=8.5.0"></script>
-<script src="js/main.js?v=8.5.0"></script>
+  <div class="toast" id="vnextToast" hidden role="status" aria-live="polite"></div>
+  <script>
+    (() => {
+      const n = document.getElementById('vnextToast');
+      let t = 0;
+      window.toast = window.toast || ((m) => {
+        if (!n) return;
+        n.textContent = String(m || '');
+        n.hidden = false;
+        n.classList.add('show');
+        clearTimeout(t);
+        t = setTimeout(() => { n.classList.remove('show'); n.hidden = true; }, 2600);
+      });
+    })();
+  </script>
+  <script src="js/config.js?v=8.8.0-vnext-73"></script>
+  <script src="js/api-client.js?v=8.8.0-vnext-73"></script>
+  <script type="module" src="js/market-context-player-bridge.mjs?v=8.8.0-vnext-73"></script>
+  <script type="module" src="js/experience-entry.mjs?v=8.8.0-vnext-73"></script>
+  <script src="js/storage.js?v=8.8.0-vnext-73" defer></script>
+  <script src="js/core.js?v=8.8.0-vnext-73" defer></script>
+  <script src="js/background-manager.js?v=8.8.0-vnext-73" defer></script>
+  <script src="js/audio-manager.js?v=8.8.0-vnext-73" defer></script>
+  <script src="js/v7-art-system.js?v=8.8.0-vnext-73" defer></script>
+  <script src="js/run-recorder.js?v=8.8.0-vnext-73" defer></script>
+  <script src="js/share-card.js?v=8.8.0-vnext-73" defer></script>
+  <script src="js/leaderboard.js?v=8.8.0-vnext-73" defer></script>
+  <script src="js/run-mode.js?v=8.8.0-vnext-73" defer></script>
+  <script src="vendor/pixi-8.19.0.min.js?v=8.8.0-vnext-73" defer></script>
+  <script src="js/bull-invaders-renderer-v2.js?v=8.8.0-vnext-73" defer></script>
+  <script src="js/bull-invaders.js?v=8.8.0-vnext-73" defer></script>
+  <script src="js/main.js?v=8.8.0-vnext-73" defer></script>
 </body>
 </html>
