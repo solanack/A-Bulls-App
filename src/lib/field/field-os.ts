@@ -21,6 +21,8 @@ import {
 } from "./galaxies";
 import { speakText, unlockSpeech, type VoiceHandle } from "./voice";
 import { resolvePublicIdentifier } from "@/lib/intelligence";
+import { getIndexedGalaxySnapshot } from "@/lib/universe-data/service";
+import type { UniverseDataStatus } from "@/lib/universe-data/contracts";
 import {
   createReplayState,
   evidenceForParticle,
@@ -40,6 +42,7 @@ export type FieldOSListener = (event: {
   galaxies: readonly GalaxyDefinition[];
   replay: ReplayState;
   evidence: EvidenceRecord | null;
+  dataStatus: UniverseDataStatus;
 }) => void;
 
 export class FieldOS {
@@ -56,10 +59,17 @@ export class FieldOS {
   galaxy: GalaxyDefinition = getGalaxy(DEFAULT_GALAXY_ID);
   replay: ReplayState;
   evidence: EvidenceRecord | null = null;
+  dataStatus: UniverseDataStatus = {
+    store: "memory-fallback",
+    coverage: "degraded",
+    circuitBreaker: null,
+    disclosure: "Checking indexed universe coverage.",
+  };
   #cameraSnapshot: CameraState | null = null;
   #voice: VoiceHandle | null = null;
   #listener: FieldOSListener | null = null;
   #querySeq = 0;
+  #snapshotSeq = 0;
 
   constructor(host: HTMLElement, listener: FieldOSListener) {
     this.host = host;
@@ -95,6 +105,7 @@ export class FieldOS {
     };
     this.muted = globalThis.localStorage?.getItem("abulls-mute") === "1";
     this.#emit();
+    void this.#hydrateGalaxy(this.galaxy.id);
   }
 
   #emit() {
@@ -110,6 +121,7 @@ export class FieldOS {
       galaxies: GALAXIES,
       replay: this.replay,
       evidence: this.evidence,
+      dataStatus: this.dataStatus,
     });
   }
 
@@ -129,7 +141,22 @@ export class FieldOS {
     this.mode = "explore";
     this.result = null;
     this.#emit();
+    void this.#hydrateGalaxy(id);
     return true;
+  }
+
+  async #hydrateGalaxy(id: GalaxyId) {
+    const seq = ++this.#snapshotSeq;
+    const delivery = await getIndexedGalaxySnapshot({ data: { galaxyId: id } });
+    if (seq !== this.#snapshotSeq || id !== this.galaxy.id) return;
+    this.dataStatus = delivery.status;
+    if (delivery.snapshot) {
+      this.field.setSnapshot(delivery.snapshot);
+      this.focus = null;
+      this.evidence = null;
+      this.replay = createReplayState(delivery.snapshot);
+    }
+    this.#emit();
   }
 
   setMode(mode: FieldMode) {
