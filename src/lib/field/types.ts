@@ -20,6 +20,33 @@ export type OrganismState =
 
 export type Coverage = "fresh" | "stale" | "degraded" | "empty";
 
+export type GalaxyId = "galaxy-zero" | "pump-fun";
+export type GalaxyStatus = "populated" | "staging";
+
+export type GalaxyDefinition = {
+  readonly id: GalaxyId;
+  readonly name: string;
+  readonly ecosystem: string;
+  readonly status: GalaxyStatus;
+  readonly seed: number;
+  readonly accent: string;
+  readonly description: string;
+  readonly coverage: string;
+  readonly sources: readonly string[];
+};
+
+export type CosmicObjectKind =
+  | "galaxy"
+  | "star"
+  | "planet"
+  | "moon"
+  | "asteroid-belt"
+  | "comet"
+  | "black-hole"
+  | "supernova"
+  | "wormhole"
+  | "ghost";
+
 export type EntityKind =
   | "wallet"
   | "transaction"
@@ -40,6 +67,8 @@ export type ParticleCategory =
 export type FieldParticle = {
   id: string;
   kind: string;
+  cosmicKind: CosmicObjectKind;
+  readonly originGalaxyId: GalaxyId;
   verificationState: string;
   observedAt: number;
   category: ParticleCategory;
@@ -50,10 +79,13 @@ export type FieldParticle = {
 export type FocusedParticle = {
   id: string;
   kind: string;
+  cosmicKind: CosmicObjectKind;
+  originGalaxyId: GalaxyId;
   category: ParticleCategory;
 };
 
 export type UniverseSnapshot = {
+  galaxyId: GalaxyId;
   windowStart: number;
   windowEnd: number;
   observedEventCount: number;
@@ -129,7 +161,7 @@ export const MODE_HINT: Record<FieldMode, string> = {
   intelligence: "Inspect verified activity. Facts only.",
   query: "Paste a public identifier. ASK wakes the Field.",
   trickster: "Compose a data story. Every claim keeps its receipt.",
-  games: "Folklore generated from indexed events.",
+  games: "Learn from narrated, indexed events. No scores. No missions.",
   compare: "Compare evidence side by side.",
   "what-if": "Simulate from observed evidence. Estimates stay labeled.",
   sequences: "Discover bounded market sequences.",

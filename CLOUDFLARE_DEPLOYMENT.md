@@ -26,7 +26,7 @@ pkg install nodejs-lts git unzip
 termux-setup-storage
 
 cd ~/storage/downloads
-unzip A-Bulls-App-Template-Alien-Cloudflare-Ready.zip -d ~/A-Bulls-App
+unzip A-Bulls-App-Galaxy-Zero-Architecture-Cloudflare-Ready.zip -d ~/A-Bulls-App
 cd ~/A-Bulls-App
 npm ci
 npx wrangler login --device
@@ -44,13 +44,17 @@ Before moving `abullsapp.com`, verify on the temporary Worker URL:
 
 1. Normal Particle Field loads and behaves exactly like the Grok source-of-truth build.
 2. Normal Particle Field movement, camera, colors, and controls are unchanged.
-3. QUERY transitions to the alien.
-4. Alien renders, rotates, and remains anatomically stable.
-5. QUERY accepts wallet / transaction / mint / NFT / program identifiers.
-6. Existing intelligence Worker returns real read-only results.
-7. Alien speaks the result.
-8. Return To Field restores the exact normal field.
-9. Test on Android/mobile.
+3. The Galaxy Zero origin-map button opens the immersive starmap.
+4. Galaxy Zero is marked current; pump.fun is visibly calibrating and cannot be
+   entered before its live source is attached.
+5. Closing the starmap returns to the same camera and field state.
+6. QUERY transitions to the alien.
+7. Alien renders, rotates, and remains anatomically stable.
+8. QUERY accepts wallet / transaction / mint / NFT / program identifiers.
+9. Existing intelligence Worker returns real read-only results.
+10. Alien speaks the result.
+11. Return To Field restores the exact normal field.
+12. Test on Android/mobile.
 
 ## Move `abullsapp.com` only after preview passes
 

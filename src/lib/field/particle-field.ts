@@ -82,6 +82,27 @@ void main() {
 }
 `;
 
+function buildGalaxyGeometry(snapshot: UniverseSnapshot, limit: number) {
+  const visible = snapshot.particles.slice(0, limit);
+  const positions = new Float32Array(visible.length * 3);
+  const colors = new Float32Array(visible.length * 3);
+  const sizes = new Float32Array(visible.length);
+  const cats = new Float32Array(visible.length);
+  visible.forEach((entity, i) => {
+    positions.set(entity.position, i * 3);
+    colors.set(parentColorForCategory(entity.category), i * 3);
+    sizes[i] = 1.18 + entity.magnitudeBand * 3.15;
+    cats[i] = CATEGORY_INDEX[entity.category] ?? 6;
+  });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+  geometry.setAttribute("aCat", new THREE.BufferAttribute(cats, 1));
+  geometry.userData.entities = visible;
+  return { geometry, positions, colors };
+}
+
 export class ParticleFieldRenderer {
   host: HTMLElement;
   snapshot: UniverseSnapshot;
@@ -118,7 +139,7 @@ export class ParticleFieldRenderer {
     const budget = deviceBudget();
     const canvas = document.createElement("canvas");
     canvas.className = "universe-canvas";
-    canvas.setAttribute("aria-label", "Interactive Solana activity field");
+    canvas.setAttribute("aria-label", `Interactive ${snapshot.galaxyId} activity field`);
     Object.assign(canvas.style, {
       position: "absolute",
       inset: "0",
@@ -160,26 +181,10 @@ export class ParticleFieldRenderer {
       fragmentShader: FIELD_FRAG,
     });
 
-    const visible = snapshot.particles.slice(0, budget.field);
-    const positions = new Float32Array(visible.length * 3);
-    const colors = new Float32Array(visible.length * 3);
-    const sizes = new Float32Array(visible.length);
-    const cats = new Float32Array(visible.length);
-    visible.forEach((entity, i) => {
-      positions.set(entity.position, i * 3);
-      colors.set(parentColorForCategory(entity.category), i * 3);
-      sizes[i] = 1.18 + entity.magnitudeBand * 3.15;
-      cats[i] = CATEGORY_INDEX[entity.category] ?? 6;
-    });
-    this.basePositions = new Float32Array(positions);
-    this.colors = colors;
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
-    geometry.setAttribute("aCat", new THREE.BufferAttribute(cats, 1));
-    geometry.userData.entities = visible;
-    this.points = new THREE.Points(geometry, this.material);
+    const fieldGeometry = buildGalaxyGeometry(snapshot, budget.field);
+    this.basePositions = new Float32Array(fieldGeometry.positions);
+    this.colors = fieldGeometry.colors;
+    this.points = new THREE.Points(fieldGeometry.geometry, this.material);
     this.scene.add(this.points);
 
     const starfield = createStarfield();
@@ -235,6 +240,22 @@ export class ParticleFieldRenderer {
 
   getParticleCount() {
     return this.points.geometry.getAttribute("position").count;
+  }
+
+  setSnapshot(snapshot: UniverseSnapshot) {
+    if (this.destroyed) return;
+    const fieldGeometry = buildGalaxyGeometry(snapshot, deviceBudget().field);
+    const previousGeometry = this.points.geometry;
+    this.snapshot = snapshot;
+    this.basePositions = new Float32Array(fieldGeometry.positions);
+    this.colors = fieldGeometry.colors;
+    this.points.geometry = fieldGeometry.geometry;
+    previousGeometry.dispose();
+    this.renderer.domElement.setAttribute(
+      "aria-label",
+      `Interactive ${snapshot.galaxyId} activity field`,
+    );
+    this.clearFocus();
   }
 
   getParentPositions() {

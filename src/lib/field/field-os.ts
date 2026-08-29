@@ -1,14 +1,22 @@
 import { ParticleFieldRenderer } from "./particle-field";
 import { LivingAlienOrganism } from "./query-organism";
-import { createSyntheticUniverse } from "./synthetic-universe";
+import { createGalaxySnapshot } from "./synthetic-universe";
 import { deviceBudget } from "./hash";
 import type {
   CameraState,
   FieldMode,
   FocusedParticle,
+  GalaxyDefinition,
+  GalaxyId,
   IntelligenceResult,
   OrganismState,
 } from "./types";
+import {
+  DEFAULT_GALAXY_ID,
+  GALAXIES,
+  getGalaxy,
+  isPopulatedGalaxy,
+} from "./galaxies";
 import { speakText, unlockSpeech, type VoiceHandle } from "./voice";
 import { resolvePublicIdentifier } from "@/lib/intelligence";
 
@@ -20,6 +28,8 @@ export type FieldOSListener = (event: {
   speaking: boolean;
   muted: boolean;
   focus: FocusedParticle | null;
+  galaxy: GalaxyDefinition;
+  galaxies: readonly GalaxyDefinition[];
 }) => void;
 
 export class FieldOS {
@@ -33,6 +43,7 @@ export class FieldOS {
   muted = false;
   volume = 0.92;
   focus: FocusedParticle | null = null;
+  galaxy: GalaxyDefinition = getGalaxy(DEFAULT_GALAXY_ID);
   #cameraSnapshot: CameraState | null = null;
   #voice: VoiceHandle | null = null;
   #listener: FieldOSListener | null = null;
@@ -42,11 +53,17 @@ export class FieldOS {
     this.host = host;
     this.#listener = listener;
     const budget = deviceBudget();
-    const snapshot = createSyntheticUniverse(budget.field);
+    const snapshot = createGalaxySnapshot(this.galaxy, budget.field);
     this.field = new ParticleFieldRenderer(host, snapshot);
     this.field.onFocus = (particle) => {
       this.focus = particle
-        ? { id: particle.id, kind: particle.kind, category: particle.category }
+        ? {
+            id: particle.id,
+            kind: particle.kind,
+            cosmicKind: particle.cosmicKind,
+            originGalaxyId: particle.originGalaxyId,
+            category: particle.category,
+          }
         : null;
       this.#emit();
     };
@@ -63,7 +80,26 @@ export class FieldOS {
       speaking: Boolean(this.#voice?.speaking),
       muted: this.muted,
       focus: this.focus,
+      galaxy: this.galaxy,
+      galaxies: GALAXIES,
     });
+  }
+
+  setGalaxy(id: GalaxyId) {
+    if (this.queryActive || !isPopulatedGalaxy(id)) return false;
+    const nextGalaxy = getGalaxy(id);
+    if (nextGalaxy.id === this.galaxy.id) {
+      this.#emit();
+      return true;
+    }
+    const snapshot = createGalaxySnapshot(nextGalaxy, deviceBudget().field);
+    this.field.setSnapshot(snapshot);
+    this.galaxy = nextGalaxy;
+    this.focus = null;
+    this.mode = "explore";
+    this.result = null;
+    this.#emit();
+    return true;
   }
 
   setMode(mode: FieldMode) {

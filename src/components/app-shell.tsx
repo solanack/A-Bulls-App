@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Volume2, VolumeX } from "lucide-react";
+import { Orbit, Volume2, VolumeX, X } from "lucide-react";
 import type { FieldOS } from "@/lib/field/field-os";
+import { COSMOLOGY_RULES, GALAXIES, getGalaxy } from "@/lib/field/galaxies";
 import {
   DOCK,
   MODE_HINT,
   type FieldMode,
   type FocusedParticle,
+  type GalaxyDefinition,
   type IntelligenceResult,
   type OrganismState,
 } from "@/lib/field/types";
@@ -14,6 +16,13 @@ const EXAMPLES = [
   { label: "WRAPPED SOL", value: "So11111111111111111111111111111111111111112" },
   { label: "SYSTEM PROGRAM", value: "11111111111111111111111111111111" },
 ];
+
+const STARMAP_LEGEND = [
+  ["star", "STAR"],
+  ["planet", "PLANET"],
+  ["comet", "COMET"],
+  ["ghost", "GHOST"],
+] as const;
 
 const STATE_LABEL: Record<OrganismState, string> = {
   idle: "THE FIELD IS CONSCIOUS",
@@ -35,6 +44,9 @@ export function AppShell() {
   const [result, setResult] = useState<IntelligenceResult | null>(null);
   const [muted, setMuted] = useState(false);
   const [focus, setFocus] = useState<FocusedParticle | null>(null);
+  const [galaxy, setGalaxy] = useState<GalaxyDefinition>(() => getGalaxy("galaxy-zero"));
+  const [galaxies, setGalaxies] = useState<readonly GalaxyDefinition[]>(GALAXIES);
+  const [starmapOpen, setStarmapOpen] = useState(false);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -50,6 +62,8 @@ export function AppShell() {
         setResult(event.result);
         setMuted(event.muted);
         setFocus(event.focus);
+        setGalaxy(event.galaxy);
+        setGalaxies(event.galaxies);
       });
       osRef.current = os;
     });
@@ -59,6 +73,15 @@ export function AppShell() {
       osRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!starmapOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setStarmapOpen(false);
+    };
+    globalThis.addEventListener("keydown", onKeyDown);
+    return () => globalThis.removeEventListener("keydown", onKeyDown);
+  }, [starmapOpen]);
 
   function onAsk(value: string) {
     const query = value.trim();
@@ -72,10 +95,16 @@ export function AppShell() {
   }
 
   const workspaceOpen = (mode === "intelligence" || mode === "trickster" || mode === "games") && !queryActive;
-  const slotValue = focus ? `${focus.kind} · living point` : null;
+  const slotValue = focus
+    ? `${focus.cosmicKind.replace("-", " ")} · ${focus.kind} · ${galaxy.name}`
+    : null;
 
   return (
-    <main className={`field-shell${queryActive ? " field-shell--query" : ""}`} data-mode={queryActive ? "query" : mode}>
+    <main
+      className={`field-shell${queryActive ? " field-shell--query" : ""}`}
+      data-mode={queryActive ? "query" : mode}
+      data-galaxy={galaxy.id}
+    >
       <div ref={hostRef} className="field-shell__field" />
       <div className="field-shell__chrome" hidden={queryActive} aria-hidden={queryActive}>
         <header className="field-shell__top">
@@ -103,8 +132,18 @@ export function AppShell() {
             </button>
           </form>
         </header>
+        <button
+          type="button"
+          className="field-shell__galaxy-trigger"
+          onClick={() => setStarmapOpen(true)}
+          aria-haspopup="dialog"
+        >
+          <Orbit size={15} aria-hidden="true" />
+          <span>{galaxy.name}</span>
+          <small>ORIGIN MAP</small>
+        </button>
         <p className="field-shell__tag">
-          <strong>THE BLOCKCHAIN IS ALIVE</strong>
+          <strong>{galaxy.name.toUpperCase()} · THE BLOCKCHAIN IS ALIVE</strong>
           {MODE_HINT[mode === "query" ? "query" : "explore"]}
         </p>
         {focus ? <p className="field-shell__focus">{slotValue}</p> : null}
@@ -140,6 +179,17 @@ export function AppShell() {
           ))}
         </nav>
       </div>
+
+      {starmapOpen && !queryActive ? (
+        <Starmap
+          galaxies={galaxies}
+          current={galaxy}
+          onClose={() => setStarmapOpen(false)}
+          onSelect={(id) => {
+            if (osRef.current?.setGalaxy(id)) setStarmapOpen(false);
+          }}
+        />
+      ) : null}
 
       {queryActive ? (
         <div className="query-experience">
@@ -208,16 +258,94 @@ export function AppShell() {
           ) : null}
           {mode === "games" ? (
             <article className="workspace-copy">
-              <h2>Folklore stays downstream</h2>
+              <h2>Learn from observed chain history</h2>
               <p>
-                Missions are generated from real indexed events. They remain reachable in the product. This
-                surface does not revive abandoned game trees.
+                The Grey will guide narrated examples using real indexed events. This is education without
+                scores, missions, progression, or competitive mechanics.
               </p>
             </article>
           ) : null}
         </div>
       </section>
     </main>
+  );
+}
+
+function Starmap({
+  galaxies,
+  current,
+  onClose,
+  onSelect,
+}: {
+  galaxies: readonly GalaxyDefinition[];
+  current: GalaxyDefinition;
+  onClose: () => void;
+  onSelect: (id: GalaxyDefinition["id"]) => void;
+}) {
+  return (
+    <section className="starmap" role="dialog" aria-modal="true" aria-labelledby="starmap-title">
+      <div className="starmap__veil" onClick={onClose} aria-hidden="true" />
+      <div className="starmap__surface">
+        <header className="starmap__header">
+          <div>
+            <span>THE LIVING UNIVERSE</span>
+            <h1 id="starmap-title">Origin starmap</h1>
+          </div>
+          <button
+            type="button"
+            className="starmap__close"
+            onClick={onClose}
+            aria-label="Close starmap"
+            autoFocus
+          >
+            <X size={18} />
+          </button>
+        </header>
+        <p className="starmap__rule">
+          A token's home galaxy is fixed by where it launched. Trading elsewhere creates a route; it never
+          rewrites origin.
+        </p>
+        <div className="starmap__field" aria-label="Available galaxies">
+          <div className="starmap__orbit starmap__orbit--outer" />
+          <div className="starmap__orbit starmap__orbit--inner" />
+          {galaxies.map((item, index) => {
+            const selected = item.id === current.id;
+            const available = item.status === "populated";
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`starmap__galaxy starmap__galaxy--${index + 1}`}
+                data-current={selected || undefined}
+                data-status={item.status}
+                disabled={!available}
+                onClick={() => onSelect(item.id)}
+                style={{ "--galaxy-accent": item.accent } as React.CSSProperties}
+              >
+                <span className="starmap__core" />
+                <strong>{item.name}</strong>
+                <small>{selected ? "CURRENT GALAXY" : available ? "ENTER GALAXY" : "CALIBRATING"}</small>
+              </button>
+            );
+          })}
+        </div>
+        <div className="starmap__details">
+          <div>
+            <span>CURRENT ORIGIN</span>
+            <strong>{current.ecosystem}</strong>
+            <p>{current.description}</p>
+          </div>
+          <div className="starmap__legend" aria-label="Universe taxonomy">
+            {STARMAP_LEGEND.map(([kind, label]) => (
+              <span key={kind}>
+                <b>{label}</b>
+                {COSMOLOGY_RULES[kind].onChainMeaning}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
