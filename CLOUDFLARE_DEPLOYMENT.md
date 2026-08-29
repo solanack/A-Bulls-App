@@ -26,10 +26,12 @@ pkg install nodejs-lts git unzip
 termux-setup-storage
 
 cd ~/storage/downloads
-unzip A-Bulls-App-Replay-Evidence-Cloudflare-Ready.zip -d ~/A-Bulls-App-Replay-Evidence
-cd ~/A-Bulls-App-Replay-Evidence
+unzip A-Bulls-App-Universe-Data-Spine-Cloudflare-Ready.zip -d ~/A-Bulls-App-Universe-Data-Spine
+cd ~/A-Bulls-App-Universe-Data-Spine
 npm ci
 npx wrangler login --device
+npx wrangler d1 create a-bulls-universe-index --binding UNIVERSE_DB --update-config
+npx wrangler d1 execute UNIVERSE_DB --remote --file=cloudflare/migrations/0001_universe_index.sql --yes
 npm run build
 npx wrangler deploy
 ```
@@ -59,6 +61,9 @@ Before moving `abullsapp.com`, verify on the temporary Worker URL:
 14. Confirm unrevealed particles cannot be selected.
 15. Select a revealed particle and open EVIDENCE.
 16. Confirm the synthetic Galaxy Zero window shows no fabricated price chart.
+17. Confirm the field displays `INDEXED / EMPTY` after D1 is attached but before
+    a production snapshot is written; it must not silently live-fetch a field.
+18. Repeat a QUERY within 60 seconds and confirm it is served from cache.
 
 ## Move `abullsapp.com` only after preview passes
 
