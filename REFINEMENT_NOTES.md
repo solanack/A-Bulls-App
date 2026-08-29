@@ -28,4 +28,4 @@ This pass fixes the QUERY organism itself. The earlier build imported the suppli
 - QUERY still accepts public wallet, transaction, mint, NFT, and program identifiers.
 - The existing read-only intelligence Worker remains unchanged:
   `https://black-bull-run-sol.ckdsigns1.workers.dev`
-- No wallet connection, commerce, or Bull Invaders surface was added.
+- No wallet connection, commerce, or retired shooter surface was added.
