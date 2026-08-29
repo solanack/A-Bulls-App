@@ -52,12 +52,12 @@ function fieldPoint(index) {
   const u = hash01(index * 1.13 + 4.2);
   const v = hash01(index * 2.71 + 8.6);
   const w = hash01(index * 3.91 + 1.8);
-  const radius = 0.35 + u * 1.55;
+  const radius = 0.55 + u * 2.35;
   const phi = Math.acos(2 * v - 1);
   const theta = w * TAU;
   return [
     Math.sin(phi) * Math.cos(theta) * radius,
-    Math.cos(phi) * radius * 0.72,
+    Math.cos(phi) * radius * 0.82,
     Math.sin(phi) * Math.sin(theta) * radius
   ];
 }
@@ -127,7 +127,7 @@ export class FieldQueryOrganism {
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     let best = -1;
-    let bestDist = 28 * 28;
+    let bestDist = 36 * 36;
     for (let i = 0; i < this.#points.length; i += 1) {
       const point = this.#points[i];
       const dx = point.px - x;
@@ -161,12 +161,12 @@ export class FieldQueryOrganism {
   }
 
   #project(x, y, z, width, height) {
-    const scale = Math.min(width, height) * 0.42;
-    const depth = 2.6 + z;
+    const scale = Math.max(width, height) * 0.62;
+    const depth = 2.15 + z * 0.55;
     return {
       px: width * 0.5 + (x * scale) / depth,
-      py: height * 0.38 + (y * scale) / depth,
-      size: Math.max(0.6, 1.8 / depth)
+      py: height * 0.42 + (y * scale) / depth,
+      size: Math.max(1.15, 2.8 / depth)
     };
   }
 
