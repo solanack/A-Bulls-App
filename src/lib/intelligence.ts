@@ -3,7 +3,6 @@ import type { Coverage, EntityKind, IntelligenceResult } from "@/lib/field/types
 import { shortId } from "@/lib/field/hash";
 
 const WORKER = "https://black-bull-run-sol.ckdsigns1.workers.dev";
-const RPC = "https://api.mainnet-beta.solana.com";
 
 type ResolveBody = {
   ok?: boolean;
@@ -114,34 +113,6 @@ function factsFromResolve(body: ResolveBody, extra: string[]): string[] {
   return facts;
 }
 
-async function rpcSignatures(address: string): Promise<string[]> {
-  try {
-    const res = await fetch(RPC, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "getSignaturesForAddress",
-        params: [address, { limit: 6 }],
-      }),
-    });
-    const json = (await res.json()) as {
-      result?: { signature: string; err: unknown; slot: number }[];
-    };
-    const rows = json.result ?? [];
-    if (!rows.length) return ["Recent signatures · none in the current RPC window."];
-    const failed = rows.filter((row) => row.err).length;
-    return [
-      `Recent signatures observed · ${rows.length}.`,
-      failed ? `${failed} of those failed.` : "No failures in that sample.",
-      `Latest slot in sample · ${rows[0]?.slot ?? "unknown"}.`,
-    ];
-  } catch {
-    return [];
-  }
-}
-
 export const resolvePublicIdentifier = createServerFn({ method: "POST" })
   .validator((input: { query: string }) => input)
   .handler(async ({ data }): Promise<IntelligenceResult> => {
@@ -164,25 +135,65 @@ export const resolvePublicIdentifier = createServerFn({ method: "POST" })
       };
     }
 
-    let body: ResolveBody | null = null;
-    try {
-      const res = await fetch(
-        `${WORKER}/api/intelligence/resolve?query=${encodeURIComponent(query)}`,
-        { headers: { accept: "application/json" }, cache: "no-store" },
+    const cacheKey = `resolve:${query.toLowerCase()}`;
+    const {
+      configuredBudgetPolicy,
+      readQueryCache,
+      reserveProviderUnits,
+      writeQueryCache,
+    } = await import("@/lib/universe-data/store.server");
+    let cached = await readQueryCache<ResolveBody>(cacheKey);
+    let body: ResolveBody | null = cached?.value ?? null;
+    let forcedCoverage: Coverage | null = cached?.coverage ?? null;
+    let budgetDisclosure: string | null = cached ? "Served from the indexed query cache." : null;
+
+    if (!body) {
+      const usage = await reserveProviderUnits(
+        configuredBudgetPolicy("intelligence-worker"),
+        1,
       );
-      body = (await res.json()) as ResolveBody;
-    } catch {
-      body = { ok: false, state: "not-found", error: "resolver_unavailable" };
+      if (usage?.blocked) {
+        cached = await readQueryCache<ResolveBody>(cacheKey, { allowExpired: true });
+        if (cached) {
+          body = cached.value;
+          forcedCoverage = "stale";
+          budgetDisclosure =
+            "Provider circuit breaker is active. This answer came from an expired cache record and is labeled stale.";
+        } else {
+          body = { ok: false, state: "not-found", error: "provider_budget_blocked" };
+          forcedCoverage = "stale";
+          budgetDisclosure =
+            "Provider circuit breaker is active and no cached record exists. No live request was issued.";
+        }
+      } else {
+        try {
+          const res = await fetch(
+            `${WORKER}/api/intelligence/resolve?query=${encodeURIComponent(query)}`,
+            { headers: { accept: "application/json" }, cache: "no-store" },
+          );
+          body = (await res.json()) as ResolveBody;
+          if (res.ok && body.ok) {
+            await writeQueryCache(cacheKey, body, 60_000, "fresh");
+          }
+        } catch {
+          cached = await readQueryCache<ResolveBody>(cacheKey, { allowExpired: true });
+          if (cached) {
+            body = cached.value;
+            forcedCoverage = "stale";
+            budgetDisclosure = "Resolver unavailable. Serving a stale cached record.";
+          } else {
+            body = { ok: false, state: "not-found", error: "resolver_unavailable" };
+          }
+        }
+      }
     }
 
     const extra: string[] = [];
     const kind = classifyKind(body?.label || "", body?.parsedType, body?.executable);
-    if (body?.ok && body.state === "resolved" && (kind === "wallet" || kind === "program" || kind === "mint")) {
-      const address = body.address || query;
-      extra.push(...(await rpcSignatures(address)));
-    }
 
-    const coverage = body?.error === "resolver_unavailable" ? "degraded" : coverageFrom(body ?? {});
+    const coverage =
+      forcedCoverage ??
+      (body?.error === "resolver_unavailable" ? "degraded" : coverageFrom(body ?? {}));
     if (coverage === "degraded" && !body?.ok) {
       return {
         ok: false,
@@ -195,7 +206,7 @@ export const resolvePublicIdentifier = createServerFn({ method: "POST" })
         facts: ["The intelligence resolver could not be reached. No label was guessed."],
         spokenText:
           "The intelligence record is degraded. I could not reach the resolver. I will not invent an answer.",
-        disclosure: "Degraded · resolver unavailable",
+        disclosure: budgetDisclosure ?? "Degraded · resolver unavailable",
         source: null,
       };
     }
@@ -211,7 +222,7 @@ export const resolvePublicIdentifier = createServerFn({ method: "POST" })
       label: body?.label || "unknown",
       facts: factsFromResolve(body ?? {}, extra),
       spokenText: spoken,
-      disclosure: body?.disclosure ?? null,
+      disclosure: [body?.disclosure, budgetDisclosure].filter(Boolean).join(" · ") || null,
       source: body?.source ?? null,
     };
   });
