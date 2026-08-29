@@ -76,6 +76,66 @@ void main() {
 }
 `;
 
+const CORE_VERT = /* glsl */ `
+attribute float aSize;
+uniform float uPixelRatio;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_PointSize = aSize * uPixelRatio * 205.0 / max(14.0, -mv.z);
+  gl_Position = projectionMatrix * mv;
+}
+`;
+
+const CORE_FRAG = /* glsl */ `
+uniform float uAlpha;
+void main() {
+  vec2 p = gl_PointCoord - vec2(0.5);
+  float d = length(p);
+  if (d > 0.5) discard;
+  float edge = smoothstep(0.5, 0.32, d);
+  gl_FragColor = vec4(vec3(0.006, 0.011, 0.018), edge * uAlpha);
+}
+`;
+
+const VISOR_VERT = /* glsl */ `
+varying vec2 vUv;
+varying float vCurve;
+void main() {
+  vUv = uv;
+  vec3 p = position;
+  float nx = abs(uv.x * 2.0 - 1.0);
+  p.z += (1.0 - nx * nx) * 2.45;
+  vCurve = 1.0 - nx;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+}
+`;
+
+const VISOR_FRAG = /* glsl */ `
+uniform float uTime;
+uniform float uAlpha;
+varying vec2 vUv;
+varying float vCurve;
+void main() {
+  float x = vUv.x;
+  float center = 1.0 - abs(x * 2.0 - 1.0);
+  float lower = mix(0.20, 0.035, smoothstep(0.0, 0.72, center));
+  lower += smoothstep(0.82, 1.0, center) * 0.25;
+  if (vUv.y < lower) discard;
+  vec3 magenta = vec3(0.94, 0.08, 0.82);
+  vec3 violet = vec3(0.24, 0.16, 0.94);
+  vec3 green = vec3(0.00, 0.94, 0.64);
+  vec3 color = x < 0.52
+    ? mix(magenta, violet, smoothstep(0.0, 0.52, x))
+    : mix(violet, green, smoothstep(0.52, 1.0, x));
+  float sweep = pow(max(0.0, 1.0 - abs(vUv.y - 0.76) * 5.5), 4.0);
+  float scan = 0.035 * sin(vUv.y * 115.0 + uTime * 1.4);
+  float rim = smoothstep(0.0, 0.09, vUv.y - lower) * smoothstep(1.0, 0.88, vUv.y);
+  color *= 0.36 + vCurve * 0.14 + sweep * 0.42 + scan;
+  color += vec3(0.12, 0.18, 0.28) * sweep;
+  gl_FragColor = vec4(color, rim * uAlpha * 0.98);
+}
+`;
+
 const EYE_VERT = /* glsl */ `
 varying vec3 vLocal;
 varying vec3 vWorld;
@@ -142,7 +202,9 @@ export class LivingAlienOrganism {
   skin: THREE.Points;
   material: THREE.ShaderMaterial;
   core: THREE.Points;
-  coreMaterial: THREE.PointsMaterial;
+  coreMaterial: THREE.ShaderMaterial;
+  visor: THREE.Group;
+  visorMaterial: THREE.ShaderMaterial;
   eyes: THREE.Object3D[] = [];
   mouth: THREE.Mesh;
   nostrils: THREE.Mesh[] = [];
@@ -229,16 +291,18 @@ export class LivingAlienOrganism {
     coreGeometry.setAttribute("position", new THREE.BufferAttribute(coreData.positions, 3));
     coreGeometry.setAttribute("color", new THREE.BufferAttribute(coreData.colors, 3));
     coreGeometry.setAttribute("aSize", new THREE.BufferAttribute(coreData.sizes, 1));
-    this.coreMaterial = new THREE.PointsMaterial({
-      vertexColors: true,
-      size: 2.15,
-      sizeAttenuation: true,
+    this.coreMaterial = new THREE.ShaderMaterial({
       transparent: true,
-      opacity: 0,
       depthWrite: true,
       depthTest: true,
       blending: THREE.NormalBlending,
       toneMapped: false,
+      uniforms: {
+        uPixelRatio: { value: field.renderer.getPixelRatio() },
+        uAlpha: { value: 0 },
+      },
+      vertexShader: CORE_VERT,
+      fragmentShader: CORE_FRAG,
     });
     this.core = new THREE.Points(coreGeometry, this.coreMaterial);
     this.core.renderOrder = 1;
@@ -246,6 +310,9 @@ export class LivingAlienOrganism {
     this.group.add(this.core);
 
     this.#buildEyes();
+    const visor = this.#buildVisor();
+    this.visor = visor.group;
+    this.visorMaterial = visor.material;
     this.mouth = this.#buildMouth();
     this.nostrils = this.#buildNostrils();
 
@@ -282,6 +349,81 @@ export class LivingAlienOrganism {
     };
     makeEye(EYE.left);
     makeEye(EYE.right);
+  }
+
+  #buildVisor() {
+    const group = new THREE.Group();
+    const outer = Math.max(
+      Math.abs(EYE.left.x) + EYE.left.rx,
+      Math.abs(EYE.right.x) + EYE.right.rx,
+    );
+    const width = outer * 2.18;
+    const height = Math.max(EYE.left.ry, EYE.right.ry) * 2.18;
+    const centerY = (EYE.left.y + EYE.right.y) * 0.5 + height * 0.02;
+    const frontZ = Math.max(EYE.left.z + EYE.left.rz, EYE.right.z + EYE.right.rz) + 0.9;
+
+    const geometry = new THREE.PlaneGeometry(width, height, 48, 18);
+    const material = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: true,
+      depthTest: true,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+      uniforms: {
+        uTime: { value: 0 },
+        uAlpha: { value: 0 },
+      },
+      vertexShader: VISOR_VERT,
+      fragmentShader: VISOR_FRAG,
+    });
+    const shield = new THREE.Mesh(geometry, material);
+    shield.renderOrder = 5;
+    group.add(shield);
+
+    const black = new THREE.MeshBasicMaterial({ color: 0x020306, toneMapped: false });
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(width * 0.98, 1.25, 1.35), black);
+    frame.position.set(0, height * 0.47, 0.72);
+    frame.renderOrder = 6;
+    group.add(frame);
+
+    const bridge = new THREE.Group();
+    for (const side of [-1, 1]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(4.9, 0.75, 1.1), black);
+      bar.position.set(side * 1.9, -height * 0.27, 2.55);
+      bar.rotation.z = side * 0.7;
+      bridge.add(bar);
+    }
+    bridge.renderOrder = 6;
+    group.add(bridge);
+
+    const tagGeometry = new THREE.BoxGeometry(width * 0.19, 3.25, 1.65);
+    for (const side of [-1, 1]) {
+      const tag = new THREE.Mesh(tagGeometry, black);
+      tag.position.set(side * width * 0.405, height * 0.38, 1.25);
+      tag.rotation.z = side * -0.035;
+      tag.renderOrder = 7;
+      group.add(tag);
+      const colors = [0x9945ff, 0x14f195, 0x2dd8ff];
+      for (let stripe = 0; stripe < 3; stripe++) {
+        const mark = new THREE.Mesh(
+          new THREE.BoxGeometry(width * 0.055, 0.28, 0.12),
+          new THREE.MeshBasicMaterial({ color: colors[stripe], toneMapped: false }),
+        );
+        mark.position.set(
+          side * width * 0.405 + (stripe - 1) * width * 0.035,
+          height * 0.38,
+          2.14,
+        );
+        mark.rotation.z = -0.12;
+        mark.renderOrder = 8;
+        group.add(mark);
+      }
+    }
+
+    group.position.set(0, centerY, frontZ);
+    group.visible = false;
+    this.group.add(group);
+    return { group, material };
   }
 
   #buildMouth() {
@@ -341,7 +483,10 @@ export class LivingAlienOrganism {
     this.material.uniforms.uAnalyze.value = analyze;
     this.material.uniforms.uAlpha.value = appear * (0.72 + formed * 0.27);
     this.material.uniforms.uPixelRatio.value = this.field.renderer.getPixelRatio();
-    this.coreMaterial.opacity = clamp((this.morph - 0.3) / 0.42) * 0.92;
+    this.coreMaterial.uniforms.uAlpha.value = clamp((this.morph - 0.3) / 0.42) * 0.9;
+    this.coreMaterial.uniforms.uPixelRatio.value = this.field.renderer.getPixelRatio();
+    this.visorMaterial.uniforms.uTime.value = now * 0.001;
+    this.visorMaterial.uniforms.uAlpha.value = formed;
 
     const crawl = this.field.reducedMotion ? 0 : formed;
     const breath = 1 + Math.sin(now * 0.0015) * 0.008 * crawl;
@@ -351,9 +496,10 @@ export class LivingAlienOrganism {
     this.core.visible = this.morph > 0.3;
     this.skin.visible = this.morph > 0.01;
     for (const eye of this.eyes) {
-      eye.visible = this.morph > 0.46;
-      eye.scale.setScalar(clamp((this.morph - 0.46) / 0.26));
+      eye.visible = false;
     }
+    this.visor.visible = this.morph > 0.44;
+    this.visor.scale.setScalar(clamp((this.morph - 0.44) / 0.3));
     this.mouth.visible = this.morph > 0.62;
     this.mouth.scale.set(MOUTH.w, MOUTH.h * (1 + speakPulse * 0.72), MOUTH.d);
     for (const n of this.nostrils) n.visible = this.morph > 0.6;
@@ -388,6 +534,12 @@ export class LivingAlienOrganism {
     this.material.dispose();
     this.core.geometry.dispose();
     this.coreMaterial.dispose();
+    this.visor.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      object.geometry.dispose();
+      if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose());
+      else object.material.dispose();
+    });
     this.mouth.geometry.dispose();
     (this.mouth.material as THREE.Material).dispose();
     for (const n of this.nostrils) {

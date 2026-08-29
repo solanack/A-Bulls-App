@@ -9,6 +9,8 @@ This pass fixes the QUERY organism itself. The earlier build imported the suppli
 - Eye, nostril, and mouth positions are derived from template-role bounds instead of hand-placed constants.
 - Nested template shells create opaque near-black depth without replacing the supplied silhouette.
 - Eye surfaces are recessed and restrained; the mouth is a narrow living slit instead of a rectangular block.
+- The exposed eye inserts are now concealed by a curved, fitted Solana-gradient Pit Viper visor with a black brow frame, nose bridge, and Solana-color temple marks.
+- The near-black depth core now uses circular shader points, eliminating the remaining square/block artifacts visible on the forehead.
 - The camera frames the template bounds per viewport, including portrait/mobile screens.
 - Field and star particles use round point sprites, removing the visible square artifacts.
 - Cellular motion, breathing, and speech deformation remain subtle so the anatomy stays stable.

@@ -9,6 +9,8 @@ The supplied alien point template now generates the visible QUERY organism. The 
 - Template-backed surface sampling and nested depth shells
 - Template-derived eye, nose, mouth, and camera framing
 - Recessed black almond eyes and a narrow responsive mouth slit
+- Curved Solana Pit Viper visor fitted directly from the template eye bounds
+- Circular depth-core particles instead of square WebGL point blocks
 - Stable breathing/rotation with deterministic speech motion
 - Reusable mobile-unlocked voice context
 - Round field/star point sprites
