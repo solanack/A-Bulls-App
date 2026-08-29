@@ -35,7 +35,8 @@ function headPoint(index) {
     const v = hash01(index * 5.91 + attempt * 2.44);
     const w = hash01(index * 7.33 + attempt * 1.07);
     const y = -0.92 + v * 1.72;
-    const upper = Math.exp(-((y - 0.28) / 0.42) ** 2);
+    const width = (y - 0.28) / 0.42;
+    const upper = Math.exp(-(width * width));
     const lower = Math.max(0, Math.min(1, (y + 0.88) / 0.95));
     const rx = (0.22 + 0.34 * lower + 0.18 * upper) * Math.sqrt(u);
     const rz = (0.18 + 0.40 * lower + 0.22 * upper) * Math.sqrt(u);
