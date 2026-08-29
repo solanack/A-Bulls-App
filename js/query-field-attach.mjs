@@ -1,17 +1,18 @@
 import { QueryExperience } from './query-experience.mjs';
 import { FieldQueryOrganism } from './field-query-organism.mjs';
+import { askFieldQuery } from './field-query-worker.mjs';
 
 export function attachQueryToField({ fieldHost, chromeHost } = {}) {
   if (!(fieldHost instanceof Element)) throw new TypeError('fieldHost is required');
   const slotHost = chromeHost instanceof Element ? chromeHost : fieldHost;
   const query = new QueryExperience({
     host: slotHost,
-    onSubmit: (value) => {
-      globalThis.dispatchEvent(new CustomEvent('abulls:universal-search', {
-        detail: { query: value, source: 'query', stayInField: true }
-      }));
+    onSubmit: async (value) => {
+      query.setStatus('reading chain…');
+      const result = await askFieldQuery(value);
+      query.setStatus(result.line);
       globalThis.dispatchEvent(new CustomEvent('abulls:field-query', {
-        detail: { query: value }
+        detail: { ...result, stayInField: true }
       }));
     }
   });
