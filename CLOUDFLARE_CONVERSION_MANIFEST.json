@@ -1,0 +1,13 @@
+{
+  "source_of_truth": "grok-workspace-2.zip / Grok refinement lineage",
+  "working_package": "A-Bulls-App-Grok-Refinement-v1.zip",
+  "frontend_worker_name": "a-bulls-app-frontend",
+  "intelligence_worker": "https://black-bull-run-sol.ckdsigns1.workers.dev",
+  "intelligence_worker_changed": false,
+  "normal_particle_field_should_change": false,
+  "custom_domain_attached": false,
+  "custom_domain_target_after_preview": "abullsapp.com",
+  "cloudflare_runtime": "Workers + @cloudflare/vite-plugin + TanStack Start",
+  "compatibility_date": "2026-08-29",
+  "compatibility_flags": ["nodejs_compat"]
+}
