@@ -22,6 +22,8 @@
   function init() {
     setMode(state.mode);
     document.querySelectorAll('[name="invaderMode"]').forEach(input => {
+      if (input.dataset.bbrRunModeWired === '1') return;
+      input.dataset.bbrRunModeWired = '1';
       input.addEventListener('change', () => setMode(input.value, { user: true }));
     });
   }
