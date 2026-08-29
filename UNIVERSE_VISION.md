@@ -8,8 +8,8 @@ contract used while implementing it.
 
 - The product is read-only: no wallet connection, custody, commerce, minting,
   transaction approval, or signing.
-- Bull Invaders is retired. Shooter code, assets, terminology, navigation, and
-  Bullpen staking/skin surfaces must not return.
+- Retired shooter code, assets, terminology, navigation, and Bullpen
+  staking/skin surfaces must not return.
 - The current particle field, the Grey query organism, voice layer, Field OS,
   modes, and read-only intelligence Worker are Galaxy Zero. Extend and
   generalize them; do not rewrite them.
@@ -52,3 +52,24 @@ Preserve mobile, reduced-motion, and save-data behavior. Use level of detail at
 galaxy scale, keep Comets live, and cache bounded Replay windows. The future
 public API/SDK and third-party platform layer informs separation of concerns but
 is not part of the current build pass.
+
+## Implemented data-cost foundation
+
+- D1 schema for normalized galaxy snapshots, query cache, provider usage,
+  market candles, and ingestion receipts.
+- Cache-first QUERY resolution with a 60-second fresh TTL and stale-cache
+  fallback.
+- Database-guarded monthly provider reservation with a default hard stop at
+  75% of the declared allowance.
+- Galaxy entry reads one indexed snapshot from D1; rendering and Replay never
+  issue passive provider requests.
+- Explicit `PROTOTYPE / DEGRADED` state when D1 is not attached or no indexed
+  snapshot exists. No live fallback is attempted for the field.
+- Direct secondary Solana RPC sampling was removed from QUERY so one user ask
+  cannot silently fan out into multiple provider requests.
+
+The storage and breaker spine is complete. Real ingestion, dedicated OHLC
+credentials, and the first normalized production snapshots still require the
+account-specific D1 binding and provider secrets described in
+`cloudflare/UNIVERSE_DATA_SETUP.md`; those values are never fabricated or
+committed.
