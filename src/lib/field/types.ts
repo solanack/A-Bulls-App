@@ -82,6 +82,38 @@ export type FocusedParticle = {
   cosmicKind: CosmicObjectKind;
   originGalaxyId: GalaxyId;
   category: ParticleCategory;
+  observedAt: number;
+  verificationState: string;
+  magnitudeBand: number;
+};
+
+export type ReplayState = {
+  active: boolean;
+  status: "paused" | "playing" | "complete";
+  cursor: number;
+  windowStart: number;
+  windowEnd: number;
+  visibleEventCount: number;
+  totalEventCount: number;
+  samplingPolicy: string;
+  coverageStatement: string;
+  sources: readonly string[];
+};
+
+export type EvidenceRecord = {
+  eventId: string;
+  kind: string;
+  cosmicKind: CosmicObjectKind;
+  category: ParticleCategory;
+  originGalaxyId: GalaxyId;
+  observedAt: number;
+  verificationState: string;
+  magnitudeBand: number;
+  sources: readonly string[];
+  samplingPolicy: string;
+  coverageStatement: string;
+  chartStatus: "available" | "unavailable";
+  chartReason: string | null;
 };
 
 export type UniverseSnapshot = {
