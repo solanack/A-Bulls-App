@@ -8,6 +8,7 @@ export function attachQueryToField({ fieldHost, chromeHost } = {}) {
   const query = new QueryExperience({
     host: slotHost,
     onSubmit: async (value) => {
+      organism.setHeadForm(true);
       query.setStatus('reading chain…');
       const result = await askFieldQuery(value);
       query.setStatus(result.line);
@@ -16,27 +17,35 @@ export function attachQueryToField({ fieldHost, chromeHost } = {}) {
       }));
     }
   });
-  query.open();
 
-  const organism = new FieldQueryOrganism({ host: fieldHost });
-  organism.setHeadForm(true);
+  const organism = new FieldQueryOrganism({
+    host: fieldHost,
+    onFocus: (focus) => {
+      if (!focus) {
+        query.setStatus('');
+        return;
+      }
+      query.setStatus(focus.line);
+    }
+  });
+  organism.setHeadForm(false);
   fieldHost.classList.add('field-shell__field--query');
   slotHost.closest('.field-shell')?.classList.add('field-shell--one');
 
-  const keepHead = () => organism.setHeadForm(true);
-  globalThis.addEventListener('abulls:field-return', keepHead);
+  const returnToField = () => organism.setHeadForm(false);
+  globalThis.addEventListener('abulls:field-return', returnToField);
   globalThis.addEventListener('abulls:query-open', () => query.open());
 
   return Object.freeze({
     open() {
       query.open();
-      organism.setHeadForm(true);
     },
     close() {
       query.close();
+      organism.setHeadForm(false);
     },
     destroy() {
-      globalThis.removeEventListener('abulls:field-return', keepHead);
+      globalThis.removeEventListener('abulls:field-return', returnToField);
       organism.destroy();
       query.destroy();
     }

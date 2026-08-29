@@ -1,4 +1,5 @@
 const TAU = Math.PI * 2;
+const KINDS = ['wallet', 'tx', 'token', 'nft', 'program'];
 
 function hash01(value) {
   const n = Math.sin(value * 12.9898 + 78.233) * 43758.5453123;
@@ -67,22 +68,28 @@ export class FieldQueryOrganism {
   #raf = 0;
   #destroyed = false;
   #blend = 0;
-  #targetBlend = 1;
+  #targetBlend = 0;
   #points;
   #onResize;
+  #focus = -1;
+  #onFocus;
 
-  constructor({ host, count } = {}) {
+  constructor({ host, count, onFocus } = {}) {
     if (!(host instanceof Element)) throw new TypeError('host element is required');
     this.#host = host;
+    this.#onFocus = onFocus;
     const memory = Number(globalThis.navigator?.deviceMemory || 4);
     const budget = count || (memory >= 8 ? 14000 : memory >= 4 ? 9000 : 5200);
     this.#points = Array.from({ length: budget }, (_, index) => {
       const from = fieldPoint(index);
       const to = headPoint(index);
       return {
+        id: index,
+        kind: KINDS[Math.floor(hash01(index * 11.3) * KINDS.length)],
         x: from[0], y: from[1], z: from[2],
         tx: to[0], ty: to[1], tz: to[2],
         fx: from[0], fy: from[1], fz: from[2],
+        px: 0, py: 0,
         phase: hash01(index * 6.17) * TAU,
         hue: hash01(index * 9.31),
         layer: hash01(index * 17.13 + 3.17) < 0.78 ? 1 : hash01(index * 17.13 + 3.17) < 0.94 ? 2 : 3,
@@ -91,14 +98,14 @@ export class FieldQueryOrganism {
     });
     this.#canvas = document.createElement('canvas');
     this.#canvas.className = 'field-query-organism';
-    this.#canvas.setAttribute('aria-hidden', 'true');
     Object.assign(this.#canvas.style, {
       position: 'absolute', inset: '0', width: '100%', height: '100%',
-      pointerEvents: 'none', zIndex: '2'
+      pointerEvents: 'auto', zIndex: '2', touchAction: 'none'
     });
     host.append(this.#canvas);
     this.#ctx = this.#canvas.getContext('2d');
     this.#onResize = () => this.#resize();
+    this.#canvas.addEventListener('pointerdown', this.#onPointer, { passive: true });
     globalThis.addEventListener('resize', this.#onResize);
     this.#resize();
     this.#raf = requestAnimationFrame(this.#frame);
@@ -107,6 +114,41 @@ export class FieldQueryOrganism {
   setHeadForm(active = true) {
     this.#targetBlend = active ? 1 : 0;
   }
+
+  clearFocus() {
+    this.#focus = -1;
+    this.#onFocus?.(null);
+  }
+
+  #onPointer = (event) => {
+    if (this.#targetBlend > 0.6) return;
+    const rect = this.#canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    let best = -1;
+    let bestDist = 28 * 28;
+    for (let i = 0; i < this.#points.length; i += 1) {
+      const point = this.#points[i];
+      const dx = point.px - x;
+      const dy = point.py - y;
+      const dist = dx * dx + dy * dy;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = i;
+      }
+    }
+    if (best < 0) {
+      this.clearFocus();
+      return;
+    }
+    this.#focus = best;
+    const point = this.#points[best];
+    this.#onFocus?.({
+      id: point.id,
+      kind: point.kind,
+      line: `${point.kind} · living point`
+    });
+  };
 
   #resize() {
     const width = Math.max(1, this.#host.clientWidth || globalThis.innerWidth || 1);
@@ -142,10 +184,11 @@ export class FieldQueryOrganism {
     const yaw = Math.sin(t * 0.11) * 0.12 * this.#blend;
     const cy = Math.cos(yaw);
     const sy = Math.sin(yaw);
+    const focused = this.#focus >= 0 ? this.#points[this.#focus] : null;
     for (const point of this.#points) {
       const form = this.#blend;
       const fieldSwirl = Math.sin(t * 0.55 + point.phase) * 0.028 * (1 - form);
-      const live = form * point.amp;
+      const live = point.amp * (form + (1 - form) * 0.55);
       const flowA = Math.sin(t * (0.55 + point.layer * 0.08) + point.phase);
       const flowB = Math.cos(t * (0.37 + point.layer * 0.05) + point.phase * 1.73);
       const radial = Math.sin(t * 0.29 + point.phase * 0.61) * (point.layer === 1 ? 0.35 : point.layer === 2 ? 0.7 : 1.15);
@@ -155,16 +198,27 @@ export class FieldQueryOrganism {
       x += flowA * live + point.tx * lungs * 0.012 * form;
       y += flowB * live * 0.85 + lungs * 0.01 * form;
       z += radial * live;
+      if (focused && form < 0.7) {
+        const same = point.kind === focused.kind ? 0.035 : 0.012;
+        x += (focused.fx - point.fx) * same;
+        y += (focused.fy - point.fy) * same;
+        z += (focused.fz - point.fz) * same;
+      }
       x *= pulse;
       y *= pulse;
       z *= pulse;
       const rx = x * cy + z * sy;
       const rz = z * cy - x * sy;
       const drawn = this.#project(rx, y, rz, width, height);
-      const glow = 0.32 + form * 0.4 + point.hue * 0.22 + lungs * 0.12 * form;
-      const alpha = (0.22 + form * 0.5) * (point.layer === 1 ? 1 : point.layer === 2 ? 0.82 : 0.62);
+      point.px = drawn.px;
+      point.py = drawn.py;
+      const selected = point.id === this.#focus;
+      const related = focused && point.kind === focused.kind;
+      const glow = 0.32 + form * 0.4 + point.hue * 0.22 + lungs * 0.12 * form + (selected ? 0.45 : related ? 0.18 : 0);
+      const alpha = (0.22 + form * 0.5 + (selected ? 0.4 : 0)) * (point.layer === 1 ? 1 : point.layer === 2 ? 0.82 : 0.62);
       ctx.fillStyle = `rgba(${Math.floor(80 + glow * 90)}, ${Math.floor(150 + glow * 80)}, ${Math.floor(200 + glow * 50)}, ${alpha})`;
-      ctx.fillRect(drawn.px, drawn.py, drawn.size * (0.85 + lungs * 0.25), drawn.size * (0.85 + lungs * 0.25));
+      const size = drawn.size * (0.85 + lungs * 0.25) * (selected ? 3.2 : related ? 1.35 : 1);
+      ctx.fillRect(drawn.px, drawn.py, size, size);
     }
     this.#raf = requestAnimationFrame(this.#frame);
   };
@@ -172,6 +226,7 @@ export class FieldQueryOrganism {
   destroy() {
     this.#destroyed = true;
     cancelAnimationFrame(this.#raf);
+    this.#canvas.removeEventListener('pointerdown', this.#onPointer);
     globalThis.removeEventListener('resize', this.#onResize);
     this.#canvas.remove();
   }

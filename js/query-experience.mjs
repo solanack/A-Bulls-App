@@ -42,14 +42,12 @@ export class QueryExperience {
       event.preventDefault();
       const value = input.value.trim();
       if (!value) return;
-      this.#status.textContent = value.length > 16 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value;
       this.#onSubmit?.(value);
     });
   }
 
   open() {
     this.#root?.classList.add('is-active');
-    this.#input?.focus();
   }
 
   close() {
