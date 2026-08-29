@@ -1,19 +1,12 @@
 # A Bulls App — source of truth
 
-This branch is the live **Field / Intelligence / Universe / Trickster** website.
-QUERY is the face of the Field.
-Bull Invaders is not part of this branch.
+QUERY and the Field are one thing.
 
-## How it works now
+- The Field particles swarm into the Grey head.
+- QUERY does not open a second screen.
+- The only extra UI is a small wallet/tx/token slot under the head.
+- Asking QUERY stays on the Field.
+- Intelligence and Trickster do not take over the view from QUERY.
 
-- Field is the world.
-- QUERY is the dock face. Ask. Point. Follow.
-- A QUERY submit opens Intelligence with that request.
-- The Grey organism mounts only if THREE + `js/quantum/isolated-organism-controller.mjs` are present.
-- The 470KB alien template still lives on `feature/query-isolated-organism-v2`. Copy that folder next if you want the full head on this branch.
-
-## Live Worker
-
-- https://black-bull-run-sol.ckdsigns1.workers.dev
-- Do not deploy Worker code from this branch.
-- Do not deploy this branch to abullsapp.com until the remaining Field modules are on it.
+Branch: `production/pages`
+Live abullsapp.com is unchanged until this is deployed on purpose.

@@ -1,55 +1,42 @@
 import { QueryExperience } from './query-experience.mjs';
+import { FieldQueryOrganism } from './field-query-organism.mjs';
 
-export function attachQueryToField({ fieldHost, chromeHost, onSubmit } = {}) {
-  if (!(chromeHost instanceof Element)) throw new TypeError('chromeHost is required');
+export function attachQueryToField({ fieldHost, chromeHost } = {}) {
+  if (!(fieldHost instanceof Element)) throw new TypeError('fieldHost is required');
+  const slotHost = chromeHost instanceof Element ? chromeHost : fieldHost;
   const query = new QueryExperience({
-    host: chromeHost,
+    host: slotHost,
     onSubmit: (value) => {
-      onSubmit?.(value);
       globalThis.dispatchEvent(new CustomEvent('abulls:universal-search', {
-        detail: { query: value, source: 'query' }
+        detail: { query: value, source: 'query', stayInField: true }
+      }));
+      globalThis.dispatchEvent(new CustomEvent('abulls:field-query', {
+        detail: { query: value }
       }));
     }
   });
+  query.open();
 
-  let organism = null;
-  const onState = async (event) => {
-    const active = event?.detail?.active === true;
-    fieldHost?.classList.toggle('field-shell__field--query', active);
-    if (!active) {
-      organism?.setActive?.(false);
-      return;
-    }
-    if (organism) {
-      organism.setActive(true);
-      return;
-    }
-    const THREE = globalThis.THREE;
-    if (!THREE) return;
-    try {
-      const mod = await import('./quantum/isolated-organism-controller.mjs');
-      organism = new mod.IsolatedQuantumOrganismController({ host: fieldHost, THREE });
-      organism.setActive(true);
-    } catch (error) {
-      console.warn('[QUERY organism]', error);
-    }
-  };
+  const organism = new FieldQueryOrganism({ host: fieldHost });
+  organism.setHeadForm(true);
+  fieldHost.classList.add('field-shell__field--query');
+  slotHost.closest('.field-shell')?.classList.add('field-shell--one');
 
-  const open = () => query.open();
-  const close = () => query.close();
-  globalThis.addEventListener('abulls:query-state', onState);
-  globalThis.addEventListener('abulls:query-open', open);
-  globalThis.addEventListener('abulls:field-return', close);
+  const keepHead = () => organism.setHeadForm(true);
+  globalThis.addEventListener('abulls:field-return', keepHead);
+  globalThis.addEventListener('abulls:query-open', () => query.open());
 
   return Object.freeze({
-    open,
-    close,
+    open() {
+      query.open();
+      organism.setHeadForm(true);
+    },
+    close() {
+      query.close();
+    },
     destroy() {
-      globalThis.removeEventListener('abulls:query-state', onState);
-      globalThis.removeEventListener('abulls:query-open', open);
-      globalThis.removeEventListener('abulls:field-return', close);
-      organism?.destroy?.();
-      organism = null;
+      globalThis.removeEventListener('abulls:field-return', keepHead);
+      organism.destroy();
       query.destroy();
     }
   });

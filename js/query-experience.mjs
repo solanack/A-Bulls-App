@@ -9,69 +9,61 @@ export class QueryExperience {
   #host;
   #root;
   #input;
+  #status;
   #onSubmit;
 
   constructor({ host, onSubmit } = {}) {
     if (!(host instanceof Element)) throw new TypeError('host element is required');
     this.#host = host;
     this.#onSubmit = onSubmit;
+    this.#mount();
   }
 
-  open() {
-    if (this.#root) {
-      this.#input?.focus();
-      return;
-    }
-
-    const root = el('div', 'query-experience');
-    const form = el('form', 'query-experience__form');
+  #mount() {
+    if (this.#root) return;
+    const root = el('div', 'query-slot');
+    const form = el('form', 'query-slot__form');
     const input = document.createElement('input');
     input.type = 'search';
     input.autocomplete = 'off';
     input.spellcheck = false;
-    input.placeholder = 'Ask QUERY. Wallet, transaction, token, NFT, or program.';
-    input.setAttribute('aria-label', 'QUERY');
-    const submit = el('button', 'query-experience__submit', 'QUERY');
+    input.placeholder = 'Wallet, tx, token, NFT, program';
+    input.setAttribute('aria-label', 'QUERY address');
+    const submit = el('button', 'query-slot__go', 'ASK');
     submit.type = 'submit';
-    const back = el('button', 'query-experience__back', 'RETURN TO FIELD');
-    back.type = 'button';
+    const status = el('p', 'query-slot__status', '');
     form.append(input, submit);
-    root.append(form, back);
+    root.append(form, status);
     this.#host.append(root);
     this.#root = root;
     this.#input = input;
-
+    this.#status = status;
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const value = input.value.trim();
       if (!value) return;
+      this.#status.textContent = value.length > 16 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value;
       this.#onSubmit?.(value);
     });
-    back.addEventListener('click', () => {
-      globalThis.dispatchEvent(new CustomEvent('abulls:query-return'));
-      this.close();
-    });
+  }
 
-    globalThis.__ABULLS_QUERY_ACTIVE = true;
-    globalThis.dispatchEvent(new CustomEvent('abulls:query-state', { detail: { active: true } }));
-    requestAnimationFrame(() => {
-      root.classList.add('is-active');
-      input.focus();
-    });
+  open() {
+    this.#root?.classList.add('is-active');
+    this.#input?.focus();
   }
 
   close() {
-    if (!this.#root) return;
-    const root = this.#root;
-    this.#root = null;
-    this.#input = null;
-    globalThis.__ABULLS_QUERY_ACTIVE = false;
-    globalThis.dispatchEvent(new CustomEvent('abulls:query-state', { detail: { active: false } }));
-    root.classList.remove('is-active');
-    setTimeout(() => root.remove(), 180);
+    this.#input?.blur();
+  }
+
+  setStatus(text) {
+    if (this.#status) this.#status.textContent = text || '';
   }
 
   destroy() {
-    this.close();
+    this.#root?.remove();
+    this.#root = null;
+    this.#input = null;
+    this.#status = null;
   }
 }
