@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import {
   buildCoreBuffers,
   buildLivingSkin,
@@ -97,45 +98,6 @@ void main() {
 }
 `;
 
-const VISOR_VERT = /* glsl */ `
-varying vec2 vUv;
-varying float vCurve;
-void main() {
-  vUv = uv;
-  vec3 p = position;
-  float nx = abs(uv.x * 2.0 - 1.0);
-  p.z += (1.0 - nx * nx) * 2.45;
-  vCurve = 1.0 - nx;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-}
-`;
-
-const VISOR_FRAG = /* glsl */ `
-uniform float uTime;
-uniform float uAlpha;
-varying vec2 vUv;
-varying float vCurve;
-void main() {
-  float x = vUv.x;
-  float center = 1.0 - abs(x * 2.0 - 1.0);
-  float lower = mix(0.20, 0.035, smoothstep(0.0, 0.72, center));
-  lower += smoothstep(0.82, 1.0, center) * 0.25;
-  if (vUv.y < lower) discard;
-  vec3 magenta = vec3(0.94, 0.08, 0.82);
-  vec3 violet = vec3(0.24, 0.16, 0.94);
-  vec3 green = vec3(0.00, 0.94, 0.64);
-  vec3 color = x < 0.52
-    ? mix(magenta, violet, smoothstep(0.0, 0.52, x))
-    : mix(violet, green, smoothstep(0.52, 1.0, x));
-  float sweep = pow(max(0.0, 1.0 - abs(vUv.y - 0.76) * 5.5), 4.0);
-  float scan = 0.035 * sin(vUv.y * 115.0 + uTime * 1.4);
-  float rim = smoothstep(0.0, 0.09, vUv.y - lower) * smoothstep(1.0, 0.88, vUv.y);
-  color *= 0.36 + vCurve * 0.14 + sweep * 0.42 + scan;
-  color += vec3(0.12, 0.18, 0.28) * sweep;
-  gl_FragColor = vec4(color, rim * uAlpha * 0.98);
-}
-`;
-
 const EYE_VERT = /* glsl */ `
 varying vec3 vLocal;
 varying vec3 vWorld;
@@ -204,7 +166,8 @@ export class LivingAlienOrganism {
   core: THREE.Points;
   coreMaterial: THREE.ShaderMaterial;
   visor: THREE.Group;
-  visorMaterial: THREE.ShaderMaterial;
+  visorMaterials: THREE.Material[] = [];
+  visorLoaded = false;
   eyes: THREE.Object3D[] = [];
   mouth: THREE.Mesh;
   nostrils: THREE.Mesh[] = [];
@@ -310,9 +273,7 @@ export class LivingAlienOrganism {
     this.group.add(this.core);
 
     this.#buildEyes();
-    const visor = this.#buildVisor();
-    this.visor = visor.group;
-    this.visorMaterial = visor.material;
+    this.visor = this.#buildVisor();
     this.mouth = this.#buildMouth();
     this.nostrils = this.#buildNostrils();
 
@@ -361,69 +322,76 @@ export class LivingAlienOrganism {
     const height = Math.max(EYE.left.ry, EYE.right.ry) * 2.18;
     const centerY = (EYE.left.y + EYE.right.y) * 0.5 + height * 0.02;
     const frontZ = Math.max(EYE.left.z + EYE.left.rz, EYE.right.z + EYE.right.rz) + 0.9;
-
-    const geometry = new THREE.PlaneGeometry(width, height, 48, 18);
-    const material = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: true,
-      depthTest: true,
-      side: THREE.DoubleSide,
-      toneMapped: false,
-      uniforms: {
-        uTime: { value: 0 },
-        uAlpha: { value: 0 },
-      },
-      vertexShader: VISOR_VERT,
-      fragmentShader: VISOR_FRAG,
-    });
-    const shield = new THREE.Mesh(geometry, material);
-    shield.renderOrder = 5;
-    group.add(shield);
-
-    const black = new THREE.MeshBasicMaterial({ color: 0x020306, toneMapped: false });
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(width * 0.98, 1.25, 1.35), black);
-    frame.position.set(0, height * 0.47, 0.72);
-    frame.renderOrder = 6;
-    group.add(frame);
-
-    const bridge = new THREE.Group();
-    for (const side of [-1, 1]) {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(4.9, 0.75, 1.1), black);
-      bar.position.set(side * 1.9, -height * 0.27, 2.55);
-      bar.rotation.z = side * 0.7;
-      bridge.add(bar);
-    }
-    bridge.renderOrder = 6;
-    group.add(bridge);
-
-    const tagGeometry = new THREE.BoxGeometry(width * 0.19, 3.25, 1.65);
-    for (const side of [-1, 1]) {
-      const tag = new THREE.Mesh(tagGeometry, black);
-      tag.position.set(side * width * 0.405, height * 0.38, 1.25);
-      tag.rotation.z = side * -0.035;
-      tag.renderOrder = 7;
-      group.add(tag);
-      const colors = [0x9945ff, 0x14f195, 0x2dd8ff];
-      for (let stripe = 0; stripe < 3; stripe++) {
-        const mark = new THREE.Mesh(
-          new THREE.BoxGeometry(width * 0.055, 0.28, 0.12),
-          new THREE.MeshBasicMaterial({ color: colors[stripe], toneMapped: false }),
-        );
-        mark.position.set(
-          side * width * 0.405 + (stripe - 1) * width * 0.035,
-          height * 0.38,
-          2.14,
-        );
-        mark.rotation.z = -0.12;
-        mark.renderOrder = 8;
-        group.add(mark);
-      }
-    }
-
     group.position.set(0, centerY, frontZ);
     group.visible = false;
     this.group.add(group);
-    return { group, material };
+
+    const loader = new GLTFLoader();
+    loader.load(
+      "/models/pit_viper_style_glasses.glb",
+      (gltf) => {
+        if (this.destroyed) {
+          disposeObject(gltf.scene);
+          return;
+        }
+
+        const asset = gltf.scene;
+        asset.updateMatrixWorld(true);
+        let lens: THREE.Mesh | null = null;
+        asset.traverse((object) => {
+          if (!(object instanceof THREE.Mesh)) return;
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          if (materials.some((material) => material.name === "Polarized")) lens = object;
+          if (materials.some((material) => material.name === "Logo")) object.visible = false;
+          object.castShadow = false;
+          object.receiveShadow = false;
+          object.renderOrder = materials.some((material) => material.name === "Logo") ? 8 : 6;
+          for (const material of materials) {
+            if (!this.visorMaterials.includes(material)) this.visorMaterials.push(material);
+            material.userData.baseOpacity = material.opacity;
+            material.transparent = true;
+            material.opacity = 0;
+            material.depthTest = true;
+            material.needsUpdate = true;
+          }
+        });
+
+        const lensBox = new THREE.Box3().setFromObject(lens ?? asset);
+        const lensCenter = lensBox.getCenter(new THREE.Vector3());
+        const lensSize = lensBox.getSize(new THREE.Vector3());
+        const fit = new THREE.Group();
+        const modelScale = width / Math.max(0.001, lensSize.x);
+        asset.position.set(-lensCenter.x, -lensCenter.y, -lensBox.max.z);
+        const wordmarkTexture = createSolanaWordmarkTexture();
+        const wordmarkMaterial = new THREE.MeshBasicMaterial({
+          map: wordmarkTexture,
+          transparent: true,
+          depthWrite: false,
+          depthTest: true,
+          toneMapped: false,
+          opacity: 0,
+        });
+        wordmarkMaterial.name = "SolanaWordmark";
+        wordmarkMaterial.userData.baseOpacity = 1;
+        this.visorMaterials.push(wordmarkMaterial);
+        for (const side of [-1, 1]) {
+          const label = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 0.23), wordmarkMaterial);
+          label.position.set(side * 1.78, 0.79, 0.31);
+          label.rotation.y = side * -0.12;
+          label.renderOrder = 9;
+          asset.add(label);
+        }
+        fit.scale.setScalar(modelScale);
+        fit.add(asset);
+        group.add(fit);
+        this.visorLoaded = true;
+      },
+      undefined,
+      (error) => {
+        console.error("Unable to load the Pit Viper glasses model", error);
+      },
+    );
+    return group;
   }
 
   #buildMouth() {
@@ -485,8 +453,10 @@ export class LivingAlienOrganism {
     this.material.uniforms.uPixelRatio.value = this.field.renderer.getPixelRatio();
     this.coreMaterial.uniforms.uAlpha.value = clamp((this.morph - 0.3) / 0.42) * 0.9;
     this.coreMaterial.uniforms.uPixelRatio.value = this.field.renderer.getPixelRatio();
-    this.visorMaterial.uniforms.uTime.value = now * 0.001;
-    this.visorMaterial.uniforms.uAlpha.value = formed;
+    for (const material of this.visorMaterials) {
+      const baseOpacity = Number(material.userData.baseOpacity ?? 1);
+      material.opacity = baseOpacity * formed;
+    }
 
     const crawl = this.field.reducedMotion ? 0 : formed;
     const breath = 1 + Math.sin(now * 0.0015) * 0.008 * crawl;
@@ -498,7 +468,7 @@ export class LivingAlienOrganism {
     for (const eye of this.eyes) {
       eye.visible = false;
     }
-    this.visor.visible = this.morph > 0.44;
+    this.visor.visible = this.visorLoaded && this.morph > 0.44;
     this.visor.scale.setScalar(clamp((this.morph - 0.44) / 0.3));
     this.mouth.visible = this.morph > 0.62;
     this.mouth.scale.set(MOUTH.w, MOUTH.h * (1 + speakPulse * 0.72), MOUTH.d);
@@ -534,12 +504,7 @@ export class LivingAlienOrganism {
     this.material.dispose();
     this.core.geometry.dispose();
     this.coreMaterial.dispose();
-    this.visor.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) return;
-      object.geometry.dispose();
-      if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose());
-      else object.material.dispose();
-    });
+    disposeObject(this.visor);
     this.mouth.geometry.dispose();
     (this.mouth.material as THREE.Material).dispose();
     for (const n of this.nostrils) {
@@ -550,6 +515,56 @@ export class LivingAlienOrganism {
     this.#eyeMat?.dispose();
     globalThis.__ABULLS_ORGANISM = undefined;
   }
+}
+
+function disposeObject(root: THREE.Object3D) {
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    object.geometry.dispose();
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      for (const value of Object.values(material)) {
+        if (value instanceof THREE.Texture) value.dispose();
+      }
+      material.dispose();
+    }
+  });
+}
+
+function createSolanaWordmarkTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 768;
+  canvas.height = 192;
+  const context = canvas.getContext("2d");
+  if (!context) return new THREE.CanvasTexture(canvas);
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  const gradient = context.createLinearGradient(20, 20, 150, 170);
+  gradient.addColorStop(0, "#9945ff");
+  gradient.addColorStop(0.52, "#2dd8ff");
+  gradient.addColorStop(1, "#14f195");
+  context.fillStyle = gradient;
+  for (let row = 0; row < 3; row++) {
+    const y = 38 + row * 42;
+    const offset = row === 1 ? 14 : 0;
+    context.beginPath();
+    context.moveTo(22 + offset, y);
+    context.lineTo(130 + offset, y);
+    context.lineTo(110 + offset, y + 24);
+    context.lineTo(2 + offset, y + 24);
+    context.closePath();
+    context.fill();
+  }
+  context.fillStyle = "#ffffff";
+  context.font = "700 82px Arial, Helvetica, sans-serif";
+  context.textBaseline = "middle";
+  context.fillText("SOLANA", 174, 99);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
+  return texture;
 }
 
 declare global {
