@@ -7,9 +7,9 @@ const COMMANDS = Object.freeze([
   ['sequences', 'SEQUENCES'],
   ['trickster', 'CREATE'],
   ['evidence', 'EVIDENCE'],
-  ['games', 'GAMES']
+  ['query', 'QUERY']
 ]);
-const DOCK = Object.freeze(['explore', 'intelligence', 'trickster', 'games']);
+const DOCK = Object.freeze(['explore', 'intelligence', 'trickster', 'query']);
 const MODE_HINTS = Object.freeze({
   explore: 'Search the chain. Select a node for replay, compare, and story.',
   intelligence: 'Inspect verified activity and follow evidence.',
@@ -19,7 +19,7 @@ const MODE_HINTS = Object.freeze({
   sequences: 'Discover bounded market sequences.',
   trickster: 'Compose a data story. Every published claim keeps its receipt.',
   evidence: 'Verify sources, coverage, and original chain time.',
-  games: 'Enter Bull Invaders.'
+  query: 'Ask QUERY. The Field stays behind the face.'
 });
 
 function el(tag, className, text) {
@@ -124,8 +124,8 @@ export function createFieldShell({ host, serviceState = 'ready', onCommand, onSe
     root.dataset.mode = mode;
     const pressed = DOCK.includes(mode)
       ? mode
-      : mode === 'games'
-        ? 'games'
+      : mode === 'query'
+        ? 'query'
         : 'intelligence';
     root.querySelectorAll('[data-field-command]').forEach((button) => {
       button.setAttribute('aria-pressed', String(button.dataset.fieldCommand === pressed));
