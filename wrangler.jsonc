@@ -4,6 +4,10 @@
   "compatibility_date": "2026-08-29",
   "compatibility_flags": ["nodejs_compat"],
   "main": "@tanstack/react-start/server-entry",
+  "vars": {
+    "HELIUS_MONTHLY_CREDITS": "1000000",
+    "HELIUS_BREAKER_RATIO": "0.75"
+  },
   "observability": {
     "enabled": true
   }
