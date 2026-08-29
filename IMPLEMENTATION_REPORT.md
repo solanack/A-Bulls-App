@@ -21,6 +21,6 @@ The supplied alien point template now generates the visible QUERY organism. The 
 - `npx wrangler deploy --dry-run`: pass
 - Alien template contract: 18,000 finite samples with surface, eye, nose, mouth, and silhouette roles
 
-The inherited Grok scaffold test suite and lint configuration contain pre-existing failures in PWA metadata/config fixtures plus two unrelated lint errors. None are in the corrected QUERY implementation; the production build and Cloudflare dry run complete successfully.
+The inherited Grok scaffold test suite and lint configuration contain pre-existing failures in PWA metadata/config fixtures plus one unrelated lint error. None are in the corrected QUERY implementation; the production build and Cloudflare dry run complete successfully.
 
 Automated screenshot verification could not run in the implementation environment because its Chromium download endpoint timed out. Complete the Android visual gate on the temporary `workers.dev` deployment before attaching `abullsapp.com`.
