@@ -26,8 +26,8 @@ pkg install nodejs-lts git unzip
 termux-setup-storage
 
 cd ~/storage/downloads
-unzip A-Bulls-App-Galaxy-Zero-Architecture-Cloudflare-Ready.zip -d ~/A-Bulls-App
-cd ~/A-Bulls-App
+unzip A-Bulls-App-Replay-Evidence-Cloudflare-Ready.zip -d ~/A-Bulls-App-Replay-Evidence
+cd ~/A-Bulls-App-Replay-Evidence
 npm ci
 npx wrangler login --device
 npm run build
@@ -55,6 +55,10 @@ Before moving `abullsapp.com`, verify on the temporary Worker URL:
 10. Alien speaks the result.
 11. Return To Field restores the exact normal field.
 12. Test on Android/mobile.
+13. Open REPLAY, play/pause, scrub, and step through the bounded field window.
+14. Confirm unrevealed particles cannot be selected.
+15. Select a revealed particle and open EVIDENCE.
+16. Confirm the synthetic Galaxy Zero window shows no fabricated price chart.
 
 ## Move `abullsapp.com` only after preview passes
 
