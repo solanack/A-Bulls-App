@@ -22,14 +22,20 @@ function hostSize(host: HTMLElement) {
 const FIELD_VERT = /* glsl */ `
 attribute float aSize;
 attribute float aCat;
+attribute float aObserved;
 uniform float uPixelRatio;
 uniform float uIntensity;
 uniform float uPull;
 uniform vec3 uFocus;
 uniform float uFocusAmt;
 uniform float uFocusCat;
+uniform float uReplayActive;
+uniform float uReplayCursor;
 varying vec3 vColor;
+varying float vReplayVisible;
 void main() {
+  float replayVisible = 1.0 - step(uReplayCursor + 0.0005, aObserved);
+  vReplayVisible = mix(1.0, replayVisible, uReplayActive);
   float kin = step(abs(aCat - uFocusCat), 0.45) * uFocusAmt;
   vec3 origin = vec3(0.0, 6.0, 0.0);
   float t = uPull;
@@ -43,14 +49,16 @@ void main() {
   p = origin + vec3(d.x * c - d.z * s, d.y * (1.0 - ease * 0.38), d.x * s + d.z * c);
   vColor = color * uIntensity * (1.0 + kin * 1.45);
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  gl_PointSize = aSize * uPixelRatio * (210.0 / max(12.0, -mv.z)) * mix(1.0, 0.28, ease) * (1.0 + kin * 1.6);
+  gl_PointSize = aSize * uPixelRatio * (210.0 / max(12.0, -mv.z)) * mix(1.0, 0.28, ease) * (1.0 + kin * 1.6) * vReplayVisible;
   gl_Position = projectionMatrix * mv;
 }
 `;
 
 const FIELD_FRAG = /* glsl */ `
 varying vec3 vColor;
+varying float vReplayVisible;
 void main() {
+  if (vReplayVisible < 0.5) discard;
   vec2 p = gl_PointCoord - vec2(0.5);
   float d = length(p);
   if (d > 0.5) discard;
@@ -88,17 +96,21 @@ function buildGalaxyGeometry(snapshot: UniverseSnapshot, limit: number) {
   const colors = new Float32Array(visible.length * 3);
   const sizes = new Float32Array(visible.length);
   const cats = new Float32Array(visible.length);
+  const observed = new Float32Array(visible.length);
+  const duration = Math.max(1, snapshot.windowEnd - snapshot.windowStart);
   visible.forEach((entity, i) => {
     positions.set(entity.position, i * 3);
     colors.set(parentColorForCategory(entity.category), i * 3);
     sizes[i] = 1.18 + entity.magnitudeBand * 3.15;
     cats[i] = CATEGORY_INDEX[entity.category] ?? 6;
+    observed[i] = clamp((entity.observedAt - snapshot.windowStart) / duration, 0, 1);
   });
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
   geometry.setAttribute("aCat", new THREE.BufferAttribute(cats, 1));
+  geometry.setAttribute("aObserved", new THREE.BufferAttribute(observed, 1));
   geometry.userData.entities = visible;
   return { geometry, positions, colors };
 }
@@ -121,8 +133,13 @@ export class ParticleFieldRenderer {
   autoSpin = 0.00042;
   destroyed = false;
   focused: FieldParticle | null = null;
+  replayActive = false;
+  replayPlaying = false;
+  replayCursor = 1;
+  replaySpeed = 0.12;
   onAfterUpdate: ((elapsed: number, now: number) => void) | null = null;
   onFocus: ((particle: FieldParticle | null) => void) | null = null;
+  onReplayTick: ((cursor: number, playing: boolean) => void) | null = null;
   #raf = 0;
   #last = 0;
   #gestures: CameraGestures;
@@ -130,6 +147,7 @@ export class ParticleFieldRenderer {
   #pick = new THREE.Vector3();
   #queryFrame: CameraState | null = null;
   #queryFrameWeight = 0;
+  #lastReplayEmit = 0;
 
   constructor(host: HTMLElement, snapshot: UniverseSnapshot) {
     this.host = host;
@@ -176,6 +194,8 @@ export class ParticleFieldRenderer {
         uFocus: { value: new THREE.Vector3() },
         uFocusAmt: { value: 0 },
         uFocusCat: { value: -1 },
+        uReplayActive: { value: 0 },
+        uReplayCursor: { value: 1 },
       },
       vertexShader: FIELD_VERT,
       fragmentShader: FIELD_FRAG,
@@ -256,6 +276,23 @@ export class ParticleFieldRenderer {
       `Interactive ${snapshot.galaxyId} activity field`,
     );
     this.clearFocus();
+    this.setReplay({ active: false, cursor: 1, playing: false });
+  }
+
+  setReplay({
+    active = this.replayActive,
+    cursor = this.replayCursor,
+    playing = this.replayPlaying,
+  }: {
+    active?: boolean;
+    cursor?: number;
+    playing?: boolean;
+  }) {
+    this.replayActive = active;
+    this.replayCursor = clamp(cursor, 0, 1);
+    this.replayPlaying = active && playing && this.replayCursor < 1;
+    this.material.uniforms.uReplayActive.value = active ? 1 : 0;
+    this.material.uniforms.uReplayCursor.value = this.replayCursor;
   }
 
   getParentPositions() {
@@ -368,6 +405,11 @@ export class ParticleFieldRenderer {
     let bestD = 72;
     const pos = this.basePositions;
     for (let i = 0; i < entities.length; i++) {
+      if (this.replayActive) {
+        const duration = Math.max(1, this.snapshot.windowEnd - this.snapshot.windowStart);
+        const observed = (entities[i].observedAt - this.snapshot.windowStart) / duration;
+        if (observed > this.replayCursor + 0.0005) continue;
+      }
       const x0 = pos[i * 3];
       const y0 = pos[i * 3 + 1];
       const z0 = pos[i * 3 + 2];
@@ -388,6 +430,15 @@ export class ParticleFieldRenderer {
     if (this.destroyed) return;
     const elapsed = Math.min(0.1, (now - this.#last) / 1000);
     this.#last = now;
+    if (this.replayActive && this.replayPlaying) {
+      this.replayCursor = Math.min(1, this.replayCursor + elapsed * this.replaySpeed);
+      if (this.replayCursor >= 1) this.replayPlaying = false;
+      this.material.uniforms.uReplayCursor.value = this.replayCursor;
+      if (now - this.#lastReplayEmit > 70 || !this.replayPlaying) {
+        this.#lastReplayEmit = now;
+        this.onReplayTick?.(this.replayCursor, this.replayPlaying);
+      }
+    }
     const blendSpeed = 1 - Math.exp(-elapsed * 1.05);
     this.queryBlend += (this.queryTarget - this.queryBlend) * blendSpeed;
     if (this.queryTarget < 0.5 && this.queryBlend < 0.0005) this.queryBlend = 0;
