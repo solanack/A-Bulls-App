@@ -17,4 +17,3 @@ test('wrong methods are rejected without touching index state',async()=>{
   assert.equal(response.status,405);
 });
 
-

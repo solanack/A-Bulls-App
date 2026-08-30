@@ -31,4 +31,3 @@ test('caps projected observation volume',()=>{
   assert.equal(projectIndexedEventsToUniverse(events).length,1000);
 });
 
-

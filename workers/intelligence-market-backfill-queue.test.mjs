@@ -10,4 +10,3 @@ assert.deepEqual(disabled,{ok:true,enabled:false,queued:0,jobs:[]});
 
 console.log('Market backfill queue guard contract passed');
 
-

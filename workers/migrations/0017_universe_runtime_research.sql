@@ -121,4 +121,3 @@ CREATE TABLE IF NOT EXISTS intelligence_pattern_runs (
 CREATE INDEX IF NOT EXISTS idx_pattern_runs_universe
   ON intelligence_pattern_runs(universe_id, window_end DESC);
 
-

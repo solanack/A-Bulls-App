@@ -27,7 +27,7 @@ const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 const now = () => Math.floor(Date.now() / 1000);
 
 function dbOf(env = {}) {
-  const db = env.BULL_INTELLIGENCE_DB || env.LEADERBOARD_DB || env.DB;
+  const db = env.INTELLIGENCE_DB;
   return db && typeof db.prepare === 'function' ? db : null;
 }
 
@@ -279,5 +279,3 @@ export async function handleBullIntelligenceRequest(request, env = {}) {
 
   return json({ ok: false, error: 'not_found' }, 404);
 }
-
-

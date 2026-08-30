@@ -49,4 +49,3 @@ export async function handleHeliusUniverseWebhook(request,env={}){
 
 export const __heliusUniverseIngestContract=Object.freeze({maxBatch:100,filtersAgainstActiveUniverseMints:true,legacyPumpIngestAlias:true,readOnly:true});
 
-

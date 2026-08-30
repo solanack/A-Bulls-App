@@ -63,4 +63,3 @@ export async function handleIntelligenceVNext(request, env = {}) {
   return handleBullIntelligenceRequest(request, env);
 }
 
-

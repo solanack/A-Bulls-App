@@ -123,4 +123,3 @@ export function normalizeAdapterBatch(kind = '', rows = [], wallet = '', source 
   return { events, routes, swaps, verified, archiveRefs };
 }
 
-

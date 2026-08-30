@@ -70,4 +70,3 @@ CREATE INDEX IF NOT EXISTS idx_z500_evidence_token
 CREATE INDEX IF NOT EXISTS idx_z500_evidence_mint
   ON intelligence_z500_identity_evidence(candidate_mint, observed_at DESC);
 
-

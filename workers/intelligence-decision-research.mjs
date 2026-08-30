@@ -67,4 +67,3 @@ export async function analyzeDecisionModels(env={},universeId='solana',{windowSe
 
 export const __decisionResearchContract=Object.freeze({contextWindowsSeconds:Object.freeze([300,600]),minimumProfileTrades:4,theoryOnly:true,usesIndexedEvidenceOnly:true});
 
-

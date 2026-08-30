@@ -69,4 +69,3 @@ export async function analyzeUniversePatterns(env={},universeId='solana',{window
   return{universeId:id,windowStart:from,windowEnd:now,observationsAnalyzed:rows.length,walletsAnalyzed:features.length,methodology:'Descriptive pattern mining from bounded public-chain observations. Hypotheses are not proof of bots, ownership, intent, coordination, causation, or future performance.',features:features.sort((a,b)=>b.transactionCount-a.transactionCount).slice(0,250),hypotheses:hypotheses.slice(0,250)};
 }
 
-

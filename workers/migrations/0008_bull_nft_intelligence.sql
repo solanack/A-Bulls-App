@@ -68,4 +68,3 @@ CREATE INDEX IF NOT EXISTS idx_bull_nft_collection_cohorts_time
 -- Future NFT Museum views must distinguish observed facts from missing history.
 -- Historical valuation fields stay nullable so incomplete pricing cannot be presented as exact P&L.
 
-

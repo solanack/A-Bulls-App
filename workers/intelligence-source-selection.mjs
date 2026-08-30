@@ -49,4 +49,3 @@ export function buildRetrievalPlan(sources=[],request={}){
   return Object.freeze({depthClass:choice.depthClass,primary,fallbacks:Object.freeze(fallbacks),attemptOrder:Object.freeze([primary,...fallbacks].filter(Boolean)),coverageClaim:'unknown-until-measured',disclosure:choice.disclosure});
 }
 
-

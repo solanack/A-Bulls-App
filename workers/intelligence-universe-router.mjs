@@ -129,4 +129,3 @@ export async function handleUniverseRequest(request,env={}){
   return json({ok:true,readOnly:true,completeChainRepresentation:false,universeId,snapshot},200,'public, max-age=2, stale-while-revalidate=4');
 }
 
-

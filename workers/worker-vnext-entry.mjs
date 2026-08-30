@@ -1,23 +1,6 @@
-/* A Bulls App Worker — vNext compatibility entry.
- * Build-forward provenance: verified Worker 8.2.0.
- * Active baseline runtime retains only system/auth/Bull Invaders leaderboard routes.
- * All wallet/intelligence product behavior is owned by vNext.
- */
-
-import baselineWorker from './worker-baseline-retained.mjs';
+/* A Bulls App Living Universe Worker — read-only intelligence entry. */
 import { handleIntelligenceFetch, handleIntelligenceScheduled } from './intelligence-worker-hooks.mjs';
 import { guardIntelligenceRequest } from './intelligence-request-guard.mjs';
-
-const RETAINED_BASELINE_PATHS = new Set([
-  '/api/health',
-  '/api/auth/google/config',
-  '/api/auth/google',
-  '/api/auth/google/session',
-  '/api/auth/player-session',
-  '/api/leaderboard/top',
-  '/api/leaderboard/challenge',
-  '/api/leaderboard/submit'
-]);
 
 function allowedOrigins(env = {}) {
   return String(env.ALLOWED_ORIGINS || 'https://abullsapp.com,https://www.abullsapp.com,http://localhost:8788,http://localhost:4173,http://127.0.0.1:4173')
@@ -56,11 +39,13 @@ function notFound(request, env) {
   });
 }
 
-async function cleanupLeaderboard(env = {}) {
-  const db = env.LEADERBOARD_DB;
-  if (!db || typeof db.prepare !== 'function') return;
-  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
-  await db.prepare('DELETE FROM run_submissions WHERE created_at < ?').bind(cutoff).run().catch(() => null);
+function health(request, env) {
+  return withCors(new Response(JSON.stringify({
+    ok: true,
+    service: 'a-bulls-living-universe',
+    runtime: 'read-only-intelligence',
+    timestamp: new Date().toISOString()
+  }), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }), request, env);
 }
 
 export default {
@@ -73,16 +58,13 @@ export default {
     if (guarded) return withCors(guarded, request, env);
     const vnext = await handleIntelligenceFetch(request, env, ctx);
     if (vnext) return withCors(vnext, request, env);
-    if (!RETAINED_BASELINE_PATHS.has(url.pathname)) return notFound(request, env);
-    return baselineWorker.fetch(request, env, ctx);
+    if (url.pathname === '/api/health' && request.method === 'GET') return health(request, env);
+    return notFound(request, env);
   },
 
   async scheduled(event, env, ctx) {
     const task = (async () => {
-      await Promise.allSettled([
-        cleanupLeaderboard(env),
-        handleIntelligenceScheduled(env)
-      ]);
+      await handleIntelligenceScheduled(env);
     })();
     if (ctx?.waitUntil) ctx.waitUntil(task);
     else await task;
@@ -90,9 +72,6 @@ export default {
 };
 
 export const __workerVNextContract = Object.freeze({
-  baselineVersion: '8.2.0',
-  baselineRuntime: 'retained-system-auth-bull-invaders',
-  retainedBaselinePaths: Object.freeze([...RETAINED_BASELINE_PATHS])
+  runtime: 'living-universe-read-only',
+  retainedPaths: Object.freeze(['/api/health'])
 });
-
-

@@ -145,4 +145,3 @@ CREATE TABLE IF NOT EXISTS intelligence_demand_patterns (
 );
 CREATE INDEX IF NOT EXISTS idx_intelligence_demand_priority ON intelligence_demand_patterns(priority_score DESC, updated_at DESC);
 
-

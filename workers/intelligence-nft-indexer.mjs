@@ -205,4 +205,3 @@ export async function persistNftObservations(db, rows = [], options = {}) {
   return { events: eventWrites, windows: windows.length, cohorts: cohorts.length };
 }
 
-

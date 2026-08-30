@@ -426,8 +426,15 @@ export function injectGrokPwaHead(html, ctx = {}) {
   if (typeof html !== "string") return html;
   const { site, projectId, creator, creatorId, host, cwd } = normalizeHeadContext(ctx);
   const documentTitle = titleFromDocument(html);
+  // Repository site.json is the deployment fallback. It must not overwrite a
+  // document title or an explicit caller name; an explicitly supplied `site`
+  // remains authoritative for published share-card identity.
+  const titleSite =
+    ctx.site !== undefined || (!documentTitle && ctx.appName === undefined)
+      ? site
+      : { ...site, title: "" };
   const appName = resolveOgTitle(
-    site,
+    titleSite,
     ctx.appName ?? DEFAULT_APP_NAME,
     host,
     documentTitle,
@@ -444,7 +451,7 @@ export function injectGrokPwaHead(html, ctx = {}) {
 
   next = insertAfterHeadOpen(
     next,
-    grokOgHeadTags({ host, appName, site, documentTitle, cwd }).join(""),
+    grokOgHeadTags({ host, appName, site: titleSite, documentTitle, cwd }).join(""),
   );
 
   if (!next.includes("/grok-app-builder/extensions.js")) {
@@ -497,7 +504,9 @@ export function createHeadInjector(ctx = {}) {
       creatorId: normalized.creatorId,
       host: normalized.host,
       cwd: normalized.cwd,
-      site: normalized.site,
+      // Preserve whether site identity was explicit. If it was only the baked
+      // fallback, a streamed document title must still take precedence.
+      site: ctx.site !== undefined ? normalized.site : undefined,
     });
 
   return {

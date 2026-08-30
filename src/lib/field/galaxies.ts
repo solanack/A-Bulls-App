@@ -16,12 +16,12 @@ export const GALAXIES = [
     id: "pump-fun",
     name: "pump.fun",
     ecosystem: "pump.fun launch origin",
-    status: "staging",
+    status: "populated",
     seed: 2205,
     accent: "var(--color-live)",
-    description: "The first additional galaxy. Birth, graduation, migration, and death will be visible here.",
-    coverage: "Architecture ready; origin-classified live feed not yet attached",
-    sources: [],
+    description: "The first additional galaxy, populated from the indexed pump.fun lifecycle feed.",
+    coverage: "Indexed births, trades, graduations, migrations, and terminal states",
+    sources: ["pump.fun indexed stream", "Helius indexed history"],
   },
 ] as const satisfies readonly GalaxyDefinition[];
 

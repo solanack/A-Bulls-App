@@ -51,4 +51,3 @@ export async function handleIndexJobStatusRequest(request,env={}){
   catch(error){const code=text(error?.message||error),status=code==='intelligence_db_unavailable'?503:400;return json({ok:false,error:code},status);}
 }
 
-

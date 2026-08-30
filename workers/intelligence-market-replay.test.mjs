@@ -42,4 +42,3 @@ assert.equal(mismatch,null);
 
 console.log('Token Market Replay truth contract passed');
 
-

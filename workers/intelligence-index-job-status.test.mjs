@@ -23,4 +23,3 @@ test('separates retries, external waits, exhausted fallbacks, work counters and 
   assert.equal(Object.isFrozen(summary.sources),true);
 });
 
-

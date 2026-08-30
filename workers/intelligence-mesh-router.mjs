@@ -57,7 +57,7 @@ export async function handleIntelligenceMeshRequest(request, env = {}) {
   }
   if (url.pathname === '/api/intelligence/parallel-universe' && request.method === 'POST') {
     const payload=await body(request); const wallet=s(payload.wallet||payload.address), quoteMint=s(payload.quoteMint||payload.quote_mint); if(!validWallet(wallet)||!quoteMint) return json({ok:false,error:'wallet_and_quote_required'},400);
-    const simulation=await parallelUniverse(env,wallet,quoteMint,payload.holdDays,payload.limit); return json({ok:true,simulation});
+    const simulation=await parallelUniverse(env,wallet,quoteMint,payload.holdDays,payload.limit,payload.mint); return json({ok:true,simulation});
   }
   if (url.pathname === '/api/intelligence/wallet-rivalry' && request.method === 'POST') {
     const payload=await body(request); const walletA=s(payload.walletA||payload.a), walletB=s(payload.walletB||payload.b); if(!validWallet(walletA)||!validWallet(walletB)) return json({ok:false,error:'two_valid_wallets_required'},400);
@@ -74,5 +74,3 @@ export async function handleIntelligenceMeshRequest(request, env = {}) {
 
   return null;
 }
-
-

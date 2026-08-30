@@ -25,4 +25,3 @@ test('destination layer stays read-only and local',()=>{
   assert.equal(__universeFlightDestinationContract.noWalletConnect,true);assert.equal(__universeFlightDestinationContract.noSigning,true);assert.equal(__universeFlightDestinationContract.noNetworkCalls,true);
 });
 
-

@@ -118,4 +118,3 @@ export async function chainWeather(env = {}) {
   return first(db.prepare(`SELECT bucket_start,bucket_seconds,regime,activity_score,volatility_score,concentration_score,rotation_score,convergence_score,nft_activity_score,evidence_json FROM bull_chain_weather ORDER BY bucket_start DESC LIMIT 1`));
 }
 
-

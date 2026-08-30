@@ -9,12 +9,16 @@ import {
 
 const particles = [10, 40, 90].map((observedAt, index) => ({
   id: `event-${index}`,
+  eventId: `event-${index}`,
   kind: "transaction",
   cosmicKind: "comet",
   originGalaxyId: "galaxy-zero",
   verificationState: "synthetic",
   observedAt,
   category: "swap",
+  source: "synthetic-prototype",
+  slot: null,
+  metadata: {},
   magnitudeBand: 1,
   position: [0, 0, 0],
 }));
@@ -46,6 +50,6 @@ test("replay steps to exact observed event boundaries", () => {
 test("evidence refuses to synthesize a price chart", () => {
   const evidence = evidenceForParticle(snapshot, particles[0]);
   assert.equal(evidence.chartStatus, "unavailable");
-  assert.match(evidence.chartReason, /would fabricate evidence/i);
+  assert.match(evidence.chartReason, /no price path is inferred|source is attached/i);
   assert.deepEqual(evidence.sources, ["synthetic-prototype"]);
 });

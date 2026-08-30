@@ -132,4 +132,3 @@ CREATE TABLE IF NOT EXISTS pump_ingest_health (
 INSERT OR IGNORE INTO pump_ingest_health (id, state, updated_at) VALUES (1, 'idle', unixepoch());
 
 
-

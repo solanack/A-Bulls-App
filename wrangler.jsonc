@@ -4,9 +4,6 @@
   "compatibility_date": "2026-08-29",
   "compatibility_flags": ["nodejs_compat"],
   "main": "@tanstack/react-start/server-entry",
-  "vars": {
-    "INTELLIGENCE_WORKER_URL": "https://black-bull-run-sol.ckdsigns1.workers.dev"
-  },
   "observability": {
     "enabled": true
   }

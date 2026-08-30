@@ -48,7 +48,7 @@ function mockDb(){
   };
 }
 
-const env=()=>({DB:mockDb(),PLAYABLE_DATA_ENABLED:'true'});
+const env=()=>({INTELLIGENCE_DB:mockDb(),PLAYABLE_DATA_ENABLED:'true'});
 
 test('builds a synchronized two-wallet replay with route-backed prices',async()=>{
   const bundle=await buildReplayBundle(env(),{wallets:[walletA,walletB],mint,quoteMint:quote,from:100,to:200,bucketSeconds:60});
@@ -74,7 +74,7 @@ test('does not invent execution prices without a quote mint',async()=>{
 
 test('HTTP route is fail-closed and validates input',async()=>{
   const endpoint='https://example.test/api/intelligence/replay-bundle';
-  const disabled=await handleReplayBundleRequest(new Request(endpoint,{method:'POST',body:JSON.stringify({wallet:walletA,mint})}),{DB:mockDb()});
+  const disabled=await handleReplayBundleRequest(new Request(endpoint,{method:'POST',body:JSON.stringify({wallet:walletA,mint})}),{INTELLIGENCE_DB:mockDb()});
   assert.equal(disabled.status,404);
   const invalid=await handleReplayBundleRequest(new Request(endpoint,{method:'POST',body:JSON.stringify({wallet:'bad',mint})}),env());
   assert.equal(invalid.status,400);
@@ -84,5 +84,3 @@ test('HTTP route is fail-closed and validates input',async()=>{
   assert.equal(body.ok,true);
   assert.equal(body.bundle.eventCount,1);
 });
-
-

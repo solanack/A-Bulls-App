@@ -1,13 +1,9 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-
-execFileSync(process.execPath, ['scripts/reconstruct-worker-8.2.0.mjs'], { cwd: new URL('..', import.meta.url), stdio: 'inherit' });
 const mod = await import('./worker-vnext-entry.mjs');
 const worker = mod.default;
 
-assert.equal(mod.__workerVNextContract.baselineVersion, '8.2.0');
-assert.equal(mod.__workerVNextContract.baselineRuntime, 'retained-system-auth-bull-invaders');
-assert.deepEqual(new Set(mod.__workerVNextContract.retainedBaselinePaths),new Set(['/api/health','/api/auth/google/config','/api/auth/google','/api/auth/google/session','/api/auth/player-session','/api/leaderboard/top','/api/leaderboard/challenge','/api/leaderboard/submit']));
+assert.equal(mod.__workerVNextContract.runtime, 'living-universe-read-only');
+assert.deepEqual(mod.__workerVNextContract.retainedPaths, ['/api/health']);
 assert.ok(worker && typeof worker.fetch === 'function');
 assert.ok(typeof worker.scheduled === 'function');
 
@@ -47,11 +43,11 @@ for (const path of [
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://abullsapp.com');
 }
 
-// Baseline system/game support remains reachable through the retained 8.2.0 implementation.
+// Only the neutral health route remains outside the Intelligence router.
 const health = await worker.fetch(new Request('https://api.example/api/health'), env, {});
-assert.notEqual(health.status, 404, 'baseline /api/health must remain reachable');
+assert.equal(health.status, 200, '/api/health must remain reachable');
 const leaderboard = await worker.fetch(new Request('https://api.example/api/leaderboard/top'), env, {});
-assert.notEqual(leaderboard.status, 404, 'Bull Invaders leaderboard route must remain reachable');
+assert.equal(leaderboard.status, 404, 'competitive leaderboard route must remain retired');
 
 // A new vNext route owns its disabled-state 404; it is never reinterpreted by the baseline.
 const replay = await worker.fetch(new Request('https://api.example/api/intelligence/replay-bundle', {
@@ -72,6 +68,4 @@ assert.equal((await jsonOf(limited)).error, 'rate_limited');
 assert.equal(limited.headers.get('retry-after'), '60');
 assert.equal(limited.headers.get('access-control-allow-origin'), 'https://abullsapp.com');
 
-console.log('Worker vNext retained-baseline compatibility contract passed');
-
-
+console.log('Worker living-universe read-only contract passed');

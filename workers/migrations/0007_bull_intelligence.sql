@@ -136,4 +136,3 @@ CREATE TABLE IF NOT EXISTS bull_intelligence_cache (
 );
 CREATE INDEX IF NOT EXISTS idx_bull_intelligence_cache_expiry ON bull_intelligence_cache(expires_at);
 
-

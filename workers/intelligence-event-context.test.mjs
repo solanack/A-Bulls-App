@@ -27,7 +27,7 @@ function mockDb(){
     return{results:[]};
   },async first(){if(state.sql.includes('SELECT request_count'))return null;return null;},async run(){return{success:true};}};}};
 }
-const env=()=>({DB:mockDb(),PLAYABLE_DATA_ENABLED:'true'});
+const env=()=>({INTELLIGENCE_DB:mockDb(),PLAYABLE_DATA_ENABLED:'true'});
 
 test('builds bounded all-wallet market context without ownership or intent claims',async()=>{
   const context=await buildEventMarketContext(env(),{mint,timestamp:1000_000,subjectWallet:walletA,signature:'sig-a',windowSeconds:1800});
@@ -64,7 +64,7 @@ test('reports deterministic before and after windows with actual elapsed time',a
 
 test('HTTP endpoint is feature-gated and validates input',async()=>{
   const url='https://example.test/api/intelligence/event-context';
-  const disabled=await handleEventMarketContextRequest(new Request(url,{method:'POST',body:JSON.stringify({mint,timestamp:1000000})}),{DB:mockDb()});
+  const disabled=await handleEventMarketContextRequest(new Request(url,{method:'POST',body:JSON.stringify({mint,timestamp:1000000})}),{INTELLIGENCE_DB:mockDb()});
   assert.equal(disabled.status,404);
   const invalid=await handleEventMarketContextRequest(new Request(url,{method:'POST',body:JSON.stringify({mint:'bad',timestamp:1000000})}),env());
   assert.equal(invalid.status,400);
@@ -74,5 +74,3 @@ test('HTTP endpoint is feature-gated and validates input',async()=>{
   assert.equal(body.ok,true);
   assert.equal(body.context.activity.walletCount,2);
 });
-
-

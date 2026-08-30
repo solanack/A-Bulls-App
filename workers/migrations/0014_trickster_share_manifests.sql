@@ -12,4 +12,3 @@ CREATE TABLE IF NOT EXISTS trickster_share_manifests (
 CREATE INDEX IF NOT EXISTS idx_trickster_share_manifests_expiry
   ON trickster_share_manifests(expires_at);
 
-

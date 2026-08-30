@@ -17,4 +17,3 @@ test('contract keeps recording cheap and client-only',()=>{
   assert.equal(__flightRecorderContract.clientOnly,true);assert.equal(__flightRecorderContract.boundedFrames,true);assert.equal(__flightRecorderContract.defaultMaxFrames,3600);
 });
 
-

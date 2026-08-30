@@ -68,8 +68,21 @@ is not part of the current build pass.
 - Direct secondary Solana RPC sampling was removed from QUERY so one user ask
   cannot silently fan out into multiple provider requests.
 
-The storage and breaker spine is complete. Real ingestion, dedicated OHLC
-credentials, and the first normalized production snapshots still require the
-account-specific D1 binding and provider secrets described in
-`cloudflare/UNIVERSE_DATA_SETUP.md`; those values are never fabricated or
-committed.
+## Completed Living Universe layer
+
+- The recovered production Intelligence Worker is integrated without creating
+  a second D1 database.
+- Real indexed Replay bundles and event market context drive candlesticks and
+  evidence receipts.
+- Compare, What-If, Sequences, Ghost, Trickster/Create, and narrated education
+  are functional read-only modes with honest empty states.
+- pump.fun writes to the shared event, provenance, route, candle, and universe
+  contracts used by Galaxy Zero.
+- One database-guarded provider reservation protects QUERY and background
+  Helius indexing before a network call is made.
+- The retired competitive runtime and its database binding are absent from the
+  release.
+
+Account-owned bindings, provider secrets, webhook configuration, and the
+health of live ingestion remain deployment configuration. Those values and any
+missing market evidence are never fabricated or committed.

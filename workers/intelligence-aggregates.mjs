@@ -123,4 +123,3 @@ function inputOrZero(rows, key) {
   return rows.reduce((sum, row) => sum + n(row?.[key]), 0);
 }
 
-

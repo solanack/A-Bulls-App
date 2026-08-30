@@ -26,4 +26,3 @@ export async function handleIntelligenceAssetRequest(request,env={}){
   return null;
 }
 
-

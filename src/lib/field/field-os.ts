@@ -89,6 +89,10 @@ export class FieldOS {
             observedAt: particle.observedAt,
             verificationState: particle.verificationState,
             magnitudeBand: particle.magnitudeBand,
+            eventId: particle.eventId,
+            source: particle.source,
+            slot: particle.slot,
+            metadata: particle.metadata,
           }
         : null;
       this.evidence = particle ? evidenceForParticle(this.field.snapshot, particle) : null;
@@ -281,6 +285,19 @@ export class FieldOS {
     this.muted = muted;
     globalThis.localStorage?.setItem("abulls-mute", muted ? "1" : "0");
     if (muted) this.#stopVoice();
+    this.#emit();
+  }
+
+  narrateObserved(text: string) {
+    this.#stopVoice();
+    this.#voice = speakText(text, {
+      muted: this.muted,
+      volume: this.volume,
+      onEnd: () => {
+        this.#voice = null;
+        this.#emit();
+      },
+    });
     this.#emit();
   }
 

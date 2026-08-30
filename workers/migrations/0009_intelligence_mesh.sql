@@ -117,4 +117,3 @@ CREATE TABLE IF NOT EXISTS intelligence_trade_routes (
 );
 CREATE INDEX IF NOT EXISTS idx_intelligence_trade_routes_wallet_time ON intelligence_trade_routes(wallet, block_time DESC);
 
-

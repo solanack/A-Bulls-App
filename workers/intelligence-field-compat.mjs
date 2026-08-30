@@ -3,6 +3,7 @@ import { resolvePublicChainEntity } from './intelligence-entity-resolver.mjs';
 import { resolveHistoryRpc } from './intelligence-history-engine.mjs';
 import { ecosystemUniverseSnapshot } from './intelligence-ecosystem-universe-snapshot.mjs';
 import { listUniverses } from './intelligence-ecosystem-universes.mjs';
+import { reserveProviderCredits } from './intelligence-provider-budget.mjs';
 
 const GALAXY_TO_UNIVERSE=Object.freeze({'galaxy-zero':'solana','pump-fun':'pump-fun'});
 const UNIVERSE_TO_GALAXY=Object.freeze({solana:'galaxy-zero','pump-fun':'pump-fun'});
@@ -31,7 +32,12 @@ function category(value){
   return'unknown';
 }
 
-function cosmicKind(kind){
+function cosmicKind(kind,metadata={}){
+  const lifecycle=s(metadata.lifecycle||metadata.state||metadata.eventType).toLowerCase();
+  if(/migrat|graduat|bridge/.test(lifecycle))return'wormhole';
+  if(/birth|launch|ignite/.test(lifecycle))return'supernova';
+  if(/dead|closed|terminal|rug/.test(lifecycle))return'black-hole';
+  if(/inactive|dormant|ghost/.test(lifecycle))return'ghost';
   switch(s(kind).toLowerCase()){
     case'token':case'mint':return'star';
     case'wallet':case'account':return'planet';
@@ -53,12 +59,16 @@ export function toFieldSnapshot(galaxyId,input={}){
   const id=GALAXY_TO_UNIVERSE[galaxyId]?galaxyId:'galaxy-zero';
   const particles=(Array.isArray(input.particles)?input.particles:[]).map((item,index)=>({
     id:s(item.id)||`${id}:unknown:${index}`,
+    eventId:s(item.observationId||item.eventId||item.id)||`${id}:event:${index}`,
     kind:s(item.kind)||'unknown',
-    cosmicKind:cosmicKind(item.kind),
+    cosmicKind:cosmicKind(item.kind,item.metadata),
     originGalaxyId:id,
     verificationState:s(item.verificationState)||'observed',
     observedAt:n(item.observedAt),
     category:category(item.category),
+    source:s(item.source)||null,
+    slot:n(item.slot)||null,
+    metadata:item.metadata&&typeof item.metadata==='object'?item.metadata:{},
     magnitudeBand:clamp(item.magnitudeBand),
     position:position(item.position)
   }));
@@ -93,13 +103,10 @@ export async function readFieldProviderBudget(env={},now=Math.floor(Date.now()/1
 }
 
 async function reserveFieldProviderCredit(env={},units=1,now=Math.floor(Date.now()/1000)){
-  const db=intelligenceDb(env),policy=budgetPolicy(env),key=monthKey(now);
-  if(!db)return{blocked:false,budget:null};
-  const amount=Math.max(0,Math.trunc(n(units))),hardStop=Math.floor(policy.monthlyLimit*policy.circuitBreakerRatio);
-  await db.prepare('INSERT INTO intelligence_provider_budget_monthly(provider,month_key,call_count,credits_reserved,monthly_limit,breaker_ratio,updated_at) VALUES(?,?,0,0,?,?,?) ON CONFLICT(provider,month_key) DO NOTHING').bind(policy.provider,key,policy.monthlyLimit,policy.circuitBreakerRatio,now).run();
-  const result=await db.prepare('UPDATE intelligence_provider_budget_monthly SET call_count=call_count+1,credits_reserved=credits_reserved+?,monthly_limit=?,breaker_ratio=?,updated_at=? WHERE provider=? AND month_key=? AND credits_reserved+?<=?').bind(amount,policy.monthlyLimit,policy.circuitBreakerRatio,now,policy.provider,key,amount,hardStop).run();
+  const db=intelligenceDb(env);if(!db)return{blocked:false,budget:null};
+  const result=await reserveProviderCredits(env,units,'helius',now*1000);
   const budget=await readFieldProviderBudget(env,now);
-  return{blocked:n(result?.meta?.changes)===0,budget};
+  return{blocked:result.blocked,budget};
 }
 
 async function readCache(db,key,{allowExpired=false,now=Math.floor(Date.now()/1000)}={}){
@@ -169,4 +176,3 @@ export async function handleFieldCompatibilityRequest(request,env={}){
 }
 
 export const __fieldCompatibilityContract=Object.freeze({version:'field-v1',galaxyMap:GALAXY_TO_UNIVERSE,usesExistingIntelligenceDb:true,passiveSnapshotsUseIndexedDataOnly:true,queryCacheTable:'bull_intelligence_cache',providerBudgetTable:'intelligence_provider_budget_monthly'});
-

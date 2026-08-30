@@ -14,4 +14,3 @@ assert.equal((await method.json()).error,'method_not_allowed');
 
 console.log('Market backfill request boundary passed');
 
-

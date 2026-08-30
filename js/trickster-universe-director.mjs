@@ -37,4 +37,3 @@ export function buildTricksterSimulationCue({at=0,prompt='',summary=''}={}){
 
 export const __tricksterUniverseDirectorContract=Object.freeze({observedNarrationUsesEvidenceOnly:true,simulationAlwaysDisclosed:true,boundedDefaultCues:24,noNetworkCalls:true});
 
-

@@ -2,9 +2,6 @@ name = "black-bull-run-sol-api"
 main = "worker-vnext-entry.mjs"
 compatibility_date = "2026-08-01"
 
-[build]
-command = "node ../scripts/reconstruct-worker-8.2.0.mjs"
-
 [triggers]
 crons = ["*/15 * * * *"]
 
@@ -33,19 +30,10 @@ INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
 # Protected internal ingest/retrieval secret must be stored with Wrangler, never in this file:
 # npx wrangler secret put INTELLIGENCE_MESH_INGEST_TOKEN
 
-# Existing identity/game secrets retained from the verified Worker 8.2.0 baseline:
+# Provider secret for bounded, read-only indexing:
 # npx wrangler secret put HELIUS_API_KEY
-# npx wrangler secret put GOOGLE_CLIENT_ID
-# npx wrangler secret put AUTH_SESSION_SECRET
 
-# Existing D1 leaderboard binding. The neutral Intelligence runtime can share the configured DB
-# through its supported binding aliases until a dedicated binding is selected.
-# [[d1_databases]]
-# binding = "LEADERBOARD_DB"
-# database_name = "black-bull-run-leaderboard"
-# database_id = "<YOUR_D1_DATABASE_ID>"
-
-# Optional shared cache retained for compatible baseline routes.
+# Optional shared cache for indexed intelligence responses.
 # [[kv_namespaces]]
 # binding = "ANALYTICS_CACHE"
 # id = "<YOUR_KV_NAMESPACE_ID>"
@@ -68,5 +56,3 @@ binding = "INTELLIGENCE_DB"
 database_name = "a-bulls-app-intelligence"
 database_id = "a54ed900-ccd0-4fe5-9522-71996e96d16b"
 migrations_dir = "migrations"
-
-

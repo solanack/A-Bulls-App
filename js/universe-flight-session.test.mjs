@@ -22,4 +22,3 @@ test('session contract keeps networking outside the game core',()=>{
   assert.equal(__universeFlightSessionContract.networkInjectedExternally,true);assert.equal(__universeFlightSessionContract.clientPhysicsIndependent,true);
 });
 
-

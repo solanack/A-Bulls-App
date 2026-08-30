@@ -32,4 +32,3 @@ test('rejects invalid public wallet input',async()=>{
   await assert.rejects(()=>buildCommonTokenIndex({},wallet,wallet,{db:fakeDb({})}),/comparison_wallet_must_differ/);
 });
 
-

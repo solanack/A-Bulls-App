@@ -3,10 +3,7 @@ const n=v=>Number.isFinite(Number(v))?Number(v):0;
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
 function hash(value){let h=2166136261;for(const c of s(value)){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;}
-function rng(seed){return()=>{
-  seed=(Math.imul(seed^(seed>>>15),1|seed)+0x6D2B79F5)|0;
-  return (((seed^(seed>>>7))>>>0)/4294967296);
-};}
+function rng(seed){return()=>{seed=seed+0x6D2B79F5|0;let value=Math.imul(seed^seed>>>15,1|seed);value=value+Math.imul(value^value>>>7,61|value)^value;return((value^value>>>14)>>>0)/4294967296;};}
 function kindWeight(kind){return kind==='wallet'?1:kind==='token'?.9:kind==='transaction'?.65:kind==='nft'?.8:.55;}
 function colorClass(item={}){const category=s(item.category).toLowerCase();if(category==='swap')return item.side==='sell'?'sell':'trade';if(category==='nft')return'nft';if(category==='transfer')return'transfer';return'program';}
 
@@ -51,4 +48,3 @@ export function flightMarketStateFromReplay(bundle={}){
 }
 
 export const __universeFlightSectorContract=Object.freeze({boundedProjectionItems:1000,boundedReplayEvents:1500,noNetworkCalls:true,observedDataOnly:true});
-

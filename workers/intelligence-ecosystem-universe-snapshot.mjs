@@ -15,7 +15,7 @@ function relationsFor(rows=[],extraIds=[]){
 }
 
 function memberParticle(id,member,now){return{id:member.entityId,observationId:`membership:${id}:${member.entityId}`,kind:member.entityKind||'token',category:'member',verificationState:'verified',observedAt:member.lastSeenAt||now,magnitudeBand:clamp(1-((Math.max(1,n(member.rank)||1)-1)/Math.max(10,n(member.rank)||10))*.55),position:positionForEntity(`${id}:member:${member.entityId}`),metadata:{rank:member.rank,active:true,qualifyingCycles:member.qualifyingCycles,entryCount:member.entryCount,...(member.metadata||{})}};}
-function observationParticle(id,row){return{id:s(row.entity_id),observationId:s(row.event_id),kind:s(row.entity_kind),category:s(row.category)||'unknown',verificationState:COMMITMENTS.has(s(row.commitment))?s(row.commitment):'observed',observedAt:n(row.observed_at),magnitudeBand:clamp(row.magnitude_band),position:positionForEntity(`${id}:${s(row.entity_kind)}:${s(row.entity_id)}`),metadata:{}};}
+function observationParticle(id,row){const evidence=parse(row.evidence_json);return{id:s(row.entity_id),observationId:s(row.event_id),kind:s(row.entity_kind),category:s(row.category)||'unknown',verificationState:COMMITMENTS.has(s(row.commitment))?s(row.commitment):'observed',observedAt:n(row.observed_at),slot:n(row.slot)||null,source:s(row.source)||null,magnitudeBand:clamp(row.magnitude_band),position:positionForEntity(`${id}:${s(row.entity_kind)}:${s(row.entity_id)}`),metadata:evidence};}
 
 export async function ecosystemUniverseSnapshot(env={},universeId='solana',{windowSeconds=60,limit=2500,now=Math.floor(Date.now()/1000)}={}){
   const db=intelligenceDb(env),id=s(universeId)||'solana',window=Math.max(10,Math.min(86400,Math.trunc(n(windowSeconds)||60))),cap=Math.max(1,Math.min(5000,Math.trunc(n(limit)||2500))),from=now-window;
@@ -28,5 +28,3 @@ export async function ecosystemUniverseSnapshot(env={},universeId='solana',{wind
   const sources=[...new Set([...rows.map(row=>s(row.source)).filter(Boolean),...(members.length?['universe-membership']:[])])],shownObservations=Math.max(0,particles.length-anchors.length);
   return{schemaVersion:2,universeId:id,windowStart:from,windowEnd:now,observedEventCount:rows.length,renderedParticleCount:particles.length,activeMemberCount:members.length,members,samplingPolicy:rows.length>remaining?'active-member anchors plus magnitude/category-balanced observation sample':'active-member anchors plus all bounded universe observations',coverageStatement:`${anchors.length} active members anchored; ${shownObservations} of ${rows.length} indexed observations shown from ${id} over the last ${window} seconds`,sources,particles,relations:relationsFor(sampled,anchors.map(item=>item.id))};
 }
-
-

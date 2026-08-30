@@ -38,4 +38,3 @@ export async function refreshLaunchpadUniverse(env={},definition={},options={}){
 export async function refreshConfiguredLaunchpadUniverses(env={},options={}){const results=[];for(const definition of DEFINITIONS)results.push(await refreshLaunchpadUniverse(env,definition,options));return{definitions:DEFINITIONS.length,results};}
 export const __launchpadUniverseSelectorContract=Object.freeze({universes:Object.freeze(DEFINITIONS.map(item=>item.universeId)),directMintOnly:true,confirmationCycles:2,failClosed:true});
 
-

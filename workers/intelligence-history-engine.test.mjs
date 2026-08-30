@@ -26,4 +26,3 @@ test('history decoder emits observed token deltas without claiming PnL', () => {
   assert.equal(Object.hasOwn(rows[0],'pnl'),false);
 });
 
-

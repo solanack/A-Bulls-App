@@ -28,4 +28,3 @@ CREATE INDEX IF NOT EXISTS idx_intelligence_retrieval_tasks_ready
 CREATE INDEX IF NOT EXISTS idx_intelligence_retrieval_tasks_wallet
   ON intelligence_retrieval_tasks(wallet, requested_from, requested_to, updated_at DESC);
 
-

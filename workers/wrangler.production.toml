@@ -2,9 +2,6 @@ name = "black-bull-run-sol"
 main = "worker-vnext-entry.mjs"
 compatibility_date = "2026-08-01"
 
-[build]
-command = "node ../scripts/reconstruct-worker-8.2.0.mjs"
-
 [triggers]
 crons = ["*/15 * * * *"]
 
@@ -12,27 +9,28 @@ crons = ["*/15 * * * *"]
 ALLOWED_ORIGINS = "https://abullsapp.com,https://www.abullsapp.com"
 UNIVERSE_ENABLED = "true"
 TRICKSTER_STUDIO_ENABLED = "true"
-TRICKSTER_SHARE_ENABLED = "false"
+TRICKSTER_SHARE_ENABLED = "true"
 PLAYABLE_DATA_ENABLED = "true"
 FIELD_COMPAT_ENABLED = "true"
 FIELD_QUERY_CACHE_TTL_SECONDS = "60"
 HELIUS_BREAKER_RATIO = "0.75"
+HELIUS_MONTHLY_CREDITS = "1000000"
 
 # Conservative test mode: populate Universe sparingly while broad/history paths stay off.
 ECOSYSTEM_UNIVERSES_ENABLED = "true"
-INTELLIGENCE_MESH_ENABLED = "false"
+INTELLIGENCE_MESH_ENABLED = "true"
 INTELLIGENCE_SCHEDULER_BATCH_SIZE = "1"
 BULL_INDEXER_ENABLED = "false"
 BULL_NFT_INDEXER_ENABLED = "false"
 BULL_ARCHIVAL_ENABLED = "false"
-MARKET_BACKFILL_QUEUE_ENABLED = "false"
+MARKET_BACKFILL_QUEUE_ENABLED = "true"
 INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED = "false"
 INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED = "false"
 INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
 
 PUMP_INDEX_ENABLED = "true"
 PUMP_INDEX_SOURCE = "ansem-z500"
-PUMP_STREAM_ENABLED = "false"
+PUMP_STREAM_ENABLED = "true"
 PUMP_ACTIVE_TOKEN_LIMIT = "10"
 PUMP_MONTHLY_CREDIT_BUDGET = "1000000"
 PUMP_BUDGET_WARNING_PERCENT = "60"
@@ -48,11 +46,6 @@ Z500_HELIUS_ROTATION_ENABLED = "false"
 Z500_TOP_LIMIT = "10"
 Z500_REFRESH_SECONDS = "900"
 Z500_CONFIRMATION_CYCLES = "2"
-
-[[d1_databases]]
-binding = "LEADERBOARD_DB"
-database_name = "a-bulls-app-leaderboard-production"
-database_id = "f0747244-28c7-4a70-a40c-6f5200e9e6bd"
 
 [[ratelimits]]
 name = "RATE_LIMITER"
@@ -71,4 +64,3 @@ binding = "INTELLIGENCE_DB"
 database_name = "a-bulls-app-intelligence"
 database_id = "a54ed900-ccd0-4fe5-9522-71996e96d16b"
 migrations_dir = "migrations"
-

@@ -39,4 +39,3 @@ test('builds deterministic fallback order without converting ranking into a cove
   assert.equal(plan.coverageClaim,'unknown-until-measured');
 });
 
-

@@ -24,4 +24,3 @@ test('verified ingest preserves verified relation presentation state',()=>{
   assert.equal(observation.evidence.relations[0].verificationState,'verified');
 });
 
-

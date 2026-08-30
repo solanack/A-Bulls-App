@@ -24,4 +24,3 @@ test('invalid request windows fail closed',()=>{
   assert.throws(()=>buildMarketBackfillPlan([],{requestFrom:500,requestTo:100}),/valid requested coverage window/);
 });
 
-

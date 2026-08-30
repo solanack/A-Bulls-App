@@ -78,4 +78,3 @@ CREATE TABLE IF NOT EXISTS intelligence_behavior_clusters (
 CREATE INDEX IF NOT EXISTS idx_behavior_clusters_universe
   ON intelligence_behavior_clusters(universe_id, window_end DESC, confidence DESC);
 
-

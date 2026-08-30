@@ -47,4 +47,3 @@ test('resolves transaction signatures with investigation context',async()=>{
   assert.match(result.disclosure,/not claims of identity/);
 });
 
-

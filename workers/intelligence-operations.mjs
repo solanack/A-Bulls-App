@@ -30,4 +30,3 @@ export async function indexJobs(env={},wallet='',limit=50){
   return all(db.prepare(`SELECT id,wallet,job_type,state,cursor_before,page_size,pages_completed,signatures_seen,transactions_ingested,source,last_error,next_attempt_at,created_at,updated_at FROM intelligence_index_jobs ORDER BY updated_at DESC LIMIT ?`).bind(Math.max(1,Math.min(100,n(limit)||50))));
 }
 
-

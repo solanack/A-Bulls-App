@@ -42,4 +42,3 @@ export function projectIndexedEventsToUniverse(events=[],options={}){
   const output=[];for(const event of (Array.isArray(events)?events:[]).slice(0,500))output.push(...projectIndexedEventToUniverse(event,options));return Object.freeze(output.slice(0,1000));
 }
 
-

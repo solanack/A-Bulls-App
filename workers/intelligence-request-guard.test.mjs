@@ -25,4 +25,3 @@ test('allows bounded requests when the configured limiter succeeds',async()=>{
   assert.equal(await guardIntelligenceRequest(new Request('https://example.com/api/intelligence/mesh-status'),env),null);
 });
 
-

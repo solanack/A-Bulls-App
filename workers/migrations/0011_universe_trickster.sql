@@ -52,4 +52,3 @@ CREATE TABLE IF NOT EXISTS intelligence_story_exports (
 CREATE INDEX IF NOT EXISTS idx_intelligence_story_exports_story
   ON intelligence_story_exports(story_id, created_at DESC);
 
-

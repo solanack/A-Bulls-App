@@ -31,4 +31,3 @@ export async function durableUniverseEvidence(env={},universeId='',{from=0,to=Ma
 
 export const __durableUniverseLinkContract=Object.freeze({canonicalTable:'bull_wallet_events',membershipAtIngest:true,preservesExitedUniverseHistory:true});
 
-

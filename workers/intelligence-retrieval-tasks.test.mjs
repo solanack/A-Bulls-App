@@ -17,8 +17,6 @@ test('invalid receipt ranges fail closed',()=>{const receipt=normalizeRetrievalR
 test('claim skips a task whose conditional lease update lost a concurrent race',async()=>{
   const wallet='11111111111111111111111111111111',rows=[{id:1,index_job_id:10,wallet,source:'archive',source_kind:'old-faithful',requested_from:100,requested_to:200,state:'queued',lease_until:null,attempts:0},{id:2,index_job_id:11,wallet,source:'archive',source_kind:'old-faithful',requested_from:300,requested_to:400,state:'queued',lease_until:null,attempts:0}];
   const db={prepare(sql){return{bind(...args){return{async all(){return{results:rows};},async run(){if(!sql.startsWith('UPDATE intelligence_retrieval_tasks SET state=\'leased\''))throw new Error('unexpected_update');const id=args[1];return{meta:{changes:id===1?0:1}};}};}};}};
-  const result=await claimExternalRetrievalTasks({INTELLIGENCE_MESH_ENABLED:'true',INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED:'true',BULL_INTELLIGENCE_DB:db},{sourceKinds:['old-faithful'],limit:1});
+  const result=await claimExternalRetrievalTasks({INTELLIGENCE_MESH_ENABLED:'true',INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED:'true',INTELLIGENCE_DB:db},{sourceKinds:['old-faithful'],limit:1});
   assert.equal(result.tasks.length,1);assert.equal(result.tasks[0].taskId,2);assert.match(result.disclosure,/concurrent bridge workers/i);
 });
-
-

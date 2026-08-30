@@ -20,16 +20,10 @@ type ResolveBody = {
   failed?: boolean;
   blockTime?: number;
   source?: string;
+  coverage?: Coverage;
+  cache?: string;
   readOnly?: boolean;
   disclosure?: string | null;
-  coverage?: Coverage;
-  cache?: "fresh" | "stale" | "miss";
-  budget?: {
-    blocked?: boolean;
-    unitsSpent?: number;
-    monthlyLimit?: number;
-    circuitBreakerRatio?: number;
-  } | null;
   context?: {
     signers?: string[];
     tokenMints?: string[];
@@ -143,33 +137,31 @@ export const resolvePublicIdentifier = createServerFn({ method: "POST" })
       };
     }
 
-    let body: ResolveBody;
+    let body: ResolveBody | null = null;
+    let forcedCoverage: Coverage | null = null;
+    let budgetDisclosure: string | null = null;
     try {
       const res = await fetch(
         `${WORKER}/api/intelligence/field/resolve?query=${encodeURIComponent(query)}`,
         { headers: { accept: "application/json" }, cache: "no-store" },
       );
       body = (await res.json()) as ResolveBody;
+      forcedCoverage = body.coverage ?? null;
+      budgetDisclosure = body.disclosure ?? null;
+      if (!res.ok && !body.error) body.error = `resolver_http_${res.status}`;
     } catch {
       body = { ok: false, state: "not-found", error: "resolver_unavailable" };
+      forcedCoverage = "degraded";
+      budgetDisclosure = "The Intelligence Worker could not be reached. No fallback provider request was issued.";
     }
-    const forcedCoverage = body.coverage ?? null;
-    const budgetDisclosure =
-      body.cache === "fresh"
-        ? "Served from the Intelligence Worker cache."
-        : body.cache === "stale"
-          ? "Served from stale Intelligence Worker evidence; no live provider request was issued."
-          : body.budget?.blocked
-            ? "The Intelligence Worker provider circuit breaker is active."
-            : null;
 
     const extra: string[] = [];
-    const kind = classifyKind(body.label || "", body.parsedType, body.executable);
+    const kind = classifyKind(body?.label || "", body?.parsedType, body?.executable);
 
     const coverage =
       forcedCoverage ??
-      (body.error === "resolver_unavailable" ? "degraded" : coverageFrom(body));
-    if (coverage === "degraded" && !body.ok) {
+      (body?.error === "resolver_unavailable" ? "degraded" : coverageFrom(body ?? {}));
+    if (coverage === "degraded" && !body?.ok) {
       return {
         ok: false,
         kind: "unknown",
@@ -186,18 +178,18 @@ export const resolvePublicIdentifier = createServerFn({ method: "POST" })
       };
     }
 
-    const spoken = speakFromResolve(query, body, extra);
+    const spoken = speakFromResolve(query, body ?? {}, extra);
     return {
-      ok: Boolean(body.ok && body.state !== "not-found"),
+      ok: Boolean(body?.ok && body.state !== "not-found"),
       kind,
       query,
-      shortId: shortId(body.address || body.signature || query),
+      shortId: shortId(body?.address || body?.signature || query),
       coverage,
       observedAt,
-      label: body.label || "unknown",
-      facts: factsFromResolve(body, extra),
+      label: body?.label || "unknown",
+      facts: factsFromResolve(body ?? {}, extra),
       spokenText: spoken,
-      disclosure: [body.disclosure, budgetDisclosure].filter(Boolean).join(" · ") || null,
-      source: body.source ?? null,
+      disclosure: [body?.disclosure, budgetDisclosure].filter(Boolean).join(" · ") || null,
+      source: body?.source ?? null,
     };
   });

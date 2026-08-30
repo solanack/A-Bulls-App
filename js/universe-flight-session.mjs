@@ -26,4 +26,3 @@ export function createUniverseFlightSession(options={}){
 
 export const __universeFlightSessionContract=Object.freeze({networkInjectedExternally:true,clientPhysicsIndependent:true,replayAndCreatorComposable:true});
 
-

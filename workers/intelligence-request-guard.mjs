@@ -30,4 +30,3 @@ export async function guardIntelligenceRequest(request,env={}){
 
 export const __intelligenceRequestGuardContract=Object.freeze({maxBodyBytes:MAX_INTELLIGENCE_BODY_BYTES,prefix:INTELLIGENCE_PREFIX});
 
-

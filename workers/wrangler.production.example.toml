@@ -2,9 +2,6 @@ name = "black-bull-run-sol-api"
 main = "worker-vnext-entry.mjs"
 compatibility_date = "2026-08-01"
 
-[build]
-command = "node ../scripts/reconstruct-worker-8.2.0.mjs"
-
 [triggers]
 crons = ["* * * * *"]
 
@@ -12,11 +9,12 @@ crons = ["* * * * *"]
 ALLOWED_ORIGINS = "https://abullsapp.com,https://www.abullsapp.com"
 UNIVERSE_ENABLED = "true"
 TRICKSTER_STUDIO_ENABLED = "true"
-TRICKSTER_SHARE_ENABLED = "false"
+TRICKSTER_SHARE_ENABLED = "true"
 PLAYABLE_DATA_ENABLED = "true"
 FIELD_COMPAT_ENABLED = "true"
 FIELD_QUERY_CACHE_TTL_SECONDS = "60"
 HELIUS_BREAKER_RATIO = "0.75"
+HELIUS_MONTHLY_CREDITS = "1000000"
 INTELLIGENCE_MESH_ENABLED = "true"
 BULL_INDEXER_ENABLED = "true"
 BULL_NFT_INDEXER_ENABLED = "false"
@@ -27,7 +25,7 @@ INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED = "false"
 INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED = "false"
 INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
 PUMP_INDEX_ENABLED = "true"
-PUMP_STREAM_ENABLED = "false"
+PUMP_STREAM_ENABLED = "true"
 PUMP_ACTIVE_TOKEN_LIMIT = "10"
 PUMP_MONTHLY_CREDIT_BUDGET = "4000000"
 PUMP_BUDGET_WARNING_PERCENT = "70"
@@ -40,9 +38,10 @@ PUMP_HELIUS_WEBHOOK_ID = ""
 PUMP_PROGRAM_IDS = "6EF8rrecthR5DkPSj2BJJFhcEryXq8pFCEuPUVMF6P,pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"
 
 [[d1_databases]]
-binding = "LEADERBOARD_DB"
-database_name = "<YOUR_PRODUCTION_D1_DATABASE_NAME>"
-database_id = "<YOUR_PRODUCTION_D1_DATABASE_ID>"
+binding = "INTELLIGENCE_DB"
+database_name = "<YOUR_PRODUCTION_INTELLIGENCE_D1_NAME>"
+database_id = "<YOUR_PRODUCTION_INTELLIGENCE_D1_ID>"
+migrations_dir = "migrations"
 
 [[ratelimits]]
 name = "RATE_LIMITER"
@@ -54,4 +53,3 @@ namespace_id = "<YOUR_ACCOUNT_UNIQUE_INTEGER_NAMESPACE_ID>"
 [observability]
 enabled = true
 head_sampling_rate = 0.1
-

@@ -8,7 +8,8 @@ export type FieldMode =
   | "what-if"
   | "sequences"
   | "evidence"
-  | "replay";
+  | "replay"
+  | "ghost";
 
 export type OrganismState =
   | "idle"
@@ -22,6 +23,8 @@ export type Coverage = "fresh" | "stale" | "degraded" | "empty";
 
 export type GalaxyId = "galaxy-zero" | "pump-fun";
 export type GalaxyStatus = "populated" | "staging";
+
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export type GalaxyDefinition = {
   readonly id: GalaxyId;
@@ -66,6 +69,7 @@ export type ParticleCategory =
 
 export type FieldParticle = {
   id: string;
+  eventId?: string;
   kind: string;
   cosmicKind: CosmicObjectKind;
   readonly originGalaxyId: GalaxyId;
@@ -74,6 +78,9 @@ export type FieldParticle = {
   category: ParticleCategory;
   magnitudeBand: number;
   position: [number, number, number];
+  source?: string | null;
+  slot?: number | null;
+  metadata?: Record<string, JsonValue>;
 };
 
 export type FocusedParticle = {
@@ -85,6 +92,10 @@ export type FocusedParticle = {
   observedAt: number;
   verificationState: string;
   magnitudeBand: number;
+  eventId?: string;
+  source?: string | null;
+  slot?: number | null;
+  metadata?: Record<string, JsonValue>;
 };
 
 export type ReplayState = {
@@ -114,6 +125,12 @@ export type EvidenceRecord = {
   coverageStatement: string;
   chartStatus: "available" | "unavailable";
   chartReason: string | null;
+  source?: string | null;
+  slot?: number | null;
+  signature?: string | null;
+  wallet?: string | null;
+  mint?: string | null;
+  metadata?: Record<string, JsonValue>;
 };
 
 export type UniverseSnapshot = {
@@ -188,6 +205,15 @@ export const DOCK: { id: FieldMode; label: string }[] = [
   { id: "games", label: "GAMES" },
 ];
 
+export const ANALYSIS_MODES: { id: FieldMode; label: string }[] = [
+  { id: "replay", label: "REPLAY" },
+  { id: "evidence", label: "EVIDENCE" },
+  { id: "compare", label: "COMPARE" },
+  { id: "what-if", label: "WHAT-IF" },
+  { id: "sequences", label: "SEQUENCES" },
+  { id: "ghost", label: "GHOST" },
+];
+
 export const MODE_HINT: Record<FieldMode, string> = {
   explore: "INTELLIGENCE IS VISIBLE. THE FUTURE IS PARTICLE.",
   intelligence: "Inspect verified activity. Facts only.",
@@ -199,4 +225,5 @@ export const MODE_HINT: Record<FieldMode, string> = {
   sequences: "Discover bounded market sequences.",
   evidence: "Verify sources, coverage, and original chain time.",
   replay: "Play, pause, and step through chain time.",
+  ghost: "See the indexed counterfactual portfolio. Estimates stay labeled.",
 };

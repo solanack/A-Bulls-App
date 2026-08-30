@@ -96,9 +96,18 @@ async function persistCandidate(db,event,now){
 
 async function persistDetailedTrade(db,event,now){
   await db.prepare(`INSERT OR IGNORE INTO pump_trades(event_id,signature,event_index,mint,wallet,side,token_amount,sol_amount,price_sol,slot,block_time,program_id,source,commitment,inserted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(event.eventId,event.signature,event.eventIndex,event.mint,event.wallet,event.side,event.tokenAmount,event.solAmount,event.priceSol,event.slot,event.blockTime,event.programId,event.source,event.commitment,now).run();
+  const quoteMint='So11111111111111111111111111111111111111112';
+  if(event.wallet){
+    const tokenDelta=(event.side==='buy'?1:-1)*(event.tokenAmount||0),solDelta=(event.side==='buy'?-1:1)*(event.solAmount||0);
+    await db.prepare(`INSERT OR IGNORE INTO bull_wallet_events(signature,slot,block_time,wallet,program_id,mint,event_class,sol_delta,token_delta,source,confidence,decoder_version) VALUES(?,?,?,?,?,?,'swap-like',?,?,?,?,?)`).bind(event.signature,event.slot,event.blockTime,event.wallet,event.programId,event.mint,solDelta,tokenDelta,event.source,event.commitment==='finalized'?1:.9,'pump-shared-v1').run();
+    await db.prepare(`INSERT INTO intelligence_event_provenance(signature,wallet,source,source_kind,observed_at,slot,commitment,verified) VALUES(?,?,?,'pump-stream',?,?,?,?) ON CONFLICT(signature,wallet,source) DO UPDATE SET observed_at=excluded.observed_at,slot=excluded.slot,commitment=excluded.commitment,verified=MAX(verified,excluded.verified)`).bind(event.signature,event.wallet,event.source,now,event.slot,event.commitment,event.commitment==='finalized'?1:0).run();
+    const inputMint=event.side==='buy'?quoteMint:event.mint,outputMint=event.side==='buy'?event.mint:quoteMint,inputAmount=event.side==='buy'?event.solAmount:event.tokenAmount,outputAmount=event.side==='buy'?event.tokenAmount:event.solAmount;
+    await db.prepare(`INSERT OR REPLACE INTO intelligence_trade_routes(signature,wallet,hop_index,program_id,venue,pool,input_mint,output_mint,input_amount,output_amount,slot,block_time,source,confidence) VALUES(?,?,0,?,'pump.fun',?,?,?,?,?,?,?,?,?)`).bind(event.signature,event.wallet,event.programId,event.pairAddress,inputMint,outputMint,inputAmount,outputAmount,event.slot,event.blockTime,event.source,event.commitment==='finalized'?1:.9).run();
+  }
   if(event.priceSol==null)return;
   const bucket=Math.floor(event.blockTime/60)*60;
   await db.prepare(`INSERT INTO pump_candles(mint,bucket_start,bucket_seconds,open,high,low,close,open_time,close_time,volume_token,volume_sol,buy_count,sell_count,trade_count,source_set_json,updated_at) VALUES(?,?,60,?,?,?,?,?,?,?,?,?,?,1,?,?) ON CONFLICT(mint,bucket_start,bucket_seconds) DO UPDATE SET open=CASE WHEN excluded.open_time<open_time THEN excluded.open ELSE open END,high=MAX(high,excluded.high),low=MIN(low,excluded.low),close=CASE WHEN excluded.close_time>=close_time THEN excluded.close ELSE close END,open_time=MIN(open_time,excluded.open_time),close_time=MAX(close_time,excluded.close_time),volume_token=volume_token+excluded.volume_token,volume_sol=volume_sol+excluded.volume_sol,buy_count=buy_count+excluded.buy_count,sell_count=sell_count+excluded.sell_count,trade_count=trade_count+1,updated_at=excluded.updated_at`).bind(event.mint,bucket,event.priceSol,event.priceSol,event.priceSol,event.priceSol,event.blockTime,event.blockTime,event.tokenAmount||0,event.solAmount||0,event.side==='buy'?1:0,event.side==='sell'?1:0,JSON.stringify([event.source]),now).run();
+  await db.prepare(`INSERT INTO intelligence_price_candles(mint,quote_mint,bucket_start,bucket_seconds,open,high,low,close,volume_base,volume_quote,swap_count,wallet_count,confidence,source_set_json,updated_at) VALUES(?,?,?,60,?,?,?,?,?,?,1,?,?,?,?) ON CONFLICT(mint,quote_mint,bucket_start,bucket_seconds) DO UPDATE SET high=MAX(high,excluded.high),low=MIN(low,excluded.low),close=excluded.close,volume_base=volume_base+excluded.volume_base,volume_quote=volume_quote+excluded.volume_quote,swap_count=swap_count+1,wallet_count=MAX(wallet_count,excluded.wallet_count),confidence=MAX(confidence,excluded.confidence),source_set_json=excluded.source_set_json,updated_at=excluded.updated_at`).bind(event.mint,quoteMint,bucket,event.priceSol,event.priceSol,event.priceSol,event.priceSol,event.tokenAmount||0,event.solAmount||0,event.wallet?1:0,event.commitment==='finalized'?1:.9,JSON.stringify([event.source]),now).run();
 }
 
 export async function ingestPumpEvents(env={},inputs=[],{bytes=0,now=Math.floor(Date.now()/1000)}={}){
@@ -200,5 +209,3 @@ export async function handlePumpTop10Request(request,env={}){
 }
 
 export const __pumpTop10Contract=Object.freeze({defaultPrograms:DEFAULT_PROGRAMS,maximumBatch:100,maximumActiveTokens:25});
-
-

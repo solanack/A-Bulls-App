@@ -29,4 +29,3 @@ test('unknown galaxies fail closed',async()=>{
   assert.equal(response.status,400);
   assert.equal((await response.json()).error,'unknown_galaxy');
 });
-

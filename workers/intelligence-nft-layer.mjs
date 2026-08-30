@@ -66,4 +66,3 @@ export async function nftMemory(env={},wallet='',limit=250){
   return {wallet:s(wallet),events,collections,bounds:bounds||{},walletCoverage:await coverageForWallet(env,wallet),state:events.length?'observed-history':'no-observed-nft-history',disclaimer:'NFT Memory reflects indexed public observations only. Missing history must not be interpreted as absence of ownership or activity.'};
 }
 
-

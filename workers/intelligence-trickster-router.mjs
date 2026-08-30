@@ -89,4 +89,3 @@ export async function handleTricksterRequest(request,env={}) {
 
 export const __tricksterShareContract=Object.freeze({maxBodyBytes:MAX_BODY_BYTES,ttlSeconds:SHARE_TTL_SECONDS,shareIdPattern:SHARE_ID_RE.source});
 
-

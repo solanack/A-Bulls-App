@@ -17,4 +17,3 @@ test('director contract makes no network calls',()=>{
   assert.equal(__tricksterUniverseDirectorContract.noNetworkCalls,true);assert.equal(__tricksterUniverseDirectorContract.simulationAlwaysDisclosed,true);
 });
 
-

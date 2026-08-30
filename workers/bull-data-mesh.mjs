@@ -26,4 +26,3 @@ export async function queueWalletBackfill(env = {}, wallet = '', options = {}) {
   return queueHistoryJob(env, wallet, options);
 }
 
-

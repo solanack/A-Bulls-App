@@ -23,4 +23,3 @@ export function recordingToMovieInputs(recording={}){
 
 export const __flightRecorderContract=Object.freeze({clientOnly:true,boundedFrames:true,defaultSampleMs:100,defaultMaxFrames:3600,storesReferencesNotBlockchainCopies:true});
 
-

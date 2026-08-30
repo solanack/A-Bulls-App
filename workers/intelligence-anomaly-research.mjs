@@ -364,4 +364,3 @@ export const __anomalyResearchContract = Object.freeze({
   maxCohortWallets: 400
 });
 
-

@@ -28,4 +28,3 @@ export function buildTradeMovieDraft({id,storyType='custom',subject,evidence=[],
 
 export const __tradeMovieContract=Object.freeze({evidenceRequiredForObservedSegments:true,simulationMustBeDisclosed:true,lightweightManifest:true,noBlockchainDataDuplication:true});
 
-

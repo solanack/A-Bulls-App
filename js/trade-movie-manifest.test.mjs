@@ -23,4 +23,3 @@ test('contract locks creator integrity',()=>{
   assert.equal(__tradeMovieContract.evidenceRequiredForObservedSegments,true);assert.equal(__tradeMovieContract.simulationMustBeDisclosed,true);assert.equal(__tradeMovieContract.noBlockchainDataDuplication,true);
 });
 
-

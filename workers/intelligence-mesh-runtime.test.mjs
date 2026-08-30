@@ -25,4 +25,3 @@ test('buildOhlc creates deterministic candles', () => {
   assert.equal(candles[0].confidence, 0.8);
 });
 
-

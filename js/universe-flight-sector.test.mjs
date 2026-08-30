@@ -27,4 +27,3 @@ test('contract guarantees bounded zero-network adapter',()=>{
   assert.equal(__universeFlightSectorContract.noNetworkCalls,true);assert.equal(__universeFlightSectorContract.observedDataOnly,true);assert.equal(__universeFlightSectorContract.boundedProjectionItems,1000);
 });
 
-

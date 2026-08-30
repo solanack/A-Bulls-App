@@ -63,4 +63,3 @@ export async function handleWalletTokenIndexRequest(request,env={}){
   catch(error){const code=s(error?.message||error);return json({ok:false,error:code},code==='intelligence_db_unavailable'?503:400);}
 }
 
-

@@ -11,12 +11,12 @@ import {
   preserveLaunchOrigin,
 } from "../src/lib/field/galaxies.ts";
 
-test("Galaxy Zero remains the populated reference galaxy", () => {
+test("Galaxy Zero and pump.fun are populated through the shared contract", () => {
   const zero = getGalaxy("galaxy-zero");
   assert.equal(zero.status, "populated");
   assert.equal(zero.seed, 861);
   assert.equal(isPopulatedGalaxy("galaxy-zero"), true);
-  assert.equal(isPopulatedGalaxy("pump-fun"), false);
+  assert.equal(isPopulatedGalaxy("pump-fun"), true);
   assert.equal(GALAXIES.length, 2);
 });
 

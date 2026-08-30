@@ -82,7 +82,7 @@ async function all(stmt) {
 }
 
 export async function refreshIntelligenceAggregates(env = {}, options = {}) {
-  const db = env.BULL_INTELLIGENCE_DB || env.LEADERBOARD_DB || env.DB;
+  const db = env.INTELLIGENCE_DB;
   if (!db || typeof db.prepare !== 'function') throw new Error('Bull Intelligence D1 binding is unavailable.');
   const now = Math.floor(num(options.now || Date.now() / 1000));
   const bucketSeconds = Math.max(3600, Math.floor(num(options.bucketSeconds || 3600)));
@@ -140,5 +140,3 @@ export async function refreshIntelligenceAggregates(env = {}, options = {}) {
     source: 'bull-intelligence-aggregate-refresh'
   };
 }
-
-

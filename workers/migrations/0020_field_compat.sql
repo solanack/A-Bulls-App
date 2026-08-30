@@ -14,4 +14,3 @@ CREATE TABLE IF NOT EXISTS intelligence_provider_budget_monthly (
 
 CREATE INDEX IF NOT EXISTS idx_intelligence_provider_budget_updated
   ON intelligence_provider_budget_monthly(provider, updated_at DESC);
-

@@ -2,9 +2,6 @@ name = "a-bulls-app-z500-preview"
 main = "worker-vnext-entry.mjs"
 compatibility_date = "2026-08-01"
 
-[build]
-command = "node ../scripts/reconstruct-worker-8.2.0.mjs"
-
 [vars]
 ALLOWED_ORIGINS = "https://abullsapp.com,https://www.abullsapp.com"
 UNIVERSE_ENABLED = "true"
@@ -33,5 +30,3 @@ binding = "INTELLIGENCE_DB"
 database_name = "a-bulls-app-intelligence"
 database_id = "a54ed900-ccd0-4fe5-9522-71996e96d16b"
 migrations_dir = "migrations"
-
-

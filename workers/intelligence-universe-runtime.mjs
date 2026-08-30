@@ -209,4 +209,3 @@ export async function pruneUniverseObservations(env = {}, retentionSeconds = 600
   return n(result?.meta?.changes);
 }
 
-

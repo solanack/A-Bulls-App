@@ -79,4 +79,3 @@ test('Pattern features can surface regular execution as a hypothesis, not a fact
   assert.ok(hypotheses.every(item=>/possible|consistent|compatible|appears|observed/i.test(item.statement)));
 });
 
-

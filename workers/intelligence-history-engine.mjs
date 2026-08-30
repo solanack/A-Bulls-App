@@ -4,6 +4,7 @@
  */
 
 import { ingestDecodedObservations, intelligenceDb } from './intelligence-indexer.mjs';
+import { reserveProviderCredits } from './intelligence-provider-budget.mjs';
 
 const WALLET_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const PUBLIC_RPC='https://api.mainnet-beta.solana.com';
@@ -61,6 +62,10 @@ export async function backfillHistoryPass(env,wallet,options={}){
   const db=intelligenceDb(env);if(!db)throw new Error('Intelligence database binding is unavailable.');
   const source=options.source||resolveHistoryRpc(env),pageSize=Math.max(1,Math.min(MAX_PAGE,Math.round(n(options.pageSize||25)))),cfg={limit:pageSize,commitment:'confirmed'};if(s(options.before))cfg.before=s(options.before);
   try{
+    if(source.name==='helius-standard-rpc'){
+      const reservation=await reserveProviderCredits(env,1+Math.min(pageSize,MAX_TX),'helius');
+      if(reservation.blocked)throw new Error('provider_budget_blocked');
+    }
     const sigResult=await rpc(source,'getSignaturesForAddress',[s(wallet),cfg],options.fetchImpl),sigs=Array.isArray(sigResult.result)?sigResult.result:[];
     let txLatency=0;
     const txRows=await mapLimit(sigs.slice(0,MAX_TX),TX_CONCURRENCY,async sig=>{try{const tx=await rpc(source,'getTransaction',[sig.signature,{commitment:'confirmed',maxSupportedTransactionVersion:0,encoding:'jsonParsed'}],options.fetchImpl);txLatency+=tx.latencyMs;return{sig,tx:tx.result}}catch(error){return{sig,tx:null,error:s(error?.message)}}});
@@ -69,5 +74,3 @@ export async function backfillHistoryPass(env,wallet,options={}){
     return{ok:true,wallet:s(wallet),source:source.name,signatures:sigs.length,transactionsFetched:txRows.filter(x=>x.tx).length,acceptedEvents:ingested.accepted,complete,nextCursor:complete?null:nextCursor,state:complete?'complete-history':'partial-history'};
   }catch(error){await sourceHealth(db,source,'error',null,s(error?.message)).catch(()=>null);throw error}
 }
-
-

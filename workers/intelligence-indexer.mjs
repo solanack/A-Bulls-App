@@ -14,7 +14,7 @@ const s = value => String(value == null ? '' : value).trim();
 const clamp01 = value => Math.max(0, Math.min(1, n(value)));
 
 export function intelligenceDb(env = {}) {
-  const db = env.INTELLIGENCE_DB || env.BULL_INTELLIGENCE_DB || env.LEADERBOARD_DB || env.DB;
+  const db = env.INTELLIGENCE_DB;
   return db && typeof db.prepare === 'function' ? db : null;
 }
 
@@ -268,5 +268,3 @@ export async function ingestDecodedObservations(env = {}, observedWallet = '', r
     source: 'bull-intelligence-indexer'
   };
 }
-
-

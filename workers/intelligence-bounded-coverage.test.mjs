@@ -18,4 +18,3 @@ test('zero verified receipts never becomes a no-activity claim',()=>{
   assert.doesNotMatch(summary.statement,/no activity/i);
 });
 
-

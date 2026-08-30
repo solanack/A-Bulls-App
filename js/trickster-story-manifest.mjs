@@ -114,4 +114,3 @@ export function manifestDisclosures(manifest) {
   return Object.freeze([...disclosures]);
 }
 
-

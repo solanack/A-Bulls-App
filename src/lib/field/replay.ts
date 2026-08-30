@@ -61,7 +61,7 @@ export function evidenceForParticle(
   particle: FieldParticle,
 ): EvidenceRecord {
   return {
-    eventId: particle.id,
+    eventId: particle.eventId ?? particle.id,
     kind: particle.kind,
     cosmicKind: particle.cosmicKind,
     category: particle.category,
@@ -69,11 +69,17 @@ export function evidenceForParticle(
     observedAt: particle.observedAt,
     verificationState: particle.verificationState,
     magnitudeBand: particle.magnitudeBand,
-    sources: snapshot.sources,
+    sources: particle.source ? [...new Set([particle.source, ...snapshot.sources])] : snapshot.sources,
     samplingPolicy: snapshot.samplingPolicy,
     coverageStatement: snapshot.coverageStatement,
     chartStatus: "unavailable",
     chartReason:
-      "No OHLC or candlestick source is attached to this Galaxy Zero window. Drawing a price chart would fabricate evidence, so none is shown.",
+      "Select a token event with indexed OHLC coverage to load its real candlestick context. No price path is inferred when the index is empty.",
+    source: particle.source ?? null,
+    slot: particle.slot ?? null,
+    signature: typeof particle.metadata?.signature === "string" ? particle.metadata.signature : null,
+    wallet: typeof particle.metadata?.wallet === "string" ? particle.metadata.wallet : null,
+    mint: typeof particle.metadata?.mint === "string" ? particle.metadata.mint : particle.kind === "token" ? particle.id : null,
+    metadata: particle.metadata ?? {},
   };
 }

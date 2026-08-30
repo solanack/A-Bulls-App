@@ -53,4 +53,3 @@ test('only bounded historical transports are eligible for external history execu
   assert.equal(externalHistorySource({kind:'rpc'}),false);
 });
 
-

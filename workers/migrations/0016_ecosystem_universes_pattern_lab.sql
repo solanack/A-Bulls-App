@@ -133,4 +133,3 @@ VALUES
   ('pump-fun','Pump.fun','launchpad','pump-fun','Pump.fun ecosystem universe. Can be bounded by an active selector.',1,'v1',900),
   ('raydium-launchlab','Raydium LaunchLab','launchpad','raydium-launchlab','Raydium LaunchLab ecosystem universe.',1,'v1',900);
 
-

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { FileSearch, Orbit, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX, X } from "lucide-react";
+import { Orbit, Volume2, VolumeX, X } from "lucide-react";
 import type { FieldOS } from "@/lib/field/field-os";
 import type { UniverseDataStatus } from "@/lib/universe-data/contracts";
+import { UniverseWorkspace } from "@/components/universe-workspace";
 import { COSMOLOGY_RULES, GALAXIES, getGalaxy } from "@/lib/field/galaxies";
 import {
   DOCK,
+  ANALYSIS_MODES,
   MODE_HINT,
   type FieldMode,
   type FocusedParticle,
@@ -12,7 +14,6 @@ import {
   type IntelligenceResult,
   type OrganismState,
   type EvidenceRecord,
-  type ReplayState,
 } from "@/lib/field/types";
 
 const EXAMPLES = [
@@ -50,7 +51,6 @@ export function AppShell() {
   const [galaxy, setGalaxy] = useState<GalaxyDefinition>(() => getGalaxy("galaxy-zero"));
   const [galaxies, setGalaxies] = useState<readonly GalaxyDefinition[]>(GALAXIES);
   const [starmapOpen, setStarmapOpen] = useState(false);
-  const [replay, setReplay] = useState<ReplayState | null>(null);
   const [evidence, setEvidence] = useState<EvidenceRecord | null>(null);
   const [dataStatus, setDataStatus] = useState<UniverseDataStatus>({
     store: "memory-fallback",
@@ -75,11 +75,13 @@ export function AppShell() {
         setFocus(event.focus);
         setGalaxy(event.galaxy);
         setGalaxies(event.galaxies);
-        setReplay(event.replay);
         setEvidence(event.evidence);
         setDataStatus(event.dataStatus);
       });
       osRef.current = os;
+      if (new URLSearchParams(globalThis.location?.search ?? "").has("tour")) {
+        os.setMode("trickster");
+      }
     });
     return () => {
       cancelled = true;
@@ -108,7 +110,7 @@ export function AppShell() {
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
-  const workspaceOpen = ["intelligence", "trickster", "games", "replay", "evidence"].includes(mode) && !queryActive;
+  const workspaceOpen = mode !== "explore" && mode !== "query" && !queryActive;
   const timelineOpen = mode === "replay" || mode === "evidence";
   const slotValue = focus
     ? `${focus.cosmicKind.replace("-", " ")} · ${focus.kind} · ${galaxy.name}`
@@ -185,13 +187,12 @@ export function AppShell() {
             </button>
           ))}
         </div>
-        <div className="field-shell__mode-tools" aria-label="Time and provenance tools">
-          <button type="button" aria-pressed={mode === "replay"} onClick={() => osRef.current?.setMode("replay")}>
-            <Play size={13} aria-hidden="true" /> REPLAY
-          </button>
-          <button type="button" aria-pressed={mode === "evidence"} onClick={() => osRef.current?.setMode("evidence")}>
-            <FileSearch size={13} aria-hidden="true" /> EVIDENCE
-          </button>
+        <div className="field-shell__mode-tools" aria-label="Universe analysis tools">
+          {ANALYSIS_MODES.map((item) => (
+            <button key={item.id} type="button" aria-pressed={mode === item.id} onClick={() => osRef.current?.setMode(item.id)}>
+              {item.label}
+            </button>
+          ))}
         </div>
         <nav className="field-shell__commands" aria-label="Primary modes">
           {DOCK.map((item) => (
@@ -269,7 +270,7 @@ export function AppShell() {
 
       <section className={`field-shell__workspace${timelineOpen ? " field-shell__workspace--timeline" : ""}`} hidden={!workspaceOpen}>
         <div className="field-shell__workspace-head">
-          <strong>{mode === "intelligence" ? "INTELLIGENCE" : mode === "trickster" ? "CREATE · TRICKSTER" : mode === "replay" ? "REPLAY · CHAIN TIME" : mode === "evidence" ? "EVIDENCE · PROVENANCE" : "GAMES"}</strong>
+          <strong>{mode.toUpperCase().replace("WHAT-IF", "WHAT-IF · ESTIMATE")}</strong>
           <button type="button" className="field-shell__close" onClick={() => osRef.current?.setMode("explore")}>
             RETURN TO FIELD
           </button>
@@ -278,128 +279,17 @@ export function AppShell() {
           {mode === "intelligence" ? (
             <IntelligencePanel result={result} onAsk={() => onQueryMode()} />
           ) : null}
-          {mode === "trickster" ? (
-            <article className="workspace-copy">
-              <h2>Create stays publish-only</h2>
-              <p>
-                Trickster composes evidence-backed clips from indexed chain events. This assignment keeps the
-                field and QUERY organism intact. No wallet connect. No commerce.
-              </p>
-            </article>
-          ) : null}
-          {mode === "games" ? (
-            <article className="workspace-copy">
-              <h2>Learn from observed chain history</h2>
-              <p>
-                The Grey will guide narrated examples using real indexed events. This is education without
-                scores, missions, progression, or competitive mechanics.
-              </p>
-            </article>
-          ) : null}
-          {mode === "replay" && replay ? (
-            <ReplayPanel
-              replay={replay}
-              dataStatus={dataStatus}
-              onToggle={() => osRef.current?.toggleReplay()}
-              onSeek={(cursor) => osRef.current?.seekReplay(cursor)}
-              onStep={(direction) => osRef.current?.stepReplay(direction)}
-              onEvidence={() => osRef.current?.setMode("evidence")}
-            />
-          ) : null}
-          {mode === "evidence" ? (
-            <EvidencePanel
+          {mode !== "intelligence" ? (
+            <UniverseWorkspace
+              mode={mode}
+              galaxy={galaxy}
               evidence={evidence}
-              onReplay={() => osRef.current?.setMode("replay")}
+              onNarrate={(text) => osRef.current?.narrateObserved(text)}
             />
           ) : null}
         </div>
       </section>
     </main>
-  );
-}
-
-function ReplayPanel({
-  replay,
-  dataStatus,
-  onToggle,
-  onSeek,
-  onStep,
-  onEvidence,
-}: {
-  replay: ReplayState;
-  dataStatus: UniverseDataStatus;
-  onToggle: () => void;
-  onSeek: (cursor: number) => void;
-  onStep: (direction: -1 | 1) => void;
-  onEvidence: () => void;
-}) {
-  const elapsed = (replay.windowEnd - replay.windowStart) * replay.cursor;
-  return (
-    <article className="replay-panel">
-      <div className="replay-panel__readout">
-        <span>CHAIN TIME</span>
-        <strong>+{(elapsed / 1000).toFixed(1)}s</strong>
-        <b>{replay.visibleEventCount.toLocaleString()} / {replay.totalEventCount.toLocaleString()} EVENTS VISIBLE</b>
-      </div>
-      <div className="replay-panel__controls">
-        <button type="button" onClick={() => onStep(-1)} aria-label="Previous event"><SkipBack size={17} /></button>
-        <button type="button" className="replay-panel__play" onClick={onToggle} aria-label={replay.status === "playing" ? "Pause replay" : "Play replay"}>
-          {replay.status === "playing" ? <Pause size={18} /> : <Play size={18} />}
-        </button>
-        <button type="button" onClick={() => onStep(1)} aria-label="Next event"><SkipForward size={17} /></button>
-        <input
-          type="range"
-          min="0"
-          max="1000"
-          value={Math.round(replay.cursor * 1000)}
-          onChange={(event) => onSeek(Number(event.currentTarget.value) / 1000)}
-          aria-label="Replay position"
-        />
-      </div>
-      <div className="replay-panel__provenance">
-        <p><b>WINDOW COVERAGE</b> {replay.coverageStatement}</p>
-        <p><b>POLICY</b> {replay.samplingPolicy}</p>
-        <button type="button" onClick={onEvidence}>INSPECT EVIDENCE</button>
-      </div>
-      <p className="replay-panel__data"><b>DATA SPINE</b> {dataStatus.disclosure}</p>
-      {dataStatus.circuitBreaker ? (
-        <p className="replay-panel__data">
-          <b>PROVIDER BUDGET</b> {dataStatus.circuitBreaker.unitsSpent.toLocaleString()} / {Math.floor(dataStatus.circuitBreaker.monthlyLimit * dataStatus.circuitBreaker.circuitBreakerRatio).toLocaleString()} guarded units
-        </p>
-      ) : null}
-      <p className="replay-panel__instruction">Tap any revealed particle to load its evidence receipt.</p>
-    </article>
-  );
-}
-
-function EvidencePanel({ evidence, onReplay }: { evidence: EvidenceRecord | null; onReplay: () => void }) {
-  if (!evidence) {
-    return (
-      <article className="evidence-panel evidence-panel--empty">
-        <FileSearch size={24} aria-hidden="true" />
-        <h2>No event selected</h2>
-        <p>Return to Replay, reveal an event, then tap its particle. Only visible events can be inspected.</p>
-        <button type="button" onClick={onReplay}>RETURN TO REPLAY</button>
-      </article>
-    );
-  }
-  return (
-    <article className="evidence-panel">
-      <div className="evidence-panel__grid">
-        <div><span>EVENT</span><strong>{evidence.eventId}</strong></div>
-        <div><span>OBSERVED</span><strong>+{(evidence.observedAt / 1000).toFixed(2)}s prototype time</strong></div>
-        <div><span>OBJECT</span><strong>{evidence.cosmicKind} · {evidence.kind}</strong></div>
-        <div><span>VERIFICATION</span><strong>{evidence.verificationState}</strong></div>
-      </div>
-      <div className="evidence-panel__chart" data-status={evidence.chartStatus}>
-        <span>PRICE HISTORY</span>
-        <strong>NOT AVAILABLE</strong>
-        <p>{evidence.chartReason}</p>
-      </div>
-      <p><b>SOURCES</b> {evidence.sources.join(" · ")}</p>
-      <p><b>COVERAGE</b> {evidence.coverageStatement}</p>
-      <button type="button" onClick={onReplay}>RETURN TO REPLAY</button>
-    </article>
   );
 }
 

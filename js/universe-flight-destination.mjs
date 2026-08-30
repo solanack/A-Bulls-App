@@ -36,4 +36,3 @@ export function destinationPrompt(plan={}){
 
 export const __universeFlightDestinationContract=Object.freeze({publicIdentifiersOnly:true,noWalletConnect:true,noSigning:true,noNetworkCalls:true,unknownIndexUsesFog:true});
 
-
