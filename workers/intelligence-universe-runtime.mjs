@@ -1,0 +1,212 @@
+import { intelligenceDb } from './intelligence-indexer.mjs';
+
+const ENTITY_KINDS = new Set(['transaction','wallet','program','token','nft','cluster']);
+const COMMITMENTS = new Set(['observed','confirmed','finalized','verified']);
+const s = value => String(value ?? '').trim();
+const n = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+const clamp01 = value => Math.max(0, Math.min(1, n(value)));
+
+function hash32(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function parseEvidence(value) {
+  if (value && typeof value === 'object') return value;
+  try { return JSON.parse(String(value || '{}')); }
+  catch { return {}; }
+}
+
+export function positionForEntity(id) {
+  const first = hash32(`x:${id}`) / 4294967295;
+  const second = hash32(`y:${id}`) / 4294967295;
+  const third = hash32(`z:${id}`) / 4294967295;
+  const radius = 18 + first * 82;
+  const angle = second * Math.PI * 2;
+  return Object.freeze([
+    Math.cos(angle) * radius,
+    (third - 0.5) * 70,
+    Math.sin(angle) * radius
+  ]);
+}
+
+export function normalizeObservation(input = {}) {
+  const kind = ENTITY_KINDS.has(s(input.entityKind)) ? s(input.entityKind) : 'transaction';
+  const commitment = COMMITMENTS.has(s(input.commitment)) ? s(input.commitment) : 'observed';
+  const entityId = s(input.entityId);
+  const eventId = s(input.eventId || input.signature || `${kind}:${entityId}:${n(input.observedAt)}`);
+  if (!eventId || !entityId || !s(input.source)) throw new TypeError('event id, entity id, and source are required');
+  return Object.freeze({
+    eventId,
+    entityKind: kind,
+    entityId,
+    category: s(input.category) || 'unknown',
+    observedAt: Math.max(0, Math.trunc(n(input.observedAt))),
+    slot: input.slot == null ? null : Math.max(0, Math.trunc(n(input.slot))),
+    commitment,
+    magnitudeBand: clamp01(input.magnitudeBand),
+    source: s(input.source),
+    evidence: input.evidence && typeof input.evidence === 'object' ? input.evidence : {}
+  });
+}
+
+export function sampleUniverseObservations(rows = [], limit = 2500) {
+  const cap = Math.max(1, Math.min(5000, Math.trunc(n(limit) || 2500)));
+  if (rows.length <= cap) return [...rows];
+  const sorted = [...rows].sort((a, b) =>
+    n(b.magnitude_band ?? b.magnitudeBand) - n(a.magnitude_band ?? a.magnitudeBand) ||
+    n(b.observed_at ?? b.observedAt) - n(a.observed_at ?? a.observedAt)
+  );
+  const priorityCount = Math.min(Math.ceil(cap * 0.35), sorted.length);
+  const selected = sorted.slice(0, priorityCount);
+  const selectedIds = new Set(selected.map(row => s(row.event_id ?? row.eventId)));
+  const remainder = sorted.filter(row => !selectedIds.has(s(row.event_id ?? row.eventId)));
+  const categories = new Map();
+  for (const row of remainder) {
+    const category = s(row.category) || 'unknown';
+    if (!categories.has(category)) categories.set(category, []);
+    categories.get(category).push(row);
+  }
+  let cursor = 0;
+  const groups = [...categories.values()];
+  while (selected.length < cap && groups.length) {
+    const group = groups[cursor % groups.length];
+    const item = group.shift();
+    if (item) selected.push(item);
+    if (!group.length) groups.splice(cursor % groups.length, 1);
+    else cursor += 1;
+  }
+  return selected;
+}
+
+export async function persistUniverseObservations(env = {}, inputs = []) {
+  const db = intelligenceDb(env);
+  if (!db) throw new Error('Intelligence database binding is unavailable.');
+  let written = 0;
+  for (const input of inputs.slice(0, 1000)) {
+    const item = normalizeObservation(input);
+    await db.prepare(`
+      INSERT INTO intelligence_live_observations
+        (event_id,entity_kind,entity_id,category,observed_at,slot,commitment,
+         magnitude_band,source,evidence_json,inserted_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,unixepoch())
+      ON CONFLICT(event_id) DO UPDATE SET
+        commitment=excluded.commitment,
+        magnitude_band=MAX(magnitude_band,excluded.magnitude_band),
+        source=excluded.source,
+        evidence_json=excluded.evidence_json
+    `).bind(
+      item.eventId,item.entityKind,item.entityId,item.category,item.observedAt,item.slot,
+      item.commitment,item.magnitudeBand,item.source,JSON.stringify(item.evidence)
+    ).run();
+    written += 1;
+  }
+  return written;
+}
+
+function relationsForSample(sampled = []) {
+  const entityIds = new Set(sampled.map(row => s(row.entity_id)).filter(Boolean));
+  const seen = new Set();
+  const relations = [];
+  for (const row of sampled) {
+    const evidence = parseEvidence(row.evidence_json);
+    const items = Array.isArray(evidence.relations) ? evidence.relations : [];
+    for (const relation of items) {
+      const sourceId = s(relation?.sourceId || relation?.fromId);
+      const targetId = s(relation?.targetId || relation?.toId);
+      if (!sourceId || !targetId || sourceId === targetId) continue;
+      if (!entityIds.has(sourceId) || !entityIds.has(targetId)) continue;
+      const evidenceId = s(relation?.evidenceId || relation?.eventId || relation?.signature || row.event_id);
+      if (!evidenceId) continue;
+      const key = [sourceId,targetId,evidenceId].sort().join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const requestedVerification = s(relation?.verificationState);
+      const rowVerification = s(row.commitment);
+      relations.push({
+        id: s(relation?.id) || `relation:${evidenceId}:${relations.length}`,
+        sourceId,
+        targetId,
+        evidenceId,
+        relationKind: s(relation?.relationKind || relation?.kind || relation?.type) || 'observed',
+        observedAt: n(relation?.observedAt || row.observed_at),
+        verificationState: COMMITMENTS.has(requestedVerification)
+          ? requestedVerification
+          : COMMITMENTS.has(rowVerification) ? rowVerification : 'observed'
+      });
+    }
+  }
+  return relations;
+}
+
+export async function universeSnapshot(env = {}, {
+  windowSeconds = 60,
+  limit = 2500,
+  now = Math.floor(Date.now()/1000)
+} = {}) {
+  const db = intelligenceDb(env);
+  const window = Math.max(10, Math.min(120, Math.trunc(n(windowSeconds) || 60)));
+  const cap = Math.max(1, Math.min(5000, Math.trunc(n(limit) || 2500)));
+  const from = now - window;
+  if (!db) {
+    return {
+      windowStart: from,
+      windowEnd: now,
+      observedEventCount: 0,
+      particles: [],
+      relations: [],
+      sources: [],
+      samplingPolicy: 'no database binding',
+      coverageStatement: 'No live observations available.'
+    };
+  }
+  const result = await db.prepare(`
+    SELECT event_id,entity_kind,entity_id,category,observed_at,slot,commitment,
+           magnitude_band,source,evidence_json
+    FROM intelligence_live_observations
+    WHERE observed_at BETWEEN ? AND ?
+    ORDER BY observed_at DESC
+    LIMIT 20000
+  `).bind(from,now).all();
+  const rows = result?.results || [];
+  const sampled = sampleUniverseObservations(rows,cap);
+  const sources = [...new Set(rows.map(row => s(row.source)).filter(Boolean))];
+  const relations = relationsForSample(sampled);
+  return {
+    schemaVersion: 1,
+    windowStart: from,
+    windowEnd: now,
+    observedEventCount: rows.length,
+    renderedParticleCount: sampled.length,
+    samplingPolicy: rows.length > cap
+      ? '35% magnitude-priority plus category-balanced sample'
+      : 'all bounded observations',
+    coverageStatement: `${sampled.length.toLocaleString()} of ${rows.length.toLocaleString()} observations shown from the last ${window} seconds`,
+    sources,
+    particles: sampled.map(row => ({
+      id: s(row.entity_id),
+      observationId: s(row.event_id),
+      kind: s(row.entity_kind),
+      category: s(row.category) || 'unknown',
+      verificationState: COMMITMENTS.has(s(row.commitment)) ? s(row.commitment) : 'observed',
+      observedAt: n(row.observed_at),
+      magnitudeBand: clamp01(row.magnitude_band),
+      position: positionForEntity(s(row.entity_id))
+    })),
+    relations
+  };
+}
+
+export async function pruneUniverseObservations(env = {}, retentionSeconds = 600, now = Math.floor(Date.now()/1000)) {
+  const db = intelligenceDb(env);
+  if (!db) return 0;
+  const cutoff = now - Math.max(120, Math.min(3600, Math.trunc(n(retentionSeconds) || 600)));
+  const result = await db.prepare('DELETE FROM intelligence_live_observations WHERE observed_at < ?').bind(cutoff).run();
+  return n(result?.meta?.changes);
+}
+
+

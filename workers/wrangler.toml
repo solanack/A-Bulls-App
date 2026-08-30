@@ -1,0 +1,72 @@
+name = "black-bull-run-sol-api"
+main = "worker-vnext-entry.mjs"
+compatibility_date = "2026-08-01"
+
+[build]
+command = "node ../scripts/reconstruct-worker-8.2.0.mjs"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+ALLOWED_ORIGINS = "https://abullsapp.com,https://www.abullsapp.com,https://black-bull-run-sol.pages.dev,http://localhost:8788"
+# vNext server products remain fail-closed until explicitly enabled after migration/verification.
+UNIVERSE_ENABLED = "false"
+TRICKSTER_STUDIO_ENABLED = "false"
+TRICKSTER_SHARE_ENABLED = "false"
+PLAYABLE_DATA_ENABLED = "false"
+INTELLIGENCE_MESH_ENABLED = "false"
+MARKET_BACKFILL_QUEUE_ENABLED = "false"
+INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED = "false"
+INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED = "false"
+INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
+
+# Optional neutral Solana RPC overrides. Comma-separate additional standard RPC fallbacks.
+# INTELLIGENCE_RPC_URL = "https://api.mainnet-beta.solana.com"
+# INTELLIGENCE_RPC_FALLBACK_URLS = "https://rpc-backup-1.example,https://rpc-backup-2.example"
+# Optional external bridge source labels. These identify configured retrieval paths, not quality ratings.
+# INTELLIGENCE_SUBSTREAMS_SOURCE_NAME = "substreams-svm"
+# INTELLIGENCE_OLD_FAITHFUL_SOURCE_NAME = "old-faithful"
+# Optional bounded retry budget for one external retrieval task. Defaults to 4; allowed range is 1-10.
+# INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS = "4"
+
+# Protected internal ingest/retrieval secret must be stored with Wrangler, never in this file:
+# npx wrangler secret put INTELLIGENCE_MESH_INGEST_TOKEN
+
+# Existing identity/game secrets retained from the verified Worker 8.2.0 baseline:
+# npx wrangler secret put HELIUS_API_KEY
+# npx wrangler secret put GOOGLE_CLIENT_ID
+# npx wrangler secret put AUTH_SESSION_SECRET
+
+# Existing D1 leaderboard binding. The neutral Intelligence runtime can share the configured DB
+# through its supported binding aliases until a dedicated binding is selected.
+# [[d1_databases]]
+# binding = "LEADERBOARD_DB"
+# database_name = "black-bull-run-leaderboard"
+# database_id = "<YOUR_D1_DATABASE_ID>"
+
+# Optional shared cache retained for compatible baseline routes.
+# [[kv_namespaces]]
+# binding = "ANALYTICS_CACHE"
+# id = "<YOUR_KV_NAMESPACE_ID>"
+
+# Production Cloudflare Rate Limiting binding. Wrangler 4.36+ is required.
+# [[ratelimits]]
+# name = "RATE_LIMITER"
+# namespace_id = "1001"
+#   [ratelimits.simple]
+#   limit = 60
+#   period = 60
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1
+
+# Dedicated A Bulls App Intelligence database
+[[d1_databases]]
+binding = "INTELLIGENCE_DB"
+database_name = "a-bulls-app-intelligence"
+database_id = "a54ed900-ccd0-4fe5-9522-71996e96d16b"
+migrations_dir = "migrations"
+
+

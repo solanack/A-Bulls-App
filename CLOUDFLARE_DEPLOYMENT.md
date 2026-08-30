@@ -1,74 +1,64 @@
-# A Bulls App — Cloudflare Frontend Deployment
+# A Bulls App — integrated Cloudflare deployment
 
 ## Locked architecture
 
-- This project is the **frontend/application runtime** for `abullsapp.com`.
-- Existing intelligence Worker remains unchanged:
-  `https://black-bull-run-sol.ckdsigns1.workers.dev`
-- Do not migrate, edit, or redeploy the intelligence Worker as part of this frontend deployment.
-- Do not point `abullsapp.com` directly at the intelligence Worker.
-- The original Grok workspace archive remains the rollback/source-of-truth fallback.
+- `a-bulls-app-frontend` serves the particle interface and `abullsapp.com`.
+- `black-bull-run-sol` remains the complete Z500/Universe intelligence backend.
+- `INTELLIGENCE_DB` remains the only Universe intelligence database.
+- The frontend never receives Helius secrets and never creates its own D1 database.
+- Passive field loading reads indexed snapshots only; it never falls back to a
+  per-particle or per-frame provider request.
 
-## What was changed for Cloudflare
+## Integration
 
-1. Replaced the Vercel/Nitro build adapter with Cloudflare's official Vite plugin for TanStack Start.
-2. Added `wrangler.jsonc` with `nodejs_compat` and TanStack's server entry.
-3. Added `deploy` and `cf-typegen` scripts.
-4. Removed the build-time `db:migrate` step from `npm run build`; this frontend does not need to mutate the existing A Bulls App Worker/D1 infrastructure.
-5. Left `src/lib/intelligence.ts` pointed at the existing Worker.
-6. Did not add the production custom domain route yet. First deploy to a temporary `workers.dev` URL and verify the app.
+The existing intelligence Worker exposes a narrow Field OS compatibility layer:
 
-## First deployment from Termux / Ubuntu
+- `/api/intelligence/field/snapshot`
+- `/api/intelligence/field/resolve`
+- `/api/intelligence/field/status`
+
+These routes reuse the existing universe index, pump.fun membership, intelligence
+cache, provider budget, rate limiter, CORS policy, cron scheduler, secrets, and D1
+binding. Migration `0020_field_compat.sql` is additive and creates only the atomic
+monthly provider reservation table.
+
+## Deploy from Termux / Ubuntu
 
 ```bash
-pkg update
-pkg install nodejs-lts git unzip
-termux-setup-storage
+cd /root
+unzip -q /sdcard/Download/A-Bulls-App-Integrated-Universe-Cloudflare-Ready.zip \
+  -d A-Bulls-App-Integrated-Universe
+cd /root/A-Bulls-App-Integrated-Universe
+npm install
 
-cd ~/storage/downloads
-unzip A-Bulls-App-Universe-Data-Spine-Cloudflare-Ready.zip -d ~/A-Bulls-App-Universe-Data-Spine
-cd ~/A-Bulls-App-Universe-Data-Spine
-npm ci
-npx wrangler login --device
-npx wrangler d1 create a-bulls-universe-index --binding UNIVERSE_DB --update-config
-npx wrangler d1 execute UNIVERSE_DB --remote --file=cloudflare/migrations/0001_universe_index.sql --yes
+cd workers
+npx wrangler d1 migrations apply INTELLIGENCE_DB \
+  --remote \
+  --config wrangler.production.toml
+npx wrangler deploy --config wrangler.production.toml
+
+cd ..
 npm run build
 npx wrangler deploy
 ```
 
-If Wrangler is already authenticated, skip the login command. Device login is used because it avoids Termux browser callback problems.
+Wrangler updates the existing Worker names from their checked-in configurations.
+It does not create a new Worker or database. Existing secrets remain stored in
+Cloudflare and are not included in the source package.
 
-Wrangler prints the temporary `workers.dev` URL after deployment. Keep that URL for the preview checks below. This command deploys only `a-bulls-app-frontend`; it does not deploy or modify the existing intelligence Worker.
+## Required verification
 
-## Required preview verification
+1. Galaxy Zero reports the existing Intelligence Worker coverage state.
+2. pump.fun uses the existing `pump-fun` universe membership when populated.
+3. Normal field loading makes no live Helius request.
+4. QUERY accepts a public wallet, transaction, mint, NFT, or program.
+5. Repeating a QUERY within 60 seconds reports an Intelligence Worker cache hit.
+6. A closed Helius circuit breaker serves stale evidence when available and never
+   invents a result.
+7. Replay and Evidence use indexed observations and never fabricate candles.
+8. The Grey, voice, fitted glasses, camera, origin map, and mobile controls remain
+   functional.
+9. Existing Z500, pump.fun, Trickster, replay, research, ingestion, and health routes
+   continue responding.
+10. Test both `https://abullsapp.com` and `https://www.abullsapp.com` after deployment.
 
-Before moving `abullsapp.com`, verify on the temporary Worker URL:
-
-1. Normal Particle Field loads and behaves exactly like the Grok source-of-truth build.
-2. Normal Particle Field movement, camera, colors, and controls are unchanged.
-3. The Galaxy Zero origin-map button opens the immersive starmap.
-4. Galaxy Zero is marked current; pump.fun is visibly calibrating and cannot be
-   entered before its live source is attached.
-5. Closing the starmap returns to the same camera and field state.
-6. QUERY transitions to the alien.
-7. Alien renders, rotates, and remains anatomically stable.
-8. QUERY accepts wallet / transaction / mint / NFT / program identifiers.
-9. Existing intelligence Worker returns real read-only results.
-10. Alien speaks the result.
-11. Return To Field restores the exact normal field.
-12. Test on Android/mobile.
-13. Open REPLAY, play/pause, scrub, and step through the bounded field window.
-14. Confirm unrevealed particles cannot be selected.
-15. Select a revealed particle and open EVIDENCE.
-16. Confirm the synthetic Galaxy Zero window shows no fabricated price chart.
-17. Confirm the field displays `INDEXED / EMPTY` after D1 is attached but before
-    a production snapshot is written; it must not silently live-fetch a field.
-18. Repeat a QUERY within 60 seconds and confirm it is served from cache.
-
-## Move `abullsapp.com` only after preview passes
-
-In Cloudflare Dashboard:
-
-Workers & Pages → `a-bulls-app-frontend` → Settings → Domains & Routes → Add → Custom Domain → `abullsapp.com`
-
-Keep the previous Pages deployment available as rollback until the new Worker deployment is verified in production.

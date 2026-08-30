@@ -22,6 +22,14 @@ type ResolveBody = {
   source?: string;
   readOnly?: boolean;
   disclosure?: string | null;
+  coverage?: Coverage;
+  cache?: "fresh" | "stale" | "miss";
+  budget?: {
+    blocked?: boolean;
+    unitsSpent?: number;
+    monthlyLimit?: number;
+    circuitBreakerRatio?: number;
+  } | null;
   context?: {
     signers?: string[];
     tokenMints?: string[];
@@ -135,66 +143,33 @@ export const resolvePublicIdentifier = createServerFn({ method: "POST" })
       };
     }
 
-    const cacheKey = `resolve:${query.toLowerCase()}`;
-    const {
-      configuredBudgetPolicy,
-      readQueryCache,
-      reserveProviderUnits,
-      writeQueryCache,
-    } = await import("@/lib/universe-data/store.server");
-    let cached = await readQueryCache<ResolveBody>(cacheKey);
-    let body: ResolveBody | null = cached?.value ?? null;
-    let forcedCoverage: Coverage | null = cached?.coverage ?? null;
-    let budgetDisclosure: string | null = cached ? "Served from the indexed query cache." : null;
-
-    if (!body) {
-      const usage = await reserveProviderUnits(
-        configuredBudgetPolicy("intelligence-worker"),
-        1,
+    let body: ResolveBody;
+    try {
+      const res = await fetch(
+        `${WORKER}/api/intelligence/field/resolve?query=${encodeURIComponent(query)}`,
+        { headers: { accept: "application/json" }, cache: "no-store" },
       );
-      if (usage?.blocked) {
-        cached = await readQueryCache<ResolveBody>(cacheKey, { allowExpired: true });
-        if (cached) {
-          body = cached.value;
-          forcedCoverage = "stale";
-          budgetDisclosure =
-            "Provider circuit breaker is active. This answer came from an expired cache record and is labeled stale.";
-        } else {
-          body = { ok: false, state: "not-found", error: "provider_budget_blocked" };
-          forcedCoverage = "stale";
-          budgetDisclosure =
-            "Provider circuit breaker is active and no cached record exists. No live request was issued.";
-        }
-      } else {
-        try {
-          const res = await fetch(
-            `${WORKER}/api/intelligence/resolve?query=${encodeURIComponent(query)}`,
-            { headers: { accept: "application/json" }, cache: "no-store" },
-          );
-          body = (await res.json()) as ResolveBody;
-          if (res.ok && body.ok) {
-            await writeQueryCache(cacheKey, body, 60_000, "fresh");
-          }
-        } catch {
-          cached = await readQueryCache<ResolveBody>(cacheKey, { allowExpired: true });
-          if (cached) {
-            body = cached.value;
-            forcedCoverage = "stale";
-            budgetDisclosure = "Resolver unavailable. Serving a stale cached record.";
-          } else {
-            body = { ok: false, state: "not-found", error: "resolver_unavailable" };
-          }
-        }
-      }
+      body = (await res.json()) as ResolveBody;
+    } catch {
+      body = { ok: false, state: "not-found", error: "resolver_unavailable" };
     }
+    const forcedCoverage = body.coverage ?? null;
+    const budgetDisclosure =
+      body.cache === "fresh"
+        ? "Served from the Intelligence Worker cache."
+        : body.cache === "stale"
+          ? "Served from stale Intelligence Worker evidence; no live provider request was issued."
+          : body.budget?.blocked
+            ? "The Intelligence Worker provider circuit breaker is active."
+            : null;
 
     const extra: string[] = [];
-    const kind = classifyKind(body?.label || "", body?.parsedType, body?.executable);
+    const kind = classifyKind(body.label || "", body.parsedType, body.executable);
 
     const coverage =
       forcedCoverage ??
-      (body?.error === "resolver_unavailable" ? "degraded" : coverageFrom(body ?? {}));
-    if (coverage === "degraded" && !body?.ok) {
+      (body.error === "resolver_unavailable" ? "degraded" : coverageFrom(body));
+    if (coverage === "degraded" && !body.ok) {
       return {
         ok: false,
         kind: "unknown",
@@ -211,18 +186,18 @@ export const resolvePublicIdentifier = createServerFn({ method: "POST" })
       };
     }
 
-    const spoken = speakFromResolve(query, body ?? {}, extra);
+    const spoken = speakFromResolve(query, body, extra);
     return {
-      ok: Boolean(body?.ok && body.state !== "not-found"),
+      ok: Boolean(body.ok && body.state !== "not-found"),
       kind,
       query,
-      shortId: shortId(body?.address || body?.signature || query),
+      shortId: shortId(body.address || body.signature || query),
       coverage,
       observedAt,
-      label: body?.label || "unknown",
-      facts: factsFromResolve(body ?? {}, extra),
+      label: body.label || "unknown",
+      facts: factsFromResolve(body, extra),
       spokenText: spoken,
-      disclosure: [body?.disclosure, budgetDisclosure].filter(Boolean).join(" · ") || null,
-      source: body?.source ?? null,
+      disclosure: [body.disclosure, budgetDisclosure].filter(Boolean).join(" · ") || null,
+      source: body.source ?? null,
     };
   });

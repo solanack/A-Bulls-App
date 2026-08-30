@@ -5,8 +5,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "main": "@tanstack/react-start/server-entry",
   "vars": {
-    "HELIUS_MONTHLY_CREDITS": "1000000",
-    "HELIUS_BREAKER_RATIO": "0.75"
+    "INTELLIGENCE_WORKER_URL": "https://black-bull-run-sol.ckdsigns1.workers.dev"
   },
   "observability": {
     "enabled": true
