@@ -1,19 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Orbit, Volume2, VolumeX, X } from "lucide-react";
+import { Menu, Volume2, VolumeX } from "lucide-react";
 import type { FieldOS } from "@/lib/field/field-os";
 import type { UniverseDataStatus } from "@/lib/universe-data/contracts";
 import { UniverseWorkspace } from "@/components/universe-workspace";
-import { COSMOLOGY_RULES, GALAXIES, getGalaxy } from "@/lib/field/galaxies";
-import {
-  DOCK,
-  ANALYSIS_MODES,
-  MODE_HINT,
-  type FieldMode,
-  type FocusedParticle,
-  type GalaxyDefinition,
-  type IntelligenceResult,
-  type OrganismState,
-  type EvidenceRecord,
+import { GALAXIES, getGalaxy } from "@/lib/field/galaxies";
+import type {
+  FieldMode,
+  FocusedParticle,
+  GalaxyDefinition,
+  IntelligenceResult,
+  OrganismState,
+  EvidenceRecord,
 } from "@/lib/field/types";
 
 const EXAMPLES = [
@@ -21,12 +18,18 @@ const EXAMPLES = [
   { label: "SYSTEM PROGRAM", value: "11111111111111111111111111111111" },
 ];
 
-const STARMAP_LEGEND = [
-  ["star", "STAR"],
-  ["planet", "PLANET"],
-  ["comet", "COMET"],
-  ["ghost", "GHOST"],
-] as const;
+const MENU_ITEMS: { id: FieldMode; label: string }[] = [
+  { id: "replay", label: "REPLAY" },
+  { id: "evidence", label: "EVIDENCE" },
+  { id: "compare", label: "COMPARE" },
+  { id: "what-if", label: "WHAT-IF" },
+  { id: "sequences", label: "SEQUENCES" },
+  { id: "ghost", label: "GHOST" },
+  { id: "intelligence", label: "INTELLIGENCE" },
+  { id: "query", label: "QUERY" },
+  { id: "trickster", label: "CREATE" },
+  { id: "explore", label: "FIELD" },
+];
 
 const STATE_LABEL: Record<OrganismState, string> = {
   idle: "THE FIELD IS CONSCIOUS",
@@ -43,14 +46,14 @@ export function AppShell() {
   const inputRef = useRef<HTMLInputElement>(null);
   const queryInputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<FieldMode>("explore");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [queryActive, setQueryActive] = useState(false);
   const [organismState, setOrganismState] = useState<OrganismState>("idle");
   const [result, setResult] = useState<IntelligenceResult | null>(null);
   const [muted, setMuted] = useState(false);
   const [focus, setFocus] = useState<FocusedParticle | null>(null);
   const [galaxy, setGalaxy] = useState<GalaxyDefinition>(() => getGalaxy("galaxy-zero"));
-  const [galaxies, setGalaxies] = useState<readonly GalaxyDefinition[]>(GALAXIES);
-  const [starmapOpen, setStarmapOpen] = useState(false);
+  const [, setGalaxies] = useState<readonly GalaxyDefinition[]>(GALAXIES);
   const [evidence, setEvidence] = useState<EvidenceRecord | null>(null);
   const [dataStatus, setDataStatus] = useState<UniverseDataStatus>({
     store: "memory-fallback",
@@ -79,9 +82,7 @@ export function AppShell() {
         setDataStatus(event.dataStatus);
       });
       osRef.current = os;
-      if (new URLSearchParams(globalThis.location?.search ?? "").has("tour")) {
-        os.setMode("trickster");
-      }
+      if (new URLSearchParams(globalThis.location?.search ?? "").has("tour")) os.setMode("trickster");
     });
     return () => {
       cancelled = true;
@@ -91,179 +92,85 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (!starmapOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setStarmapOpen(false);
-    };
-    globalThis.addEventListener("keydown", onKeyDown);
-    return () => globalThis.removeEventListener("keydown", onKeyDown);
-  }, [starmapOpen]);
+    if (!menuOpen) return;
+    const close = (event: KeyboardEvent) => event.key === "Escape" && setMenuOpen(false);
+    globalThis.addEventListener("keydown", close);
+    return () => globalThis.removeEventListener("keydown", close);
+  }, [menuOpen]);
 
   function onAsk(value: string) {
     const query = value.trim();
-    if (!query) return;
-    void osRef.current?.submitQuery(query);
+    if (query) void osRef.current?.submitQuery(query);
   }
 
   function onQueryMode() {
+    setMenuOpen(false);
     osRef.current?.setMode("query");
     requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function selectMode(id: FieldMode) {
+    setMenuOpen(false);
+    if (id === "query") onQueryMode();
+    else osRef.current?.setMode(id);
   }
 
   const workspaceOpen = mode !== "explore" && mode !== "query" && !queryActive;
   const timelineOpen = mode === "replay" || mode === "evidence";
   const slotValue = focus
     ? `${focus.cosmicKind.replace("-", " ")} · ${focus.kind} · ${galaxy.name}`
-    : null;
+    : `FIELD · SOLANA · ${galaxy.name}`;
 
   return (
-    <main
-      className={`field-shell${queryActive ? " field-shell--query" : ""}`}
-      data-mode={queryActive ? "query" : mode}
-      data-galaxy={galaxy.id}
-    >
+    <main className={`field-shell${queryActive ? " field-shell--query" : ""}`} data-mode={queryActive ? "query" : mode} data-galaxy={galaxy.id}>
+      <style>{`
+        .gz-top{position:absolute;top:max(12px,env(safe-area-inset-top));left:12px;right:12px;z-index:25;display:flex;align-items:center;gap:10px;pointer-events:none}.gz-menu-wrap{position:relative;flex:0 0 auto;pointer-events:auto}.gz-menu-button{width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--color-line-strong);border-radius:14px;background:rgba(8,8,12,.62);color:var(--color-fg);backdrop-filter:blur(14px);box-shadow:var(--shadow-field)}.gz-menu{position:absolute;top:52px;left:0;width:168px;display:grid;padding:6px;border:1px solid var(--color-line);border-radius:14px;background:rgba(7,7,11,.9);backdrop-filter:blur(20px);box-shadow:var(--shadow-field)}.gz-menu button{min-height:32px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--color-muted);text-align:left;font:600 9px/1 var(--font-display);letter-spacing:.12em}.gz-menu button:hover,.gz-menu button[aria-pressed=true]{background:rgba(255,255,255,.06);color:var(--color-fg)}.gz-menu-status{margin:5px 6px 3px;padding-top:7px;border-top:1px solid var(--color-line);color:var(--color-muted);font:600 8px/1.35 var(--font-mono);letter-spacing:.08em}.gz-search{pointer-events:auto;flex:1 1 auto;min-width:0;max-width:640px;margin:0 auto;height:44px;display:flex;align-items:center;gap:10px;padding:0 14px;border:1px solid var(--color-line-strong);border-radius:999px;background:rgba(8,8,12,.62);box-shadow:var(--shadow-field);backdrop-filter:blur(14px)}.gz-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--color-fg);font:500 14px/1 var(--font-sans)}.gz-search input::placeholder{color:var(--color-muted)}.gz-search button{height:28px;padding:0 12px;border:1px solid var(--color-line-strong);border-radius:999px;background:rgba(255,255,255,.08);color:var(--color-fg);font:600 10px/1 var(--font-display);letter-spacing:.14em}.gz-bottom{position:absolute;z-index:24;left:12px;right:12px;bottom:max(10px,env(safe-area-inset-bottom));min-height:32px;display:flex;align-items:center;justify-content:center;gap:8px;overflow-x:auto;white-space:nowrap;pointer-events:auto;color:var(--color-muted);font:600 9px/1 var(--font-mono);letter-spacing:.08em;scrollbar-width:none}.gz-bottom::-webkit-scrollbar{display:none}.gz-bottom span,.gz-bottom button{flex:0 0 auto}.gz-bottom button{border:0;border-left:1px solid var(--color-line);padding:2px 0 2px 8px;background:transparent;color:var(--color-muted);font:inherit;letter-spacing:inherit}.field-shell__chrome{padding:0}.field-shell__tag,.field-shell__focus,.field-shell__chips,.field-shell__commands,.field-shell__mode-tools,.field-shell__galaxy-trigger,.field-shell__data-status,.field-shell__brand{display:none!important}@media(max-width:560px){.gz-top{gap:7px}.gz-menu-button{width:40px;height:40px}.gz-search{height:40px;padding:0 9px}.gz-search input{font-size:12px}.gz-search button{height:26px;padding:0 9px}.gz-bottom{justify-content:flex-start;font-size:8px}}
+      `}</style>
       <div ref={hostRef} className="field-shell__field" />
+
       <div className="field-shell__chrome" hidden={queryActive} aria-hidden={queryActive}>
-        <header className="field-shell__top">
-          <button type="button" className="field-shell__brand" onClick={() => osRef.current?.setMode("explore")}>
-            A BULLS APP
-          </button>
-          <form
-            className="field-shell__search"
-            role="search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              onAsk(inputRef.current?.value ?? "");
-            }}
-          >
-            <input
-              ref={inputRef}
-              type="search"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="Wallet, tx, token, NFT, program"
-              aria-label="Ask the field a public identifier"
-            />
-            <button className="field-shell__ask" type="submit">
-              ASK
+        <header className="gz-top">
+          <div className="gz-menu-wrap">
+            <button type="button" className="gz-menu-button" aria-label="Open Galaxy Zero menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+              <Menu size={19} />
             </button>
+            {menuOpen ? (
+              <nav className="gz-menu" aria-label="Galaxy Zero modes">
+                {MENU_ITEMS.map((item) => (
+                  <button key={item.id} type="button" aria-pressed={mode === item.id} onClick={() => selectMode(item.id)}>{item.label}</button>
+                ))}
+                <p className="gz-menu-status" title={dataStatus.disclosure}>
+                  {dataStatus.store === "d1" ? "INDEXED" : "PROTOTYPE"} · {dataStatus.coverage.toUpperCase()}
+                </p>
+              </nav>
+            ) : null}
+          </div>
+          <form className="gz-search" role="search" onSubmit={(event) => { event.preventDefault(); onAsk(inputRef.current?.value ?? ""); }}>
+            <input ref={inputRef} type="search" autoComplete="off" spellCheck={false} placeholder="Wallet, tx, token, NFT, program" aria-label="Ask the field a public identifier" />
+            <button type="submit">ASK</button>
           </form>
         </header>
-        <button
-          type="button"
-          className="field-shell__galaxy-trigger"
-          onClick={() => setStarmapOpen(true)}
-          aria-haspopup="dialog"
-        >
-          <Orbit size={15} aria-hidden="true" />
-          <span>{galaxy.name}</span>
-          <small>ORIGIN MAP</small>
-        </button>
-        <p
-          className="field-shell__data-status"
-          data-coverage={dataStatus.coverage}
-          title={dataStatus.disclosure}
-        >
-          <span>{dataStatus.store === "d1" ? "INDEXED" : "PROTOTYPE"}</span>
-          {dataStatus.coverage.toUpperCase()}
-        </p>
-        <p className="field-shell__tag">
-          <strong>{galaxy.name.toUpperCase()} · THE BLOCKCHAIN IS ALIVE</strong>
-          {MODE_HINT[mode]}
-        </p>
-        {focus ? <p className="field-shell__focus">{slotValue}</p> : null}
-        <div className="field-shell__chips">
-          {EXAMPLES.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              className="query-chip"
-              onClick={() => {
-                if (inputRef.current) inputRef.current.value = item.value;
-                onAsk(item.value);
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <div className="field-shell__mode-tools" aria-label="Universe analysis tools">
-          {ANALYSIS_MODES.map((item) => (
-            <button key={item.id} type="button" aria-pressed={mode === item.id} onClick={() => osRef.current?.setMode(item.id)}>
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <nav className="field-shell__commands" aria-label="Primary modes">
-          {DOCK.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className="field-shell__command"
-              aria-pressed={mode === item.id || (item.id === "query" && queryActive)}
-              onClick={() => {
-                if (item.id === "query") onQueryMode();
-                else osRef.current?.setMode(item.id);
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-      </div>
 
-      {starmapOpen && !queryActive ? (
-        <Starmap
-          galaxies={galaxies}
-          current={galaxy}
-          onClose={() => setStarmapOpen(false)}
-          onSelect={(id) => {
-            if (osRef.current?.setGalaxy(id)) setStarmapOpen(false);
-          }}
-        />
-      ) : null}
+        <div className="gz-bottom" aria-label="Current field tags">
+          <span>{slotValue}</span>
+          {EXAMPLES.map((item) => (
+            <button key={item.value} type="button" onClick={() => { if (inputRef.current) inputRef.current.value = item.value; onAsk(item.value); }}>{item.label}</button>
+          ))}
+        </div>
+      </div>
 
       {queryActive ? (
         <div className="query-experience">
-          <button
-            type="button"
-            className="query-mute"
-            aria-label={muted ? "Unmute" : "Mute"}
-            onClick={() => osRef.current?.setMuted(!muted)}
-          >
+          <button type="button" className="query-mute" aria-label={muted ? "Unmute" : "Mute"} onClick={() => osRef.current?.setMuted(!muted)}>
             {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
           </button>
           <div className="query-chin">
-            <form
-              className="query-experience__form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                onAsk(queryInputRef.current?.value ?? "");
-              }}
-            >
-              <input
-                ref={queryInputRef}
-                type="search"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="Ask again · wallet, tx, mint, NFT, program"
-                aria-label="Ask the living field"
-              />
-              <button className="query-experience__submit" type="submit">
-                ASK
-              </button>
+            <form className="query-experience__form" onSubmit={(event) => { event.preventDefault(); onAsk(queryInputRef.current?.value ?? ""); }}>
+              <input ref={queryInputRef} type="search" autoComplete="off" spellCheck={false} placeholder="Ask again · wallet, tx, mint, NFT, program" aria-label="Ask the living field" />
+              <button className="query-experience__submit" type="submit">ASK</button>
             </form>
-            <div className="query-status">
-              <b>{STATE_LABEL[organismState]}</b>
-              {result?.spokenText ? <p>{result.spokenText}</p> : null}
-            </div>
-            <button
-              type="button"
-              className="query-experience__back"
-              onClick={() => void osRef.current?.returnToField()}
-            >
-              RETURN TO FIELD
-            </button>
+            <div className="query-status"><b>{STATE_LABEL[organismState]}</b>{result?.spokenText ? <p>{result.spokenText}</p> : null}</div>
+            <button type="button" className="query-experience__back" onClick={() => void osRef.current?.returnToField()}>RETURN TO FIELD</button>
           </div>
         </div>
       ) : null}
@@ -271,143 +178,33 @@ export function AppShell() {
       <section className={`field-shell__workspace${timelineOpen ? " field-shell__workspace--timeline" : ""}`} hidden={!workspaceOpen}>
         <div className="field-shell__workspace-head">
           <strong>{mode.toUpperCase().replace("WHAT-IF", "WHAT-IF · ESTIMATE")}</strong>
-          <button type="button" className="field-shell__close" onClick={() => osRef.current?.setMode("explore")}>
-            RETURN TO FIELD
-          </button>
+          <button type="button" className="field-shell__close" onClick={() => osRef.current?.setMode("explore")}>RETURN TO FIELD</button>
         </div>
         <div className="field-shell__workspace-body">
-          {mode === "intelligence" ? (
-            <IntelligencePanel result={result} onAsk={() => onQueryMode()} />
-          ) : null}
-          {mode !== "intelligence" ? (
-            <UniverseWorkspace
-              mode={mode}
-              galaxy={galaxy}
-              evidence={evidence}
-              onNarrate={(text) => osRef.current?.narrateObserved(text)}
-            />
-          ) : null}
+          {mode === "intelligence" ? <IntelligencePanel result={result} onAsk={() => onQueryMode()} /> : null}
+          {mode !== "intelligence" ? <UniverseWorkspace mode={mode} galaxy={galaxy} evidence={evidence} onNarrate={(text) => osRef.current?.narrateObserved(text)} /> : null}
         </div>
       </section>
     </main>
   );
 }
 
-function Starmap({
-  galaxies,
-  current,
-  onClose,
-  onSelect,
-}: {
-  galaxies: readonly GalaxyDefinition[];
-  current: GalaxyDefinition;
-  onClose: () => void;
-  onSelect: (id: GalaxyDefinition["id"]) => void;
-}) {
-  return (
-    <section className="starmap" role="dialog" aria-modal="true" aria-labelledby="starmap-title">
-      <div className="starmap__veil" onClick={onClose} aria-hidden="true" />
-      <div className="starmap__surface">
-        <header className="starmap__header">
-          <div>
-            <span>THE LIVING UNIVERSE</span>
-            <h1 id="starmap-title">Origin starmap</h1>
-          </div>
-          <button
-            type="button"
-            className="starmap__close"
-            onClick={onClose}
-            aria-label="Close starmap"
-            autoFocus
-          >
-            <X size={18} />
-          </button>
-        </header>
-        <p className="starmap__rule">
-          A token's home galaxy is fixed by where it launched. Trading elsewhere creates a route; it never
-          rewrites origin.
-        </p>
-        <div className="starmap__field" aria-label="Available galaxies">
-          <div className="starmap__orbit starmap__orbit--outer" />
-          <div className="starmap__orbit starmap__orbit--inner" />
-          {galaxies.map((item, index) => {
-            const selected = item.id === current.id;
-            const available = item.status === "populated";
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={`starmap__galaxy starmap__galaxy--${index + 1}`}
-                data-current={selected || undefined}
-                data-status={item.status}
-                disabled={!available}
-                onClick={() => onSelect(item.id)}
-                style={{ "--galaxy-accent": item.accent } as React.CSSProperties}
-              >
-                <span className="starmap__core" />
-                <strong>{item.name}</strong>
-                <small>{selected ? "CURRENT GALAXY" : available ? "ENTER GALAXY" : "CALIBRATING"}</small>
-              </button>
-            );
-          })}
-        </div>
-        <div className="starmap__details">
-          <div>
-            <span>CURRENT ORIGIN</span>
-            <strong>{current.ecosystem}</strong>
-            <p>{current.description}</p>
-          </div>
-          <div className="starmap__legend" aria-label="Universe taxonomy">
-            {STARMAP_LEGEND.map(([kind, label]) => (
-              <span key={kind}>
-                <b>{label}</b>
-                {COSMOLOGY_RULES[kind].onChainMeaning}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function IntelligencePanel({
-  result,
-  onAsk,
-}: {
-  result: IntelligenceResult | null;
-  onAsk: () => void;
-}) {
+function IntelligencePanel({ result, onAsk }: { result: IntelligenceResult | null; onAsk: () => void }) {
   if (!result) {
     return (
       <article className="workspace-copy">
         <h2>Public memory, observed facts</h2>
-        <p>
-          ASK a public identifier on the Field. The same particles become the Grey and speak only what the
-          public chain shows.
-        </p>
-        <button type="button" className="query-experience__submit" onClick={onAsk}>
-          ASK THE FIELD
-        </button>
+        <p>ASK a public identifier on the Field. The same particles become the Grey and speak only what the public chain shows.</p>
+        <button type="button" className="query-experience__submit" onClick={onAsk}>ASK THE FIELD</button>
       </article>
     );
   }
   return (
     <article className="workspace-copy">
-      <h2>
-        {result.label} · {result.shortId}
-      </h2>
+      <h2>{result.label} · {result.shortId}</h2>
       <p>{result.spokenText}</p>
-      <p>
-        Coverage {result.coverage}
-        {result.source ? ` · ${result.source}` : ""}
-        {result.disclosure ? ` · ${result.disclosure}` : ""}
-      </p>
-      <ul className="workspace-facts">
-        {result.facts.map((fact) => (
-          <li key={fact}>{fact}</li>
-        ))}
-      </ul>
+      <p>Coverage {result.coverage}{result.source ? ` · ${result.source}` : ""}{result.disclosure ? ` · ${result.disclosure}` : ""}</p>
+      <ul className="workspace-facts">{result.facts.map((fact) => <li key={fact}>{fact}</li>)}</ul>
     </article>
   );
 }
