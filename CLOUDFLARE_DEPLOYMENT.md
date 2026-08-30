@@ -11,8 +11,7 @@ The frontend calls the Worker over its existing public read-only API. Do not cre
 
 ```bash
 cd /root
-unzip -q /sdcard/Download/A-Bulls-App-Living-Universe-Complete-Cloudflare-Ready.zip \
-  -d A-Bulls-App-Living-Universe-Complete
+unzip -q /sdcard/Download/A-Bulls-App-Living-Universe-Complete-Cloudflare-Ready.zip
 
 cd /root/A-Bulls-App-Living-Universe-Complete/worker
 npx wrangler d1 migrations apply INTELLIGENCE_DB --remote \
