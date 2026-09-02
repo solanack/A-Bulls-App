@@ -153,12 +153,21 @@ export class FieldOS {
     const seq = ++this.#snapshotSeq;
     const delivery = await getIndexedGalaxySnapshot({ data: { galaxyId: id } });
     if (seq !== this.#snapshotSeq || id !== this.galaxy.id) return;
-    this.dataStatus = delivery.status;
-    if (delivery.snapshot) {
-      this.field.setSnapshot(delivery.snapshot);
+    const indexedSnapshot = delivery.snapshot;
+    const indexedParticleCount = indexedSnapshot?.particles.length ?? 0;
+    if (indexedSnapshot && indexedParticleCount > 0) {
+      this.dataStatus = delivery.status;
+      this.field.setSnapshot(indexedSnapshot);
       this.focus = null;
       this.evidence = null;
-      this.replay = createReplayState(delivery.snapshot);
+      this.replay = createReplayState(indexedSnapshot);
+    } else {
+      this.dataStatus = {
+        ...delivery.status,
+        store: "memory-fallback",
+        disclosure:
+          `${delivery.status.disclosure} The indexed snapshot contains no particles, so the visible prototype field remains active.`.trim(),
+      };
     }
     this.#emit();
   }
