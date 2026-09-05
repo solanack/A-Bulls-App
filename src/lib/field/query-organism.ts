@@ -227,9 +227,6 @@ export class LivingAlienOrganism {
   head: THREE.Group;
   headMaterials: THREE.Material[] = [];
   headLoaded = false;
-  visor: THREE.Group;
-  visorMaterials: THREE.Material[] = [];
-  visorLoaded = false;
   eyes: THREE.Object3D[] = [];
   mouth: THREE.Group;
   mouthCavity: THREE.Mesh;
@@ -370,7 +367,6 @@ export class LivingAlienOrganism {
 
     this.head = this.#buildHead();
     this.#buildEyes();
-    this.visor = this.#buildVisor();
     const mouth = this.#buildMouth();
     this.mouth = mouth.group;
     this.mouthCavity = mouth.cavity;
@@ -447,7 +443,11 @@ export class LivingAlienOrganism {
                 shader.vertexShader = shader.vertexShader
                   .replace(
                     "#include <common>",
-                    "#include <common>\nuniform float uGreySpeech;\nuniform float uGreyTime;",
+                    `#include <common>
+                    uniform float uGreySpeech;
+                    uniform float uGreyTime;
+                    varying vec3 vGreyLocal;
+                    varying vec3 vGreyNormal;`,
                   )
                   .replace(
                     "#include <begin_vertex>",
@@ -459,11 +459,59 @@ export class LivingAlienOrganism {
                     float greyCenter = 1.0 - smoothstep(0.2, 0.58, abs(position.x));
                     float greyJaw = greyFront * greyLower * greyCenter;
                     transformed.z += greyJaw * pow(clamp(uGreySpeech, 0.0, 1.0), 0.72) * 0.055;
-                    transformed.y += greyJaw * uGreySpeech * 0.012;`,
+                    transformed.y += greyJaw * uGreySpeech * 0.012;
+                    vGreyLocal = position;
+                    vGreyNormal = normalize(normal);`,
+                  );
+                shader.fragmentShader = shader.fragmentShader
+                  .replace(
+                    "#include <common>",
+                    `#include <common>
+                    uniform float uGreyTime;
+                    varying vec3 vGreyLocal;
+                    varying vec3 vGreyNormal;
+
+                    vec3 greySolanaGradient(float t) {
+                      vec3 purple = vec3(0.60, 0.27, 1.0);
+                      vec3 cyan = vec3(0.18, 0.84, 1.0);
+                      vec3 green = vec3(0.078, 0.945, 0.584);
+                      return t < 0.5
+                        ? mix(purple, cyan, t * 2.0)
+                        : mix(cyan, green, (t - 0.5) * 2.0);
+                    }`,
+                  )
+                  .replace(
+                    "#include <color_fragment>",
+                    `#include <color_fragment>
+                    // Original at 0s, full Solana iridescence at 5s, original again at 10s.
+                    float skinCycle = 0.5 - 0.5 * cos(uGreyTime * 0.6283185307);
+                    skinCycle = smoothstep(0.06, 0.94, skinCycle);
+
+                    // Staggered overlapping cells create curved fish-scale highlights.
+                    float scaleY = vGreyLocal.z * 5.2;
+                    float scaleRow = floor(scaleY);
+                    vec2 scaleCell = fract(vec2(
+                      vGreyLocal.x * 5.2 + mod(scaleRow, 2.0) * 0.5,
+                      scaleY
+                    )) - 0.5;
+                    float scaleDistance = length(vec2(scaleCell.x, scaleCell.y * 1.28));
+                    float scaleBody = 1.0 - smoothstep(0.38, 0.5, scaleDistance);
+                    float scaleRim = smoothstep(0.30, 0.47, scaleDistance) * scaleBody;
+
+                    vec3 curvedNormal = normalize(vGreyNormal);
+                    float iridescentShift = fract(
+                      vGreyLocal.x * 0.055 +
+                      vGreyLocal.z * 0.032 +
+                      dot(curvedNormal, normalize(vec3(0.45, 0.72, 0.53))) * 0.34 +
+                      uGreyTime * 0.018
+                    );
+                    vec3 solanaSkin = greySolanaGradient(iridescentShift);
+                    solanaSkin *= 0.66 + scaleBody * 0.22 + scaleRim * 0.46;
+                    diffuseColor.rgb = mix(diffuseColor.rgb, solanaSkin, skinCycle * 0.88);`,
                   );
                 material.userData.shader = shader;
               };
-              material.customProgramCacheKey = () => "a-bulls-grey-face-v1";
+              material.customProgramCacheKey = () => "a-bulls-grey-fishscale-v2";
             }
             this.headMaterials.push(material);
             return material;
@@ -513,97 +561,6 @@ export class LivingAlienOrganism {
     };
     makeEye(EYE.left);
     makeEye(EYE.right);
-  }
-
-  #buildVisor() {
-    const group = new THREE.Group();
-    const outer = Math.max(
-      Math.abs(EYE.left.x) + EYE.left.rx,
-      Math.abs(EYE.right.x) + EYE.right.rx,
-    );
-    const width = outer * 1.92;
-    const height = Math.max(EYE.left.ry, EYE.right.ry) * 2.18;
-    const centerY = (EYE.left.y + EYE.right.y) * 0.5 - height * 0.015;
-    const frontZ = Math.max(EYE.left.z + EYE.left.rz, EYE.right.z + EYE.right.rz) + 0.9;
-    group.position.set(0, centerY, frontZ);
-    group.visible = false;
-    this.group.add(group);
-
-    const loader = new GLTFLoader();
-    loader.load(
-      "/models/pit_viper_style_glasses.glb",
-      (gltf) => {
-        if (this.destroyed) {
-          disposeObject(gltf.scene);
-          return;
-        }
-
-        const asset = gltf.scene;
-        asset.updateMatrixWorld(true);
-        let lens: THREE.Mesh | null = null;
-        asset.traverse((object) => {
-          if (!(object instanceof THREE.Mesh)) return;
-          const materials = Array.isArray(object.material) ? object.material : [object.material];
-          if (materials.some((material) => material.name === "Polarized")) lens = object;
-          if (materials.some((material) => material.name === "Logo")) object.visible = false;
-          object.castShadow = false;
-          object.receiveShadow = false;
-          object.renderOrder = materials.some((material) => material.name === "Logo") ? 8 : 6;
-          for (const material of materials) {
-            if (!this.visorMaterials.includes(material)) this.visorMaterials.push(material);
-            material.userData.baseOpacity = material.opacity;
-            material.transparent = true;
-            material.opacity = 0;
-            material.depthTest = true;
-            if (material instanceof THREE.MeshStandardMaterial) {
-              material.roughness = material.name === "Polarized" ? 0.1 : 0.24;
-              material.metalness = material.name === "Polarized" ? 0.34 : 0.12;
-              material.envMapIntensity = 1.35;
-            }
-            if (material.name === "Polarized") {
-              material.userData.baseOpacity = 0.76;
-              material.depthWrite = true;
-            }
-            material.needsUpdate = true;
-          }
-        });
-
-        const lensBox = new THREE.Box3().setFromObject(lens ?? asset);
-        const lensCenter = lensBox.getCenter(new THREE.Vector3());
-        const lensSize = lensBox.getSize(new THREE.Vector3());
-        const fit = new THREE.Group();
-        const modelScale = width / Math.max(0.001, lensSize.x);
-        asset.position.set(-lensCenter.x, -lensCenter.y, -lensBox.max.z);
-        const wordmarkTexture = createSolanaWordmarkTexture();
-        const wordmarkMaterial = new THREE.MeshBasicMaterial({
-          map: wordmarkTexture,
-          transparent: true,
-          depthWrite: false,
-          depthTest: true,
-          toneMapped: false,
-          opacity: 0,
-        });
-        wordmarkMaterial.name = "SolanaWordmark";
-        wordmarkMaterial.userData.baseOpacity = 1;
-        this.visorMaterials.push(wordmarkMaterial);
-        for (const side of [-1, 1]) {
-          const label = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 0.23), wordmarkMaterial);
-          label.position.set(side * 1.78, 0.79, 0.31);
-          label.rotation.y = side * -0.12;
-          label.renderOrder = 9;
-          asset.add(label);
-        }
-        fit.scale.setScalar(modelScale);
-        fit.add(asset);
-        group.add(fit);
-        this.visorLoaded = true;
-      },
-      undefined,
-      (error) => {
-        console.error("Unable to load the Pit Viper glasses model", error);
-      },
-    );
-    return group;
   }
 
   #buildMouth() {
@@ -721,11 +678,6 @@ export class LivingAlienOrganism {
         }
       }
     }
-    for (const material of this.visorMaterials) {
-      const baseOpacity = Number(material.userData.baseOpacity ?? 1);
-      material.opacity = baseOpacity * formed;
-    }
-
     const crawl = this.field.reducedMotion ? 0 : formed;
     const breath = 1 + Math.sin(now * 0.0015) * 0.008 * crawl;
     this.group.scale.setScalar(breath);
@@ -740,11 +692,6 @@ export class LivingAlienOrganism {
       eye.visible = !this.headLoaded && this.morph > 0.48;
       eye.scale.y = Math.max(0.08, 1 - blink * 0.92);
     }
-    this.visor.visible = this.visorLoaded && this.morph > 0.44;
-    const visorArrival = clamp((this.morph - 0.44) / 0.3);
-    const visorEase = 1 - Math.pow(1 - visorArrival, 3);
-    this.visor.scale.set(visorEase, visorEase * (0.92 + visorEase * 0.08), visorEase);
-    this.visor.rotation.x = (1 - visorEase) * -0.18;
     this.mouth.visible = !this.headLoaded && this.morph > 0.62;
     const jawOpen = Math.pow(clamp(speakPulse), 0.72);
     this.mouthCavity.scale.set(MOUTH.w * 0.88, MOUTH.h * (0.72 + jawOpen * 2.55), MOUTH.d * 0.74);
@@ -790,7 +737,6 @@ export class LivingAlienOrganism {
     this.dermis.geometry.dispose();
     this.dermalMaterial.dispose();
     disposeObject(this.head);
-    disposeObject(this.visor);
     disposeObject(this.mouth);
     for (const n of this.nostrils) {
       n.geometry.dispose();
@@ -814,42 +760,6 @@ function disposeObject(root: THREE.Object3D) {
       material.dispose();
     }
   });
-}
-
-function createSolanaWordmarkTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 768;
-  canvas.height = 192;
-  const context = canvas.getContext("2d");
-  if (!context) return new THREE.CanvasTexture(canvas);
-
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  const gradient = context.createLinearGradient(20, 20, 150, 170);
-  gradient.addColorStop(0, "#9945ff");
-  gradient.addColorStop(0.52, "#2dd8ff");
-  gradient.addColorStop(1, "#14f195");
-  context.fillStyle = gradient;
-  for (let row = 0; row < 3; row++) {
-    const y = 38 + row * 42;
-    const offset = row === 1 ? 14 : 0;
-    context.beginPath();
-    context.moveTo(22 + offset, y);
-    context.lineTo(130 + offset, y);
-    context.lineTo(110 + offset, y + 24);
-    context.lineTo(2 + offset, y + 24);
-    context.closePath();
-    context.fill();
-  }
-  context.fillStyle = "#ffffff";
-  context.font = "700 82px Arial, Helvetica, sans-serif";
-  context.textBaseline = "middle";
-  context.fillText("SOLANA", 174, 99);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  texture.needsUpdate = true;
-  return texture;
 }
 
 declare global {
