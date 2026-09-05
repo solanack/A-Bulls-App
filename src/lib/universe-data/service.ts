@@ -22,8 +22,14 @@ export const getIndexedGalaxySnapshot = createServerFn({ method: "GET" })
 
     try {
       const response = await fetch(
-        `${FIELD_V0_ORIGIN}/api/intelligence/field/snapshot?galaxy=${encodeURIComponent(data.galaxyId)}&window=300&limit=2500`,
-        { headers: { accept: "application/json" }, cache: "no-store" },
+        `${FIELD_V0_ORIGIN}/api/intelligence/field/snapshot?galaxy=${encodeURIComponent(data.galaxyId)}&window=300&limit=2500&_ts=${Date.now()}`,
+        {
+          headers: {
+            accept: "application/json",
+            "cache-control": "no-cache",
+          },
+          cache: "no-store",
+        },
       );
       const contentType = response.headers.get("content-type") ?? "";
       if (!contentType.includes("application/json")) {
