@@ -85,6 +85,11 @@ async function recordUsage(db,{bytes=0,events=0,credits=0,now}){
 
 async function activeMintSet(db){const rows=await all(db.prepare('SELECT mint FROM pump_active_tokens'));return new Set(rows.map(row=>s(row.mint)));}
 
+/** Cold-start: empty active set still persists detailed trades (webhook is already ≤10 accounts). */
+export function shouldPersistDetailedTrade(activeSet,mint){
+  return !activeSet.size||activeSet.has(s(mint));
+}
+
 async function persistCandidate(db,event,now){
   const inserted=await db.prepare('INSERT OR IGNORE INTO pump_seen_events(event_id,mint,block_time,inserted_at) VALUES(?,?,?,?)').bind(event.eventId,event.mint,event.blockTime,now).run();
   if(!n(inserted?.meta?.changes))return false;
@@ -118,12 +123,14 @@ export async function ingestPumpEvents(env={},inputs=[],{bytes=0,now=Math.floor(
   for(let index=0;index<list.length;index+=1){
     let event;try{event=normalizePumpEvent(list[index],index);}catch{rejected+=1;continue;}
     const fresh=await persistCandidate(db,event,now);if(!fresh){duplicates+=1;continue;}accepted+=1;
-    if(active.has(event.mint)&&budget.mode!=='hard-stop'){
+    if(shouldPersistDetailedTrade(active,event.mint)&&budget.mode!=='hard-stop'){
       await persistDetailedTrade(db,event,now);
       observations.push({eventId:`pump:${event.eventId}`,entityKind:'token',entityId:event.mint,category:'swap',observedAt:event.blockTime,slot:event.slot,commitment:event.commitment,magnitudeBand:Math.min(1,Math.log10(1+(event.solAmount||0))/3),source:event.source,evidence:{signature:event.signature,side:event.side,wallet:event.wallet,relations:event.wallet?[{sourceId:event.mint,targetId:event.wallet,evidenceId:event.signature,relationKind:event.side,observedAt:event.blockTime,verificationState:event.commitment}]:[]}});
     }
   }
   if(observations.length)await persistUniverseObservations(env,observations).catch(()=>0);
+  // Seed active set from observed volume so subsequent batches resume the bounded gate.
+  if(!active.size&&accepted>0)await refreshPumpRankings(env,now).catch(()=>null);
   const webhookCredits=list.length,streamCredits=Math.ceil(Math.max(0,bytes)/100_000)*2,credits=s(env.PUMP_INGEST_CREDIT_MODE)==='stream'?streamCredits:webhookCredits;
   await recordUsage(db,{bytes,events:list.length,credits,now});
   await db.prepare(`UPDATE pump_ingest_health SET state='receiving',last_message_at=?,last_success_at=?,received_events=received_events+?,accepted_events=accepted_events+?,duplicate_events=duplicate_events+?,rejected_events=rejected_events+?,updated_at=? WHERE id=1`).bind(now,now,list.length,accepted,duplicates,rejected,now).run();
