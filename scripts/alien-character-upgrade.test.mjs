@@ -15,11 +15,16 @@ test("alien uses the licensed continuous head with particle fallback", async () 
   assert.match(organism, /DERMAL_VERT/);
   assert.match(organism, /grey_alien_head_ccby\.glb/);
   assert.match(organism, /uGreySpeech/);
+  assert.match(organism, /greySolanaGradient/);
+  assert.match(organism, /skinCycle/);
+  assert.match(organism, /scaleCell/);
   assert.match(organism, /!this\.headLoaded/);
   assert.match(organism, /mouthCavity/);
   assert.match(organism, /upperLip/);
   assert.match(organism, /lowerLip/);
   assert.doesNotMatch(organism, /Math\.abs\(Math\.sin\(now \* 0\.0105\)\)/);
+  assert.doesNotMatch(organism, /pit_viper_style_glasses/);
+  assert.doesNotMatch(organism, /buildVisor/);
 });
 
 test("licensed Grey head is optimized and attributed", async () => {
