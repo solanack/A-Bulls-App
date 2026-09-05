@@ -38,5 +38,20 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Same coverage as `npm test`, minus scripts that require local-only
+      # `.grok/skills/og/*` (brand-check / write-atomic hand-over docs).
       - name: Unit tests
-        run: npm test
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          scripts_tests=()
+          for f in scripts/*.test.mjs; do
+            case "$f" in
+              scripts/brand-check.test.mjs|scripts/write-atomic.test.mjs) continue ;;
+              *) scripts_tests+=("$f") ;;
+            esac
+          done
+          node --test "${scripts_tests[@]}"
+          node --experimental-strip-types --test \
+            src/lib/app-data/app-data.test.ts \
+            src/lib/auth/gate-identity.test.ts
