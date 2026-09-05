@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePumpEvent, __pumpTop10Contract } from './intelligence-pump-top10.mjs';
+import { normalizePumpEvent, shouldPersistDetailedTrade, __pumpTop10Contract } from './intelligence-pump-top10.mjs';
 
 const signature='5'.repeat(88);
 const mint='7'.repeat(44);
@@ -36,3 +36,13 @@ test('rejects malformed evidence identifiers',()=>{
 });
 
 
+
+test('cold-start persists detailed trades when active set is empty',()=>{
+  assert.equal(shouldPersistDetailedTrade(new Set(),mint),true);
+});
+
+test('after active set exists, only active mints get detailed trades',()=>{
+  const active=new Set([mint]);
+  assert.equal(shouldPersistDetailedTrade(active,mint),true);
+  assert.equal(shouldPersistDetailedTrade(active,'9'.repeat(44)),false);
+});
