@@ -2,28 +2,34 @@
  * Compose these from the existing production worker without changing unrelated routes.
  */
 
-import { handleIntelligenceVNext } from './intelligence-router-vnext.mjs';
-import { runIntelligenceMeshScheduler } from './intelligence-mesh-scheduler.mjs';
-import { handleIntelligenceMeshIngestRequest } from './intelligence-mesh-ingest.mjs';
-import { handleHeliusUniverseWebhook } from './intelligence-helius-universe-ingest.mjs';
-import { handleIntelligenceAdapterRequest } from './intelligence-adapter-router.mjs';
-import { handleExternalRetrievalTaskRequest } from './intelligence-retrieval-tasks.mjs';
-import { handleUniverseRequest } from './intelligence-universe-router.mjs';
-import { handleTricksterRequest, pruneTricksterShareManifests } from './intelligence-trickster-router.mjs';
-import { handleReplayBundleRequest } from './intelligence-replay-bundle.mjs';
-import { handleMarketReplayRequest } from './intelligence-market-replay.mjs';
-import { handleMarketBackfillPlanRequest } from './intelligence-market-backfill-router.mjs';
-import { handleMarketBackfillRequest } from './intelligence-market-backfill-request.mjs';
-import { handleIndexJobStatusRequest } from './intelligence-index-job-status.mjs';
-import { handleWalletTokenIndexRequest } from './intelligence-wallet-token-index.mjs';
-import { handleEventMarketContextRequest } from './intelligence-event-context.mjs';
-import { pruneUniverseObservations } from './intelligence-universe-runtime.mjs';
-import { handlePumpTop10Request, maintainPumpIndex } from './intelligence-pump-top10.mjs';
-import { runUniverseScheduledMaintenance } from './intelligence-universe-scheduler.mjs';
-import { handleFieldCompatibilityRequest } from './intelligence-field-compat.mjs';
+import { handleIntelligenceVNext } from "./intelligence-router-vnext.mjs";
+import { runIntelligenceMeshScheduler } from "./intelligence-mesh-scheduler.mjs";
+import { handleIntelligenceMeshIngestRequest } from "./intelligence-mesh-ingest.mjs";
+import { handleHeliusUniverseWebhook } from "./intelligence-helius-universe-ingest.mjs";
+import { handleIntelligenceAdapterRequest } from "./intelligence-adapter-router.mjs";
+import { handleExternalRetrievalTaskRequest } from "./intelligence-retrieval-tasks.mjs";
+import { handleUniverseRequest } from "./intelligence-universe-router.mjs";
+import {
+  handleTricksterRequest,
+  pruneTricksterShareManifests,
+} from "./intelligence-trickster-router.mjs";
+import { handleReplayBundleRequest } from "./intelligence-replay-bundle.mjs";
+import { handleMarketReplayRequest } from "./intelligence-market-replay.mjs";
+import { handleMarketBackfillPlanRequest } from "./intelligence-market-backfill-router.mjs";
+import { handleMarketBackfillRequest } from "./intelligence-market-backfill-request.mjs";
+import { handleIndexJobStatusRequest } from "./intelligence-index-job-status.mjs";
+import { handleWalletTokenIndexRequest } from "./intelligence-wallet-token-index.mjs";
+import { handleEventMarketContextRequest } from "./intelligence-event-context.mjs";
+import { pruneUniverseObservations } from "./intelligence-universe-runtime.mjs";
+import { handlePumpTop10Request, maintainPumpIndex } from "./intelligence-pump-top10.mjs";
+import { runUniverseScheduledMaintenance } from "./intelligence-universe-scheduler.mjs";
+import { handleFieldCompatibilityRequest } from "./intelligence-field-compat.mjs";
+import { handleSocialFiRequest } from "./socialfi-router.mjs";
 
 export async function handleIntelligenceFetch(request, env = {}, ctx = null) {
-  if(ctx)env.__EXECUTION_CTX=ctx;
+  if (ctx) env.__EXECUTION_CTX = ctx;
+  const social = await handleSocialFiRequest(request, env);
+  if (social) return social;
   const field = await handleFieldCompatibilityRequest(request, env);
   if (field) return field;
   const heliusUniverse = await handleHeliusUniverseWebhook(request, env);
@@ -58,19 +64,27 @@ export async function handleIntelligenceFetch(request, env = {}, ctx = null) {
 }
 
 export async function handleIntelligenceScheduled(env = {}) {
-  const configured=Number(env.INTELLIGENCE_SCHEDULER_BATCH_SIZE||3);
-  const limit=Math.max(1,Math.min(5,Number.isFinite(configured)?Math.trunc(configured):3));
+  const configured = Number(env.INTELLIGENCE_SCHEDULER_BATCH_SIZE || 3);
+  const limit = Math.max(1, Math.min(5, Number.isFinite(configured) ? Math.trunc(configured) : 3));
   const mesh = await runIntelligenceMeshScheduler(env, { limit });
-  const maintenance=[];
-  if (String(env.ECOSYSTEM_UNIVERSES_ENABLED || '').toLowerCase() === 'true') maintenance.push(runUniverseScheduledMaintenance(env));
-  if (String(env.UNIVERSE_ENABLED || '').toLowerCase() === 'true') maintenance.push(pruneUniverseObservations(env));
-  if (String(env.TRICKSTER_SHARE_ENABLED || '').toLowerCase() === 'true') maintenance.push(pruneTricksterShareManifests(env));
-  if (String(env.PUMP_INDEX_ENABLED || '').toLowerCase() === 'true') maintenance.push(maintainPumpIndex(env));
-  if(maintenance.length){
-    const settled=await Promise.allSettled(maintenance);
-    for(const [index,result] of settled.entries()){
-      if(result.status==='rejected'){
-        console.error('[scheduled-maintenance-error]',index,String(result.reason?.stack||result.reason?.message||result.reason));
+  const maintenance = [];
+  if (String(env.ECOSYSTEM_UNIVERSES_ENABLED || "").toLowerCase() === "true")
+    maintenance.push(runUniverseScheduledMaintenance(env));
+  if (String(env.UNIVERSE_ENABLED || "").toLowerCase() === "true")
+    maintenance.push(pruneUniverseObservations(env));
+  if (String(env.TRICKSTER_SHARE_ENABLED || "").toLowerCase() === "true")
+    maintenance.push(pruneTricksterShareManifests(env));
+  if (String(env.PUMP_INDEX_ENABLED || "").toLowerCase() === "true")
+    maintenance.push(maintainPumpIndex(env));
+  if (maintenance.length) {
+    const settled = await Promise.allSettled(maintenance);
+    for (const [index, result] of settled.entries()) {
+      if (result.status === "rejected") {
+        console.error(
+          "[scheduled-maintenance-error]",
+          index,
+          String(result.reason?.stack || result.reason?.message || result.reason),
+        );
       }
     }
   }
