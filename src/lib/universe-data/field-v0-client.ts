@@ -4,9 +4,9 @@
  *   GET /api/intelligence/field/v0/tokens
  *   GET /api/intelligence/field/v0/wallets/:wallet
  *
- * Live galaxy host is a-bulls-app-frontend (abullsapp.com). Prefer that origin
- * for hydrate; fall back to the Intelligence Worker only if the origin path is
- * unavailable. Never treat Field compat v1 particle snapshots as truth.
+ * Live galaxy host is a-bulls-app-frontend (abullsapp.com). Hydrate only via
+ * that origin (zone-routed to the Intelligence Worker). No workers.dev hardcode.
+ * Never treat Field compat v1 particle snapshots as truth.
  * Incomplete dying (producer omits liqSol) must not become black holes.
  */
 
@@ -20,10 +20,8 @@ import {
 import type { GalaxyId, UniverseSnapshot } from "@/lib/field/types";
 import type { UniverseDataStatus } from "./contracts";
 
-/** Preferred live galaxy / frontend origin (a-bulls-app-frontend). */
+/** Live galaxy / frontend origin (a-bulls-app-frontend). */
 export const FIELD_V0_ORIGIN = "https://abullsapp.com";
-/** Intelligence Worker fallback until frontend routes /api/intelligence/*. */
-export const FIELD_V0_WORKER_FALLBACK = "https://black-bull-run-sol.ckdsigns1.workers.dev";
 
 export const FIELD_V0_PATH = "/api/intelligence/field/v0";
 
@@ -34,15 +32,6 @@ export const FIELD_V0_PATHS = Object.freeze({
   tokens: `${FIELD_V0_BASE}/tokens`,
   wallet: (wallet: string) => `${FIELD_V0_BASE}/wallets/${encodeURIComponent(wallet)}`,
 });
-
-function fieldV0Urls(base: string) {
-  const root = `${base.replace(/\/$/, "")}${FIELD_V0_PATH}`;
-  return {
-    events: `${root}/events`,
-    tokens: `${root}/tokens`,
-    wallet: (wallet: string) => `${root}/wallets/${encodeURIComponent(wallet)}`,
-  };
-}
 
 export type FieldV0Coverage = {
   readonly complete?: boolean;
@@ -128,29 +117,6 @@ export function snapshotFromFieldV0Payloads(input: {
   });
 }
 
-async function fetchFieldV0Pair(base: string, limit: number, minScore: number) {
-  const urls = fieldV0Urls(base);
-  const eventsUrl = `${urls.events}?types=${encodeURIComponent(
-    "token.trade,token.dying,holder.exit",
-  )}&minScore=${minScore}&limit=${limit}`;
-  const tokensUrl = `${urls.tokens}?minScore=${minScore}&limit=${limit}`;
-  const [eventsRes, tokensRes] = await Promise.all([
-    getJson<EventsBody>(eventsUrl),
-    getJson<TokensBody>(tokensUrl),
-  ]);
-  return { eventsRes, tokensRes, base };
-}
-
-function pairUsable(pair: {
-  eventsRes: { ok: boolean; status: number; body: EventsBody | null };
-  tokensRes: { ok: boolean; status: number; body: TokensBody | null };
-}) {
-  return Boolean(
-    (pair.eventsRes.ok && pair.eventsRes.body?.ok) ||
-      (pair.tokensRes.ok && pair.tokensRes.body?.ok),
-  );
-}
-
 /** Plain loader — safe to call from other server handlers (no nested createServerFn). */
 export async function loadFieldV0GalaxyDelivery(input: {
   galaxyId: GalaxyId;
@@ -165,30 +131,25 @@ export async function loadFieldV0GalaxyDelivery(input: {
 
   const limit = Math.max(1, Math.min(500, Math.trunc(input.limit ?? 200)));
   const minScore = Math.max(0, Math.min(1, Number(input.minScore ?? 0.4)));
+  const eventsUrl = `${FIELD_V0_PATHS.events}?types=${encodeURIComponent(
+    "token.trade,token.dying,holder.exit",
+  )}&minScore=${minScore}&limit=${limit}`;
+  const tokensUrl = `${FIELD_V0_PATHS.tokens}?minScore=${minScore}&limit=${limit}`;
 
-  let pair = await fetchFieldV0Pair(FIELD_V0_ORIGIN, limit, minScore);
-  let usedFallback = false;
-  if (!pairUsable(pair)) {
-    const fallback = await fetchFieldV0Pair(FIELD_V0_WORKER_FALLBACK, limit, minScore);
-    if (pairUsable(fallback)) {
-      pair = fallback;
-      usedFallback = true;
-    }
-  }
-
-  const { eventsRes, tokensRes } = pair;
+  const [eventsRes, tokensRes] = await Promise.all([
+    getJson<EventsBody>(eventsUrl),
+    getJson<TokensBody>(tokensUrl),
+  ]);
 
   if (eventsRes.status === 404 || tokensRes.status === 404) {
-    if (!pairUsable(pair)) {
-      return degraded(
-        "Field v0 is not reachable on abullsapp.com yet (HTML/404). Intelligence Worker fallback also unavailable. No invented live feed.",
-      );
-    }
+    return degraded(
+      "Field v0 producer is feature-disabled or not routed on abullsapp.com yet (404). No invented live feed.",
+    );
   }
 
   if (!eventsRes.ok && !tokensRes.ok) {
     return degraded(
-      "Field v0 producer did not return usable events/tokens. The field made no provider fallback beyond the configured hosts.",
+      "Field v0 on abullsapp.com did not return usable events/tokens. No workers.dev fallback.",
     );
   }
 
@@ -200,9 +161,6 @@ export async function loadFieldV0GalaxyDelivery(input: {
     eventsRes.body?.disclosure ??
     coverage?.statement ??
     "Field v0 evidence-only snapshot.";
-  const hostNote = usedFallback
-    ? " Hydrated via Intelligence Worker fallback; prefer abullsapp.com once /api/intelligence is routed on a-bulls-app-frontend."
-    : "";
 
   const snapshot = snapshotFromFieldV0Payloads({
     stars,
@@ -219,7 +177,7 @@ export async function loadFieldV0GalaxyDelivery(input: {
         store: "memory-fallback",
         coverage: "empty",
         circuitBreaker: null,
-        disclosure: `${disclosure} Honest empty: no Field v0 particles yet.${hostNote}`,
+        disclosure: `${disclosure} Honest empty: no Field v0 particles yet.`,
       },
     };
   }
@@ -231,7 +189,7 @@ export async function loadFieldV0GalaxyDelivery(input: {
       store: "d1",
       coverage: coverage?.complete === false ? "stale" : "fresh",
       circuitBreaker: null,
-      disclosure: `${disclosure}${hostNote}`,
+      disclosure,
     },
   };
 }
@@ -240,34 +198,27 @@ export async function loadFieldV0Planet(wallet: string): Promise<{
   planet: FieldV0PlanetSnapshot | null;
   status: UniverseDataStatus;
 }> {
-  const tryBases = [FIELD_V0_ORIGIN, FIELD_V0_WORKER_FALLBACK];
-  for (const base of tryBases) {
-    const urls = fieldV0Urls(base);
-    const response = await getJson<PlanetBody>(urls.wallet(wallet));
-    if (response.ok && response.body?.ok && response.body.planet) {
-      return {
-        planet: response.body.planet,
-        status: {
-          store: "d1",
-          coverage: response.body.planet.incomplete ? "stale" : "fresh",
-          circuitBreaker: null,
-          disclosure:
-            response.body.disclosure ??
-            (base === FIELD_V0_ORIGIN
-              ? "Field v0 planet snapshot."
-              : "Field v0 planet snapshot via Intelligence Worker fallback."),
-        },
-      };
-    }
+  const response = await getJson<PlanetBody>(FIELD_V0_PATHS.wallet(wallet));
+  if (!response.ok || !response.body?.ok || !response.body.planet) {
+    return {
+      planet: null,
+      status: {
+        store: "memory-fallback",
+        coverage: "degraded",
+        circuitBreaker: null,
+        disclosure:
+          response.body?.disclosure ??
+          "Field v0 wallet snapshot unavailable on abullsapp.com. Membership exit is never treated as holder.exit.",
+      },
+    };
   }
   return {
-    planet: null,
+    planet: response.body.planet,
     status: {
-      store: "memory-fallback",
-      coverage: "degraded",
+      store: "d1",
+      coverage: response.body.planet.incomplete ? "stale" : "fresh",
       circuitBreaker: null,
-      disclosure:
-        "Field v0 wallet snapshot unavailable on abullsapp.com and Worker fallback. Membership exit is never treated as holder.exit.",
+      disclosure: response.body.disclosure ?? "Field v0 planet snapshot.",
     },
   };
 }
