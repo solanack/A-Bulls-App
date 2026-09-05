@@ -1,7 +1,14 @@
 /**
- * Deployed-app (Nitro) half of the platform PWA chrome. Auto-registered as
- * global h3 middleware because vite.config.ts sets `serverDir: "./server"` —
- * without that option Nitro v3 never scans this directory.
+ * Deployed-app (Nitro) half of the platform PWA chrome.
+ *
+ * NOTE (CF Workers / a-bulls-app-frontend): production uses
+ * `@cloudflare/vite-plugin` + `@tanstack/react-start/server-entry`, which does
+ * NOT auto-scan this directory. Document Cache-Control no-store is set on
+ * `src/routes/__root.tsx` `headers` so HTML actually emits it in prod.
+ * Keep this middleware for Nitro/dev install+manifest paths when serverDir is wired.
+ *
+ * Historically: Nitro v3 only scans this folder when vite/nitro sets
+ * `serverDir: "./server"`.
  *
  * - `?install=1&platform=ios` on a document path → the Home Screen tutorial,
  *   bundled into the server build via `?raw` (the public/ directory is CDN
