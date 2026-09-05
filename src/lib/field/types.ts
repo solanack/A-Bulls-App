@@ -12,15 +12,20 @@ export type FieldMode =
   | "ghost"
   | "social";
 
-export type OrganismState = "idle" | "listening" | "analyzing" | "speaking" | "complete" | "return";
+export type OrganismState =
+  | "idle"
+  | "listening"
+  | "analyzing"
+  | "speaking"
+  | "complete"
+  | "return";
 
 export type Coverage = "fresh" | "stale" | "degraded" | "empty";
 
 export type GalaxyId = "galaxy-zero" | "pump-fun";
 export type GalaxyStatus = "populated" | "staging";
 
-export type JsonValue =
-  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export type GalaxyDefinition = {
   readonly id: GalaxyId;
@@ -46,10 +51,22 @@ export type CosmicObjectKind =
   | "wormhole"
   | "ghost";
 
-export type EntityKind = "wallet" | "transaction" | "mint" | "nft" | "program" | "unknown";
+export type EntityKind =
+  | "wallet"
+  | "transaction"
+  | "mint"
+  | "nft"
+  | "program"
+  | "unknown";
 
 export type ParticleCategory =
-  "swap" | "transfer" | "nft" | "staking" | "program" | "failure" | "unknown";
+  | "swap"
+  | "transfer"
+  | "nft"
+  | "staking"
+  | "program"
+  | "failure"
+  | "unknown";
 
 export type FieldParticle = {
   id: string;
@@ -149,15 +166,16 @@ export type IntelligenceResult = {
   source: string | null;
 };
 
-export const CATEGORY_COLORS: Record<ParticleCategory, [number, number, number]> = {
-  swap: [0.42, 0.18, 1],
-  transfer: [0.08, 0.82, 0.96],
-  nft: [1, 0.34, 0.7],
-  staking: [0.3, 1, 0.54],
-  program: [1, 0.72, 0.2],
-  failure: [1, 0.2, 0.2],
-  unknown: [0.72, 0.72, 0.8],
-};
+export const CATEGORY_COLORS: Record<ParticleCategory, [number, number, number]> =
+  {
+    swap: [0.42, 0.18, 1],
+    transfer: [0.08, 0.82, 0.96],
+    nft: [1, 0.34, 0.7],
+    staking: [0.3, 1, 0.54],
+    program: [1, 0.72, 0.2],
+    failure: [1, 0.2, 0.2],
+    unknown: [0.72, 0.72, 0.8],
+  };
 
 export const CATEGORY_INDEX: Record<ParticleCategory, number> = {
   swap: 0,
