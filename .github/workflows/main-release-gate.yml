@@ -1,0 +1,57 @@
+name: Main release gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-release-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: verify + typecheck + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # package-lock.json is currently out of sync with npm 10 / Node 22
+      # (missing nested peer lru-cache@11.5.2). Prefer npm ci once lock is regenerated.
+      - name: Install dependencies
+        run: npm install --ignore-scripts --no-fund --no-audit
+
+      - name: Verify release baseline
+        run: npm run verify:release
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Same coverage as `npm test`, minus scripts that require local-only
+      # `.grok/skills/og/*` (brand-check / write-atomic hand-over docs).
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          scripts_tests=()
+          for f in scripts/*.test.mjs; do
+            case "$f" in
+              scripts/brand-check.test.mjs|scripts/write-atomic.test.mjs) continue ;;
+              *) scripts_tests+=("$f") ;;
+            esac
+          done
+          node --test "${scripts_tests[@]}"
+          node --experimental-strip-types --test \
+            src/lib/app-data/app-data.test.ts \
+            src/lib/auth/gate-identity.test.ts
