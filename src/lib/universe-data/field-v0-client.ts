@@ -1,11 +1,11 @@
 /**
- * Field v0 producer client — aligns with Indexer PR #22 paths:
+ * Field v0 producer client — aligns with merged Indexer Field v0 (#22 on main):
  *   GET /api/intelligence/field/v0/events
  *   GET /api/intelligence/field/v0/tokens
  *   GET /api/intelligence/field/v0/wallets/:wallet
  *
  * Never treats Field compat v1 particle snapshots as truth.
- * Incomplete dying (producer always omits liqSol today) must not become black holes.
+ * Incomplete dying (producer omits liqSol) must not become black holes.
  */
 
 import { createServerFn } from "@tanstack/react-start";
@@ -107,105 +107,116 @@ export function snapshotFromFieldV0Payloads(input: {
   });
 }
 
-export const getFieldV0GalaxySnapshot = createServerFn({ method: "GET" })
-  .validator((input: { galaxyId: GalaxyId; limit?: number; minScore?: number }) => input)
-  .handler(async ({ data }): Promise<FieldV0GalaxyDelivery> => {
-    if (data.galaxyId !== "pump-fun") {
-      return degraded(
-        "Field v0 producer is pump.fun-scoped. Other galaxies keep the legacy indexed snapshot path.",
-      );
-    }
+/** Plain loader — safe to call from other server handlers (no nested createServerFn). */
+export async function loadFieldV0GalaxyDelivery(input: {
+  galaxyId: GalaxyId;
+  limit?: number;
+  minScore?: number;
+}): Promise<FieldV0GalaxyDelivery> {
+  if (input.galaxyId !== "pump-fun") {
+    return degraded(
+      "Field v0 producer is pump.fun-scoped. Other galaxies keep the legacy indexed snapshot path.",
+    );
+  }
 
-    const limit = Math.max(1, Math.min(500, Math.trunc(data.limit ?? 200)));
-    const minScore = Math.max(0, Math.min(1, Number(data.minScore ?? 0.4)));
-    const eventsUrl = `${FIELD_V0_PATHS.events}?types=${encodeURIComponent(
-      "token.trade,token.dying,holder.exit",
-    )}&minScore=${minScore}&limit=${limit}`;
-    const tokensUrl = `${FIELD_V0_PATHS.tokens}?minScore=${minScore}&limit=${limit}`;
+  const limit = Math.max(1, Math.min(500, Math.trunc(input.limit ?? 200)));
+  const minScore = Math.max(0, Math.min(1, Number(input.minScore ?? 0.4)));
+  const eventsUrl = `${FIELD_V0_PATHS.events}?types=${encodeURIComponent(
+    "token.trade,token.dying,holder.exit",
+  )}&minScore=${minScore}&limit=${limit}`;
+  const tokensUrl = `${FIELD_V0_PATHS.tokens}?minScore=${minScore}&limit=${limit}`;
 
-    const [eventsRes, tokensRes] = await Promise.all([
-      getJson<EventsBody>(eventsUrl),
-      getJson<TokensBody>(tokensUrl),
-    ]);
+  const [eventsRes, tokensRes] = await Promise.all([
+    getJson<EventsBody>(eventsUrl),
+    getJson<TokensBody>(tokensUrl),
+  ]);
 
-    if (eventsRes.status === 404 || tokensRes.status === 404) {
-      return degraded(
-        "Field v0 producer is feature-disabled or not deployed yet (404). No invented live feed.",
-      );
-    }
+  if (eventsRes.status === 404 || tokensRes.status === 404) {
+    return degraded(
+      "Field v0 producer is feature-disabled or not deployed yet (404). No invented live feed.",
+    );
+  }
 
-    if (!eventsRes.ok && !tokensRes.ok) {
-      return degraded(
-        "Field v0 producer did not return usable events/tokens. The field made no provider fallback.",
-      );
-    }
+  if (!eventsRes.ok && !tokensRes.ok) {
+    return degraded(
+      "Field v0 producer did not return usable events/tokens. The field made no provider fallback.",
+    );
+  }
 
-    const events = eventsRes.body?.ok ? eventsRes.body.events ?? [] : [];
-    const stars = tokensRes.body?.ok ? tokensRes.body.stars ?? [] : [];
-    const coverage =
-      tokensRes.body?.coverage ?? eventsRes.body?.coverage ?? null;
-    const disclosure =
-      tokensRes.body?.disclosure ??
-      eventsRes.body?.disclosure ??
-      coverage?.statement ??
-      "Field v0 evidence-only snapshot.";
+  const events = eventsRes.body?.ok ? eventsRes.body.events ?? [] : [];
+  const stars = tokensRes.body?.ok ? tokensRes.body.stars ?? [] : [];
+  const coverage = tokensRes.body?.coverage ?? eventsRes.body?.coverage ?? null;
+  const disclosure =
+    tokensRes.body?.disclosure ??
+    eventsRes.body?.disclosure ??
+    coverage?.statement ??
+    "Field v0 evidence-only snapshot.";
 
-    const snapshot = snapshotFromFieldV0Payloads({
-      stars,
-      events,
-      galaxyId: "pump-fun",
-      disclosure,
-    });
+  const snapshot = snapshotFromFieldV0Payloads({
+    stars,
+    events,
+    galaxyId: "pump-fun",
+    disclosure,
+  });
 
-    if (snapshot.particles.length === 0) {
-      return {
-        snapshot: null,
-        coverage,
-        status: {
-          store: "memory-fallback",
-          coverage: "empty",
-          circuitBreaker: null,
-          disclosure: `${disclosure} Honest empty: no Field v0 particles yet.`,
-        },
-      };
-    }
-
+  if (snapshot.particles.length === 0) {
     return {
-      snapshot,
+      snapshot: null,
       coverage,
       status: {
-        store: "d1",
-        coverage: coverage?.complete === false ? "stale" : "fresh",
+        store: "memory-fallback",
+        coverage: "empty",
         circuitBreaker: null,
-        disclosure,
+        disclosure: `${disclosure} Honest empty: no Field v0 particles yet.`,
       },
     };
-  });
+  }
+
+  return {
+    snapshot,
+    coverage,
+    status: {
+      store: "d1",
+      coverage: coverage?.complete === false ? "stale" : "fresh",
+      circuitBreaker: null,
+      disclosure,
+    },
+  };
+}
+
+export async function loadFieldV0Planet(wallet: string): Promise<{
+  planet: FieldV0PlanetSnapshot | null;
+  status: UniverseDataStatus;
+}> {
+  const response = await getJson<PlanetBody>(FIELD_V0_PATHS.wallet(wallet));
+  if (!response.ok || !response.body?.ok || !response.body.planet) {
+    return {
+      planet: null,
+      status: {
+        store: "memory-fallback",
+        coverage: "degraded",
+        circuitBreaker: null,
+        disclosure:
+          response.body?.disclosure ??
+          "Field v0 wallet snapshot unavailable. Membership exit is never treated as holder.exit.",
+      },
+    };
+  }
+  return {
+    planet: response.body.planet,
+    status: {
+      store: "d1",
+      coverage: response.body.planet.incomplete ? "stale" : "fresh",
+      circuitBreaker: null,
+      disclosure: response.body.disclosure ?? "Field v0 planet snapshot.",
+    },
+  };
+}
+
+export const getFieldV0GalaxySnapshot = createServerFn({ method: "GET" })
+  .validator((input: { galaxyId: GalaxyId; limit?: number; minScore?: number }) => input)
+  .handler(async ({ data }) => loadFieldV0GalaxyDelivery(data));
 
 export const getFieldV0Planet = createServerFn({ method: "GET" })
   .validator((input: { wallet: string }) => input)
-  .handler(async ({ data }): Promise<{ planet: FieldV0PlanetSnapshot | null; status: UniverseDataStatus }> => {
-    const response = await getJson<PlanetBody>(FIELD_V0_PATHS.wallet(data.wallet));
-    if (!response.ok || !response.body?.ok || !response.body.planet) {
-      return {
-        planet: null,
-        status: {
-          store: "memory-fallback",
-          coverage: "degraded",
-          circuitBreaker: null,
-          disclosure:
-            response.body?.disclosure ??
-            "Field v0 wallet snapshot unavailable. Membership exit is never treated as holder.exit.",
-        },
-      };
-    }
-    return {
-      planet: response.body.planet,
-      status: {
-        store: "d1",
-        coverage: response.body.planet.incomplete ? "stale" : "fresh",
-        circuitBreaker: null,
-        disclosure: response.body.disclosure ?? "Field v0 planet snapshot.",
-      },
-    };
-  });
+  .handler(async ({ data }) => loadFieldV0Planet(data.wallet));
