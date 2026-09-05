@@ -1,5 +1,7 @@
 export type SocialFeedScope = "discover" | "following" | "watchlist" | "creators";
 
+export type SocialCoverage = "fresh" | "stale" | "degraded" | "empty";
+
 export type SocialCapabilities = {
   socialEnabled: boolean;
   writesEnabled: boolean;
@@ -12,6 +14,7 @@ export type SocialCapabilities = {
   available: readonly string[];
   unavailable: readonly string[];
   releasePolicy: string;
+  step?: string;
 };
 
 export type SocialActor = {
@@ -43,6 +46,10 @@ export type SocialFeedResponse = {
   items: readonly SocialFeedItem[];
   nextCursor: string | null;
   disclosure: string;
+  /** Step 1 envelope fields for evidence discover */
+  coverage?: SocialCoverage;
+  galaxyId?: string;
+  sources?: readonly string[];
 };
 
 export const SOCIAL_RELEASE_POLICY =
