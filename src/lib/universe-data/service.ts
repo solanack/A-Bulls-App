@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import type { GalaxyId, UniverseSnapshot } from "@/lib/field/types";
 import type { UniverseDataStatus } from "./contracts";
+import { loadFieldV0GalaxyDelivery } from "./field-v0-client";
 
 const WORKER = "https://black-bull-run-sol.ckdsigns1.workers.dev";
 
@@ -12,6 +13,15 @@ export type GalaxySnapshotDelivery = {
 export const getIndexedGalaxySnapshot = createServerFn({ method: "GET" })
   .validator((input: { galaxyId: GalaxyId }) => input)
   .handler(async ({ data }): Promise<GalaxySnapshotDelivery> => {
+    // pump.fun prefers Field v0 producer (#22 on main) — never Field compat v1 as truth.
+    if (data.galaxyId === "pump-fun") {
+      const fieldV0 = await loadFieldV0GalaxyDelivery(data);
+      if (fieldV0.snapshot && fieldV0.snapshot.particles.length > 0) {
+        return { snapshot: fieldV0.snapshot, status: fieldV0.status };
+      }
+      // Fall through to legacy snapshot only when v0 is empty/unavailable.
+    }
+
     try {
       const response = await fetch(
         `${WORKER}/api/intelligence/field/snapshot?galaxy=${encodeURIComponent(data.galaxyId)}&window=300&limit=2500`,
