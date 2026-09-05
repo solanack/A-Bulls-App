@@ -46,6 +46,14 @@ export type CoreBuffers = {
   sizes: Float32Array;
 };
 
+export type DermalBuffers = {
+  count: number;
+  positions: Float32Array;
+  normals: Float32Array;
+  phases: Float32Array;
+  features: Float32Array;
+};
+
 function rawBounds(): Bounds {
   const min: [number, number, number] = [Infinity, Infinity, Infinity];
   const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
@@ -113,8 +121,16 @@ function featureBounds(role: number, side = 0): FeatureBounds {
 }
 
 export const ALIEN_BOUNDS = Object.freeze({
-  min: RAW_BOUNDS.min.map((value, axis) => (value - RAW_BOUNDS.center[axis]) * TEMPLATE_SCALE) as [number, number, number],
-  max: RAW_BOUNDS.max.map((value, axis) => (value - RAW_BOUNDS.center[axis]) * TEMPLATE_SCALE) as [number, number, number],
+  min: RAW_BOUNDS.min.map((value, axis) => (value - RAW_BOUNDS.center[axis]) * TEMPLATE_SCALE) as [
+    number,
+    number,
+    number,
+  ],
+  max: RAW_BOUNDS.max.map((value, axis) => (value - RAW_BOUNDS.center[axis]) * TEMPLATE_SCALE) as [
+    number,
+    number,
+    number,
+  ],
   center: [0, 0, 0] as [number, number, number],
   size: RAW_BOUNDS.size.map((value) => value * TEMPLATE_SCALE) as [number, number, number],
 });
@@ -211,7 +227,13 @@ export function confirmAlienOrientation() {
   }
   const nose = noseCount ? noseZ / noseCount : 0;
   if (!(nose > 20 && rearZ < -20)) throw new Error("Alien template orientation is not +Z facing");
-  return { facing: "+Z" as const, yawCorrection: 0 as const, verified: true as const, noseZ: nose, rearZ };
+  return {
+    facing: "+Z" as const,
+    yawCorrection: 0 as const,
+    verified: true as const,
+    noseZ: nose,
+    rearZ,
+  };
 }
 
 export function buildCoreBuffers(shells = 3): CoreBuffers {
@@ -238,6 +260,44 @@ export function buildCoreBuffers(shells = 3): CoreBuffers {
     }
   }
   return { count, positions, colors, sizes };
+}
+
+/**
+ * A restrained, low-overdraw anatomical veil sampled directly from the supplied
+ * alien template. It gives the character a continuous silhouette and readable
+ * facial planes without replacing the particle identity with a solid mesh.
+ */
+export function buildDermalBuffers(limit = 18000): DermalBuffers {
+  const pool: number[] = [];
+  for (let i = 0; i < ALIEN_HEAD_TEMPLATE.count; i++) {
+    const role = ALIEN_HEAD_TEMPLATE.roles[i];
+    const [x, y, z] = templatePoint(i);
+    if (role === ROLE.EYE_RIM) continue;
+    if (role === ROLE.MOUTH && isMouthSlit(x, y, z)) continue;
+    pool.push(i);
+  }
+  const count = Math.min(Math.max(6000, limit), pool.length);
+  const positions = new Float32Array(count * 3);
+  const normals = new Float32Array(count * 3);
+  const phases = new Float32Array(count);
+  const features = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const sample = pool[Math.floor((i / count) * pool.length)];
+    const [x, y, z] = templatePoint(sample);
+    const [nx, ny, nz] = templateNormal(x, y, z);
+    const j = i * 3;
+    positions[j] = x - nx * 0.08;
+    positions[j + 1] = y - ny * 0.08;
+    positions[j + 2] = z - nz * 0.08;
+    normals[j] = nx;
+    normals[j + 1] = ny;
+    normals[j + 2] = nz;
+    phases[i] = hash01(i * 5.317 + 0.91) * Math.PI * 2;
+    const role = ALIEN_HEAD_TEMPLATE.roles[sample];
+    features[i] =
+      role === ROLE.NOSE || role === ROLE.MOUTH ? 1 : role === ROLE.SILHOUETTE ? 0.4 : 0;
+  }
+  return { count, positions, normals, phases, features };
 }
 
 export function buildLivingSkin(options: {
@@ -289,8 +349,18 @@ export function buildLivingSkin(options: {
     const h = hash01(i * 17.133 + 3.17);
     const layer = h < 0.91 ? 1 : h < 0.982 ? 2 : 3;
     const angle = hash01(i * 1.913 + 2.7) * Math.PI * 2;
-    const tangentRadius = layer === 1 ? 0.025 + hash01(i * 3.731) * 0.22 : layer === 2 ? 0.12 + hash01(i * 3.731) * 0.38 : 0.35 + hash01(i * 3.731) * 0.9;
-    const depth = layer === 1 ? 0.01 + hash01(i * 5.117) * 0.13 : layer === 2 ? 0.22 + hash01(i * 5.117) * 0.72 : 1.1 + hash01(i * 5.117) * 3.1;
+    const tangentRadius =
+      layer === 1
+        ? 0.025 + hash01(i * 3.731) * 0.22
+        : layer === 2
+          ? 0.12 + hash01(i * 3.731) * 0.38
+          : 0.35 + hash01(i * 3.731) * 0.9;
+    const depth =
+      layer === 1
+        ? 0.01 + hash01(i * 5.117) * 0.13
+        : layer === 2
+          ? 0.22 + hash01(i * 5.117) * 0.72
+          : 1.1 + hash01(i * 5.117) * 3.1;
     const ta = Math.cos(angle) * tangentRadius;
     const tb = Math.sin(angle) * tangentRadius;
     const offset = layer === 1 ? 0.08 : -depth;
@@ -307,7 +377,11 @@ export function buildLivingSkin(options: {
     normals[j + 2] = nz;
     layers[i] = layer;
 
-    const parentColor: [number, number, number] = [options.parentColors[pj] ?? 0.4, options.parentColors[pj + 1] ?? 0.2, options.parentColors[pj + 2] ?? 0.9];
+    const parentColor: [number, number, number] = [
+      options.parentColors[pj] ?? 0.4,
+      options.parentColors[pj + 1] ?? 0.2,
+      options.parentColors[pj + 2] ?? 0.9,
+    ];
     const side = clamp(x / Math.max(1, ALIEN_BOUNDS.size[0] * 0.44), -1, 1) * 0.5 + 0.5;
     const elevation = clamp((y - ALIEN_BOUNDS.min[1]) / ALIEN_BOUNDS.size[1]);
     const purple: [number, number, number] = [0.76, 0.13, 1];
@@ -316,11 +390,21 @@ export function buildLivingSkin(options: {
     const mint: [number, number, number] = [0.12, 1, 0.55];
     const leftMix = 1 - elevation * 0.62;
     const rightMix = 1 - elevation * 0.46;
-    const left: [number, number, number] = [purple[0] + (magenta[0] - purple[0]) * leftMix, purple[1] + (magenta[1] - purple[1]) * leftMix, purple[2] + (magenta[2] - purple[2]) * leftMix];
-    const right: [number, number, number] = [cyan[0] + (mint[0] - cyan[0]) * rightMix, cyan[1] + (mint[1] - cyan[1]) * rightMix, cyan[2] + (mint[2] - cyan[2]) * rightMix];
+    const left: [number, number, number] = [
+      purple[0] + (magenta[0] - purple[0]) * leftMix,
+      purple[1] + (magenta[1] - purple[1]) * leftMix,
+      purple[2] + (magenta[2] - purple[2]) * leftMix,
+    ];
+    const right: [number, number, number] = [
+      cyan[0] + (mint[0] - cyan[0]) * rightMix,
+      cyan[1] + (mint[1] - cyan[1]) * rightMix,
+      cyan[2] + (mint[2] - cyan[2]) * rightMix,
+    ];
     const twinkle = 0.78 + hash01(i * 4.17) * 0.38;
     const shade = layer === 3 ? 0.28 : layer === 2 ? 0.6 : 1;
-    const nearEye = clamp(1 - Math.min(eyeDistance(x, y, EYE.left), eyeDistance(x, y, EYE.right)) / 1.45);
+    const nearEye = clamp(
+      1 - Math.min(eyeDistance(x, y, EYE.left), eyeDistance(x, y, EYE.right)) / 1.45,
+    );
     const socketShade = 1 - nearEye * 0.62;
     const identity = 0.035;
     let cr = (left[0] * (1 - side) + right[0] * side) * twinkle * shade * socketShade;
@@ -336,15 +420,28 @@ export function buildLivingSkin(options: {
     fromColors[j + 1] = parentColor[1];
     fromColors[j + 2] = parentColor[2];
 
-    sizes[i] = layer === 1 ? 1.18 + hash01(i * 2.37) * 0.54 : layer === 2 ? 0.84 + hash01(i * 2.37) * 0.38 : 0.64 + hash01(i * 2.37) * 0.28;
+    sizes[i] =
+      layer === 1
+        ? 1.18 + hash01(i * 2.37) * 0.54
+        : layer === 2
+          ? 0.84 + hash01(i * 2.37) * 0.38
+          : 0.64 + hash01(i * 2.37) * 0.28;
     phases[i] = hash01(i * 5.91) * Math.PI * 2;
-    amps[i] = layer === 1 ? 0.1 + hash01(i * 4.21) * 0.13 : layer === 2 ? 0.18 + hash01(i * 4.21) * 0.2 : 0.28 + hash01(i * 4.21) * 0.3;
+    amps[i] =
+      layer === 1
+        ? 0.1 + hash01(i * 4.21) * 0.13
+        : layer === 2
+          ? 0.18 + hash01(i * 4.21) * 0.2
+          : 0.28 + hash01(i * 4.21) * 0.3;
     const featureDelay = nearEye > 0.45 ? 0.12 : 0;
     delays[i] = clamp(hash01(i * 13.71 + 2.4) * 0.43 + featureDelay, 0, 0.68);
     const arcRadius = 18 + hash01(i * 8.13) * 46;
     const arcAngle = hash01(i * 2.47) * Math.PI * 2;
     arcs[j] = (basis.t[0] * Math.cos(arcAngle) + basis.b[0] * Math.sin(arcAngle)) * arcRadius;
-    arcs[j + 1] = (basis.t[1] * Math.cos(arcAngle) + basis.b[1] * Math.sin(arcAngle)) * arcRadius + 8 + hash01(i * 4.9) * 14;
+    arcs[j + 1] =
+      (basis.t[1] * Math.cos(arcAngle) + basis.b[1] * Math.sin(arcAngle)) * arcRadius +
+      8 +
+      hash01(i * 4.9) * 14;
     arcs[j + 2] = (basis.t[2] * Math.cos(arcAngle) + basis.b[2] * Math.sin(arcAngle)) * arcRadius;
 
     const role = ALIEN_HEAD_TEMPLATE.roles[sampleIndex];
@@ -355,7 +452,24 @@ export function buildLivingSkin(options: {
     attention[i] = nearEye;
   }
 
-  return { count, parentIndex, parentPos, targetPos, colors, sizes, phases, amps, layers, speech, attention, normals, delays, arcs, fromColors, orientation };
+  return {
+    count,
+    parentIndex,
+    parentPos,
+    targetPos,
+    colors,
+    sizes,
+    phases,
+    amps,
+    layers,
+    speech,
+    attention,
+    normals,
+    delays,
+    arcs,
+    fromColors,
+    orientation,
+  };
 }
 
 export function parentColorForCategory(category: ParticleCategory): [number, number, number] {

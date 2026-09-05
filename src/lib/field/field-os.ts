@@ -13,12 +13,7 @@ import type {
   OrganismState,
   ReplayState,
 } from "./types";
-import {
-  DEFAULT_GALAXY_ID,
-  GALAXIES,
-  getGalaxy,
-  isPopulatedGalaxy,
-} from "./galaxies";
+import { DEFAULT_GALAXY_ID, GALAXIES, getGalaxy, isPopulatedGalaxy } from "./galaxies";
 import { speakText, unlockSpeech, type VoiceHandle } from "./voice";
 import { resolvePublicIdentifier } from "@/lib/intelligence";
 import { getIndexedGalaxySnapshot } from "@/lib/universe-data/service";
@@ -338,7 +333,10 @@ export class FieldOS {
         this.#pulseSpeech(true);
       },
       onBoundary: () => {
-        this.organism?.setSpeech(0.72);
+        this.organism?.setSpeech(0.34);
+      },
+      onEnergy: (energy) => {
+        this.organism?.setSpeech(energy);
       },
       onEnd: () => {
         this.#pulseSpeech(false);

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import {
   buildCoreBuffers,
+  buildDermalBuffers,
   buildLivingSkin,
   confirmAlienOrientation,
   EYE,
@@ -98,6 +99,61 @@ void main() {
 }
 `;
 
+const DERMAL_VERT = /* glsl */ `
+attribute vec3 aNormal;
+attribute float aPhase;
+attribute float aFeature;
+uniform float uPixelRatio;
+uniform float uTime;
+uniform float uMorph;
+uniform float uSpeech;
+varying vec3 vNormal;
+varying vec3 vLocal;
+varying float vFeature;
+void main() {
+  vNormal = normalize(normalMatrix * aNormal);
+  vLocal = position;
+  vFeature = aFeature;
+  float formed = smoothstep(0.34, 0.76, uMorph);
+  float cellular = sin(uTime * 1.7 + aPhase) * 0.045 * formed;
+  vec3 p = position + aNormal * (cellular + aFeature * uSpeech * 0.10);
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  float perspective = 300.0 / max(16.0, -mv.z);
+  gl_PointSize = mix(0.0, 3.25 + aFeature * 0.55, formed) * uPixelRatio * perspective;
+  gl_Position = projectionMatrix * mv;
+}
+`;
+
+const DERMAL_FRAG = /* glsl */ `
+uniform float uAlpha;
+uniform float uSpeech;
+varying vec3 vNormal;
+varying vec3 vLocal;
+varying float vFeature;
+void main() {
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(q, q);
+  if (r2 > 1.0) discard;
+  float z = sqrt(max(0.0, 1.0 - r2));
+  vec3 n = normalize(vNormal + vec3(q.x * 0.22, q.y * 0.22, z * 0.12));
+  vec3 key = normalize(vec3(-0.46, 0.72, 0.55));
+  vec3 fill = normalize(vec3(0.65, 0.18, 0.74));
+  float keyLight = max(dot(n, key), 0.0);
+  float fillLight = max(dot(n, fill), 0.0);
+  float rim = pow(1.0 - max(n.z, 0.0), 2.4);
+  float side = smoothstep(-34.0, 34.0, vLocal.x);
+  vec3 leftColor = vec3(0.23, 0.075, 0.34);
+  vec3 rightColor = vec3(0.025, 0.31, 0.29);
+  vec3 identity = mix(leftColor, rightColor, side);
+  vec3 tissue = vec3(0.055, 0.075, 0.088);
+  vec3 color = tissue * (0.52 + keyLight * 1.28 + fillLight * 0.42);
+  color += identity * (rim * 0.54 + vFeature * 0.08 + uSpeech * vFeature * 0.18);
+  float edge = smoothstep(1.0, 0.46, r2);
+  float pore = 0.88 + 0.12 * sin((q.x + q.y) * 18.0 + vLocal.y * 0.2);
+  gl_FragColor = vec4(color * pore, edge * uAlpha);
+}
+`;
+
 const EYE_VERT = /* glsl */ `
 varying vec3 vLocal;
 varying vec3 vWorld;
@@ -136,7 +192,7 @@ void main() {
   col += vec3(0.16, 0.22, 0.32) * spec * 0.34;
   col += vec3(0.07, 0.025, 0.11) * rim * 0.10;
   col += vec3(micro);
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col, 0.62);
 }
 `;
 
@@ -165,11 +221,16 @@ export class LivingAlienOrganism {
   material: THREE.ShaderMaterial;
   core: THREE.Points;
   coreMaterial: THREE.ShaderMaterial;
+  dermis: THREE.Points;
+  dermalMaterial: THREE.ShaderMaterial;
   visor: THREE.Group;
   visorMaterials: THREE.Material[] = [];
   visorLoaded = false;
   eyes: THREE.Object3D[] = [];
-  mouth: THREE.Mesh;
+  mouth: THREE.Group;
+  mouthCavity: THREE.Mesh;
+  upperLip: THREE.Mesh;
+  lowerLip: THREE.Mesh;
   nostrils: THREE.Mesh[] = [];
   lights: THREE.Light[] = [];
   morph = 0;
@@ -272,14 +333,62 @@ export class LivingAlienOrganism {
     this.core.visible = false;
     this.group.add(this.core);
 
+    const dermalData = buildDermalBuffers(budget.organism > 500000 ? 18000 : 12000);
+    const dermalGeometry = new THREE.BufferGeometry();
+    dermalGeometry.setAttribute("position", new THREE.BufferAttribute(dermalData.positions, 3));
+    dermalGeometry.setAttribute("aNormal", new THREE.BufferAttribute(dermalData.normals, 3));
+    dermalGeometry.setAttribute("aPhase", new THREE.BufferAttribute(dermalData.phases, 1));
+    dermalGeometry.setAttribute("aFeature", new THREE.BufferAttribute(dermalData.features, 1));
+    this.dermalMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: true,
+      depthTest: true,
+      blending: THREE.NormalBlending,
+      toneMapped: true,
+      uniforms: {
+        uPixelRatio: { value: field.renderer.getPixelRatio() },
+        uTime: { value: 0 },
+        uMorph: { value: 0 },
+        uSpeech: { value: 0 },
+        uAlpha: { value: 0 },
+      },
+      vertexShader: DERMAL_VERT,
+      fragmentShader: DERMAL_FRAG,
+    });
+    this.dermis = new THREE.Points(dermalGeometry, this.dermalMaterial);
+    this.dermis.frustumCulled = false;
+    this.dermis.renderOrder = 2;
+    this.dermis.visible = false;
+    this.group.add(this.dermis);
+
+    this.#buildLighting();
+
     this.#buildEyes();
     this.visor = this.#buildVisor();
-    this.mouth = this.#buildMouth();
+    const mouth = this.#buildMouth();
+    this.mouth = mouth.group;
+    this.mouthCavity = mouth.cavity;
+    this.upperLip = mouth.upper;
+    this.lowerLip = mouth.lower;
     this.nostrils = this.#buildNostrils();
 
     field.onAfterUpdate = (_elapsed, now) => this.tick(_elapsed, now);
     this.morphTarget = 1;
     this.#last = performance.now();
+  }
+
+  #buildLighting() {
+    const ambient = new THREE.HemisphereLight(0x95d8ff, 0x16091f, 0.72);
+    const violet = new THREE.PointLight(0xa739ff, 36, 190, 2);
+    violet.position.set(-42, 28, 68);
+    const cyan = new THREE.PointLight(0x22f2d0, 31, 180, 2);
+    cyan.position.set(46, 4, 54);
+    const key = new THREE.DirectionalLight(0xe9f5ff, 1.15);
+    key.position.set(-0.45, 0.72, 1);
+    for (const light of [ambient, violet, cyan, key]) {
+      this.field.scene.add(light);
+      this.lights.push(light);
+    }
   }
 
   #buildEyes() {
@@ -288,6 +397,9 @@ export class LivingAlienOrganism {
       vertexShader: EYE_VERT,
       fragmentShader: EYE_FRAG,
       toneMapped: false,
+      transparent: true,
+      opacity: 0.62,
+      depthWrite: true,
     });
     this.#eyeGeo = almond;
     this.#eyeMat = galaxy;
@@ -352,6 +464,15 @@ export class LivingAlienOrganism {
             material.transparent = true;
             material.opacity = 0;
             material.depthTest = true;
+            if (material instanceof THREE.MeshStandardMaterial) {
+              material.roughness = material.name === "Polarized" ? 0.1 : 0.24;
+              material.metalness = material.name === "Polarized" ? 0.34 : 0.12;
+              material.envMapIntensity = 1.35;
+            }
+            if (material.name === "Polarized") {
+              material.userData.baseOpacity = 0.88;
+              material.depthWrite = true;
+            }
             material.needsUpdate = true;
           }
         });
@@ -395,18 +516,48 @@ export class LivingAlienOrganism {
   }
 
   #buildMouth() {
-    const dark = new THREE.MeshBasicMaterial({ color: 0x000000 });
-    const mouth = new THREE.Mesh(new THREE.SphereGeometry(1, 36, 16), dark);
-    mouth.position.set(MOUTH.x, MOUTH.y, MOUTH.z);
-    mouth.scale.set(MOUTH.w, MOUTH.h, MOUTH.d);
-    mouth.renderOrder = 2;
-    mouth.visible = false;
-    this.group.add(mouth);
-    return mouth;
+    const group = new THREE.Group();
+    group.position.set(MOUTH.x, MOUTH.y, MOUTH.z);
+    group.visible = false;
+    this.group.add(group);
+
+    const cavityMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0x010204,
+      roughness: 0.84,
+      metalness: 0,
+      clearcoat: 0.08,
+    });
+    const cavity = new THREE.Mesh(new THREE.SphereGeometry(1, 44, 20), cavityMaterial);
+    cavity.scale.set(MOUTH.w * 0.88, MOUTH.h * 0.9, MOUTH.d * 0.74);
+    cavity.renderOrder = 2;
+    group.add(cavity);
+
+    const lipMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0x384751,
+      emissive: 0x09040f,
+      emissiveIntensity: 0.34,
+      roughness: 0.42,
+      metalness: 0.04,
+      clearcoat: 0.3,
+      clearcoatRoughness: 0.32,
+    });
+    const lipGeometry = new THREE.CapsuleGeometry(0.34, 1.25, 8, 24);
+    lipGeometry.rotateZ(Math.PI * 0.5);
+    const upper = new THREE.Mesh(lipGeometry, lipMaterial);
+    const lower = new THREE.Mesh(lipGeometry, lipMaterial.clone());
+    const lipScaleX = Math.max(0.6, MOUTH.w / 1.55);
+    upper.scale.set(lipScaleX, MOUTH.h * 0.45, MOUTH.d * 0.34);
+    lower.scale.copy(upper.scale);
+    upper.position.set(0, MOUTH.h * 0.48, MOUTH.d * 0.26);
+    lower.position.set(0, -MOUTH.h * 0.48, MOUTH.d * 0.26);
+    upper.renderOrder = 3;
+    lower.renderOrder = 3;
+    group.add(upper, lower);
+    return { group, cavity, upper, lower };
   }
 
   #buildNostrils() {
-    const dark = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const dark = new THREE.MeshPhysicalMaterial({ color: 0x010203, roughness: 0.92 });
     const meshes: THREE.Mesh[] = [];
     for (const side of [-1, 1]) {
       const n = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), dark);
@@ -439,8 +590,7 @@ export class LivingAlienOrganism {
 
     const listen = this.state === "listening" ? 1 : this.state === "analyzing" ? 0.4 : 0;
     const analyze = this.state === "analyzing" ? 1 : 0;
-    const speakPulse =
-      this.state === "speaking" ? 0.16 + 0.54 * Math.abs(Math.sin(now * 0.0105)) : this.speech;
+    const speakPulse = this.state === "speaking" ? Math.max(0.035, this.speech) : this.speech;
     const formed = clamp((this.morph - 0.3) / 0.52);
     const appear = clamp(this.morph / 0.1);
 
@@ -453,6 +603,11 @@ export class LivingAlienOrganism {
     this.material.uniforms.uPixelRatio.value = this.field.renderer.getPixelRatio();
     this.coreMaterial.uniforms.uAlpha.value = clamp((this.morph - 0.3) / 0.42) * 0.9;
     this.coreMaterial.uniforms.uPixelRatio.value = this.field.renderer.getPixelRatio();
+    this.dermalMaterial.uniforms.uPixelRatio.value = this.field.renderer.getPixelRatio();
+    this.dermalMaterial.uniforms.uTime.value = now * 0.001;
+    this.dermalMaterial.uniforms.uMorph.value = this.morph;
+    this.dermalMaterial.uniforms.uSpeech.value = speakPulse;
+    this.dermalMaterial.uniforms.uAlpha.value = formed * 0.32;
     for (const material of this.visorMaterials) {
       const baseOpacity = Number(material.userData.baseOpacity ?? 1);
       material.opacity = baseOpacity * formed;
@@ -461,17 +616,32 @@ export class LivingAlienOrganism {
     const crawl = this.field.reducedMotion ? 0 : formed;
     const breath = 1 + Math.sin(now * 0.0015) * 0.008 * crawl;
     this.group.scale.setScalar(breath);
-    this.group.rotation.y = Math.sin(now * 0.00038) * 0.04 * crawl;
-    this.group.rotation.x = Math.sin(now * 0.00029) * 0.01 * crawl;
+    this.group.rotation.y = Math.sin(now * 0.00038) * 0.036 * crawl;
+    this.group.rotation.x = Math.sin(now * 0.00029) * 0.012 * crawl - speakPulse * 0.004;
     this.core.visible = this.morph > 0.3;
+    this.dermis.visible = this.morph > 0.3;
     this.skin.visible = this.morph > 0.01;
+    const blinkWave = Math.max(0, Math.sin(now * 0.00131 + 1.7));
+    const blink = Math.pow(blinkWave, 30) * formed;
     for (const eye of this.eyes) {
-      eye.visible = false;
+      eye.visible = this.morph > 0.48;
+      eye.scale.y = Math.max(0.08, 1 - blink * 0.92);
     }
     this.visor.visible = this.visorLoaded && this.morph > 0.44;
-    this.visor.scale.setScalar(clamp((this.morph - 0.44) / 0.3));
+    const visorArrival = clamp((this.morph - 0.44) / 0.3);
+    const visorEase = 1 - Math.pow(1 - visorArrival, 3);
+    this.visor.scale.set(visorEase, visorEase * (0.92 + visorEase * 0.08), visorEase);
+    this.visor.rotation.x = (1 - visorEase) * -0.18;
     this.mouth.visible = this.morph > 0.62;
-    this.mouth.scale.set(MOUTH.w, MOUTH.h * (1 + speakPulse * 0.72), MOUTH.d);
+    const jawOpen = Math.pow(clamp(speakPulse), 0.72);
+    this.mouthCavity.scale.set(MOUTH.w * 0.88, MOUTH.h * (0.72 + jawOpen * 2.55), MOUTH.d * 0.74);
+    this.mouthCavity.position.y = -jawOpen * MOUTH.h * 0.18;
+    this.upperLip.position.y = MOUTH.h * (0.48 + jawOpen * 0.22);
+    this.lowerLip.position.y = -MOUTH.h * (0.48 + jawOpen * 1.42);
+    this.lowerLip.rotation.x = jawOpen * 0.08;
+    const rounding = 1 - jawOpen * 0.12;
+    this.upperLip.scale.x = Math.max(0.6, MOUTH.w / 1.55) * rounding;
+    this.lowerLip.scale.x = this.upperLip.scale.x;
     for (const n of this.nostrils) n.visible = this.morph > 0.6;
 
     if (globalThis.__ABULLS_ORGANISM) {
@@ -504,9 +674,10 @@ export class LivingAlienOrganism {
     this.material.dispose();
     this.core.geometry.dispose();
     this.coreMaterial.dispose();
+    this.dermis.geometry.dispose();
+    this.dermalMaterial.dispose();
     disposeObject(this.visor);
-    this.mouth.geometry.dispose();
-    (this.mouth.material as THREE.Material).dispose();
+    disposeObject(this.mouth);
     for (const n of this.nostrils) {
       n.geometry.dispose();
       (n.material as THREE.Material).dispose();
