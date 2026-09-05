@@ -205,9 +205,9 @@ async function loadCohortStats(db,nowSec){
 }
 
 async function netTokenPosition(db,wallet,mint){
-  const row=await first(db.prepare(`SELECT COALESCE(SUM(token_delta),0) net FROM bull_wallet_events WHERE wallet=? AND mint=?`).bind(wallet,mint));
-  if(row&&row.net!=null)return n(row.net);
-  // Fallback: sequential pump_trades estimate
+  const row=await first(db.prepare(`SELECT COUNT(*) cnt, COALESCE(SUM(token_delta),0) net FROM bull_wallet_events WHERE wallet=? AND mint=?`).bind(wallet,mint));
+  if(row&&n(row.cnt)>0)return n(row.net);
+  // Fallback: sequential pump_trades estimate — require at least one indexed trade
   const trades=await all(db.prepare(`SELECT side,token_amount FROM pump_trades WHERE wallet=? AND mint=? ORDER BY block_time ASC,event_id ASC`).bind(wallet,mint));
   if(!trades.length)return null;
   let net=0;

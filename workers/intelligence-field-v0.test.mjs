@@ -135,7 +135,7 @@ test('events endpoint returns trades and skips exits without remainingPct',async
           // sell present but no position history → should skip holder.exit
           return{results:[{signature:`${signature}x`,mint,wallet,token_amount:50,sol_amount:0.4,block_time:1_700_000_050,source:'pump-stream'}]};
         }
-        if(sql.includes('SUM(token_delta)'))return{results:[],first:null};
+        if(sql.includes('SUM(token_delta)')||sql.includes('COUNT(*) cnt'))return{results:[],first:null};
         if(sql.includes('FROM pump_trades WHERE wallet=? AND mint=?'))return{results:[]};
         return{results:[]};
       }
@@ -166,7 +166,7 @@ test('holder.exit emits only when net position evidence yields remainingPct',asy
         if(sql.includes(`side='sell'`)&&sql.includes('FROM pump_trades')){
           return{results:[{signature,mint,wallet,token_amount:75,sol_amount:1.1,block_time:1_700_000_000,source:'pump-stream'}]};
         }
-        if(sql.includes('SUM(token_delta)'))return{first:{net:25}};
+        if(sql.includes('SUM(token_delta)')||sql.includes('COUNT(*) cnt'))return{first:{cnt:3,net:25}};
         return{results:[]};
       }
     })
