@@ -17,6 +17,11 @@ import { DEFAULT_GALAXY_ID, GALAXIES, getGalaxy, isPopulatedGalaxy } from "./gal
 import { speakText, unlockSpeech, type VoiceHandle } from "./voice";
 import { resolvePublicIdentifier } from "@/lib/intelligence";
 import { getIndexedGalaxySnapshot } from "@/lib/universe-data/service";
+import {
+  shouldReplacePrototypeField,
+  sparseHydrateDisclosure,
+  visibilityFloor,
+} from "./hydrate-gate";
 import type { UniverseDataStatus } from "@/lib/universe-data/contracts";
 import {
   createReplayState,
@@ -146,22 +151,30 @@ export class FieldOS {
 
   async #hydrateGalaxy(id: GalaxyId) {
     const seq = ++this.#snapshotSeq;
+    void unregisterStaleServiceWorkers();
     const delivery = await getIndexedGalaxySnapshot({ data: { galaxyId: id } });
     if (seq !== this.#snapshotSeq || id !== this.galaxy.id) return;
     const indexedSnapshot = delivery.snapshot;
     const indexedParticleCount = indexedSnapshot?.particles.length ?? 0;
-    if (indexedSnapshot && indexedParticleCount > 0) {
+    const budgetField = deviceBudget().field;
+    if (shouldReplacePrototypeField(indexedSnapshot, budgetField)) {
       this.dataStatus = delivery.status;
-      this.field.setSnapshot(indexedSnapshot);
+      this.field.setSnapshot(indexedSnapshot!);
       this.focus = null;
       this.evidence = null;
-      this.replay = createReplayState(indexedSnapshot);
+      this.replay = createReplayState(indexedSnapshot!);
     } else {
+      const floor = visibilityFloor(budgetField);
+      const emptyNote =
+        "The indexed snapshot contains no particles, so the visible prototype field remains active.";
       this.dataStatus = {
         ...delivery.status,
         store: "memory-fallback",
+        coverage: indexedParticleCount > 0 ? "stale" : delivery.status.coverage,
         disclosure:
-          `${delivery.status.disclosure} The indexed snapshot contains no particles, so the visible prototype field remains active.`.trim(),
+          indexedParticleCount > 0
+            ? sparseHydrateDisclosure(delivery.status.disclosure, indexedParticleCount, floor)
+            : `${delivery.status.disclosure} ${emptyNote}`.trim(),
       };
     }
     this.#emit();
@@ -370,6 +383,16 @@ export class FieldOS {
     this.#stopVoice();
     this.organism?.destroy();
     this.field.destroy();
+  }
+}
+
+async function unregisterStaleServiceWorkers() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+  } catch {
+    // Best-effort cache bust for leftover PWA service workers.
   }
 }
 
