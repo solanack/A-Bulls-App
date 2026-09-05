@@ -53,6 +53,9 @@ function injectHeadStreaming(response: Response, host: string): Response {
   );
   const headers = new Headers(response.headers);
   headers.delete("content-length");
+  // Documents must not stick in CF/browser caches (flash-then-vanish regressions).
+  headers.set("cache-control", "no-store, no-cache, must-revalidate");
+  headers.set("pragma", "no-cache");
   return new Response(transformed, {
     status: response.status,
     statusText: response.statusText,
@@ -91,7 +94,8 @@ export default async function grokPwaMiddleware(
     return new Response(html, {
       headers: {
         "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-cache",
+        "cache-control": "no-store, no-cache, must-revalidate",
+        pragma: "no-cache",
       },
     });
   }
