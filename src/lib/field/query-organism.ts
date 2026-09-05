@@ -4,6 +4,7 @@ import {
   buildCoreBuffers,
   buildDermalBuffers,
   buildLivingSkin,
+  ALIEN_BOUNDS,
   confirmAlienOrientation,
   EYE,
   MOUTH,
@@ -223,6 +224,9 @@ export class LivingAlienOrganism {
   coreMaterial: THREE.ShaderMaterial;
   dermis: THREE.Points;
   dermalMaterial: THREE.ShaderMaterial;
+  head: THREE.Group;
+  headMaterials: THREE.Material[] = [];
+  headLoaded = false;
   visor: THREE.Group;
   visorMaterials: THREE.Material[] = [];
   visorLoaded = false;
@@ -243,6 +247,7 @@ export class LivingAlienOrganism {
   #last = 0;
   #eyeGeo: THREE.BufferGeometry | null = null;
   #eyeMat: THREE.Material | null = null;
+  #headBaseScale = new THREE.Vector3(1, 1, 1);
 
   constructor(
     field: ParticleFieldRenderer,
@@ -363,6 +368,7 @@ export class LivingAlienOrganism {
 
     this.#buildLighting();
 
+    this.head = this.#buildHead();
     this.#buildEyes();
     this.visor = this.#buildVisor();
     const mouth = this.#buildMouth();
@@ -378,17 +384,102 @@ export class LivingAlienOrganism {
   }
 
   #buildLighting() {
-    const ambient = new THREE.HemisphereLight(0x95d8ff, 0x16091f, 0.72);
-    const violet = new THREE.PointLight(0xa739ff, 36, 190, 2);
-    violet.position.set(-42, 28, 68);
-    const cyan = new THREE.PointLight(0x22f2d0, 31, 180, 2);
-    cyan.position.set(46, 4, 54);
-    const key = new THREE.DirectionalLight(0xe9f5ff, 1.15);
-    key.position.set(-0.45, 0.72, 1);
+    const ambient = new THREE.HemisphereLight(0xa7d6ff, 0x09050f, 0.86);
+    const violet = new THREE.PointLight(0x8c35ff, 42, 205, 2);
+    violet.position.set(-47, 31, 74);
+    const cyan = new THREE.PointLight(0x20e3cf, 34, 195, 2);
+    cyan.position.set(49, -2, 63);
+    const key = new THREE.DirectionalLight(0xf2f7ff, 1.7);
+    key.position.set(-0.38, 0.78, 1);
     for (const light of [ambient, violet, cyan, key]) {
       this.field.scene.add(light);
       this.lights.push(light);
     }
+  }
+
+  #buildHead() {
+    const root = new THREE.Group();
+    root.visible = false;
+    this.group.add(root);
+
+    new GLTFLoader().load(
+      "/models/grey_alien_head_ccby.glb",
+      (gltf) => {
+        if (this.destroyed) {
+          disposeObject(gltf.scene);
+          return;
+        }
+
+        const asset = gltf.scene;
+        asset.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(asset);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        asset.position.sub(center);
+
+        this.#headBaseScale.set(
+          (ALIEN_BOUNDS.size[0] * 0.9) / Math.max(0.001, size.x),
+          (ALIEN_BOUNDS.size[1] * 1.02) / Math.max(0.001, size.y),
+          (ALIEN_BOUNDS.size[2] * 0.96) / Math.max(0.001, size.z),
+        );
+
+        asset.traverse((object) => {
+          if (!(object instanceof THREE.Mesh)) return;
+          object.castShadow = false;
+          object.receiveShadow = false;
+          object.renderOrder = 2;
+          const source = Array.isArray(object.material) ? object.material : [object.material];
+          const materials = source.map((entry) => {
+            const material = entry.clone();
+            material.transparent = true;
+            material.opacity = 0;
+            material.depthWrite = true;
+            material.depthTest = true;
+            material.userData.baseOpacity = 1;
+            if (material instanceof THREE.MeshStandardMaterial) {
+              material.metalness = Math.min(material.metalness, 0.05);
+              material.roughness = Math.max(material.roughness, 0.5);
+              material.envMapIntensity = 0.72;
+              material.color.multiply(new THREE.Color(0xa8b2b7));
+              material.onBeforeCompile = (shader) => {
+                shader.uniforms.uGreySpeech = { value: 0 };
+                shader.uniforms.uGreyTime = { value: 0 };
+                shader.vertexShader = shader.vertexShader
+                  .replace(
+                    "#include <common>",
+                    "#include <common>\nuniform float uGreySpeech;\nuniform float uGreyTime;",
+                  )
+                  .replace(
+                    "#include <begin_vertex>",
+                    `#include <begin_vertex>
+                    // The source mesh faces +Y before its authored node rotation.
+                    // Move only the lower, forward, central face for a restrained jaw response.
+                    float greyFront = smoothstep(0.05, 0.48, position.y);
+                    float greyLower = smoothstep(0.16, 0.52, position.z) * (1.0 - smoothstep(0.72, 0.92, position.z));
+                    float greyCenter = 1.0 - smoothstep(0.2, 0.58, abs(position.x));
+                    float greyJaw = greyFront * greyLower * greyCenter;
+                    transformed.z += greyJaw * pow(clamp(uGreySpeech, 0.0, 1.0), 0.72) * 0.055;
+                    transformed.y += greyJaw * uGreySpeech * 0.012;`,
+                  );
+                material.userData.shader = shader;
+              };
+              material.customProgramCacheKey = () => "a-bulls-grey-face-v1";
+            }
+            this.headMaterials.push(material);
+            return material;
+          });
+          object.material = Array.isArray(object.material) ? materials : materials[0];
+        });
+
+        root.add(asset);
+        root.scale.copy(this.#headBaseScale);
+        root.position.y = 1.1;
+        this.headLoaded = true;
+      },
+      undefined,
+      (error) => console.error("Unable to load the licensed Grey head model", error),
+    );
+    return root;
   }
 
   #buildEyes() {
@@ -430,9 +521,9 @@ export class LivingAlienOrganism {
       Math.abs(EYE.left.x) + EYE.left.rx,
       Math.abs(EYE.right.x) + EYE.right.rx,
     );
-    const width = outer * 2.18;
+    const width = outer * 1.92;
     const height = Math.max(EYE.left.ry, EYE.right.ry) * 2.18;
-    const centerY = (EYE.left.y + EYE.right.y) * 0.5 + height * 0.02;
+    const centerY = (EYE.left.y + EYE.right.y) * 0.5 - height * 0.015;
     const frontZ = Math.max(EYE.left.z + EYE.left.rz, EYE.right.z + EYE.right.rz) + 0.9;
     group.position.set(0, centerY, frontZ);
     group.visible = false;
@@ -470,7 +561,7 @@ export class LivingAlienOrganism {
               material.envMapIntensity = 1.35;
             }
             if (material.name === "Polarized") {
-              material.userData.baseOpacity = 0.88;
+              material.userData.baseOpacity = 0.76;
               material.depthWrite = true;
             }
             material.needsUpdate = true;
@@ -593,13 +684,16 @@ export class LivingAlienOrganism {
     const speakPulse = this.state === "speaking" ? Math.max(0.035, this.speech) : this.speech;
     const formed = clamp((this.morph - 0.3) / 0.52);
     const appear = clamp(this.morph / 0.1);
+    const headArrival = clamp((this.morph - 0.34) / 0.44);
+    const headEase = headArrival * headArrival * (3 - 2 * headArrival);
 
     this.material.uniforms.uTime.value = now * 0.001;
     this.material.uniforms.uMorph.value = this.morph;
     this.material.uniforms.uSpeech.value = this.state === "speaking" ? speakPulse : this.speech;
     this.material.uniforms.uListen.value = listen;
     this.material.uniforms.uAnalyze.value = analyze;
-    this.material.uniforms.uAlpha.value = appear * (0.72 + formed * 0.27);
+    this.material.uniforms.uAlpha.value =
+      appear * (this.headLoaded ? 0.76 - formed * 0.64 : 0.72 + formed * 0.27);
     this.material.uniforms.uPixelRatio.value = this.field.renderer.getPixelRatio();
     this.coreMaterial.uniforms.uAlpha.value = clamp((this.morph - 0.3) / 0.42) * 0.9;
     this.coreMaterial.uniforms.uPixelRatio.value = this.field.renderer.getPixelRatio();
@@ -607,7 +701,26 @@ export class LivingAlienOrganism {
     this.dermalMaterial.uniforms.uTime.value = now * 0.001;
     this.dermalMaterial.uniforms.uMorph.value = this.morph;
     this.dermalMaterial.uniforms.uSpeech.value = speakPulse;
-    this.dermalMaterial.uniforms.uAlpha.value = formed * 0.32;
+    this.dermalMaterial.uniforms.uAlpha.value = formed * (this.headLoaded ? 0.075 : 0.32);
+    this.head.visible = this.headLoaded && this.morph > 0.34;
+    if (this.headLoaded) {
+      this.head.scale.set(
+        this.#headBaseScale.x * headEase,
+        this.#headBaseScale.y * headEase,
+        this.#headBaseScale.z * headEase,
+      );
+      this.head.rotation.y = (1 - headEase) * -0.09;
+      for (const material of this.headMaterials) {
+        material.opacity = headEase;
+        const shader = material.userData.shader as
+          | { uniforms: { uGreySpeech: { value: number }; uGreyTime: { value: number } } }
+          | undefined;
+        if (shader) {
+          shader.uniforms.uGreySpeech.value = speakPulse;
+          shader.uniforms.uGreyTime.value = now * 0.001;
+        }
+      }
+    }
     for (const material of this.visorMaterials) {
       const baseOpacity = Number(material.userData.baseOpacity ?? 1);
       material.opacity = baseOpacity * formed;
@@ -618,13 +731,13 @@ export class LivingAlienOrganism {
     this.group.scale.setScalar(breath);
     this.group.rotation.y = Math.sin(now * 0.00038) * 0.036 * crawl;
     this.group.rotation.x = Math.sin(now * 0.00029) * 0.012 * crawl - speakPulse * 0.004;
-    this.core.visible = this.morph > 0.3;
+    this.core.visible = !this.headLoaded && this.morph > 0.3;
     this.dermis.visible = this.morph > 0.3;
     this.skin.visible = this.morph > 0.01;
     const blinkWave = Math.max(0, Math.sin(now * 0.00131 + 1.7));
     const blink = Math.pow(blinkWave, 30) * formed;
     for (const eye of this.eyes) {
-      eye.visible = this.morph > 0.48;
+      eye.visible = !this.headLoaded && this.morph > 0.48;
       eye.scale.y = Math.max(0.08, 1 - blink * 0.92);
     }
     this.visor.visible = this.visorLoaded && this.morph > 0.44;
@@ -632,7 +745,7 @@ export class LivingAlienOrganism {
     const visorEase = 1 - Math.pow(1 - visorArrival, 3);
     this.visor.scale.set(visorEase, visorEase * (0.92 + visorEase * 0.08), visorEase);
     this.visor.rotation.x = (1 - visorEase) * -0.18;
-    this.mouth.visible = this.morph > 0.62;
+    this.mouth.visible = !this.headLoaded && this.morph > 0.62;
     const jawOpen = Math.pow(clamp(speakPulse), 0.72);
     this.mouthCavity.scale.set(MOUTH.w * 0.88, MOUTH.h * (0.72 + jawOpen * 2.55), MOUTH.d * 0.74);
     this.mouthCavity.position.y = -jawOpen * MOUTH.h * 0.18;
@@ -642,7 +755,7 @@ export class LivingAlienOrganism {
     const rounding = 1 - jawOpen * 0.12;
     this.upperLip.scale.x = Math.max(0.6, MOUTH.w / 1.55) * rounding;
     this.lowerLip.scale.x = this.upperLip.scale.x;
-    for (const n of this.nostrils) n.visible = this.morph > 0.6;
+    for (const n of this.nostrils) n.visible = !this.headLoaded && this.morph > 0.6;
 
     if (globalThis.__ABULLS_ORGANISM) {
       globalThis.__ABULLS_ORGANISM.distance = this.field.cameraState.distance;
@@ -676,6 +789,7 @@ export class LivingAlienOrganism {
     this.coreMaterial.dispose();
     this.dermis.geometry.dispose();
     this.dermalMaterial.dispose();
+    disposeObject(this.head);
     disposeObject(this.visor);
     disposeObject(this.mouth);
     for (const n of this.nostrils) {
