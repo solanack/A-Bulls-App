@@ -20,6 +20,7 @@ import { handleEventMarketContextRequest } from './intelligence-event-context.mj
 import { pruneUniverseObservations } from './intelligence-universe-runtime.mjs';
 import { handlePumpTop10Request, maintainPumpIndex } from './intelligence-pump-top10.mjs';
 import { runUniverseScheduledMaintenance } from './intelligence-universe-scheduler.mjs';
+import { handleFieldV0Request } from './intelligence-field-v0.mjs';
 import { handleFieldCompatibilityRequest } from './intelligence-field-compat.mjs';
 import { handleSocialFiRequest } from './socialfi-router.mjs';
 
@@ -27,6 +28,8 @@ export async function handleIntelligenceFetch(request, env = {}, ctx = null) {
   if(ctx)env.__EXECUTION_CTX=ctx;
   const social = await handleSocialFiRequest(request, env);
   if (social) return social;
+  const fieldV0 = await handleFieldV0Request(request, env);
+  if (fieldV0) return fieldV0;
   const field = await handleFieldCompatibilityRequest(request, env);
   if (field) return field;
   const heliusUniverse = await handleHeliusUniverseWebhook(request, env);
