@@ -41,11 +41,11 @@ export async function ingestHeliusUniversePayload(env={},payload=[]){
 }
 
 export async function handleHeliusUniverseWebhook(request,env={}){
-  const url=new URL(request.url),path=url.pathname;if(path!=='/api/internal/intelligence/helius-universe-ingest'&&path!=='/api/intelligence/pump/ingest')return null;
+  const url=new URL(request.url),path=url.pathname;if(path!=='/api/internal/intelligence/helius-universe-ingest')return null; // pump/ingest owned by pump-top10
   if(request.method!=='POST')return json({ok:false,error:'method_not_allowed'},405);if(!authorized(request,env))return json({ok:false,error:'unauthorized'},401);
   let body;try{body=await request.json();}catch{return json({ok:false,error:'invalid_json'},400);}
   try{return json({ok:true,result:await ingestHeliusUniversePayload(env,body)},202);}catch(error){return json({ok:false,error:s(error?.message||error)},400);}
 }
 
-export const __heliusUniverseIngestContract=Object.freeze({maxBatch:100,filtersAgainstActiveUniverseMints:true,legacyPumpIngestAlias:true,readOnly:true});
+export const __heliusUniverseIngestContract=Object.freeze({maxBatch:100,filtersAgainstActiveUniverseMints:true,legacyPumpIngestAlias:false,readOnly:true});
 
