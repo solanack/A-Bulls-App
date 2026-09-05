@@ -6,6 +6,13 @@ import appCss from "../styles.css?url";
 const APP_NAME = "A Bulls App";
 
 export const Route = createRootRoute({
+  // Document responses on Cloudflare Workers must set cache headers here.
+  // server/middleware/grok-pwa.ts is Nitro-oriented and is not scanned by the
+  // @cloudflare/vite-plugin + @tanstack/react-start/server-entry path.
+  headers: () => ({
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    Pragma: "no-cache",
+  }),
   head: () => ({
     meta: [
       { charSet: "utf-8" },
