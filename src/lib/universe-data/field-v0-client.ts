@@ -4,7 +4,9 @@
  *   GET /api/intelligence/field/v0/tokens
  *   GET /api/intelligence/field/v0/wallets/:wallet
  *
- * Never treats Field compat v1 particle snapshots as truth.
+ * Live galaxy host is a-bulls-app-frontend (abullsapp.com). Hydrate only via
+ * that origin (zone-routed to the Intelligence Worker). No workers.dev hardcode.
+ * Never treat Field compat v1 particle snapshots as truth.
  * Incomplete dying (producer omits liqSol) must not become black holes.
  */
 
@@ -18,8 +20,12 @@ import {
 import type { GalaxyId, UniverseSnapshot } from "@/lib/field/types";
 import type { UniverseDataStatus } from "./contracts";
 
-const WORKER = "https://black-bull-run-sol.ckdsigns1.workers.dev";
-export const FIELD_V0_BASE = `${WORKER}/api/intelligence/field/v0`;
+/** Live galaxy / frontend origin (a-bulls-app-frontend). */
+export const FIELD_V0_ORIGIN = "https://abullsapp.com";
+
+export const FIELD_V0_PATH = "/api/intelligence/field/v0";
+
+export const FIELD_V0_BASE = `${FIELD_V0_ORIGIN}${FIELD_V0_PATH}`;
 
 export const FIELD_V0_PATHS = Object.freeze({
   events: `${FIELD_V0_BASE}/events`,
@@ -84,6 +90,10 @@ async function getJson<T>(url: string): Promise<{ ok: boolean; status: number; b
       headers: { accept: "application/json" },
       cache: "no-store",
     });
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json")) {
+      return { ok: false, status: response.status, body: null };
+    }
     const body = (await response.json()) as T;
     return { ok: response.ok, status: response.status, body };
   } catch {
@@ -133,13 +143,13 @@ export async function loadFieldV0GalaxyDelivery(input: {
 
   if (eventsRes.status === 404 || tokensRes.status === 404) {
     return degraded(
-      "Field v0 producer is feature-disabled or not deployed yet (404). No invented live feed.",
+      "Field v0 producer is feature-disabled or not routed on abullsapp.com yet (404). No invented live feed.",
     );
   }
 
   if (!eventsRes.ok && !tokensRes.ok) {
     return degraded(
-      "Field v0 producer did not return usable events/tokens. The field made no provider fallback.",
+      "Field v0 on abullsapp.com did not return usable events/tokens. No workers.dev fallback.",
     );
   }
 
@@ -198,7 +208,7 @@ export async function loadFieldV0Planet(wallet: string): Promise<{
         circuitBreaker: null,
         disclosure:
           response.body?.disclosure ??
-          "Field v0 wallet snapshot unavailable. Membership exit is never treated as holder.exit.",
+          "Field v0 wallet snapshot unavailable on abullsapp.com. Membership exit is never treated as holder.exit.",
       },
     };
   }

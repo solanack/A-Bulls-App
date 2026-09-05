@@ -1,9 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import type { GalaxyId, UniverseSnapshot } from "@/lib/field/types";
 import type { UniverseDataStatus } from "./contracts";
-import { loadFieldV0GalaxyDelivery } from "./field-v0-client";
-
-const WORKER = "https://black-bull-run-sol.ckdsigns1.workers.dev";
+import { FIELD_V0_ORIGIN, loadFieldV0GalaxyDelivery } from "./field-v0-client";
 
 export type GalaxySnapshotDelivery = {
   snapshot: UniverseSnapshot | null;
@@ -13,7 +11,7 @@ export type GalaxySnapshotDelivery = {
 export const getIndexedGalaxySnapshot = createServerFn({ method: "GET" })
   .validator((input: { galaxyId: GalaxyId }) => input)
   .handler(async ({ data }): Promise<GalaxySnapshotDelivery> => {
-    // pump.fun prefers Field v0 producer (#22 on main) — never Field compat v1 as truth.
+    // pump.fun prefers Field v0 producer — never Field compat v1 as truth.
     if (data.galaxyId === "pump-fun") {
       const fieldV0 = await loadFieldV0GalaxyDelivery(data);
       if (fieldV0.snapshot && fieldV0.snapshot.particles.length > 0) {
@@ -24,9 +22,22 @@ export const getIndexedGalaxySnapshot = createServerFn({ method: "GET" })
 
     try {
       const response = await fetch(
-        `${WORKER}/api/intelligence/field/snapshot?galaxy=${encodeURIComponent(data.galaxyId)}&window=300&limit=2500`,
+        `${FIELD_V0_ORIGIN}/api/intelligence/field/snapshot?galaxy=${encodeURIComponent(data.galaxyId)}&window=300&limit=2500`,
         { headers: { accept: "application/json" }, cache: "no-store" },
       );
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        return {
+          snapshot: null,
+          status: {
+            store: "memory-fallback",
+            coverage: "degraded",
+            circuitBreaker: null,
+            disclosure:
+              "abullsapp.com returned a non-JSON indexed snapshot response. No workers.dev fallback.",
+          },
+        };
+      }
       const body = (await response.json()) as {
         ok?: boolean;
         snapshot?: UniverseSnapshot;
@@ -42,7 +53,7 @@ export const getIndexedGalaxySnapshot = createServerFn({ method: "GET" })
           coverage: "degraded",
           circuitBreaker: null,
           disclosure:
-            "The Intelligence Worker returned no indexed snapshot. No direct provider fallback was attempted.",
+            "abullsapp.com returned no indexed snapshot. No direct provider fallback was attempted.",
         },
       };
     } catch {
@@ -53,7 +64,7 @@ export const getIndexedGalaxySnapshot = createServerFn({ method: "GET" })
           coverage: "degraded",
           circuitBreaker: null,
           disclosure:
-            "The Intelligence Worker is unavailable. The field remains read-only and made no direct provider request.",
+            "abullsapp.com indexed snapshot is unavailable. The field remains read-only and made no workers.dev request.",
         },
       };
     }
