@@ -60,6 +60,16 @@ function normalizeDexPairs(address,rows){
   return {pairAddress:s(pair.pairAddress).toLowerCase()||null,dexId:s(pair.dexId)||null,url:s(pair.url).slice(0,600)||null,symbol:s(pair.baseToken?.symbol).slice(0,32)||null,name:s(pair.baseToken?.name).slice(0,120)||null,priceUsd:n(pair.priceUsd),liquidityUsd:n(pair.liquidity?.usd),marketCapUsd:n(pair.marketCap),fdvUsd:n(pair.fdv),volumeUsd:record(pair.volume),priceChangePct:record(pair.priceChange),transactions:Object.fromEntries(periods.map(period=>[period,{buys:n(pair.txns?.[period]?.buys),sells:n(pair.txns?.[period]?.sells)}])),source:'dexscreener-token-pairs'};
 }
 
+export function summarizeRobinhoodPressure(transactions={}){
+  const summarize=value=>{
+    const buys=n(value?.buys),sells=n(value?.sells);
+    if(buys==null||sells==null)return{buys,sells,buySharePct:null,buySellRatio:null};
+    const total=buys+sells;
+    return {buys,sells,buySharePct:total>0?buys/total*100:null,buySellRatio:sells>0?buys/sells:(buys>0?null:0)};
+  };
+  return Object.fromEntries(['m5','h1','h6','h24'].map(key=>[key,summarize(transactions?.[key])]));
+}
+
 function normalizeBitqueryMarket(data){
   const row=data?.Trading?.Tokens?.[0];
   if(!row)return null;
@@ -89,9 +99,15 @@ export async function resolveRobinhoodToken(address,{env={},fetchImpl=fetch}={})
   const totalSupply=bitqueryMarket?.totalSupply??n(cached?.total_supply);
   const holders=await graphql(env,buildRobinhoodHoldersQuery(token),fetchImpl).then(data=>normalizeHolders(data,totalSupply)).catch(()=>({count:null,top10Pct:null,top20Pct:null,method:'unavailable',coverage:'unavailable'}));
   const ponsVerified=Boolean(cached?.factory);
-  const market={symbol:bitqueryMarket?.symbol??dex?.symbol??(s(cached?.symbol)||null),name:bitqueryMarket?.name??dex?.name??(s(cached?.name)||null),priceUsd:bitqueryMarket?.priceUsd??dex?.priceUsd??n(cached?.price_usd),marketCapUsd:bitqueryMarket?.marketCapUsd??dex?.marketCapUsd??n(cached?.market_cap_usd),fdvUsd:bitqueryMarket?.fdvUsd??dex?.fdvUsd??n(cached?.fdv_usd),circulatingSupply:bitqueryMarket?.circulatingSupply??n(cached?.circulating_supply),totalSupply,liquidityUsd:dex?.liquidityUsd??null,volumeUsd:dex?.volumeUsd??{m5:null,h1:null,h6:null,h24:null},priceChangePct:dex?.priceChangePct??{m5:null,h1:null,h6:null,h24:null},transactions:dex?.transactions??null,pairAddress:dex?.pairAddress??null,dexId:dex?.dexId??null,observedAt:bitqueryMarket?.observedAt??null};
+  const marketCapUsd=bitqueryMarket?.marketCapUsd??dex?.marketCapUsd??n(cached?.market_cap_usd);
+  const liquidityUsd=dex?.liquidityUsd??null;
+  const market={symbol:bitqueryMarket?.symbol??dex?.symbol??(s(cached?.symbol)||null),name:bitqueryMarket?.name??dex?.name??(s(cached?.name)||null),priceUsd:bitqueryMarket?.priceUsd??dex?.priceUsd??n(cached?.price_usd),marketCapUsd,fdvUsd:bitqueryMarket?.fdvUsd??dex?.fdvUsd??n(cached?.fdv_usd),circulatingSupply:bitqueryMarket?.circulatingSupply??n(cached?.circulating_supply),totalSupply,liquidityUsd,liquidityToMarketCapPct:liquidityUsd!=null&&marketCapUsd>0?liquidityUsd/marketCapUsd*100:null,volumeUsd:dex?.volumeUsd??{m5:null,h1:null,h6:null,h24:null},priceChangePct:dex?.priceChangePct??{m5:null,h1:null,h6:null,h24:null},transactions:dex?.transactions??null,pairAddress:dex?.pairAddress??null,dexId:dex?.dexId??null,observedAt:bitqueryMarket?.observedAt??null};
+  const pressure=summarizeRobinhoodPressure(market.transactions);
+  const flags=[];
+  if(market.liquidityToMarketCapPct!=null&&market.liquidityToMarketCapPct<1)flags.push('liquidity below 1 percent of market cap');
+  if(holders?.top10Pct!=null&&holders.top10Pct>=50)flags.push('raw top ten concentration at or above 50 percent');
   const hasMarket=Object.values(market).some(value=>value!=null&&typeof value!=='object')||Boolean(dex||bitqueryMarket||cached);
-  return Object.freeze({ok:true,kind:'evm-token',address:token,state:'resolved',label:ponsVerified?'pons-token':'robinhood-token',chainId:4663,network:'Robinhood Chain',readOnly:true,source:[bitqueryMarket&&'bitquery',dex&&'dexscreener','robinhood-chain-rpc'].filter(Boolean).join('+'),coverage:hasMarket?'fresh':'partial',pons:{verified:ponsVerified,rank:n(cached?.current_rank),factory:s(cached?.factory)||null,factoryVersion:s(cached?.factory_version)||null,deployer:s(cached?.deployer)||null,pool:s(cached?.pool)||null,transactionHash:s(cached?.transaction_hash)||null},market,holders,risk:{level:'insufficient-evidence',statement:'No safety guarantee. Risk, insider, sniper, bundler, phishing, and sellability signals require separate verified coverage.'},disclosure:ponsVerified?'PONS origin is verified from an allowlisted factory record. Market fields are provider observations and may be delayed.':'Robinhood Chain contract verified. PONS origin is not yet verified, so the app does not claim PONS membership. Market fields are provider observations and may be delayed.'});
+  return Object.freeze({ok:true,kind:'evm-token',address:token,state:'resolved',label:ponsVerified?'pons-token':'robinhood-token',chainId:4663,network:'Robinhood Chain',readOnly:true,source:[bitqueryMarket&&'bitquery',dex&&'dexscreener','robinhood-chain-rpc'].filter(Boolean).join('+'),coverage:hasMarket?'fresh':'partial',pons:{verified:ponsVerified,rank:n(cached?.current_rank),factory:s(cached?.factory)||null,factoryVersion:s(cached?.factory_version)||null,deployer:s(cached?.deployer)||null,pool:s(cached?.pool)||null,transactionHash:s(cached?.transaction_hash)||null},launchpad:{name:ponsVerified?'PONS':null,associated:ponsVerified,status:ponsVerified?(s(cached?.pool)?'graduated/open-market':'launched'):'unverified',evidence:ponsVerified?'allowlisted PONS factory record':'unavailable'},market,activity:{pressure},holders,creator:{coverage:ponsVerified&&cached?.deployer?'launch-deployer-only':'unavailable',address:s(cached?.deployer)||null,statement:'Deployer holdings are not asserted without current verified balance coverage.'},bundles:{coverage:'unavailable',statement:'Bundled and linked-wallet ownership is not inferred from balances alone.'},smartMoney:{coverage:'unavailable',statement:'Wallets are not labeled smart money without a verified performance methodology.'},risk:{level:flags.length?'observed-flags':'insufficient-evidence',flags,statement:'Observed facts only. This is not a safety rating or price prediction.'},disclosure:ponsVerified?'PONS origin is verified from an allowlisted factory record. Market fields are provider observations and may be delayed.':'Robinhood Chain contract verified. PONS origin is not yet verified, so the app does not claim PONS membership. Market fields are provider observations and may be delayed.'});
 }
 
 export const __ponsTokenResolverContract=Object.freeze({chainId:4663,readOnly:true,addressPattern:'0x + 40 hexadecimal characters'});
