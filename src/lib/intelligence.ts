@@ -1,4 +1,3 @@
-import { createServerFn } from "@tanstack/react-start";
 import type { Coverage, EntityKind, IntelligenceResult } from "@/lib/field/types";
 import { shortId } from "@/lib/field/hash";
 
@@ -200,9 +199,11 @@ function factsFromResolve(body: ResolveBody, extra: string[]): string[] {
   return facts;
 }
 
-export const resolvePublicIdentifier = createServerFn({ method: "POST" })
-  .validator((input: { query: string }) => input)
-  .handler(async ({ data }): Promise<IntelligenceResult> => {
+export async function resolvePublicIdentifier({
+  data,
+}: {
+  data: { query: string };
+}): Promise<IntelligenceResult> {
     const query = String(data.query || "").trim();
     const observedAt = new Date().toISOString();
     if (!query) {
@@ -277,4 +278,4 @@ export const resolvePublicIdentifier = createServerFn({ method: "POST" })
       disclosure: [body?.disclosure, budgetDisclosure].filter(Boolean).join(" · ") || null,
       source: body?.source ?? null,
     };
-  });
+  }
