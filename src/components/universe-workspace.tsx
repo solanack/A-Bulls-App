@@ -19,16 +19,18 @@ export function UniverseWorkspace({
   mode,
   galaxy,
   evidence,
+  askMint,
   onNarrate,
 }: {
   mode: FieldMode;
   galaxy: GalaxyDefinition;
   evidence: EvidenceRecord | null;
+  askMint?: string;
   onNarrate: (text: string) => void;
 }) {
   const [wallet, setWallet] = useState("");
   const [walletB, setWalletB] = useState("");
-  const [mint, setMint] = useState(evidence?.mint ?? "");
+  const [mint, setMint] = useState(evidence?.mint ?? askMint ?? "");
   const [quoteMint, setQuoteMint] = useState(WSOL);
   const [sequenceScope, setSequenceScope] = useState<"mint" | "wallet">("mint");
   const [holdDays, setHoldDays] = useState(7);
@@ -39,7 +41,8 @@ export function UniverseWorkspace({
 
   useEffect(() => {
     if (evidence?.mint) setMint(evidence.mint);
-  }, [evidence?.mint]);
+    else if (askMint) setMint(askMint);
+  }, [evidence?.mint, askMint]);
 
   useEffect(() => {
     const params = new URLSearchParams(globalThis.location?.search ?? "");
@@ -73,7 +76,7 @@ export function UniverseWorkspace({
       <WorkspaceFrame eyebrow={`${galaxy.name} · PLAYABLE DATA`} title="Replay indexed chain time" busy={busy} error={error}>
         <InputGrid wallet={wallet} setWallet={setWallet} mint={mint} setMint={setMint} quoteMint={quoteMint} setQuoteMint={setQuoteMint} />
         <Action onClick={() => void execute("replay", { wallets: [wallet].filter(Boolean), mint, quoteMint, bucketSeconds: 60 })} disabled={!wallet || !mint}>LOAD REPLAY</Action>
-        <ReplayView bundle={replayBundle} />
+        <ReplayView bundle={replayBundle} waitingMint={mint} />
       </WorkspaceFrame>
     );
   }
@@ -183,9 +186,14 @@ function Action({ onClick, disabled, children }: { onClick: () => void; disabled
   return <button className="universe-action" type="button" onClick={onClick} disabled={disabled}>{children}</button>;
 }
 
-function ReplayView({ bundle, compact = false }: { bundle: Data; compact?: boolean }) {
+function ReplayView({ bundle, compact = false, waitingMint = "" }: { bundle: Data; compact?: boolean; waitingMint?: string }) {
   const events = arr(bundle.events), candles = arr(bundle.candles);
-  if (!events.length && !candles.length) return <p className="universe-empty">No replay loaded. Indexed results will appear here; empty coverage stays empty.</p>;
+  if (!events.length && !candles.length) {
+    if (waitingMint) {
+      return <p className="universe-empty">WAIT_TAPE · mint is held. Indexed tape has not arrived. Empty coverage stays empty — no path was invented.</p>;
+    }
+    return <p className="universe-empty">EMPTY_TAPE · no mint is held and no replay is loaded. Indexed results will appear here.</p>;
+  }
   return <section className="universe-result"><div className="universe-metrics"><Metric label="EVENTS" value={events.length} /><Metric label="CANDLES" value={candles.length} /><Metric label="SOURCES" value={arr(bundle.sources).length} /></div>{candles.length ? <CandleChart candles={candles} /> : <p className="universe-empty">No indexed OHLC series exists for this selection. No price series was invented.</p>}{!compact ? <EventList events={events} /> : null}<Disclosure>{text(obj(bundle.coverage).statement)} {arr(bundle.caveats).map(text).join(" ")}</Disclosure></section>;
 }
 

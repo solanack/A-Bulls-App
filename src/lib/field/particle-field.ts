@@ -5,6 +5,7 @@ import { clamp, deviceBudget } from "./hash";
 import { CameraGestures } from "./gestures";
 import { createStarfield } from "./synthetic-universe";
 import { ALIEN_BOUNDS, parentColorForCategory } from "./anatomy";
+import { isLiveSkyParticle, particleMint } from "./volume-sky";
 
 function hostSize(host: HTMLElement) {
   const p = host.parentElement;
@@ -19,11 +20,12 @@ function hostSize(host: HTMLElement) {
   };
 }
 
+const _dummy = new THREE.Object3D();
+
 const FIELD_VERT = /* glsl */ `
-attribute float aSize;
 attribute float aCat;
 attribute float aObserved;
-uniform float uPixelRatio;
+attribute vec3 aColor;
 uniform float uIntensity;
 uniform float uPull;
 uniform vec3 uFocus;
@@ -33,6 +35,7 @@ uniform float uReplayActive;
 uniform float uReplayCursor;
 varying vec3 vColor;
 varying float vReplayVisible;
+varying vec2 vLocal;
 void main() {
   float replayVisible = 1.0 - step(uReplayCursor + 0.0005, aObserved);
   vReplayVisible = mix(1.0, replayVisible, uReplayActive);
@@ -40,16 +43,20 @@ void main() {
   vec3 origin = vec3(0.0, 6.0, 0.0);
   float t = uPull;
   float ease = t * t * (3.0 - 2.0 * t);
-  vec3 held = mix(position, uFocus, kin * 0.22);
+  vec3 center = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+  float pSize = length(vec3(instanceMatrix[0][0], instanceMatrix[1][0], instanceMatrix[2][0]));
+  vec3 held = mix(center, uFocus, kin * 0.22);
   vec3 p = mix(held, origin, ease * 0.9);
-  float ang = ease * 4.2 + position.y * 0.014;
+  float ang = ease * 4.2 + center.y * 0.014;
   float c = cos(ang);
   float s = sin(ang);
   vec3 d = p - origin;
   p = origin + vec3(d.x * c - d.z * s, d.y * (1.0 - ease * 0.38), d.x * s + d.z * c);
-  vColor = color * uIntensity * (1.0 + kin * 1.45);
+  vColor = aColor * uIntensity * (1.0 + kin * 1.45);
+  vLocal = position.xy;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  gl_PointSize = aSize * uPixelRatio * (210.0 / max(12.0, -mv.z)) * mix(1.0, 0.28, ease) * (1.0 + kin * 1.6) * vReplayVisible;
+  float size = pSize * mix(1.0, 0.28, ease) * (1.0 + kin * 1.6) * max(vReplayVisible, 0.04);
+  mv.xy += position.xy * size;
   gl_Position = projectionMatrix * mv;
 }
 `;
@@ -57,36 +64,15 @@ void main() {
 const FIELD_FRAG = /* glsl */ `
 varying vec3 vColor;
 varying float vReplayVisible;
+varying vec2 vLocal;
 void main() {
   if (vReplayVisible < 0.5) discard;
-  vec2 p = gl_PointCoord - vec2(0.5);
-  float d = length(p);
-  if (d > 0.5) discard;
-  float core = smoothstep(0.2, 0.02, d);
-  float halo = smoothstep(0.46, 0.16, d);
-  float alpha = max(core, halo * 0.24);
-  gl_FragColor = vec4(vColor * (0.82 + core * 0.3), alpha);
-}
-`;
-
-const STAR_VERT = /* glsl */ `
-uniform float uPixelRatio;
-attribute float aSize;
-void main() {
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_PointSize = aSize * uPixelRatio * 150.0 / max(18.0, -mv.z);
-  gl_Position = projectionMatrix * mv;
-}
-`;
-
-const STAR_FRAG = /* glsl */ `
-uniform float uAlpha;
-void main() {
-  vec2 p = gl_PointCoord - vec2(0.5);
-  float d = length(p);
-  if (d > 0.5) discard;
-  float alpha = smoothstep(0.5, 0.08, d) * 0.62 * uAlpha;
-  gl_FragColor = vec4(vec3(0.82, 0.86, 0.94), alpha);
+  float d = length(vLocal);
+  if (d > 1.0) discard;
+  float core = smoothstep(0.42, 0.0, d);
+  float halo = smoothstep(1.0, 0.22, d);
+  float alpha = max(core, halo * 0.34);
+  gl_FragColor = vec4(vColor * (0.78 + core * 0.55), alpha);
 }
 `;
 
@@ -140,11 +126,17 @@ function disposeLabelSprite(sprite: THREE.Sprite) {
   sprite.material.dispose();
 }
 
-function buildGalaxyGeometry(snapshot: UniverseSnapshot, limit: number) {
+function particleWorldSize(entity: FieldParticle) {
+  const role = entity.metadata?.skyRole;
+  const liveBoost = role === "live" || role === "watch" || role === "teaching" ? 1.55 : 1;
+  return (0.72 + entity.magnitudeBand * 2.05) * liveBoost;
+}
+
+function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMaterial, limit: number) {
   const visible = snapshot.particles.slice(0, limit);
+  const count = Math.max(1, visible.length);
   const positions = new Float32Array(visible.length * 3);
   const colors = new Float32Array(visible.length * 3);
-  const sizes = new Float32Array(visible.length);
   const cats = new Float32Array(visible.length);
   const observed = new Float32Array(visible.length);
   const duration = Math.max(1, snapshot.windowEnd - snapshot.windowStart);
@@ -160,18 +152,48 @@ function buildGalaxyGeometry(snapshot: UniverseSnapshot, limit: number) {
           ] as [number, number, number])
         : base;
     colors.set(color, i * 3);
-    sizes[i] = 1.18 + entity.magnitudeBand * 3.15;
     cats[i] = CATEGORY_INDEX[entity.category] ?? 6;
     observed[i] = clamp((entity.observedAt - snapshot.windowStart) / duration, 0, 1);
   });
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
-  geometry.setAttribute("aCat", new THREE.BufferAttribute(cats, 1));
-  geometry.setAttribute("aObserved", new THREE.BufferAttribute(observed, 1));
+  const geometry = new THREE.CircleGeometry(1, 10);
+  geometry.setAttribute("aCat", new THREE.InstancedBufferAttribute(cats, 1));
+  geometry.setAttribute("aObserved", new THREE.InstancedBufferAttribute(observed, 1));
+  geometry.setAttribute("aColor", new THREE.InstancedBufferAttribute(colors, 3));
   geometry.userData.entities = visible;
-  return { geometry, positions, colors };
+  const mesh = new THREE.InstancedMesh(geometry, material, count);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 2;
+  visible.forEach((entity, i) => {
+    _dummy.position.set(entity.position[0], entity.position[1], entity.position[2]);
+    _dummy.scale.setScalar(particleWorldSize(entity));
+    _dummy.rotation.set(0, 0, 0);
+    _dummy.updateMatrix();
+    mesh.setMatrixAt(i, _dummy.matrix);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  return { mesh, positions, colors };
+}
+
+function buildStarMesh(material: THREE.MeshBasicMaterial) {
+  const starfield = createStarfield();
+  const count = starfield.count;
+  const geometry = new THREE.CircleGeometry(1, 6);
+  const mesh = new THREE.InstancedMesh(geometry, material, count);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 0;
+  for (let i = 0; i < count; i++) {
+    _dummy.position.set(
+      starfield.positions[i * 3],
+      starfield.positions[i * 3 + 1],
+      starfield.positions[i * 3 + 2],
+    );
+    _dummy.scale.setScalar(0.28 + (i % 11 === 0 ? 0.55 : 0.12));
+    _dummy.rotation.set(0, 0, 0);
+    _dummy.updateMatrix();
+    mesh.setMatrixAt(i, _dummy.matrix);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  return mesh;
 }
 
 export class ParticleFieldRenderer {
@@ -180,10 +202,11 @@ export class ParticleFieldRenderer {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
-  points: THREE.Points;
-  stars: THREE.Points;
+  points: THREE.InstancedMesh;
+  stars: THREE.InstancedMesh;
   liveLabels: THREE.Sprite[] = [];
   material: THREE.ShaderMaterial;
+  starMaterial: THREE.MeshBasicMaterial;
   basePositions: Float32Array;
   colors: Float32Array;
   cameraState: CameraState = { yaw: 0.4, pitch: 0.18, distance: 125, target: [0, 0, 0] };
@@ -200,6 +223,7 @@ export class ParticleFieldRenderer {
   onAfterUpdate: ((elapsed: number, now: number) => void) | null = null;
   onFocus: ((particle: FieldParticle | null) => void) | null = null;
   onReplayTick: ((cursor: number, playing: boolean) => void) | null = null;
+  watchMints = new Set<string>();
   #raf = 0;
   #last = 0;
   #gestures: CameraGestures;
@@ -208,6 +232,7 @@ export class ParticleFieldRenderer {
   #queryFrame: CameraState | null = null;
   #queryFrameWeight = 0;
   #lastReplayEmit = 0;
+  #ro: ResizeObserver | null = null;
 
   constructor(host: HTMLElement, snapshot: UniverseSnapshot) {
     this.host = host;
@@ -224,32 +249,33 @@ export class ParticleFieldRenderer {
       width: "100%",
       height: "100%",
       touchAction: "none",
+      background: "#030307",
     });
     host.append(canvas);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      alpha: true,
+      alpha: false,
       antialias: false,
       powerPreference: "high-performance",
-      premultipliedAlpha: false,
+      premultipliedAlpha: true,
     });
-    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.setClearColor(0x030307, 1);
     this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, budget.dpr));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.08;
+    this.renderer.toneMapping = THREE.NoToneMapping;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 700);
+    this.#placeCamera();
 
     this.material = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
-      vertexColors: true,
       blending: THREE.AdditiveBlending,
+      toneMapped: false,
       uniforms: {
         uPixelRatio: { value: this.renderer.getPixelRatio() },
-        uIntensity: { value: 1 },
+        uIntensity: { value: 1.15 },
         uPull: { value: 0 },
         uFocus: { value: new THREE.Vector3() },
         uFocusAmt: { value: 0 },
@@ -261,34 +287,23 @@ export class ParticleFieldRenderer {
       fragmentShader: FIELD_FRAG,
     });
 
-    const fieldGeometry = buildGalaxyGeometry(snapshot, budget.field);
-    this.basePositions = new Float32Array(fieldGeometry.positions);
-    this.colors = fieldGeometry.colors;
-    this.points = new THREE.Points(fieldGeometry.geometry, this.material);
+    const fieldMesh = buildFieldMesh(snapshot, this.material, budget.field);
+    this.basePositions = new Float32Array(fieldMesh.positions);
+    this.colors = fieldMesh.colors;
+    this.points = fieldMesh.mesh;
     this.scene.add(this.points);
     this.#rebuildLiveLabels();
 
-    const starfield = createStarfield();
-    const sg = new THREE.BufferGeometry();
-    sg.setAttribute("position", new THREE.BufferAttribute(starfield.positions, 3));
-    const starSizes = new Float32Array(starfield.positions.length / 3);
-    for (let i = 0; i < starSizes.length; i++) {
-      starSizes[i] = 0.75 + (i % 11 === 0 ? 0.65 : 0);
-    }
-    sg.setAttribute("aSize", new THREE.BufferAttribute(starSizes, 1));
-    const starMat = new THREE.ShaderMaterial({
-      uniforms: {
-        uPixelRatio: { value: this.renderer.getPixelRatio() },
-        uAlpha: { value: 0.62 },
-      },
-      vertexShader: STAR_VERT,
-      fragmentShader: STAR_FRAG,
+    this.starMaterial = new THREE.MeshBasicMaterial({
+      color: 0xd4dcf0,
       transparent: true,
+      opacity: 0.62,
       depthWrite: false,
-      blending: THREE.NormalBlending,
+      blending: THREE.AdditiveBlending,
       toneMapped: false,
+      side: THREE.DoubleSide,
     });
-    this.stars = new THREE.Points(sg, starMat);
+    this.stars = buildStarMesh(this.starMaterial);
     this.scene.add(this.stars);
 
     this.#gestures = new CameraGestures(canvas, {
@@ -312,34 +327,66 @@ export class ParticleFieldRenderer {
     this.#onResize = () => this.resize();
     globalThis.addEventListener("resize", this.#onResize);
     globalThis.visualViewport?.addEventListener("resize", this.#onResize);
+    if (typeof ResizeObserver !== "undefined") {
+      this.#ro = new ResizeObserver(() => this.resize());
+      this.#ro.observe(host);
+    }
     this.resize();
     this.#last = performance.now();
     this.#raf = requestAnimationFrame(this.#frame);
     globalThis.__ABULLS_PICK = (x: number, y: number) => this.#handleTap(x, y);
+  }
 
+  #placeCamera() {
+    const c = this.cameraState;
+    const [tx, ty, tz] = c.target;
+    this.camera.position.set(
+      tx + Math.sin(c.yaw) * Math.cos(c.pitch) * c.distance,
+      ty + Math.sin(c.pitch) * c.distance,
+      tz + Math.cos(c.yaw) * Math.cos(c.pitch) * c.distance,
+    );
+    this.camera.lookAt(tx, ty, tz);
   }
 
   getParticleCount() {
-    return this.points.geometry.getAttribute("position").count;
+    return Math.floor(this.basePositions.length / 3);
   }
 
   setSnapshot(snapshot: UniverseSnapshot) {
     if (this.destroyed) return;
-    const fieldGeometry = buildGalaxyGeometry(snapshot, deviceBudget().field);
-    const previousGeometry = this.points.geometry;
+    const fieldMesh = buildFieldMesh(snapshot, this.material, deviceBudget().field);
+    const previous = this.points;
     this.snapshot = snapshot;
-    this.basePositions = new Float32Array(fieldGeometry.positions);
-    this.colors = fieldGeometry.colors;
-    this.points.geometry = fieldGeometry.geometry;
+    this.basePositions = new Float32Array(fieldMesh.positions);
+    this.colors = fieldMesh.colors;
+    this.points = fieldMesh.mesh;
     this.points.scale.set(1, snapshot.galaxyId === "pons" ? 0.72 : 1, 1);
-    previousGeometry.dispose();
+    this.scene.add(this.points);
+    previous.removeFromParent();
+    previous.geometry.dispose();
     this.renderer.domElement.setAttribute(
       "aria-label",
       `Interactive ${snapshot.galaxyId} activity field`,
     );
-    this.clearFocus();
+    this.clearFocus(true);
     this.setReplay({ active: false, cursor: 1, playing: false });
     this.#rebuildLiveLabels();
+  }
+
+  setWatchlistMints(mints: readonly string[]) {
+    this.watchMints = new Set(mints.map((mint) => mint.toLowerCase()));
+    this.#rebuildLiveLabels();
+  }
+
+  focusByMint(mint: string) {
+    const entities = this.points.geometry.userData.entities as FieldParticle[];
+    const hit = entities.find((particle) => particleMint(particle)?.toLowerCase() === mint.toLowerCase());
+    if (!hit) return;
+    this.focused = hit;
+    this.material.uniforms.uFocus.value.set(hit.position[0], hit.position[1], hit.position[2]);
+    this.material.uniforms.uFocusAmt.value = 1;
+    this.material.uniforms.uFocusCat.value = CATEGORY_INDEX[hit.category] ?? 6;
+    this.onFocus?.(hit);
   }
 
   #rebuildLiveLabels() {
@@ -347,9 +394,17 @@ export class ParticleFieldRenderer {
     this.liveLabels = [];
     const entities = this.points.geometry.userData.entities as FieldParticle[];
     const candidates = entities
-      .filter((particle) => Boolean(particle.source) && Boolean(liveLabel(particle)))
-      .sort((a, b) => b.magnitudeBand - a.magnitudeBand)
-      .slice(0, 5);
+      .filter((particle) => particle.metadata?.skyRole !== "wallpaper" && Boolean(liveLabel(particle)))
+      .sort((a, b) => {
+        const aMint = particleMint(a)?.toLowerCase() ?? "";
+        const bMint = particleMint(b)?.toLowerCase() ?? "";
+        const aWatch = this.watchMints.has(aMint) || a.metadata?.skyRole === "watch" ? 1000 : 0;
+        const bWatch = this.watchMints.has(bMint) || b.metadata?.skyRole === "watch" ? 1000 : 0;
+        const aTeach = a.metadata?.skyRole === "teaching" ? 500 : 0;
+        const bTeach = b.metadata?.skyRole === "teaching" ? 500 : 0;
+        return bWatch + bTeach + b.magnitudeBand - (aWatch + aTeach + a.magnitudeBand);
+      })
+      .slice(0, 8);
     for (const particle of candidates) {
       const label = liveLabel(particle);
       if (!label) continue;
@@ -385,11 +440,11 @@ export class ParticleFieldRenderer {
     return this.colors;
   }
 
-  clearFocus() {
+  clearFocus(silent = false) {
     this.focused = null;
     this.material.uniforms.uFocusAmt.value = 0;
     this.material.uniforms.uFocusCat.value = -1;
-    this.onFocus?.(null);
+    if (!silent) this.onFocus?.(null);
   }
 
   setQueryActive(active: boolean) {
@@ -439,6 +494,7 @@ export class ParticleFieldRenderer {
       distance: state.distance,
       target: [...state.target],
     };
+    this.#placeCamera();
   }
 
   resize() {
@@ -447,10 +503,6 @@ export class ParticleFieldRenderer {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.material.uniforms.uPixelRatio.value = this.renderer.getPixelRatio();
-    const starMaterial = this.stars?.material as THREE.ShaderMaterial | undefined;
-    if (starMaterial?.uniforms?.uPixelRatio) {
-      starMaterial.uniforms.uPixelRatio.value = this.renderer.getPixelRatio();
-    }
     if (this.queryTarget > 0.5 && this.queryBlend < 0.9) {
       this.#queryFrame = this.#queryCameraState();
       this.#queryFrameWeight = Math.max(this.#queryFrameWeight, 0.65);
@@ -483,8 +535,10 @@ export class ParticleFieldRenderer {
     const my = clientY - rect.top;
     const w = rect.width;
     const h = rect.height;
-    let best = -1;
-    let bestD = 72;
+    let bestLive = -1;
+    let bestLiveD = 84;
+    let bestAny = -1;
+    let bestAnyD = 72;
     const pos = this.basePositions;
     for (let i = 0; i < entities.length; i++) {
       if (this.replayActive) {
@@ -500,12 +554,17 @@ export class ParticleFieldRenderer {
       const sx = (this.#pick.x * 0.5 + 0.5) * w;
       const sy = (-this.#pick.y * 0.5 + 0.5) * h;
       const d = Math.hypot(sx - mx, sy - my);
-      if (d < bestD) {
-        bestD = d;
-        best = i;
+      if (d < bestAnyD) {
+        bestAnyD = d;
+        bestAny = i;
+      }
+      if (isLiveSkyParticle(entities[i]) && d < bestLiveD) {
+        bestLiveD = d;
+        bestLive = i;
       }
     }
-    return best >= 0 ? entities[best] : null;
+    if (bestLive >= 0) return entities[bestLive];
+    return bestAny >= 0 ? entities[bestAny] : null;
   }
 
   #frame = (now: number) => {
@@ -546,12 +605,11 @@ export class ParticleFieldRenderer {
       this.stars.rotation.y += elapsed * 0.05;
     }
 
-    this.material.uniforms.uIntensity.value = 1 - this.queryBlend * 0.96;
+    this.material.uniforms.uIntensity.value = 1.15 - this.queryBlend * 0.96;
     this.material.uniforms.uPull.value = this.queryBlend;
     this.points.scale.setScalar(1 - this.queryBlend * 0.06);
     this.points.visible = this.queryBlend < 0.97;
-    const starMaterial = this.stars.material as THREE.ShaderMaterial;
-    starMaterial.uniforms.uAlpha.value = 0.54 + this.queryBlend * 0.32;
+    this.starMaterial.opacity = 0.54 + this.queryBlend * 0.32;
 
     const c = this.cameraState;
     const [tx, ty, tz] = c.target;
@@ -578,6 +636,8 @@ export class ParticleFieldRenderer {
     this.destroyed = true;
     cancelAnimationFrame(this.#raf);
     this.#gestures.destroy();
+    this.#ro?.disconnect();
+    this.#ro = null;
     globalThis.removeEventListener("resize", this.#onResize);
     globalThis.visualViewport?.removeEventListener("resize", this.#onResize);
     this.points.geometry.dispose();
@@ -585,7 +645,7 @@ export class ParticleFieldRenderer {
     this.liveLabels = [];
     this.stars.geometry.dispose();
     this.material.dispose();
-    (this.stars.material as THREE.Material).dispose();
+    this.starMaterial.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

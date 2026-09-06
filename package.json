@@ -18,11 +18,11 @@
     "typecheck": "tsc --noEmit",
     "verify:release": "node scripts/verify-release-baseline.mjs",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/field/indexer-field-v0.test.ts src/lib/field/field-os.hydrate.test.ts src/routes/document-cache-headers.test.ts src/lib/universe-data/field-v0-client.test.ts src/lib/universe-data/pons-client.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/field/indexer-field-v0.test.ts src/lib/field/field-os.hydrate.test.ts src/lib/field/volume-sky.test.ts src/routes/document-cache-headers.test.ts src/lib/universe-data/field-v0-client.test.ts src/lib/universe-data/pons-client.test.ts",
     "test:worker": "node --test '../integrated-worker/workers/*.test.mjs' '../integrated-worker/js/*.test.mjs'",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "npm run verify:release && CF_DEPLOY=1 node scripts/with-app-env.mjs vite build && wrangler deploy",
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
@@ -80,6 +80,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.13.0",
     "@eslint/js": "^9.20.0",
     "@types/node": "^22.16.5",
     "@types/pg": "^8.11.10",
@@ -100,7 +101,6 @@
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.56.1",
     "vite": "^8.2.0",
-    "@cloudflare/vite-plugin": "^1.13.0",
     "wrangler": "^4.31.0"
   }
 }

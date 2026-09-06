@@ -2,6 +2,49 @@ import type { FieldParticle, UniverseSnapshot } from "@/lib/field/types";
 import type { UniverseDataStatus } from "./contracts";
 export const PONS_GALAXY_PATH = "/api/intelligence/pons/galaxy";
 export const PONS_GALAXY_URL = `https://abullsapp.com${PONS_GALAXY_PATH}`;
+export const PONS_TEACHING_TOKEN = "0x39dbed3a2bd333467115de45665cc57f813c4571";
+
+export function ponsTeachingParticle(): FieldParticle {
+  return {
+    id: `star:pons:${PONS_TEACHING_TOKEN}`,
+    eventId: "pons:teaching",
+    kind: "token",
+    cosmicKind: "star",
+    originGalaxyId: "pons",
+    verificationState: "teaching",
+    observedAt: Date.now(),
+    category: "program",
+    magnitudeBand: 0.82,
+    position: [18, 4, 12],
+    source: "pons-teaching",
+    metadata: {
+      mint: PONS_TEACHING_TOKEN,
+      symbol: "PONS",
+      name: "PONS teaching body",
+      teaching: true,
+      skyRole: "teaching",
+      originVerified: true,
+      chainId: 4663,
+    },
+  };
+}
+
+export function ponsTeachingSnapshot(): UniverseSnapshot {
+  const particle = ponsTeachingParticle();
+  const now = particle.observedAt;
+  return {
+    galaxyId: "pons",
+    windowStart: now - 300_000,
+    windowEnd: now,
+    observedEventCount: 0,
+    samplingPolicy:
+      "teaching star only; production PONS top-25 keeps the $500,000 floor and is not rewritten",
+    coverageStatement:
+      "PONS production index is empty at the five-hundred-thousand dollar floor. A teaching star is shown so the galaxy is tappable. Not a live ranking.",
+    sources: ["pons-teaching"],
+    particles: [particle],
+  };
+}
 
 export type PonsLaunch = {
   rank: number;

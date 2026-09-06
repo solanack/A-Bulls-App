@@ -19,9 +19,13 @@ import type {
   EvidenceRecord,
 } from "@/lib/field/types";
 
+import { formatHeat, particleMint } from "@/lib/field/volume-sky";
+import { isWatched, type WatchItem } from "@/lib/field/watchlist";
+import { PONS_TEACHING_TOKEN } from "@/lib/universe-data/pons-client";
+
 const EXAMPLES = [
+  { label: "PONS TEACHING", value: PONS_TEACHING_TOKEN },
   { label: "WRAPPED SOL", value: "So11111111111111111111111111111111111111112" },
-  { label: "SYSTEM PROGRAM", value: "11111111111111111111111111111111" },
 ];
 
 const SOCIALFI_UI_ENABLED = import.meta.env.VITE_SOCIALFI_UI_ENABLED === "true";
@@ -64,6 +68,9 @@ export function AppShell() {
   const [galaxy, setGalaxy] = useState<GalaxyDefinition>(() => getGalaxy("galaxy-zero"));
   const [, setGalaxies] = useState<readonly GalaxyDefinition[]>(GALAXIES);
   const [evidence, setEvidence] = useState<EvidenceRecord | null>(null);
+  const [askPrefill, setAskPrefill] = useState("");
+  const [watchlist, setWatchlist] = useState<readonly WatchItem[]>([]);
+  const [liveStarCount, setLiveStarCount] = useState(0);
   const [dataStatus, setDataStatus] = useState<UniverseDataStatus>({
     store: "memory-fallback",
     coverage: "degraded",
@@ -89,6 +96,9 @@ export function AppShell() {
         setGalaxies(event.galaxies);
         setEvidence(event.evidence);
         setDataStatus(event.dataStatus);
+        setAskPrefill(event.askPrefill);
+        setWatchlist(event.watchlist);
+        setLiveStarCount(event.liveStarCount);
       });
       osRef.current = os;
       if (new URLSearchParams(globalThis.location?.search ?? "").has("tour")) os.setMode("trickster");
@@ -106,6 +116,11 @@ export function AppShell() {
     globalThis.addEventListener("keydown", close);
     return () => globalThis.removeEventListener("keydown", close);
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!askPrefill || !inputRef.current) return;
+    inputRef.current.value = askPrefill;
+  }, [askPrefill]);
 
   function onAsk(value: string) {
     const query = value.trim();
@@ -126,9 +141,17 @@ export function AppShell() {
 
   const workspaceOpen = mode !== "explore" && mode !== "query" && !queryActive;
   const timelineOpen = mode === "replay" || mode === "evidence";
+  const focusedMint = particleMint(focus);
+  const watched = isWatched(watchlist, focusedMint);
+  const heat = formatHeat(
+    typeof focus?.metadata?.skyHeat === "number" && (focus.metadata.skyHeatUnit === "usd" || focus.metadata.skyHeatUnit === "sol")
+      ? { value: focus.metadata.skyHeat, unit: focus.metadata.skyHeatUnit }
+      : null,
+  );
+  const symbol = typeof focus?.metadata?.symbol === "string" ? focus.metadata.symbol : null;
   const slotValue = focus
-    ? `${focus.cosmicKind.replace("-", " ")} · ${focus.kind} · ${galaxy.name}`
-    : `FIELD · ${GALAXY_CHAIN_LABEL[galaxy.id]} · ${galaxy.name}`;
+    ? `${symbol || focus.cosmicKind.replace("-", " ")} · ${heat || focus.kind} · ${galaxy.name}`
+    : `FIELD · ${GALAXY_CHAIN_LABEL[galaxy.id]} · ${galaxy.name}${liveStarCount ? ` · ${liveStarCount} LIVE` : ""}`;
 
   return (
     <main className={`field-shell${queryActive ? " field-shell--query" : ""}`} data-mode={queryActive ? "query" : mode} data-galaxy={galaxy.id}>
@@ -174,8 +197,20 @@ export function AppShell() {
               {item.label}
             </button>
           ))}
+          <button
+            type="button"
+            className="gz-origin"
+            aria-pressed={watched}
+            aria-label={focusedMint ? (watched ? "Remove this body from the device watchlist" : "Pin this body to the device watchlist") : "Open device watchlist"}
+            onClick={() => {
+              if (focusedMint) osRef.current?.toggleWatch();
+              else osRef.current?.setMode("intelligence");
+            }}
+          >
+            WATCH
+          </button>
           {EXAMPLES.map((item) => (
-            <button key={item.value} type="button" onClick={() => { if (inputRef.current) inputRef.current.value = item.value; onAsk(item.value); }}>{item.label}</button>
+            <button key={item.value} type="button" onClick={() => { if (inputRef.current) inputRef.current.value = item.value; osRef.current?.focusMint(item.value); }}>{item.label}</button>
           ))}
         </div>
       </div>
@@ -202,31 +237,79 @@ export function AppShell() {
           <button type="button" className="field-shell__close" onClick={() => osRef.current?.setMode("explore")}>RETURN TO FIELD</button>
         </div>
         <div className="field-shell__workspace-body">
-          {mode === "intelligence" ? <IntelligencePanel result={result} onAsk={() => onQueryMode()} /> : null}
+          {mode === "intelligence" ? (
+            <IntelligencePanel
+              result={result}
+              watchlist={watchlist}
+              focusMint={focusedMint}
+              onAsk={() => onQueryMode()}
+              onAskMint={(mint) => onAsk(mint)}
+            />
+          ) : null}
           {mode === "social" ? <SocialFiWorkspace /> : null}
-          {mode !== "intelligence" && mode !== "social" ? <UniverseWorkspace mode={mode} galaxy={galaxy} evidence={evidence} onNarrate={(text) => osRef.current?.narrateObserved(text)} /> : null}
+          {mode !== "intelligence" && mode !== "social" ? (
+            <UniverseWorkspace
+              mode={mode}
+              galaxy={galaxy}
+              evidence={evidence}
+              askMint={askPrefill || focusedMint || ""}
+              onNarrate={(text) => osRef.current?.narrateObserved(text)}
+            />
+          ) : null}
         </div>
       </section>
     </main>
   );
 }
 
-function IntelligencePanel({ result, onAsk }: { result: IntelligenceResult | null; onAsk: () => void }) {
-  if (!result) {
-    return (
-      <article className="workspace-copy">
-        <h2>Public memory, observed facts</h2>
-        <p>ASK a public identifier on the Field. The same particles become the Grey and speak only what the public chain shows.</p>
-        <button type="button" className="query-experience__submit" onClick={onAsk}>ASK THE FIELD</button>
-      </article>
-    );
-  }
+function IntelligencePanel({
+  result,
+  watchlist,
+  focusMint,
+  onAsk,
+  onAskMint,
+}: {
+  result: IntelligenceResult | null;
+  watchlist: readonly WatchItem[];
+  focusMint: string | null;
+  onAsk: () => void;
+  onAskMint: (mint: string) => void;
+}) {
   return (
     <article className="workspace-copy">
-      <h2>{result.label} · {result.shortId}</h2>
-      <p>{result.spokenText}</p>
-      <p>Coverage {result.coverage}{result.source ? ` · ${result.source}` : ""}{result.disclosure ? ` · ${result.disclosure}` : ""}</p>
-      <ul className="workspace-facts">{result.facts.map((fact) => <li key={fact}>{fact}</li>)}</ul>
+      <h2>{result ? `${result.label} · ${result.shortId}` : "Public memory, observed facts"}</h2>
+      {result ? (
+        <>
+          <p>{result.spokenText}</p>
+          <p>Coverage {result.coverage}{result.source ? ` · ${result.source}` : ""}{result.disclosure ? ` · ${result.disclosure}` : ""}</p>
+          <ul className="workspace-facts">{result.facts.map((fact) => <li key={fact}>{fact}</li>)}</ul>
+        </>
+      ) : (
+        <p>Tap a live star. Grey speaks observed flags first. ASK holds the mint. Watch pins stay on this device only — they do not buy Helius tape.</p>
+      )}
+      {focusMint ? (
+        <button type="button" className="query-experience__submit" onClick={() => onAskMint(focusMint)}>
+          ASK THIS BODY
+        </button>
+      ) : (
+        <button type="button" className="query-experience__submit" onClick={onAsk}>ASK THE FIELD</button>
+      )}
+      <section className="workspace-copy">
+        <h2>Device watchlist</h2>
+        {watchlist.length ? (
+          <ul className="workspace-facts">
+            {watchlist.map((item) => (
+              <li key={`${item.galaxyId}:${item.mint}`}>
+                <button type="button" onClick={() => onAskMint(item.mint)}>
+                  {(item.symbol || item.name || item.mint.slice(0, 8)).toString()} · {item.galaxyId}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No pins yet. Focus a star and tap WATCH. Local only. Not an account.</p>
+        )}
+      </section>
     </article>
   );
 }

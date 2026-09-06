@@ -12,6 +12,7 @@ import type {
   IntelligenceResult,
   OrganismState,
   ReplayState,
+  UniverseSnapshot,
 } from "./types";
 import { DEFAULT_GALAXY_ID, GALAXIES, getGalaxy, isPopulatedGalaxy } from "./galaxies";
 import { speakText, unlockSpeech, type VoiceHandle } from "./voice";
@@ -29,6 +30,10 @@ import {
   stepReplayCursor,
   visibleReplayCount,
 } from "./replay";
+import { composeVolumeSky, countLiveStars, particleMint } from "./volume-sky";
+import { isWatched, loadWatchlist, saveWatchlist, toggleWatchItem, type WatchItem } from "./watchlist";
+import { speakObservedParticle } from "./observed-speech";
+import { ponsTeachingSnapshot, PONS_TEACHING_TOKEN } from "@/lib/universe-data/pons-client";
 
 export type FieldOSListener = (event: {
   mode: FieldMode;
@@ -43,6 +48,9 @@ export type FieldOSListener = (event: {
   replay: ReplayState;
   evidence: EvidenceRecord | null;
   dataStatus: UniverseDataStatus;
+  askPrefill: string;
+  watchlist: readonly WatchItem[];
+  liveStarCount: number;
 }) => void;
 
 export class FieldOS {
@@ -65,19 +73,36 @@ export class FieldOS {
     circuitBreaker: null,
     disclosure: "Checking indexed universe coverage.",
   };
+  askPrefill = "";
+  watchlist: WatchItem[] = [];
+  liveStarCount = 0;
   #cameraSnapshot: CameraState | null = null;
   #voice: VoiceHandle | null = null;
   #listener: FieldOSListener | null = null;
   #querySeq = 0;
   #snapshotSeq = 0;
+  #prototype = createGalaxySnapshot(getGalaxy(DEFAULT_GALAXY_ID), deviceBudget().field);
+  #live: UniverseSnapshot | null = null;
+  #hydrateTimer = 0;
+  #lastSpokenId: string | null = null;
+  #pendingFocusMint: string | null = null;
 
   constructor(host: HTMLElement, listener: FieldOSListener) {
     this.host = host;
     this.#listener = listener;
+    this.watchlist = loadWatchlist();
     const budget = deviceBudget();
-    const snapshot = createGalaxySnapshot(this.galaxy, budget.field);
-    this.field = new ParticleFieldRenderer(host, snapshot);
-    this.replay = createReplayState(snapshot);
+    this.#prototype = createGalaxySnapshot(this.galaxy, budget.field);
+    const initial = composeVolumeSky({
+      prototype: this.#prototype,
+      live: null,
+      watchlist: this.watchlist,
+      wallpaperLimit: budget.field,
+    });
+    this.field = new ParticleFieldRenderer(host, initial);
+    this.field.setWatchlistMints(this.watchlist.map((item) => item.mint));
+    this.replay = createReplayState(initial);
+    this.liveStarCount = countLiveStars(initial);
     this.field.onFocus = (particle) => {
       this.focus = particle
         ? {
@@ -96,7 +121,18 @@ export class FieldOS {
           }
         : null;
       this.evidence = particle ? evidenceForParticle(this.field.snapshot, particle) : null;
+      const mint = particleMint(particle);
+      if (particle && mint) this.askPrefill = mint;
       this.#emit();
+      if (!particle) {
+        this.#lastSpokenId = null;
+        return;
+      }
+      if (!this.queryActive && particle.id !== this.#lastSpokenId) {
+        this.#lastSpokenId = particle.id;
+        unlockSpeech();
+        this.narrateObserved(speakObservedParticle(particle, this.field.snapshot));
+      }
     };
     this.field.onReplayTick = (cursor, playing) => {
       this.replay = {
@@ -110,6 +146,9 @@ export class FieldOS {
     this.muted = globalThis.localStorage?.getItem("abulls-mute") === "1";
     this.#emit();
     void this.#hydrateGalaxy(this.galaxy.id);
+    this.#hydrateTimer = globalThis.setInterval(() => {
+      void this.#hydrateGalaxy(this.galaxy.id);
+    }, 60_000) as unknown as number;
   }
 
   #emit() {
@@ -126,7 +165,69 @@ export class FieldOS {
       replay: this.replay,
       evidence: this.evidence,
       dataStatus: this.dataStatus,
+      askPrefill: this.askPrefill,
+      watchlist: this.watchlist,
+      liveStarCount: this.liveStarCount,
     });
+  }
+
+  #applySky() {
+    const composed = composeVolumeSky({
+      prototype: this.#prototype,
+      live: this.#live,
+      watchlist: this.watchlist,
+      wallpaperLimit: deviceBudget().field,
+    });
+    this.field.setSnapshot(composed);
+    this.field.setWatchlistMints(this.watchlist.map((item) => item.mint));
+    this.liveStarCount = countLiveStars(composed);
+    this.replay = createReplayState(composed);
+    const want = particleMint(this.focus) ?? this.#pendingFocusMint;
+    if (want) {
+      this.field.focusByMint(want);
+      if (this.field.focused) this.#pendingFocusMint = null;
+    }
+  }
+
+  focusMint(mint: string) {
+    const trimmed = mint.trim();
+    if (!trimmed) return;
+    this.#pendingFocusMint = trimmed;
+    this.askPrefill = trimmed;
+    if (this.queryActive) {
+      void this.returnToField().then(() => this.focusMint(trimmed));
+      return;
+    }
+    this.mode = "explore";
+    const teaching = trimmed.toLowerCase() === PONS_TEACHING_TOKEN.toLowerCase();
+    if (teaching && this.galaxy.id !== "pons") {
+      this.setGalaxy("pons");
+      return;
+    }
+    this.field.focusByMint(trimmed);
+    this.#emit();
+  }
+
+  toggleWatch() {
+    const mint = particleMint(this.focus);
+    if (!mint) return false;
+    const symbol = typeof this.focus?.metadata?.symbol === "string" ? this.focus.metadata.symbol : null;
+    const name = typeof this.focus?.metadata?.name === "string" ? this.focus.metadata.name : null;
+    this.watchlist = saveWatchlist(
+      toggleWatchItem(this.watchlist, {
+        mint,
+        galaxyId: this.galaxy.id,
+        symbol,
+        name,
+      }),
+    );
+    this.#applySky();
+    this.#emit();
+    return isWatched(this.watchlist, mint);
+  }
+
+  isFocusedWatched() {
+    return isWatched(this.watchlist, particleMint(this.focus));
   }
 
   setGalaxy(id: GalaxyId) {
@@ -136,14 +237,15 @@ export class FieldOS {
       this.#emit();
       return true;
     }
-    const snapshot = createGalaxySnapshot(nextGalaxy, deviceBudget().field);
-    this.field.setSnapshot(snapshot);
     this.galaxy = nextGalaxy;
+    this.#prototype = createGalaxySnapshot(nextGalaxy, deviceBudget().field);
+    this.#live = null;
     this.focus = null;
     this.evidence = null;
-    this.replay = createReplayState(snapshot);
-    this.mode = "explore";
+    this.askPrefill = this.#pendingFocusMint ?? "";
     this.result = null;
+    this.mode = "explore";
+    this.#applySky();
     this.#emit();
     void this.#hydrateGalaxy(id);
     return true;
@@ -154,15 +256,18 @@ export class FieldOS {
     void unregisterStaleServiceWorkers();
     const delivery = await getIndexedGalaxySnapshot({ data: { galaxyId: id } });
     if (seq !== this.#snapshotSeq || id !== this.galaxy.id) return;
-    const indexedSnapshot = delivery.snapshot;
+    let indexedSnapshot = delivery.snapshot;
+    if (id === "pons" && (!indexedSnapshot || indexedSnapshot.particles.length === 0)) {
+      indexedSnapshot = ponsTeachingSnapshot();
+    }
     const indexedParticleCount = indexedSnapshot?.particles.length ?? 0;
     const budgetField = deviceBudget().field;
-    if (shouldReplacePrototypeField(indexedSnapshot, budgetField)) {
-      this.dataStatus = delivery.status;
-      this.field.setSnapshot(indexedSnapshot!);
-      this.focus = null;
-      this.evidence = null;
-      this.replay = createReplayState(indexedSnapshot!);
+    this.#live = indexedSnapshot && indexedParticleCount > 0 ? indexedSnapshot : id === "pons" ? ponsTeachingSnapshot() : null;
+    if (shouldReplacePrototypeField(indexedSnapshot, budgetField) || this.#live) {
+      this.dataStatus = {
+        ...delivery.status,
+        disclosure: `${delivery.status.disclosure} Volume sky ranks 5-minute heat, cap 120. Helius membership stays 10.`,
+      };
     } else {
       const floor = visibilityFloor(budgetField);
       const emptyNote =
@@ -177,6 +282,7 @@ export class FieldOS {
             : `${delivery.status.disclosure} ${emptyNote}`.trim(),
       };
     }
+    this.#applySky();
     this.#emit();
   }
 
@@ -380,6 +486,7 @@ export class FieldOS {
 
   destroy() {
     this.#querySeq++;
+    if (this.#hydrateTimer) globalThis.clearInterval(this.#hydrateTimer);
     this.#stopVoice();
     this.organism?.destroy();
     this.field.destroy();
@@ -399,3 +506,4 @@ async function unregisterStaleServiceWorkers() {
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+

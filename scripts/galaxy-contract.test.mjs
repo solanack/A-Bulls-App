@@ -56,3 +56,11 @@ test("wallet identity remains stable across galaxies", () => {
     canonicalUniverseId("star", "MintABC", "pons"),
   );
 });
+
+test("volume sky knobs stay 5m-only, cap 120, Helius membership 10", async () => {
+  const sky = await import("../src/lib/field/volume-sky.ts");
+  assert.equal(sky.SKY_CAP, 120);
+  assert.equal(sky.HELIUS_MEMBERSHIP_LIMIT, 10);
+  assert.equal(sky.LIQ_FLOOR_USD, 10_000);
+  assert.equal(sky.MAX_M5_VOL_TO_LIQ, 8);
+});

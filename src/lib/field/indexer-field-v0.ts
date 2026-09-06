@@ -19,7 +19,7 @@ import {
   canonicalUniverseId,
   cosmicKindForEntity,
   preserveLaunchOrigin,
-} from "./galaxies";
+} from "./galaxies.ts";
 
 export const FIELD_V0_VERSION = 1 as const;
 
@@ -210,6 +210,9 @@ export function starToParticle(
       state: star.state,
       incomplete,
       visualDrivers: star.visualDrivers ?? null,
+      volumeSol24h: star.visualDrivers?.volumeSol24h ?? null,
+      uniqueTraders24h: star.visualDrivers?.uniqueTraders24h ?? null,
+      liqSol: star.visualDrivers?.liqSol ?? null,
       lastTrade: star.lastTrade ?? null,
       wormhole: star.wormhole ?? null,
       fieldContract: "v0",
