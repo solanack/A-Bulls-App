@@ -101,11 +101,12 @@ export function selectStablePonsTop25(markets=[],previous=[],options={}){
 
 function topicAddress(token){return `0x${'0'.repeat(24)}${token.slice(2).toLowerCase()}`;}
 
-export function buildPonsOriginQuery(token,factory){
+export function buildPonsOriginQuery(token,factory,dataset='combined'){
   const normalized=s(token).toLowerCase();
   const definition=PONS_FACTORIES.find(item=>item.address===s(factory).toLowerCase());
   if(!ADDRESS_RE.test(normalized)||!definition)throw new Error('invalid_pons_origin_query');
-  return `query PonsOriginProof {\n  EVM(network: robinhood, dataset: combined) {\n    Events(\n      limit: {count: 5}\n      orderBy: {descending: Block_Time}\n      where: {\n        LogHeader: {Address: {is: \"${definition.address}\"}}\n        Topics: {includes: [\n          {Hash: {is: \"${definition.topic}\"}},\n          {Hash: {is: \"${topicAddress(normalized)}\"}}\n        ]}\n      }\n    ) {\n      Transaction { Hash }\n    }\n  }\n}`;
+  const datasetClause=s(dataset).toLowerCase()==='realtime'?'':', dataset: combined';
+  return `query PonsOriginProof {\n  EVM(network: robinhood${datasetClause}) {\n    Events(\n      limit: {count: 5}\n      orderBy: {descending: Block_Time}\n      where: {\n        LogHeader: {Address: {is: \"${definition.address}\"}}\n        Topics: {includes: [\n          {Hash: {is: \"${definition.topic}\"}},\n          {Hash: {is: \"${topicAddress(normalized)}\"}}\n        ]}\n      }\n    ) {\n      Transaction { Hash }\n    }\n  }\n}`;
 }
 
 async function rpc(env,method,params=[]){
@@ -129,7 +130,9 @@ async function verifyPonsOrigin(env,db,token,now){
   if(cached&&now-n(cached.checked_at)<86400&&cached.status==='not_found')return false;
   try{
     for(const factory of PONS_FACTORIES){
-      const originData=await bitquery(env,buildPonsOriginQuery(token,factory.address));
+      let originData;
+      try{originData=await bitquery(env,buildPonsOriginQuery(token,factory.address));}
+      catch{originData=await bitquery(env,buildPonsOriginQuery(token,factory.address,'realtime'));}
       const events=originData?.EVM?.Events||[];
       for(const event of(Array.isArray(events)?events:[])){
         const receipt=await rpc(env,'eth_getTransactionReceipt',[s(event?.Transaction?.Hash)]);
