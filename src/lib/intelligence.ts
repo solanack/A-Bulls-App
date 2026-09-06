@@ -214,14 +214,17 @@ function factsFromResolve(body: ResolveBody, extra: string[]): string[] {
     for (const flag of body.risk?.flags ?? []) facts.push(`Observed flag · ${flag}`);
     facts.push(`Risk coverage · ${body.risk?.level || "insufficient-evidence"}`);
   }
-  if (body.label) facts.push(`Label · ${body.label}`);
-  if (body.parsedType) facts.push(`Parsed · ${body.parsedType}`);
-  if (body.owner) facts.push(`Owner · ${shortId(body.owner)}`);
-  if (typeof body.lamports === "number") facts.push(`Lamports · ${body.lamports.toLocaleString()}`);
-  if (body.slot) facts.push(`Slot · ${body.slot}`);
-  if (typeof body.feeLamports === "number") facts.push(`Fee · ${body.feeLamports} lamports`);
-  if (body.executable) facts.push("Executable · yes");
-  if (body.failed) facts.push("Status · failed");
+  const traderToken = body.kind === "evm-token" || body.kind === "solana-token";
+  if (!traderToken) {
+    if (body.label) facts.push(`Label · ${body.label}`);
+    if (body.parsedType) facts.push(`Parsed · ${body.parsedType}`);
+    if (body.owner) facts.push(`Owner · ${shortId(body.owner)}`);
+    if (typeof body.lamports === "number") facts.push(`Lamports · ${body.lamports.toLocaleString()}`);
+    if (body.slot) facts.push(`Slot · ${body.slot}`);
+    if (typeof body.feeLamports === "number") facts.push(`Fee · ${body.feeLamports} lamports`);
+    if (body.executable) facts.push("Executable · yes");
+    if (body.failed) facts.push("Status · failed");
+  }
   facts.push(...extra);
   if (body.source) facts.push(`Source · ${body.source}`);
   return facts;
