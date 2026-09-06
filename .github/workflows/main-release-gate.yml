@@ -56,5 +56,7 @@ jobs:
             src/lib/app-data/app-data.test.ts \
             src/lib/auth/gate-identity.test.ts
 
-      - name: PONS top-25 contract tests
-        run: node --test workers/intelligence-pons-ranking.test.mjs
+      - name: PONS ranking and direct-query tests
+        run: |
+          node --test workers/intelligence-pons-ranking.test.mjs
+          node --test workers/intelligence-pons-token-resolver.test.mjs workers/intelligence-entity-resolver.test.mjs

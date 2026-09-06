@@ -47,3 +47,20 @@ test('resolves transaction signatures with investigation context',async()=>{
   assert.match(result.disclosure,/not claims of identity/);
 });
 
+
+
+test('routes EVM contracts to Robinhood token intelligence instead of Solana RPC',async()=>{
+  const address='0x1111111111111111111111111111111111111111';
+  const fetchImpl=async(input,init={})=>{
+    const url=String(input);
+    if(url==='https://robinhood-rpc.test')return new Response(JSON.stringify({jsonrpc:'2.0',id:1,result:'0x6000'}));
+    if(url.includes('dexscreener'))return new Response(JSON.stringify([{baseToken:{address,symbol:'PONZ'},liquidity:{usd:50000},marketCap:750000,volume:{h24:25000}}]));
+    const query=JSON.parse(init.body).query;
+    if(query.includes('RobinhoodTokenHolders'))return new Response(JSON.stringify({data:{EVM:{Top:[],Stats:[{holders:10,total:'1000'}]}}}));
+    return new Response(JSON.stringify({data:{Trading:{Tokens:[{Token:{Address:address,Symbol:'PONZ',Name:'Ponz Token'},Price:{Ohlc:{Close:0.001}},Supply:{MarketCap:750000,TotalSupply:1000}}]}}}));
+  };
+  const result=await resolvePublicChainEntity(address,{env:{INTELLIGENCE_RPC_URL:'https://solana-rpc.invalid',PONS_RPC_URL:'https://robinhood-rpc.test',PONS_BITQUERY_TOKEN:'secret'},fetchImpl});
+  assert.equal(result.kind,'evm-token');
+  assert.equal(result.network,'Robinhood Chain');
+  assert.equal(result.market.marketCapUsd,750000);
+});

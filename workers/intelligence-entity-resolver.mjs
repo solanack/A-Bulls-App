@@ -1,4 +1,5 @@
 import { resolveHistoryRpc } from './intelligence-history-engine.mjs';
+import { isRobinhoodContractAddress, resolveRobinhoodToken } from './intelligence-pons-token-resolver.mjs';
 
 const BASE58=/^[1-9A-HJ-NP-Za-km-z]+$/;
 const ADDRESS_MIN=32,ADDRESS_MAX=50,SIGNATURE_MIN=64,SIGNATURE_MAX=90;
@@ -11,6 +12,7 @@ const s=v=>String(v==null?'':v).trim();
 const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 
 function classify(query){
+  if(isRobinhoodContractAddress(query))return'evm-token';
   if(BASE58.test(query)&&query.length>=SIGNATURE_MIN&&query.length<=SIGNATURE_MAX)return'transaction-signature';
   if(BASE58.test(query)&&query.length>=ADDRESS_MIN&&query.length<=ADDRESS_MAX)return'solana-address';
   return'search-text';
@@ -64,7 +66,9 @@ function transactionContext(tx={}){
 }
 
 export async function resolvePublicChainEntity(query,{env={},fetchImpl=fetch}={}){
-  const value=s(query),kind=classify(value),source=resolveHistoryRpc(env);
+  const value=s(query),kind=classify(value);
+  if(kind==='evm-token')return resolveRobinhoodToken(value,{env,fetchImpl});
+  const source=resolveHistoryRpc(env);
   if(kind==='search-text')return Object.freeze({ok:false,kind,error:'free_text_resolution_unavailable',query:value,readOnly:true});
   if(kind==='transaction-signature'){
     const tx=await rpc(source,'getTransaction',[value,{commitment:'confirmed',maxSupportedTransactionVersion:0,encoding:'jsonParsed'}],fetchImpl);

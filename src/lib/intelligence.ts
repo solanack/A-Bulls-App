@@ -30,6 +30,38 @@ type ResolveBody = {
     accountCount?: number;
     instructionCount?: number;
   };
+  chainId?: number;
+  network?: string;
+  pons?: {
+    verified?: boolean;
+    rank?: number | null;
+    factory?: string | null;
+    factoryVersion?: string | null;
+    deployer?: string | null;
+    pool?: string | null;
+    transactionHash?: string | null;
+  };
+  market?: {
+    symbol?: string | null;
+    name?: string | null;
+    priceUsd?: number | null;
+    marketCapUsd?: number | null;
+    fdvUsd?: number | null;
+    liquidityUsd?: number | null;
+    volumeUsd?: { m5?: number | null; h1?: number | null; h6?: number | null; h24?: number | null };
+    priceChangePct?: { m5?: number | null; h1?: number | null; h6?: number | null; h24?: number | null };
+    circulatingSupply?: number | null;
+    totalSupply?: number | null;
+    dexId?: string | null;
+  };
+  holders?: {
+    count?: number | null;
+    top10Pct?: number | null;
+    top20Pct?: number | null;
+    method?: string;
+    coverage?: string;
+  };
+  risk?: { level?: string; statement?: string };
   error?: string;
 };
 
@@ -37,7 +69,7 @@ function classifyKind(label: string, parsedType?: string, executable?: boolean):
   const l = label.toLowerCase();
   if (l.includes("transaction")) return "transaction";
   if (l.includes("nft")) return "nft";
-  if (l.includes("mint") || parsedType === "mint") return "mint";
+  if (l.includes("mint") || l.includes("token") || parsedType === "mint") return "mint";
   if (l.includes("program") || executable) return "program";
   if (l.includes("wallet") || l.includes("system") || l.includes("account")) return "wallet";
   return "unknown";
@@ -47,6 +79,18 @@ function lamportsToSol(lamports: number) {
   return (lamports / 1_000_000_000).toLocaleString(undefined, {
     maximumFractionDigits: 4,
   });
+}
+
+function usd(value: number) {
+  return value.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: value < 1 ? 6 : 0,
+  });
+}
+
+function percent(value: number) {
+  return `${value.toFixed(1)} percent`;
 }
 
 function coverageFrom(body: ResolveBody): Coverage {
@@ -59,6 +103,30 @@ function speakFromResolve(query: string, body: ResolveBody, extra: string[] = []
   const id = shortId(body.address || body.signature || query);
   if (!body?.ok || body.state === "not-found") {
     return `This identifier ending in ${id} is not covered in the public record I can see. The memory is empty, or the address has not been observed. I will not guess.`;
+  }
+  if (body.kind === "evm-token") {
+    const market = body.market ?? {};
+    const parts: string[] = [];
+    const tokenName = market.symbol || market.name || `contract ending in ${id}`;
+    parts.push(`I am reading ${tokenName} on Robinhood Chain.`);
+    if (body.pons?.verified) {
+      parts.push(`PONS launch origin is verified${body.pons.rank ? `, with galaxy rank ${body.pons.rank}` : ""}.`);
+    } else {
+      parts.push("This is a verified Robinhood Chain contract, but PONS launch origin is not yet verified.");
+    }
+    if (typeof market.marketCapUsd === "number") parts.push(`Market cap is ${usd(market.marketCapUsd)}.`);
+    if (typeof market.liquidityUsd === "number") parts.push(`Observed liquidity is ${usd(market.liquidityUsd)}.`);
+    if (typeof market.volumeUsd?.h24 === "number") parts.push(`Twenty four hour volume is ${usd(market.volumeUsd.h24)}.`);
+    if (typeof market.volumeUsd?.h1 === "number") parts.push(`One hour volume is ${usd(market.volumeUsd.h1)}.`);
+    if (typeof body.holders?.count === "number") parts.push(`${body.holders.count.toLocaleString()} current holders were observed.`);
+    if (typeof body.holders?.top10Pct === "number") parts.push(`The raw top ten hold ${percent(body.holders.top10Pct)} of supply.`);
+    if (typeof body.holders?.top20Pct === "number") parts.push(`The raw top twenty hold ${percent(body.holders.top20Pct)} of supply.`);
+    if (body.risk?.level === "insufficient-evidence") {
+      parts.push("Trade-safety coverage is incomplete. I will not call this token safe.");
+    }
+    parts.push("Read only. Public-chain observations. No wallet signing and no price prediction.");
+    if (body.disclosure) parts.push(body.disclosure);
+    return parts.join(" ");
   }
   const parts: string[] = [];
   const kind = classifyKind(body.label || "", body.parsedType, body.executable);
@@ -102,6 +170,23 @@ function speakFromResolve(query: string, body: ResolveBody, extra: string[] = []
 
 function factsFromResolve(body: ResolveBody, extra: string[]): string[] {
   const facts: string[] = [];
+  if (body.kind === "evm-token") {
+    const market = body.market ?? {};
+    facts.push(`Network · ${body.network || "Robinhood Chain"}`);
+    facts.push(`PONS origin · ${body.pons?.verified ? "verified" : "not verified"}`);
+    if (body.pons?.rank) facts.push(`PONS rank · ${body.pons.rank}`);
+    if (market.symbol) facts.push(`Symbol · ${market.symbol}`);
+    if (typeof market.marketCapUsd === "number") facts.push(`Market cap · ${usd(market.marketCapUsd)}`);
+    if (typeof market.liquidityUsd === "number") facts.push(`Liquidity · ${usd(market.liquidityUsd)}`);
+    if (typeof market.volumeUsd?.m5 === "number") facts.push(`Volume 5m · ${usd(market.volumeUsd.m5)}`);
+    if (typeof market.volumeUsd?.h1 === "number") facts.push(`Volume 1h · ${usd(market.volumeUsd.h1)}`);
+    if (typeof market.volumeUsd?.h6 === "number") facts.push(`Volume 6h · ${usd(market.volumeUsd.h6)}`);
+    if (typeof market.volumeUsd?.h24 === "number") facts.push(`Volume 24h · ${usd(market.volumeUsd.h24)}`);
+    if (typeof body.holders?.count === "number") facts.push(`Holders · ${body.holders.count.toLocaleString()}`);
+    if (typeof body.holders?.top10Pct === "number") facts.push(`Raw top 10 · ${body.holders.top10Pct.toFixed(2)}%`);
+    if (typeof body.holders?.top20Pct === "number") facts.push(`Raw top 20 · ${body.holders.top20Pct.toFixed(2)}%`);
+    facts.push(`Risk · ${body.risk?.level || "insufficient-evidence"}`);
+  }
   if (body.label) facts.push(`Label · ${body.label}`);
   if (body.parsedType) facts.push(`Parsed · ${body.parsedType}`);
   if (body.owner) facts.push(`Owner · ${shortId(body.owner)}`);
