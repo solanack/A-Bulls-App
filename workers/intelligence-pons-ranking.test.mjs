@@ -32,6 +32,7 @@ test('Bitquery discovery starts with PONS protocol and scopes current market ran
 test('origin query binds both the allowlisted factory event and padded token topic',()=>{
   const query=buildPonsOriginQuery(token(7),'0x7ed598bcef8bd9edd8c97a195c6d13f40801ec7e');
   assert.match(query,/dataset: combined/);
+  assert.doesNotMatch(buildPonsOriginQuery(token(7),'0x7ed598bcef8bd9edd8c97a195c6d13f40801ec7e','realtime'),/dataset:/);
   assert.match(query,/8d4aad4953d0ca700d468f3753aa14432d1b35b43ec6409f051fb6aa43a89607/);
   assert.match(query,/0000000000000000000000000000000000000000000000000000000000000007/);
 });
