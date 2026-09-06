@@ -47,6 +47,9 @@ type ResolveBody = {
     marketCapUsd?: number | null;
     fdvUsd?: number | null;
     liquidityUsd?: number | null;
+    liquidityToMarketCapPct?: number | null;
+    pairCreatedAt?: number | null;
+    transactions?: Record<string, { buys?: number | null; sells?: number | null }> | null;
     volumeUsd?: { m5?: number | null; h1?: number | null; h6?: number | null; h24?: number | null };
     priceChangePct?: { m5?: number | null; h1?: number | null; h6?: number | null; h24?: number | null };
     circulatingSupply?: number | null;
@@ -60,7 +63,13 @@ type ResolveBody = {
     method?: string;
     coverage?: string;
   };
-  risk?: { level?: string; statement?: string };
+  activity?: { pressure?: Record<string, { buys?: number | null; sells?: number | null; buySharePct?: number | null; buySellRatio?: number | null }> };
+  launchpad?: { name?: string | null; associated?: boolean; status?: string; rank24h?: number | null; rank1h?: number | null; firstObservedAt?: number | null; evidence?: string };
+  token?: { decimals?: number | null; mintAuthority?: string | null; freezeAuthority?: string | null; mintAuthorityRevoked?: boolean; freezeAuthorityRevoked?: boolean };
+  creator?: { coverage?: string; address?: string | null; statement?: string };
+  bundles?: { coverage?: string; statement?: string };
+  smartMoney?: { coverage?: string; statement?: string };
+  risk?: { level?: string; flags?: string[]; statement?: string };
   error?: string;
 };
 
@@ -84,7 +93,7 @@ function usd(value: number) {
   return value.toLocaleString(undefined, {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: value < 1 ? 6 : 0,
+    maximumFractionDigits: value < 0.0001 ? 10 : value < 1 ? 6 : 0,
   });
 }
 
@@ -103,29 +112,32 @@ function speakFromResolve(query: string, body: ResolveBody, extra: string[] = []
   if (!body?.ok || body.state === "not-found") {
     return `This identifier ending in ${id} is not covered in the public record I can see. The memory is empty, or the address has not been observed. I will not guess.`;
   }
-  if (body.kind === "evm-token") {
+  if (body.kind === "evm-token" || body.kind === "solana-token") {
     const market = body.market ?? {};
     const parts: string[] = [];
-    const tokenName = market.symbol || market.name || `contract ending in ${id}`;
-    parts.push(`I am reading ${tokenName} on Robinhood Chain.`);
-    if (body.pons?.verified) {
-      parts.push(`PONS launch origin is verified${body.pons.rank ? `, with galaxy rank ${body.pons.rank}` : ""}.`);
-    } else {
-      parts.push("This is a verified Robinhood Chain contract, but PONS launch origin is not yet verified.");
-    }
-    if (typeof market.marketCapUsd === "number") parts.push(`Market cap is ${usd(market.marketCapUsd)}.`);
-    if (typeof market.fdvUsd === "number") parts.push(`Fully diluted valuation is ${usd(market.fdvUsd)}.`);
-    if (typeof market.liquidityUsd === "number") parts.push(`Observed liquidity is ${usd(market.liquidityUsd)}.`);
-    if (typeof market.volumeUsd?.h24 === "number") parts.push(`Twenty four hour volume is ${usd(market.volumeUsd.h24)}.`);
-    if (typeof market.volumeUsd?.h1 === "number") parts.push(`One hour volume is ${usd(market.volumeUsd.h1)}.`);
-    if (typeof body.holders?.count === "number") parts.push(`${body.holders.count.toLocaleString()} current holders were observed.`);
-    if (typeof body.holders?.top10Pct === "number") parts.push(`The raw top ten hold ${percent(body.holders.top10Pct)} of supply.`);
-    if (typeof body.holders?.top20Pct === "number") parts.push(`The raw top twenty hold ${percent(body.holders.top20Pct)} of supply.`);
-    if (body.risk?.level === "insufficient-evidence") {
-      parts.push("Trade-safety coverage is incomplete. I will not call this token safe.");
-    }
-    parts.push("Read only. Public-chain observations. No wallet signing and no price prediction.");
-    if (body.disclosure) parts.push(body.disclosure);
+    const network = body.network || (body.kind === "solana-token" ? "Solana" : "Robinhood Chain");
+    const tokenName = market.symbol || market.name || `token ending in ${id}`;
+    parts.push(`${tokenName} on ${network}.`);
+    const valuation: string[] = [];
+    if (typeof market.priceUsd === "number") valuation.push(`price ${usd(market.priceUsd)}`);
+    if (typeof market.marketCapUsd === "number") valuation.push(`market cap ${usd(market.marketCapUsd)}`);
+    if (typeof market.fdvUsd === "number") valuation.push(`FDV ${usd(market.fdvUsd)}`);
+    if (valuation.length) parts.push(`${valuation.join(", ")}.`);
+    const oneHour: string[] = [];
+    if (typeof market.priceChangePct?.h1 === "number") oneHour.push(`${market.priceChangePct.h1 >= 0 ? "up" : "down"} ${Math.abs(market.priceChangePct.h1).toFixed(1)} percent`);
+    if (typeof market.volumeUsd?.h1 === "number") oneHour.push(`${usd(market.volumeUsd.h1)} volume`);
+    if (oneHour.length) parts.push(`Over one hour: ${oneHour.join(", ")}.`);
+    const pressure = body.activity?.pressure?.h1;
+    if (typeof pressure?.buys === "number" && typeof pressure?.sells === "number") parts.push(`${pressure.buys.toLocaleString()} buys versus ${pressure.sells.toLocaleString()} sells in the last hour.`);
+    if (typeof market.liquidityUsd === "number") parts.push(`Liquidity is ${usd(market.liquidityUsd)}${typeof market.liquidityToMarketCapPct === "number" ? `, ${market.liquidityToMarketCapPct.toFixed(1)} percent of market cap` : ""}.`);
+    if (typeof body.holders?.top10Pct === "number") parts.push(`The raw top ten accounts hold ${percent(body.holders.top10Pct)} of supply.`);
+    if (body.launchpad?.name) parts.push(`${body.launchpad.name} status: ${body.launchpad.status || "observed"}${body.pons?.rank ? `, galaxy rank ${body.pons.rank}` : body.launchpad.rank24h ? `, twenty-four-hour rank ${body.launchpad.rank24h}` : ""}.`);
+    const authorityFlags: string[] = [];
+    if (body.token?.mintAuthorityRevoked === false) authorityFlags.push("mint authority active");
+    if (body.token?.freezeAuthorityRevoked === false) authorityFlags.push("freeze authority active");
+    if (authorityFlags.length) parts.push(`Observed flags: ${authorityFlags.join(" and ")}.`);
+    else if (body.risk?.flags?.length) parts.push(`Observed flag: ${body.risk.flags[0]}.`);
+    parts.push("Observed data only. No safety claim or price prediction.");
     return parts.join(" ");
   }
   const parts: string[] = [];
@@ -170,23 +182,37 @@ function speakFromResolve(query: string, body: ResolveBody, extra: string[] = []
 
 function factsFromResolve(body: ResolveBody, extra: string[]): string[] {
   const facts: string[] = [];
-  if (body.kind === "evm-token") {
+  if (body.kind === "evm-token" || body.kind === "solana-token") {
     const market = body.market ?? {};
-    facts.push(`Network · ${body.network || "Robinhood Chain"}`);
-    facts.push(`PONS origin · ${body.pons?.verified ? "verified" : "not verified"}`);
-    if (body.pons?.rank) facts.push(`PONS rank · ${body.pons.rank}`);
+    facts.push(`Network · ${body.network || (body.kind === "solana-token" ? "Solana" : "Robinhood Chain")}`);
     if (market.symbol) facts.push(`Symbol · ${market.symbol}`);
+    if (typeof market.priceUsd === "number") facts.push(`Price · ${usd(market.priceUsd)}`);
     if (typeof market.marketCapUsd === "number") facts.push(`Market cap · ${usd(market.marketCapUsd)}`);
     if (typeof market.fdvUsd === "number") facts.push(`FDV · ${usd(market.fdvUsd)}`);
     if (typeof market.liquidityUsd === "number") facts.push(`Liquidity · ${usd(market.liquidityUsd)}`);
-    if (typeof market.volumeUsd?.m5 === "number") facts.push(`Volume 5m · ${usd(market.volumeUsd.m5)}`);
-    if (typeof market.volumeUsd?.h1 === "number") facts.push(`Volume 1h · ${usd(market.volumeUsd.h1)}`);
-    if (typeof market.volumeUsd?.h6 === "number") facts.push(`Volume 6h · ${usd(market.volumeUsd.h6)}`);
-    if (typeof market.volumeUsd?.h24 === "number") facts.push(`Volume 24h · ${usd(market.volumeUsd.h24)}`);
+    if (typeof market.liquidityToMarketCapPct === "number") facts.push(`Liquidity / market cap · ${market.liquidityToMarketCapPct.toFixed(2)}%`);
+    for (const period of ["m5", "h1", "h6", "h24"] as const) {
+      const change = market.priceChangePct?.[period];
+      const volume = market.volumeUsd?.[period];
+      if (typeof change === "number") facts.push(`Price ${period} · ${change >= 0 ? "+" : ""}${change.toFixed(2)}%`);
+      if (typeof volume === "number") facts.push(`Volume ${period} · ${usd(volume)}`);
+    }
+    for (const period of ["m5", "h1", "h24"] as const) {
+      const pressure = body.activity?.pressure?.[period];
+      if (typeof pressure?.buys === "number" && typeof pressure?.sells === "number") facts.push(`Trades ${period} · ${pressure.buys} buys / ${pressure.sells} sells`);
+      if (typeof pressure?.buySharePct === "number") facts.push(`Buy share ${period} · ${pressure.buySharePct.toFixed(1)}%`);
+    }
     if (typeof body.holders?.count === "number") facts.push(`Holders · ${body.holders.count.toLocaleString()}`);
     if (typeof body.holders?.top10Pct === "number") facts.push(`Raw top 10 · ${body.holders.top10Pct.toFixed(2)}%`);
     if (typeof body.holders?.top20Pct === "number") facts.push(`Raw top 20 · ${body.holders.top20Pct.toFixed(2)}%`);
-    facts.push(`Risk · ${body.risk?.level || "insufficient-evidence"}`);
+    if (body.launchpad?.name) facts.push(`Launchpad · ${body.launchpad.name} · ${body.launchpad.status || "observed"}`);
+    if (body.pons) facts.push(`PONS origin · ${body.pons.verified ? "verified" : "not verified"}`);
+    if (body.pons?.rank) facts.push(`PONS rank · ${body.pons.rank}`);
+    if (body.launchpad?.rank24h) facts.push(`24h launchpad rank · ${body.launchpad.rank24h}`);
+    if (typeof body.token?.mintAuthorityRevoked === "boolean") facts.push(`Mint authority · ${body.token.mintAuthorityRevoked ? "revoked" : "active"}`);
+    if (typeof body.token?.freezeAuthorityRevoked === "boolean") facts.push(`Freeze authority · ${body.token.freezeAuthorityRevoked ? "revoked" : "active"}`);
+    for (const flag of body.risk?.flags ?? []) facts.push(`Observed flag · ${flag}`);
+    facts.push(`Risk coverage · ${body.risk?.level || "insufficient-evidence"}`);
   }
   if (body.label) facts.push(`Label · ${body.label}`);
   if (body.parsedType) facts.push(`Parsed · ${body.parsedType}`);
