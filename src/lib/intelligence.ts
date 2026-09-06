@@ -101,6 +101,13 @@ function percent(value: number) {
   return `${value.toFixed(1)} percent`;
 }
 
+function observedAge(timestampMs: number) {
+  const seconds = Math.max(0, Math.floor((Date.now() - timestampMs) / 1000));
+  if (seconds < 3600) return `${Math.max(1, Math.floor(seconds / 60))} minutes`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours`;
+  return `${Math.floor(seconds / 86400)} days`;
+}
+
 function coverageFrom(body: ResolveBody): Coverage {
   if (!body?.ok || body.state === "not-found") return "empty";
   if (body.source) return "fresh";
@@ -118,6 +125,8 @@ function speakFromResolve(query: string, body: ResolveBody, extra: string[] = []
     const network = body.network || (body.kind === "solana-token" ? "Solana" : "Robinhood Chain");
     const tokenName = market.symbol || market.name || `token ending in ${id}`;
     parts.push(`${tokenName} on ${network}.`);
+    const firstObservedAt = market.pairCreatedAt ?? body.launchpad?.firstObservedAt;
+    if (typeof firstObservedAt === "number") parts.push(`Its primary market was first observed ${observedAge(firstObservedAt)} ago.`);
     const valuation: string[] = [];
     if (typeof market.priceUsd === "number") valuation.push(`price ${usd(market.priceUsd)}`);
     if (typeof market.marketCapUsd === "number") valuation.push(`market cap ${usd(market.marketCapUsd)}`);
@@ -206,6 +215,8 @@ function factsFromResolve(body: ResolveBody, extra: string[]): string[] {
     if (typeof body.holders?.top10Pct === "number") facts.push(`Raw top 10 · ${body.holders.top10Pct.toFixed(2)}%`);
     if (typeof body.holders?.top20Pct === "number") facts.push(`Raw top 20 · ${body.holders.top20Pct.toFixed(2)}%`);
     if (body.launchpad?.name) facts.push(`Launchpad · ${body.launchpad.name} · ${body.launchpad.status || "observed"}`);
+    const firstObservedAt = market.pairCreatedAt ?? body.launchpad?.firstObservedAt;
+    if (typeof firstObservedAt === "number") facts.push(`Market age · ${observedAge(firstObservedAt)}`);
     if (body.pons) facts.push(`PONS origin · ${body.pons.verified ? "verified" : "not verified"}`);
     if (body.pons?.rank) facts.push(`PONS rank · ${body.pons.rank}`);
     if (body.launchpad?.rank24h) facts.push(`24h launchpad rank · ${body.launchpad.rank24h}`);
