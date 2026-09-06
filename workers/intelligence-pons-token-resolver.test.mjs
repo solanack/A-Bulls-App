@@ -43,6 +43,22 @@ test('an address without contract code is honestly not found',async()=>{
   assert.equal(result.state,'not-found');
 });
 
+test('market evidence survives an RPC false negative',async()=>{
+  const fetchImpl=async(input,init={})=>{
+    const url=String(input);
+    if(url==='https://rpc.test')return new Response(JSON.stringify({jsonrpc:'2.0',id:1,result:'0x'}));
+    if(url.includes('dexscreener'))return new Response(JSON.stringify([{chainId:'robinhood',baseToken:{address,symbol:'PONZ'},priceUsd:'0.02',marketCap:2000000,liquidity:{usd:125000},volume:{h24:90000}}]));
+    const query=JSON.parse(init.body).query;
+    if(query.includes('RobinhoodTokenHolders'))return new Response(JSON.stringify({data:{EVM:{Top:[],Stats:[]}}}));
+    return new Response(JSON.stringify({data:{Trading:{Tokens:[]}}}));
+  };
+  const result=await resolveRobinhoodToken(address,{env:{PONS_RPC_URL:'https://rpc.test',PONS_BITQUERY_TOKEN:'secret'},fetchImpl});
+  assert.equal(result.state,'resolved');
+  assert.equal(result.coverage,'partial');
+  assert.equal(result.market.marketCapUsd,2000000);
+  assert.ok(result.risk.flags.includes('contract code was not observed at the configured RPC'));
+});
+
 
 test('summarizes Robinhood buy and sell pressure factually',()=>{
   const pressure=summarizeRobinhoodPressure({h1:{buys:9,sells:3}});

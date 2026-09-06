@@ -138,7 +138,7 @@ async function resolveFieldQuery(query,env={}){
   }
   try{
     const value=await resolvePublicChainEntity(query,{env});
-    if(value?.ok)await writeCache(db,key,value,s(value.source)||source.name,ttl);
+    if(value?.ok&&value.state==='resolved')await writeCache(db,key,value,s(value.source)||source.name,ttl);
     return{...value,coverage:value?.coverage||(value?.ok?'fresh':'empty'),cache:'miss',budget};
   }catch(error){
     cached=await readCache(db,key,{allowExpired:true});
