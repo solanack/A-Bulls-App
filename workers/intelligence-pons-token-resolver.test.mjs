@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildRobinhoodHoldersQuery,buildRobinhoodTokenMarketQuery,isRobinhoodContractAddress,resolveRobinhoodToken} from './intelligence-pons-token-resolver.mjs';
+import {buildRobinhoodHoldersQuery,buildRobinhoodTokenMarketQuery,isRobinhoodContractAddress,resolveRobinhoodToken,summarizeRobinhoodPressure} from './intelligence-pons-token-resolver.mjs';
 
 const address='0x1111111111111111111111111111111111111111';
 
@@ -30,6 +30,8 @@ test('a valid contract resolves even without a populated galaxy',async()=>{
   assert.equal(result.kind,'evm-token');
   assert.equal(result.market.marketCapUsd,1000000);
   assert.equal(result.market.volumeUsd.h24,40);
+  assert.equal(result.market.liquidityToMarketCapPct,10);
+  assert.equal(result.activity.pressure.h24.buySharePct,60);
   assert.equal(result.holders.count,5);
   assert.equal(result.pons.verified,false);
   assert.equal(result.risk.level,'insufficient-evidence');
@@ -39,4 +41,11 @@ test('an address without contract code is honestly not found',async()=>{
   const fetchImpl=async()=>new Response(JSON.stringify({jsonrpc:'2.0',id:1,result:'0x'}));
   const result=await resolveRobinhoodToken(address,{env:{PONS_RPC_URL:'https://rpc.test'},fetchImpl});
   assert.equal(result.state,'not-found');
+});
+
+
+test('summarizes Robinhood buy and sell pressure factually',()=>{
+  const pressure=summarizeRobinhoodPressure({h1:{buys:9,sells:3}});
+  assert.equal(pressure.h1.buySharePct,75);
+  assert.equal(pressure.h1.buySellRatio,3);
 });
