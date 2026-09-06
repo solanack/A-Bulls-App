@@ -4,6 +4,7 @@ export const PONS_GALAXY_PATH = "/api/intelligence/pons/galaxy";
 export const PONS_GALAXY_URL = `https://abullsapp.com${PONS_GALAXY_PATH}`;
 
 export type PonsLaunch = {
+  rank: number;
   token: string;
   factory: string;
   factoryVersion: "v1" | "v2";
@@ -59,17 +60,14 @@ export function ponsLaunchToParticle(launch: PonsLaunch): FieldParticle {
   const angle = hashUnit(launch.token) * Math.PI * 2;
   const radius = 24 + hashUnit(`${launch.token}:radius`) * 62;
   const vertical = (hashUnit(`${launch.token}:height`) - 0.5) * 18;
-  const volumeH24 = marketNumber(launch.market, "volumeH24");
-  const liquidityUsd = marketNumber(launch.market, "liquidityUsd");
+  const marketCapUsd = marketNumber(launch.market, "marketCapUsd");
+  const fdvUsd = marketNumber(launch.market, "fdvUsd");
   const priceUsd = marketNumber(launch.market, "priceUsd");
+  const marketObservedAt = marketNumber(launch.market, "observedAt");
   const symbol = typeof launch.market?.symbol === "string" ? launch.market.symbol : null;
   const name = typeof launch.market?.name === "string" ? launch.market.name : null;
   const magnitudeBand =
-    volumeH24 !== null
-      ? clamp01(Math.log10(1 + volumeH24) / 7)
-      : liquidityUsd !== null
-        ? clamp01(Math.log10(1 + liquidityUsd) / 7)
-        : 0.42;
+    marketCapUsd !== null ? clamp01(0.45 + Math.log10(1 + marketCapUsd) / 16) : 0.42;
   const observedAt = launch.blockTime ?? Date.now();
 
   return {
@@ -86,6 +84,7 @@ export function ponsLaunchToParticle(launch: PonsLaunch): FieldParticle {
     source: "verified-pons-factory-event",
     metadata: {
       chainId: 4663,
+      rank: launch.rank,
       mint: launch.token,
       factory: launch.factory,
       factoryVersion: launch.factoryVersion,
@@ -101,8 +100,9 @@ export function ponsLaunchToParticle(launch: PonsLaunch): FieldParticle {
       symbol,
       name,
       priceUsd,
-      volumeH24,
-      liquidityUsd,
+      marketCapUsd,
+      fdvUsd,
+      marketObservedAt,
       originVerified: true,
     },
   };
@@ -122,18 +122,19 @@ export function snapshotFromPonsLaunches(
     windowStart,
     windowEnd,
     observedEventCount: particles.length,
-    samplingPolicy: "bounded verified PONS factory launch events; newest first",
+    samplingPolicy:
+      "stable top 25 by verified market cap; $500,000 floor; two qualifying cycles to enter and two misses to exit",
     coverageStatement:
       input.disclosure ??
-      "PONS membership requires an allowlisted factory TokenLaunched event. Market enrichment may be unavailable.",
-    sources: ["Robinhood Chain RPC", "verified PONS V1/V2 factories"],
+      "PONS origin is verified from an allowlisted factory receipt. Market cap is provider-reported; FDV is never substituted.",
+    sources: ["Bitquery Trading.Tokens", "Robinhood Chain RPC", "verified PONS V1/V2 factories"],
     particles,
   };
 }
 
 export async function loadPonsGalaxyDelivery(): Promise<PonsGalaxyDelivery> {
   try {
-    const response = await fetch(`${PONS_GALAXY_URL}?limit=250`, {
+    const response = await fetch(`${PONS_GALAXY_URL}?limit=25`, {
       headers: { accept: "application/json" },
       cache: "no-store",
     });
@@ -146,8 +147,8 @@ export async function loadPonsGalaxyDelivery(): Promise<PonsGalaxyDelivery> {
       const disabled = response.status === 404 || body.error === "feature_disabled";
       return degraded(
         disabled
-          ? "PONS verified index is staged but disabled. The prototype fabric remains visible."
-          : "PONS verified index is unavailable. No unverified token feed was substituted.",
+          ? "PONS top-25 index is staged but disabled. The prototype fabric remains visible."
+          : "PONS top-25 index is unavailable. No unverified token feed was substituted.",
       );
     }
     const launches = body.data.launches ?? [];
@@ -158,7 +159,7 @@ export async function loadPonsGalaxyDelivery(): Promise<PonsGalaxyDelivery> {
           store: "d1",
           coverage: "empty",
           circuitBreaker: null,
-          disclosure: `${body.data.coverage?.statement ?? "PONS index is available."} Honest empty: no verified launches are indexed yet.`,
+          disclosure: `${body.data.coverage?.statement ?? "PONS top-25 index is available."} Honest empty: no token currently passes every origin, market-cap, freshness, and stability gate.`,
         },
       };
     }
@@ -172,11 +173,11 @@ export async function loadPonsGalaxyDelivery(): Promise<PonsGalaxyDelivery> {
         coverage: body.data.coverage?.complete === true ? "fresh" : "stale",
         circuitBreaker: null,
         disclosure:
-          body.data.coverage?.statement ?? "Bounded verified PONS launch-origin coverage.",
+          body.data.coverage?.statement ?? "Bounded verified PONS top-25 market-cap coverage.",
       },
     };
   } catch {
-    return degraded("PONS verified index is unreachable. No browser-side market or RPC fallback was attempted.");
+    return degraded("PONS top-25 index is unreachable. No browser-side market or RPC fallback was attempted.");
   }
 }
 

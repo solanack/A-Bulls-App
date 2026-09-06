@@ -7,7 +7,6 @@ crons = ["*/15 * * * *"]
 
 [vars]
 ALLOWED_ORIGINS = "https://abullsapp.com,https://www.abullsapp.com,https://black-bull-run-sol.pages.dev,http://localhost:8788"
-# vNext server products remain fail-closed until explicitly enabled after migration/verification.
 UNIVERSE_ENABLED = "false"
 TRICKSTER_STUDIO_ENABLED = "false"
 TRICKSTER_SHARE_ENABLED = "false"
@@ -17,19 +16,26 @@ MARKET_BACKFILL_QUEUE_ENABLED = "false"
 INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED = "false"
 INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED = "false"
 INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
-# FIELD_V0_ENABLED — Field v0 producer (/api/intelligence/field/v0/*). Defaults on when FIELD_COMPAT_ENABLED or UNIVERSE_ENABLED is true; set explicitly to "true"|"false" to override.
-# FIELD_V0_ENABLED = "false"
+# FIELD_V0_ENABLED — Field v0 producer. Set explicitly to "true" or "false" to override.
 PONS_GALAXY_ENABLED = "false"
 PONS_INDEX_ENABLED = "false"
+PONS_RANK_ENABLED = "false"
+PONS_MARKET_CAP_MIN_USD = "500000"
+PONS_RANK_MAX_MEMBERS = "25"
+PONS_RANK_DISCOVERY_LIMIT = "500"
+PONS_RANK_PRICE_MAX_AGE_SECONDS = "900"
+PONS_RANK_REFRESH_MINUTES = "15"
+PONS_ORIGIN_VERIFY_LIMIT = "12"
 PONS_CONFIRMATIONS = "64"
 PONS_BLOCK_CHUNK = "500"
 PONS_REORG_REWIND = "32"
 PONS_MARKET_ENRICH_ENABLED = "false"
 PONS_MARKET_ENRICH_LIMIT = "4"
 
-# PONS is fail-closed until migration 0022 is applied and these are configured:
+# PONS is fail-closed until migrations 0022/0023 and these are configured:
 # PONS_START_BLOCK = "<verified deployment block>"
 # npx wrangler secret put PONS_RPC_URL
+# npx wrangler secret put PONS_BITQUERY_TOKEN
 # npx wrangler secret put PONS_INDEX_SECRET
 
 # Optional neutral Solana RPC overrides. Comma-separate additional standard RPC fallbacks.
@@ -38,33 +44,14 @@ PONS_MARKET_ENRICH_LIMIT = "4"
 # Optional external bridge source labels. These identify configured retrieval paths, not quality ratings.
 # INTELLIGENCE_SUBSTREAMS_SOURCE_NAME = "substreams-svm"
 # INTELLIGENCE_OLD_FAITHFUL_SOURCE_NAME = "old-faithful"
-# Optional bounded retry budget for one external retrieval task. Defaults to 4; allowed range is 1-10.
 # INTELLIGENCE_EXTERNAL_RETRIEVAL_MAX_ATTEMPTS = "4"
-
-# Protected internal ingest/retrieval secret must be stored with Wrangler, never in this file:
 # npx wrangler secret put INTELLIGENCE_MESH_INGEST_TOKEN
-
-# Provider secret for bounded, read-only indexing:
 # npx wrangler secret put HELIUS_API_KEY
-
-# Optional shared cache for indexed intelligence responses.
-# [[kv_namespaces]]
-# binding = "ANALYTICS_CACHE"
-# id = "<YOUR_KV_NAMESPACE_ID>"
-
-# Production Cloudflare Rate Limiting binding. Wrangler 4.36+ is required.
-# [[ratelimits]]
-# name = "RATE_LIMITER"
-# namespace_id = "1001"
-#   [ratelimits.simple]
-#   limit = 60
-#   period = 60
 
 [observability]
 enabled = true
 head_sampling_rate = 0.1
 
-# Dedicated A Bulls App Intelligence database
 [[d1_databases]]
 binding = "INTELLIGENCE_DB"
 database_name = "a-bulls-app-intelligence"
