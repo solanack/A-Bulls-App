@@ -16,6 +16,13 @@ FIELD_V0_ENABLED = "true"
 FIELD_QUERY_CACHE_TTL_SECONDS = "60"
 PONS_GALAXY_ENABLED = "false"
 PONS_INDEX_ENABLED = "false"
+PONS_RANK_ENABLED = "false"
+PONS_MARKET_CAP_MIN_USD = "500000"
+PONS_RANK_MAX_MEMBERS = "25"
+PONS_RANK_DISCOVERY_LIMIT = "500"
+PONS_RANK_PRICE_MAX_AGE_SECONDS = "900"
+PONS_RANK_REFRESH_MINUTES = "15"
+PONS_ORIGIN_VERIFY_LIMIT = "12"
 PONS_CONFIRMATIONS = "64"
 PONS_BLOCK_CHUNK = "500"
 PONS_REORG_REWIND = "32"
@@ -49,9 +56,10 @@ PUMP_CANDLE_RETENTION_DAYS = "365"
 PUMP_INGEST_CREDIT_MODE = "webhook"
 PUMP_HELIUS_WEBHOOK_ID = "06af243a-c7a6-445f-8966-31d3d46b9ddc"
 
-# Enable PONS only after migration 0022 and a production-grade Robinhood Chain RPC are configured.
+# Enable the PONS top-25 only after migrations 0022/0023 and secrets are configured.
 # PONS_START_BLOCK = "<verified deployment block>"
 # npx wrangler secret put PONS_RPC_URL
+# npx wrangler secret put PONS_BITQUERY_TOKEN
 # npx wrangler secret put PONS_INDEX_SECRET
 
 Z500_UNIVERSE_ENABLED = "false"

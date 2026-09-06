@@ -21,15 +21,23 @@ INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
 # FIELD_V0_ENABLED = "false"
 PONS_GALAXY_ENABLED = "false"
 PONS_INDEX_ENABLED = "false"
+PONS_RANK_ENABLED = "false"
+PONS_MARKET_CAP_MIN_USD = "500000"
+PONS_RANK_MAX_MEMBERS = "25"
+PONS_RANK_DISCOVERY_LIMIT = "500"
+PONS_RANK_PRICE_MAX_AGE_SECONDS = "900"
+PONS_RANK_REFRESH_MINUTES = "15"
+PONS_ORIGIN_VERIFY_LIMIT = "12"
 PONS_CONFIRMATIONS = "64"
 PONS_BLOCK_CHUNK = "500"
 PONS_REORG_REWIND = "32"
 PONS_MARKET_ENRICH_ENABLED = "false"
 PONS_MARKET_ENRICH_LIMIT = "4"
 
-# PONS is fail-closed until migration 0022 is applied and these are configured:
+# PONS is fail-closed until migrations 0022/0023 and these are configured:
 # PONS_START_BLOCK = "<verified deployment block>"
 # npx wrangler secret put PONS_RPC_URL
+# npx wrangler secret put PONS_BITQUERY_TOKEN
 # npx wrangler secret put PONS_INDEX_SECRET
 
 # Optional neutral Solana RPC overrides. Comma-separate additional standard RPC fallbacks.
