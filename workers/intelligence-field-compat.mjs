@@ -1,5 +1,6 @@
 import { intelligenceDb } from './intelligence-indexer.mjs';
 import { resolvePublicChainEntity } from './intelligence-entity-resolver.mjs';
+import { isRobinhoodContractAddress } from './intelligence-pons-token-resolver.mjs';
 import { resolveHistoryRpc } from './intelligence-history-engine.mjs';
 import { ecosystemUniverseSnapshot } from './intelligence-ecosystem-universe-snapshot.mjs';
 import { listUniverses } from './intelligence-ecosystem-universes.mjs';
@@ -125,7 +126,7 @@ async function writeCache(db,key,value,source,ttlSeconds,now=Math.floor(Date.now
 async function resolveFieldQuery(query,env={}){
   const db=intelligenceDb(env),key=`field:resolve:${s(query).toLowerCase()}`,ttl=Math.max(10,Math.min(3600,Math.trunc(n(env.FIELD_QUERY_CACHE_TTL_SECONDS)||60)));
   let cached=await readCache(db,key);if(cached)return{...cached.value,coverage:cached.coverage,cache:'fresh'};
-  const source=resolveHistoryRpc(env);
+  const source=isRobinhoodContractAddress(query)?{name:'robinhood-chain'}:resolveHistoryRpc(env);
   let budget=null;
   if(source.name==='helius-standard-rpc'){
     const reservation=await reserveFieldProviderCredit(env,1);budget=reservation.budget;
@@ -138,7 +139,7 @@ async function resolveFieldQuery(query,env={}){
   try{
     const value=await resolvePublicChainEntity(query,{env});
     if(value?.ok)await writeCache(db,key,value,s(value.source)||source.name,ttl);
-    return{...value,coverage:value?.ok?'fresh':'empty',cache:'miss',budget};
+    return{...value,coverage:value?.coverage||(value?.ok?'fresh':'empty'),cache:'miss',budget};
   }catch(error){
     cached=await readCache(db,key,{allowExpired:true});
     if(cached)return{...cached.value,coverage:'stale',cache:'stale',budget,disclosure:[cached.value.disclosure,'Resolver unavailable; served from stale cache.'].filter(Boolean).join(' · ')};
