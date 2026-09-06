@@ -90,6 +90,56 @@ void main() {
 }
 `;
 
+function liveLabel(particle: FieldParticle) {
+  const symbol = particle.metadata?.symbol;
+  const name = particle.metadata?.name;
+  if (typeof symbol === "string" && symbol.trim()) return symbol.trim().slice(0, 14).toUpperCase();
+  if (typeof name === "string" && name.trim()) return name.trim().slice(0, 18).toUpperCase();
+  const address = particle.metadata?.mint;
+  return typeof address === "string" ? `${address.slice(0, 6)}…${address.slice(-4)}` : null;
+}
+
+function createLabelSprite(text: string) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 384;
+  canvas.height = 72;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.font = "700 28px sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillStyle = "rgba(7,7,11,.78)";
+  context.strokeStyle = "rgba(199,240,95,.58)";
+  context.lineWidth = 2;
+  context.beginPath();
+  context.roundRect(28, 12, 328, 48, 20);
+  context.fill();
+  context.stroke();
+  context.fillStyle = "rgba(238,246,228,.96)";
+  context.fillText(text, 192, 37);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      toneMapped: false,
+    }),
+  );
+  sprite.scale.set(22, 4.1, 1);
+  sprite.renderOrder = 6;
+  return sprite;
+}
+
+function disposeLabelSprite(sprite: THREE.Sprite) {
+  sprite.removeFromParent();
+  sprite.material.map?.dispose();
+  sprite.material.dispose();
+}
+
 function buildGalaxyGeometry(snapshot: UniverseSnapshot, limit: number) {
   const visible = snapshot.particles.slice(0, limit);
   const positions = new Float32Array(visible.length * 3);
@@ -100,7 +150,16 @@ function buildGalaxyGeometry(snapshot: UniverseSnapshot, limit: number) {
   const duration = Math.max(1, snapshot.windowEnd - snapshot.windowStart);
   visible.forEach((entity, i) => {
     positions.set(entity.position, i * 3);
-    colors.set(parentColorForCategory(entity.category), i * 3);
+    const base = parentColorForCategory(entity.category);
+    const color =
+      snapshot.galaxyId === "pons"
+        ? ([
+            base[0] * 0.58 + 0.38,
+            base[1] * 0.62 + 0.34,
+            base[2] * 0.48 + 0.12,
+          ] as [number, number, number])
+        : base;
+    colors.set(color, i * 3);
     sizes[i] = 1.18 + entity.magnitudeBand * 3.15;
     cats[i] = CATEGORY_INDEX[entity.category] ?? 6;
     observed[i] = clamp((entity.observedAt - snapshot.windowStart) / duration, 0, 1);
@@ -123,6 +182,7 @@ export class ParticleFieldRenderer {
   camera: THREE.PerspectiveCamera;
   points: THREE.Points;
   stars: THREE.Points;
+  liveLabels: THREE.Sprite[] = [];
   material: THREE.ShaderMaterial;
   basePositions: Float32Array;
   colors: Float32Array;
@@ -206,6 +266,7 @@ export class ParticleFieldRenderer {
     this.colors = fieldGeometry.colors;
     this.points = new THREE.Points(fieldGeometry.geometry, this.material);
     this.scene.add(this.points);
+    this.#rebuildLiveLabels();
 
     const starfield = createStarfield();
     const sg = new THREE.BufferGeometry();
@@ -270,6 +331,7 @@ export class ParticleFieldRenderer {
     this.basePositions = new Float32Array(fieldGeometry.positions);
     this.colors = fieldGeometry.colors;
     this.points.geometry = fieldGeometry.geometry;
+    this.points.scale.set(1, snapshot.galaxyId === "pons" ? 0.72 : 1, 1);
     previousGeometry.dispose();
     this.renderer.domElement.setAttribute(
       "aria-label",
@@ -277,6 +339,26 @@ export class ParticleFieldRenderer {
     );
     this.clearFocus();
     this.setReplay({ active: false, cursor: 1, playing: false });
+    this.#rebuildLiveLabels();
+  }
+
+  #rebuildLiveLabels() {
+    for (const sprite of this.liveLabels) disposeLabelSprite(sprite);
+    this.liveLabels = [];
+    const entities = this.points.geometry.userData.entities as FieldParticle[];
+    const candidates = entities
+      .filter((particle) => Boolean(particle.source) && Boolean(liveLabel(particle)))
+      .sort((a, b) => b.magnitudeBand - a.magnitudeBand)
+      .slice(0, 5);
+    for (const particle of candidates) {
+      const label = liveLabel(particle);
+      if (!label) continue;
+      const sprite = createLabelSprite(label);
+      if (!sprite) continue;
+      sprite.position.set(particle.position[0], particle.position[1] + 4.5, particle.position[2]);
+      this.points.add(sprite);
+      this.liveLabels.push(sprite);
+    }
   }
 
   setReplay({
@@ -499,6 +581,8 @@ export class ParticleFieldRenderer {
     globalThis.removeEventListener("resize", this.#onResize);
     globalThis.visualViewport?.removeEventListener("resize", this.#onResize);
     this.points.geometry.dispose();
+    for (const sprite of this.liveLabels) disposeLabelSprite(sprite);
+    this.liveLabels = [];
     this.stars.geometry.dispose();
     this.material.dispose();
     (this.stars.material as THREE.Material).dispose();

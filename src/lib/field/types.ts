@@ -22,7 +22,7 @@ export type OrganismState =
 
 export type Coverage = "fresh" | "stale" | "degraded" | "empty";
 
-export type GalaxyId = "galaxy-zero" | "pump-fun";
+export type GalaxyId = "galaxy-zero" | "pump-fun" | "pons";
 export type GalaxyStatus = "populated" | "staging";
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };

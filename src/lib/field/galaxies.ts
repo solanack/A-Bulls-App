@@ -23,9 +23,33 @@ export const GALAXIES = [
     coverage: "Indexed births, trades, graduations, migrations, and terminal states",
     sources: ["pump.fun indexed stream", "Helius indexed history"],
   },
+  {
+    id: "pons",
+    name: "PONS",
+    ecosystem: "PONS launch origin on Robinhood Chain",
+    status: "populated",
+    seed: 4663,
+    accent: "#c7f05f",
+    description:
+      "Tokens proven to originate from verified PONS factory events on Robinhood Chain.",
+    coverage: "Verified V1 and V2 factory launches with explicit finality",
+    sources: ["Robinhood Chain RPC", "verified PONS factories"],
+  },
 ] as const satisfies readonly GalaxyDefinition[];
 
 export const DEFAULT_GALAXY_ID: GalaxyId = "galaxy-zero";
+
+export const GALAXY_CHAIN_LABEL: Record<GalaxyId, string> = {
+  "galaxy-zero": "SOLANA",
+  "pump-fun": "SOLANA",
+  pons: "ROBINHOOD CHAIN",
+};
+
+export const GALAXY_ORIGIN_CHIPS: readonly { id: GalaxyId; label: string }[] = [
+  { id: "galaxy-zero", label: "ZERO" },
+  { id: "pump-fun", label: "PUMP" },
+  { id: "pons", label: "PONS" },
+];
 
 export const COSMOLOGY_RULES: Record<
   CosmicObjectKind,

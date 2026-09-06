@@ -1,0 +1,37 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const appShell = readFileSync(new URL("../src/components/app-shell.tsx", import.meta.url), "utf8");
+const fieldOs = readFileSync(new URL("../src/lib/field/field-os.ts", import.meta.url), "utf8");
+const client = readFileSync(
+  new URL("../src/lib/universe-data/pons-client.ts", import.meta.url),
+  "utf8",
+);
+const worker = readFileSync(
+  new URL("../workers/intelligence-pons-galaxy.mjs", import.meta.url),
+  "utf8",
+);
+
+test("PONS remains additive inside the locked interface", () => {
+  assert.match(appShell, /GALAXY_ORIGIN_CHIPS/);
+  assert.match(appShell, /setGalaxy\(item\.id\)/);
+  assert.doesNotMatch(appShell, /className="field-shell__galaxy-trigger"/);
+});
+
+test("PONS selection does not add alien narration", () => {
+  assert.doesNotMatch(appShell, /observedGalaxySpeech|observedBodySpeech|unlockSpeech/);
+  assert.doesNotMatch(fieldOs, /observedGalaxySpeech|observedBodySpeech/);
+  assert.doesNotMatch(fieldOs, /setGalaxy[\s\S]{0,900}speakText/);
+});
+
+test("the browser reads only the first-party cached PONS endpoint", () => {
+  assert.match(client, /https:\/\/abullsapp\.com/);
+  assert.doesNotMatch(client, /dexscreener|dexpaprika|rpc\.mainnet|eth_getLogs/i);
+  assert.match(worker, /eth_getLogs/);
+});
+
+test("PONS indexing has no signing, order, launch, or wallet-connection path", () => {
+  assert.doesNotMatch(worker, /eth_sendRawTransaction|personal_sign|wallet_connect|placeOrder/);
+  assert.match(worker, /readOnly:true/);
+});

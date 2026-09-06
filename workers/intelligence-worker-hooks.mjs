@@ -23,9 +23,12 @@ import { runUniverseScheduledMaintenance } from './intelligence-universe-schedul
 import { handleFieldV0Request } from './intelligence-field-v0.mjs';
 import { handleFieldCompatibilityRequest } from './intelligence-field-compat.mjs';
 import { handleSocialFiRequest } from './socialfi-router.mjs';
+import { handlePonsGalaxyRequest, maintainPonsIndex } from './intelligence-pons-galaxy.mjs';
 
 export async function handleIntelligenceFetch(request, env = {}, ctx = null) {
   if(ctx)env.__EXECUTION_CTX=ctx;
+  const pons = await handlePonsGalaxyRequest(request, env);
+  if (pons) return pons;
   const social = await handleSocialFiRequest(request, env);
   if (social) return social;
   const fieldV0 = await handleFieldV0Request(request, env);
@@ -72,6 +75,7 @@ export async function handleIntelligenceScheduled(env = {}) {
   if (String(env.UNIVERSE_ENABLED || '').toLowerCase() === 'true') maintenance.push(pruneUniverseObservations(env));
   if (String(env.TRICKSTER_SHARE_ENABLED || '').toLowerCase() === 'true') maintenance.push(pruneTricksterShareManifests(env));
   if (String(env.PUMP_INDEX_ENABLED || '').toLowerCase() === 'true') maintenance.push(maintainPumpIndex(env));
+  if (String(env.PONS_INDEX_ENABLED || '').toLowerCase() === 'true') maintenance.push(maintainPonsIndex(env));
   if(maintenance.length){
     const settled=await Promise.allSettled(maintenance);
     for(const [index,result] of settled.entries()){

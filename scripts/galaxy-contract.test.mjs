@@ -11,13 +11,15 @@ import {
   preserveLaunchOrigin,
 } from "../src/lib/field/galaxies.ts";
 
-test("Galaxy Zero and pump.fun are populated through the shared contract", () => {
+test("Galaxy Zero, pump.fun, and PONS are populated through the shared contract", () => {
   const zero = getGalaxy("galaxy-zero");
   assert.equal(zero.status, "populated");
   assert.equal(zero.seed, 861);
   assert.equal(isPopulatedGalaxy("galaxy-zero"), true);
   assert.equal(isPopulatedGalaxy("pump-fun"), true);
-  assert.equal(GALAXIES.length, 2);
+  assert.equal(isPopulatedGalaxy("pons"), true);
+  assert.equal(getGalaxy("pons").ecosystem, "PONS launch origin on Robinhood Chain");
+  assert.equal(GALAXIES.length, 3);
 });
 
 test("existing entities map to the locked universe taxonomy", () => {
@@ -48,5 +50,9 @@ test("wallet identity remains stable across galaxies", () => {
   assert.notEqual(
     canonicalUniverseId("star", "MintABC", "galaxy-zero"),
     canonicalUniverseId("star", "MintABC", "pump-fun"),
+  );
+  assert.notEqual(
+    canonicalUniverseId("star", "MintABC", "pump-fun"),
+    canonicalUniverseId("star", "MintABC", "pons"),
   );
 });

@@ -31,10 +31,11 @@ export function createGalaxySnapshot(
   const bounded = Math.max(400, Math.min(16000, Math.trunc(count)));
   const windowStart = 1_000_000;
   const durationSeconds = 60;
+  const flatten = galaxy.id === "pons" ? 0.26 : galaxy.id === "pump-fun" ? 0.5 : 1;
   const particles: FieldParticle[] = Array.from({ length: bounded }, (_, index) => {
-    const radius = 18 + random() * 82;
+    const radius = galaxy.id === "pons" ? 22 + random() * 64 : 18 + random() * 82;
     const angle = random() * Math.PI * 2;
-    const vertical = (random() - 0.5) * 70;
+    const vertical = (random() - 0.5) * 70 * flatten;
     const kind = KINDS[index % KINDS.length];
     return {
       id: `${galaxy.id}-synthetic-${seed}-${index}`,

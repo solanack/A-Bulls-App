@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import type { GalaxyId, UniverseSnapshot } from "@/lib/field/types";
 import type { UniverseDataStatus } from "./contracts";
 import { FIELD_V0_ORIGIN, loadFieldV0GalaxyDelivery } from "./field-v0-client";
+import { loadPonsGalaxyDelivery } from "./pons-client";
 
 export type GalaxySnapshotDelivery = {
   snapshot: UniverseSnapshot | null;
@@ -11,6 +12,9 @@ export type GalaxySnapshotDelivery = {
 export const getIndexedGalaxySnapshot = createServerFn({ method: "GET" })
   .validator((input: { galaxyId: GalaxyId }) => input)
   .handler(async ({ data }): Promise<GalaxySnapshotDelivery> => {
+    if (data.galaxyId === "pons") {
+      return loadPonsGalaxyDelivery();
+    }
     // pump.fun prefers Field v0 producer — never Field compat v1 as truth.
     if (data.galaxyId === "pump-fun") {
       const fieldV0 = await loadFieldV0GalaxyDelivery(data);

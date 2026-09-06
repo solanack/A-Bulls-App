@@ -19,6 +19,18 @@ INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED = "false"
 INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
 # FIELD_V0_ENABLED — Field v0 producer (/api/intelligence/field/v0/*). Defaults on when FIELD_COMPAT_ENABLED or UNIVERSE_ENABLED is true; set explicitly to "true"|"false" to override.
 # FIELD_V0_ENABLED = "false"
+PONS_GALAXY_ENABLED = "false"
+PONS_INDEX_ENABLED = "false"
+PONS_CONFIRMATIONS = "64"
+PONS_BLOCK_CHUNK = "500"
+PONS_REORG_REWIND = "32"
+PONS_MARKET_ENRICH_ENABLED = "false"
+PONS_MARKET_ENRICH_LIMIT = "4"
+
+# PONS is fail-closed until migration 0022 is applied and these are configured:
+# PONS_START_BLOCK = "<verified deployment block>"
+# npx wrangler secret put PONS_RPC_URL
+# npx wrangler secret put PONS_INDEX_SECRET
 
 # Optional neutral Solana RPC overrides. Comma-separate additional standard RPC fallbacks.
 # INTELLIGENCE_RPC_URL = "https://api.mainnet-beta.solana.com"
