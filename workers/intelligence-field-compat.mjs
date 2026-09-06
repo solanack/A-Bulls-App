@@ -125,7 +125,9 @@ async function writeCache(db,key,value,source,ttlSeconds,now=Math.floor(Date.now
 
 async function resolveFieldQuery(query,env={}){
   const db=intelligenceDb(env),key=`field:resolve:${s(query).toLowerCase()}`,ttl=Math.max(10,Math.min(3600,Math.trunc(n(env.FIELD_QUERY_CACHE_TTL_SECONDS)||60)));
-  let cached=await readCache(db,key);if(cached)return{...cached.value,coverage:cached.coverage,cache:'fresh'};
+  let cached=await readCache(db,key);
+  if(cached?.value?.state==='resolved')return{...cached.value,coverage:cached.coverage,cache:'fresh'};
+  cached=null;
   const source=isRobinhoodContractAddress(query)?{name:'robinhood-chain'}:resolveHistoryRpc(env);
   let budget=null;
   if(source.name==='helius-standard-rpc'){
