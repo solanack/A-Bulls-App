@@ -49,3 +49,21 @@ test('summarizes Robinhood buy and sell pressure factually',()=>{
   assert.equal(pressure.h1.buySharePct,75);
   assert.equal(pressure.h1.buySellRatio,3);
 });
+
+
+test('RPC rate limiting does not discard available trader intelligence',async()=>{
+  const fetchImpl=async(input,init={})=>{
+    const url=String(input);
+    if(url==='https://rpc.test')return new Response('rate limited',{status:429});
+    if(url.includes('dexscreener'))return new Response(JSON.stringify([{chainId:'robinhood',baseToken:{address,symbol:'PONZ'},priceUsd:'0.01',marketCap:1000000,fdv:2000000,liquidity:{usd:100000},volume:{h1:5000},txns:{h1:{buys:12,sells:8}}}]));
+    const query=JSON.parse(init.body).query;
+    if(query.includes('RobinhoodTokenHolders'))return new Response(JSON.stringify({data:{EVM:{Top:[],Stats:[]}}}));
+    return new Response(JSON.stringify({data:{Trading:{Tokens:[]}}}));
+  };
+  const result=await resolveRobinhoodToken(address,{env:{PONS_RPC_URL:'https://rpc.test',PONS_BITQUERY_TOKEN:'secret'},fetchImpl});
+  assert.equal(result.ok,true);
+  assert.equal(result.coverage,'partial');
+  assert.equal(result.market.marketCapUsd,1000000);
+  assert.match(result.disclosure,/contract-code verification is temporarily unavailable/);
+  assert.ok(result.risk.flags.includes('contract-code verification temporarily unavailable'));
+});
