@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   PONS_TOP25_CONTRACT,
   buildPonsMarketRankQuery,
+  buildPonsOriginQuery,
   handlePonsRankingRequest,
   normalizePonsMarketRows,
   selectStablePonsTop25,
@@ -22,6 +23,13 @@ test('Bitquery discovery query clamps the market-cap floor',()=>{
   const query=buildPonsMarketRankQuery(500,1);
   assert.match(query,/Network: \{is: \"Robinhood\"\}/);
   assert.match(query,/MarketCap: \{ge: 500000\}/);
+});
+
+test('origin query binds both the allowlisted factory event and padded token topic',()=>{
+  const query=buildPonsOriginQuery(token(7),'0x7ed598bcef8bd9edd8c97a195c6d13f40801ec7e');
+  assert.match(query,/dataset: combined/);
+  assert.match(query,/8d4aad4953d0ca700d468f3753aa14432d1b35b43ec6409f051fb6aa43a89607/);
+  assert.match(query,/0000000000000000000000000000000000000000000000000000000000000007/);
 });
 
 test('normalizer rejects stale, malformed, below-floor, and FDV-only rows',()=>{
