@@ -79,6 +79,7 @@ namespace_id = "8262026"
 enabled = true
 head_sampling_rate = 0.1
 
+# Dedicated A Bulls App Intelligence database
 [[d1_databases]]
 binding = "INTELLIGENCE_DB"
 database_name = "a-bulls-app-intelligence"
