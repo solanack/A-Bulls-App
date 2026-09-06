@@ -1,5 +1,6 @@
 import { resolveHistoryRpc } from './intelligence-history-engine.mjs';
 import { isRobinhoodContractAddress, resolveRobinhoodToken } from './intelligence-pons-token-resolver.mjs';
+import { resolveSolanaToken } from './intelligence-solana-token-resolver.mjs';
 
 const BASE58=/^[1-9A-HJ-NP-Za-km-z]+$/;
 const ADDRESS_MIN=32,ADDRESS_MAX=50,SIGNATURE_MIN=64,SIGNATURE_MAX=90;
@@ -81,7 +82,9 @@ export async function resolvePublicChainEntity(query,{env={},fetchImpl=fetch}={}
     });
   }
   const account=await rpc(source,'getAccountInfo',[value,{commitment:'confirmed',encoding:'jsonParsed'}],fetchImpl);
-  return accountResolution(value,account?.value??account,source);
+  const resolvedAccount=account?.value??account;
+  if(TOKEN_PROGRAMS.has(s(resolvedAccount?.owner))&&s(resolvedAccount?.data?.parsed?.type)==='mint')return resolveSolanaToken(value,{env,source,account:resolvedAccount,fetchImpl});
+  return accountResolution(value,resolvedAccount,source);
 }
 
 export async function handleEntityResolverRequest(request,env={}){
