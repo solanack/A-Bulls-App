@@ -29,7 +29,7 @@ export const PONS_TOP25_CONTRACT=Object.freeze({
 
 export function buildPonsCandidateQuery(limit=1000){
   const safeLimit=bounded(limit,1000,25,1000);
-  return `query PonsProtocolCandidates {\n  Trading {\n    Tokens(\n      limit: {count: ${safeLimit}}\n      limitBy: {count: 1, by: Token_Id}\n      orderBy: {descending: Block_Time}\n      where: {\n        Block: {Time: {since_relative: {days_ago: 30}}}\n        Interval: {Time: {Duration: {eq: 1}}}\n        Token: {Network: {is: \\"Robinhood\\"}}\n        Market: {Protocol: {is: \\"pons_v2\\"}}\n      }\n    ) {\n      Token { Address }\n    }\n  }\n}`;
+  return `query PonsProtocolCandidates {\n  Trading {\n    Tokens(\n      limit: {count: ${safeLimit}}\n      limitBy: {count: 1, by: Token_Id}\n      orderBy: {descending: Block_Time}\n      where: {\n        Block: {Time: {since_relative: {days_ago: 30}}}\n        Interval: {Time: {Duration: {eq: 1}}}\n        Token: {Network: {is: \"Robinhood\"}}\n        Market: {Protocol: {is: \"pons_v2\"}}\n      }\n    ) {\n      Token { Address }\n    }\n  }\n}`;
 }
 
 export function buildPonsMarketRankQuery(limit=500,floor=500000,tokens=[]){
@@ -37,8 +37,8 @@ export function buildPonsMarketRankQuery(limit=500,floor=500000,tokens=[]){
   const safeFloor=Math.max(PONS_TOP25_CONTRACT.marketCapFloorUsd,n(floor));
   const addresses=[...new Set((Array.isArray(tokens)?tokens:[]).map(value=>s(value).toLowerCase()).filter(value=>ADDRESS_RE.test(value)))].slice(0,1000);
   if(!addresses.length)throw new Error('pons_candidate_tokens_empty');
-  const addressFilter=addresses.map(value=>`\\"${value}\\"`).join(', ');
-  return `query PonsMarketCapRank {\n  Trading {\n    Tokens(\n      limit: {count: ${safeLimit}}\n      limitBy: {count: 1, by: Token_Id}\n      orderBy: {descending: Supply_MarketCap}\n      where: {\n        Block: {Time: {since_relative: {hours_ago: 24}}}\n        Interval: {Time: {Duration: {eq: 1}}}\n        Token: {Network: {is: \\"Robinhood\\"}, Address: {in: [${addressFilter}]}}\n        Supply: {MarketCap: {ge: ${safeFloor}}}\n      }\n    ) {\n      Block { Time }\n      Token { Address Symbol Name }\n      Supply { MarketCap FullyDilutedValuationUsd CirculatingSupply TotalSupply }\n      Price { Ohlc { Close } }\n    }\n  }\n}`;
+  const addressFilter=addresses.map(value=>`\"${value}\"`).join(', ');
+  return `query PonsMarketCapRank {\n  Trading {\n    Tokens(\n      limit: {count: ${safeLimit}}\n      limitBy: {count: 1, by: Token_Id}\n      orderBy: {descending: Supply_MarketCap}\n      where: {\n        Block: {Time: {since_relative: {hours_ago: 24}}}\n        Interval: {Time: {Duration: {eq: 1}}}\n        Token: {Network: {is: \"Robinhood\"}, Address: {in: [${addressFilter}]}}\n        Supply: {MarketCap: {ge: ${safeFloor}}}\n      }\n    ) {\n      Block { Time }\n      Token { Address Symbol Name }\n      Supply { MarketCap FullyDilutedValuationUsd CirculatingSupply TotalSupply }\n      Price { Ohlc { Close } }\n    }\n  }\n}`;
 }
 
 async function bitquery(env,query){
