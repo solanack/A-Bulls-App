@@ -91,7 +91,7 @@ export async function resolveSolanaToken(mint,{env={},source,account,fetchImpl=f
   if(largest?.top10Pct!=null&&largest.top10Pct>=50)flags.push('raw top ten concentration at or above 50 percent');
   const market={...(dex||{}),circulatingSupply:null,totalSupply};
   return Object.freeze({
-    ok:true,kind:'solana-token',address,state:'resolved',label:'token-mint',network:'Solana',readOnly:true,
+    ok:true,kind:'solana-token',address,state:'resolved',label:'token-mint',owner:s(account?.owner)||null,executable:false,parsedType:'mint',lamports:Number(account?.lamports||0),network:'Solana',readOnly:true,
     source:[dex&&'dexscreener',source?.name,holderData&&'helius-das',pump&&'pump-index'].filter(Boolean).join('+'),
     coverage:dex?'fresh':'partial',market,activity:{pressure},launchpad,
     token:{decimals,mintAuthority:s(info?.mintAuthority)||null,freezeAuthority:s(info?.freezeAuthority)||null,mintAuthorityRevoked:!info?.mintAuthority,freezeAuthorityRevoked:!info?.freezeAuthority},
