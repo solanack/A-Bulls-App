@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import type { Coverage, EntityKind, IntelligenceResult } from "@/lib/field/types";
 import { shortId } from "@/lib/field/hash";
 
-const WORKER = "https://black-bull-run-sol.ckdsigns1.workers.dev";
+const WORKER = "https://abullsapp.com";
 
 type ResolveBody = {
   ok?: boolean;
