@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PONS_TOP25_CONTRACT,
+  buildPonsCandidateQuery,
   buildPonsMarketRankQuery,
   buildPonsOriginQuery,
   handlePonsRankingRequest,
@@ -19,9 +20,12 @@ test('contract is read-only, capped at 25, and forbids FDV fallback',()=>{
   assert.equal(PONS_TOP25_CONTRACT.readOnly,true);
 });
 
-test('Bitquery discovery query clamps the market-cap floor',()=>{
-  const query=buildPonsMarketRankQuery(500,1);
-  assert.match(query,/Network: \{is: \"Robinhood\"\}/);
+test('Bitquery discovery starts with PONS protocol and scopes current market ranking',()=>{
+  const discovery=buildPonsCandidateQuery(500);
+  assert.match(discovery,/Protocol: \{is: \"pons_v2\"\}/);
+  assert.match(discovery,/Network: \{is: \"Robinhood\"\}/);
+  const query=buildPonsMarketRankQuery(500,1,[token(7)]);
+  assert.match(query,/Address: \{in: \[\"0x0000000000000000000000000000000000000007\"\]\}/);
   assert.match(query,/MarketCap: \{ge: 500000\}/);
 });
 
