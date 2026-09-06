@@ -114,6 +114,7 @@ function speakFromResolve(query: string, body: ResolveBody, extra: string[] = []
       parts.push("This is a verified Robinhood Chain contract, but PONS launch origin is not yet verified.");
     }
     if (typeof market.marketCapUsd === "number") parts.push(`Market cap is ${usd(market.marketCapUsd)}.`);
+    if (typeof market.fdvUsd === "number") parts.push(`Fully diluted valuation is ${usd(market.fdvUsd)}.`);
     if (typeof market.liquidityUsd === "number") parts.push(`Observed liquidity is ${usd(market.liquidityUsd)}.`);
     if (typeof market.volumeUsd?.h24 === "number") parts.push(`Twenty four hour volume is ${usd(market.volumeUsd.h24)}.`);
     if (typeof market.volumeUsd?.h1 === "number") parts.push(`One hour volume is ${usd(market.volumeUsd.h1)}.`);
@@ -176,6 +177,7 @@ function factsFromResolve(body: ResolveBody, extra: string[]): string[] {
     if (body.pons?.rank) facts.push(`PONS rank · ${body.pons.rank}`);
     if (market.symbol) facts.push(`Symbol · ${market.symbol}`);
     if (typeof market.marketCapUsd === "number") facts.push(`Market cap · ${usd(market.marketCapUsd)}`);
+    if (typeof market.fdvUsd === "number") facts.push(`FDV · ${usd(market.fdvUsd)}`);
     if (typeof market.liquidityUsd === "number") facts.push(`Liquidity · ${usd(market.liquidityUsd)}`);
     if (typeof market.volumeUsd?.m5 === "number") facts.push(`Volume 5m · ${usd(market.volumeUsd.m5)}`);
     if (typeof market.volumeUsd?.h1 === "number") facts.push(`Volume 1h · ${usd(market.volumeUsd.h1)}`);
