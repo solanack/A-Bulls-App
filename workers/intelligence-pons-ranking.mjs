@@ -21,6 +21,7 @@ export const PONS_TOP25_CONTRACT=Object.freeze({
   marketCapFloorUsd:500000,
   entryCycles:2,
   exitCycles:2,
+  minimumCycleSeconds:900,
   fdvFallback:false,
   readOnly:true,
   internalPath:'/api/intelligence/pons/rank',
@@ -63,6 +64,8 @@ export function selectStablePonsTop25(markets=[],previous=[],options={}){
   const floor=Math.max(PONS_TOP25_CONTRACT.marketCapFloorUsd,n(options.floor));
   const entryCycles=bounded(options.entryCycles,2,1,10);
   const exitCycles=bounded(options.exitCycles,2,1,10);
+  const now=bounded(options.now,Math.floor(Date.now()/1000),1,Number.MAX_SAFE_INTEGER);
+  const minimumCycleSeconds=bounded(options.minimumCycleSeconds,900,60,3600);
   const marketByToken=new Map(markets.filter(item=>item.marketCapUsd>=floor).map(item=>[item.token,item]));
   const previousByToken=new Map(previous.map(item=>[s(item.token).toLowerCase(),item]));
   const tokens=new Set([...previousByToken.keys(),...marketByToken.keys()]);
@@ -70,8 +73,9 @@ export function selectStablePonsTop25(markets=[],previous=[],options={}){
   for(const token of tokens){
     const prior=previousByToken.get(token)||{};
     const market=marketByToken.get(token);
-    const qualifyingCycles=market?Math.max(0,n(prior.qualifying_cycles))+1:0;
-    const disqualifyingCycles=market?0:Math.max(0,n(prior.disqualifying_cycles))+1;
+    const canAdvance=!n(prior.updated_at)||now-n(prior.updated_at)>=minimumCycleSeconds;
+    const qualifyingCycles=market?(canAdvance?Math.max(0,n(prior.qualifying_cycles))+1:Math.max(0,n(prior.qualifying_cycles))):0;
+    const disqualifyingCycles=market?0:(canAdvance?Math.max(0,n(prior.disqualifying_cycles))+1:Math.max(0,n(prior.disqualifying_cycles)));
     const wasActive=n(prior.active)===1;
     const eligible=(wasActive&&disqualifyingCycles<exitCycles)||Boolean(market&&qualifyingCycles>=entryCycles);
     const cap=market?.marketCapUsd??n(prior.market_cap_usd);
@@ -160,7 +164,7 @@ export async function refreshPonsTop25(env={},now=Math.floor(Date.now()/1000)){
   }
   const eligibleMarkets=markets.filter(market=>verified.has(market.token));
   const previous=(await db.prepare('SELECT * FROM pons_rank_candidates').all())?.results||[];
-  const decisions=selectStablePonsTop25(eligibleMarkets,previous,{maximum,floor,entryCycles:2,exitCycles:2});
+  const decisions=selectStablePonsTop25(eligibleMarkets,previous,{maximum,floor,entryCycles:2,exitCycles:2,now,minimumCycleSeconds:900});
   const snapshotId=`pons-rank:${now}`;
   for(const decision of decisions){
     const market=decision.market;
@@ -183,7 +187,7 @@ export async function handlePonsRankingRequest(request,env={}){
     const {intelligenceDb}=await import('./intelligence-indexer.mjs');
     const db=intelligenceDb(env);if(!db)return json({ok:false,error:'intelligence_db_unavailable'},503);
     const rows=(await db.prepare(`SELECT r.current_rank,r.symbol,r.name,r.market_cap_usd,r.fdv_usd,r.circulating_supply,r.total_supply,r.price_usd,r.market_observed_at,r.market_source,r.market_confidence,l.token,l.factory,l.factory_version,l.curve,l.deployer,l.dex_factory,l.pair_token,l.pool,l.transaction_hash,l.block_number,l.block_hash,l.block_time,l.finality,l.launch_state,l.updated_at FROM pons_rank_candidates r JOIN pons_launches l ON l.token=r.token WHERE r.active=1 AND r.market_cap_usd>=? ORDER BY r.current_rank ASC LIMIT 25`).bind(PONS_TOP25_CONTRACT.marketCapFloorUsd).all())?.results||[];
-    return json({ok:true,data:{schemaVersion:'pons-top25-v1',generatedAt:Date.now(),readOnly:true,chain:{id:4663,name:'Robinhood Chain'},selector:{maximumMembers:25,marketCapFloorUsd:500000,entryCycles:2,exitCycles:2,fdvFallback:false},coverage:{complete:false,statement:'Up to 25 tokens with verified PONS factory origin and provider-reported market cap of at least $500,000. Two consecutive qualifying cycles are required to enter and two misses to exit. FDV is never substituted for market cap.'},launches:rows.map(row=>({rank:n(row.current_rank),token:s(row.token),factory:s(row.factory),factoryVersion:s(row.factory_version),curve:s(row.curve)||null,deployer:s(row.deployer),dexFactory:s(row.dex_factory)||null,pairToken:s(row.pair_token),pool:s(row.pool)||null,transactionHash:s(row.transaction_hash),blockNumber:n(row.block_number),blockHash:s(row.block_hash),blockTime:row.block_time==null?null:n(row.block_time)*1000,finality:s(row.finality),state:s(row.launch_state)||'launched',market:{symbol:s(row.symbol)||null,name:s(row.name)||null,marketCapUsd:n(row.market_cap_usd),fdvUsd:row.fdv_usd==null?null:n(row.fdv_usd),circulatingSupply:row.circulating_supply==null?null:n(row.circulating_supply),totalSupply:row.total_supply==null?null:n(row.total_supply),priceUsd:row.price_usd==null?null:n(row.price_usd),observedAt:n(row.market_observed_at)*1000,source:s(row.market_source),confidence:s(row.market_confidence)},updatedAt:n(row.updated_at)*1000}))}},200);
+    return json({ok:true,data:{schemaVersion:'pons-top25-v1',generatedAt:Date.now(),readOnly:true,chain:{id:4663,name:'Robinhood Chain'},selector:{maximumMembers:25,marketCapFloorUsd:500000,entryCycles:2,exitCycles:2,minimumCycleSeconds:900,fdvFallback:false},coverage:{complete:false,statement:'Up to 25 tokens with verified PONS factory origin and provider-reported market cap of at least $500,000. Two qualifying cycles at least 15 minutes apart are required to enter and two misses to exit. FDV is never substituted for market cap.'},launches:rows.map(row=>({rank:n(row.current_rank),token:s(row.token),factory:s(row.factory),factoryVersion:s(row.factory_version),curve:s(row.curve)||null,deployer:s(row.deployer),dexFactory:s(row.dex_factory)||null,pairToken:s(row.pair_token),pool:s(row.pool)||null,transactionHash:s(row.transaction_hash),blockNumber:n(row.block_number),blockHash:s(row.block_hash),blockTime:row.block_time==null?null:n(row.block_time)*1000,finality:s(row.finality),state:s(row.launch_state)||'launched',market:{symbol:s(row.symbol)||null,name:s(row.name)||null,marketCapUsd:n(row.market_cap_usd),fdvUsd:row.fdv_usd==null?null:n(row.fdv_usd),circulatingSupply:row.circulating_supply==null?null:n(row.circulating_supply),totalSupply:row.total_supply==null?null:n(row.total_supply),priceUsd:row.price_usd==null?null:n(row.price_usd),observedAt:n(row.market_observed_at)*1000,source:s(row.market_source),confidence:s(row.market_confidence)},updatedAt:n(row.updated_at)*1000}))}},200);
   }
   if(url.pathname!==PONS_TOP25_CONTRACT.internalPath)return null;
   if(!bool(env.PONS_GALAXY_ENABLED)||!bool(env.PONS_RANK_ENABLED))return json({ok:false,error:'feature_disabled'},404);

@@ -61,6 +61,13 @@ test('a new entrant cannot evict an active token before its second miss',()=>{
   assert.equal(firstMiss.find(item=>item.token===token(2))?.active,false);
 });
 
+test('repeated calls inside one 15-minute window cannot advance a cycle',()=>{
+  const prior={token:token(1),market_cap_usd:600000,qualifying_cycles:1,disqualifying_cycles:0,active:0,updated_at:2_000_000_000};
+  const result=selectStablePonsTop25([{token:token(1),marketCapUsd:700000}],[prior],{now:2_000_000_100,minimumCycleSeconds:900});
+  assert.equal(result[0].qualifyingCycles,1);
+  assert.equal(result[0].active,false);
+});
+
 test('protected ranking route fails closed while disabled',async()=>{
   const response=await handlePonsRankingRequest(new Request('https://abullsapp.com/api/intelligence/pons/rank',{method:'POST'}),{});
   assert.equal(response.status,404);
