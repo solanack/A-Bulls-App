@@ -54,7 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_pons_rank_snapshot_time
 UPDATE intelligence_universes
 SET description='Top PONS-minted tokens on Robinhood Chain with verified market cap of at least $500,000. Maximum 25; two-cycle entry and exit.',
     selector_version='verified-market-cap-top25-v1',
-    refresh_seconds=300
+    refresh_seconds=900
 WHERE universe_id='pons';
 
 PRAGMA optimize;
