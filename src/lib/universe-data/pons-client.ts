@@ -1,5 +1,6 @@
 import type { FieldParticle, UniverseSnapshot } from "@/lib/field/types";
 import type { UniverseDataStatus } from "./contracts";
+import { fetchIntelligence } from "../intelligence-origin.ts";
 export const PONS_GALAXY_PATH = "/api/intelligence/pons/galaxy";
 export const PONS_GALAXY_URL = `https://abullsapp.com${PONS_GALAXY_PATH}`;
 export const PONS_TEACHING_TOKEN = "0x39dbed3a2bd333467115de45665cc57f813c4571";
@@ -177,7 +178,7 @@ export function snapshotFromPonsLaunches(
 
 export async function loadPonsGalaxyDelivery(): Promise<PonsGalaxyDelivery> {
   try {
-    const response = await fetch(`${PONS_GALAXY_URL}?limit=25`, {
+    const response = await fetchIntelligence(`${PONS_GALAXY_PATH}?limit=25`, {
       headers: { accept: "application/json" },
       cache: "no-store",
     });

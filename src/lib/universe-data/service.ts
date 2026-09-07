@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import type { GalaxyId, UniverseSnapshot } from "@/lib/field/types";
 import type { UniverseDataStatus } from "./contracts";
-import { FIELD_V0_ORIGIN, loadFieldV0GalaxyDelivery } from "./field-v0-client";
+import { loadFieldV0GalaxyDelivery } from "./field-v0-client";
 import { loadPonsGalaxyDelivery } from "./pons-client";
+import { fetchIntelligence } from "../intelligence-origin.ts";
 
 export type GalaxySnapshotDelivery = {
   snapshot: UniverseSnapshot | null;
@@ -12,6 +13,7 @@ export type GalaxySnapshotDelivery = {
 export const getIndexedGalaxySnapshot = createServerFn({ method: "GET" })
   .validator((input: { galaxyId: GalaxyId }) => input)
   .handler(async ({ data }): Promise<GalaxySnapshotDelivery> => {
+    if (data.galaxyId === "galaxy-zero") return { snapshot: null, status: { store: "memory-fallback", coverage: "fresh", circuitBreaker: null, disclosure: "Galaxy directory; no chain fetch required." } };
     if (data.galaxyId === "pons") {
       return loadPonsGalaxyDelivery();
     }
@@ -25,8 +27,8 @@ export const getIndexedGalaxySnapshot = createServerFn({ method: "GET" })
     }
 
     try {
-      const response = await fetch(
-        `${FIELD_V0_ORIGIN}/api/intelligence/field/snapshot?galaxy=${encodeURIComponent(data.galaxyId)}&window=300&limit=2500&_ts=${Date.now()}`,
+      const response = await fetchIntelligence(
+        `/api/intelligence/field/snapshot?galaxy=${encodeURIComponent(data.galaxyId)}&window=300&limit=2500&_ts=${Date.now()}`,
         {
           headers: {
             accept: "application/json",

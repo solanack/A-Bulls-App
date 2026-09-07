@@ -104,6 +104,7 @@ export class FieldOS {
     this.replay = createReplayState(initial);
     this.liveStarCount = countLiveStars(initial);
     this.field.onFocus = (particle) => {
+      const previousTarget = typeof this.focus?.metadata?.targetGalaxyId === "string" ? this.focus.metadata.targetGalaxyId : null;
       this.focus = particle
         ? {
             id: particle.id,
@@ -128,10 +129,17 @@ export class FieldOS {
         this.#lastSpokenId = null;
         return;
       }
+      const target = typeof particle.metadata?.targetGalaxyId === "string" ? particle.metadata.targetGalaxyId as GalaxyId : null;
+      if (target && target === previousTarget) {
+        this.setGalaxy(target);
+        return;
+      }
       if (!this.queryActive && particle.id !== this.#lastSpokenId) {
         this.#lastSpokenId = particle.id;
         unlockSpeech();
-        this.narrateObserved(speakObservedParticle(particle, this.field.snapshot));
+        this.narrateObserved(target
+          ? `${String(particle.metadata?.name || "Protocol galaxy")}. ${String(particle.metadata?.description || "Tap again to enter.")} Tap again to enter.`
+          : speakObservedParticle(particle, this.field.snapshot));
       }
     };
     this.field.onReplayTick = (cursor, playing) => {
@@ -254,6 +262,13 @@ export class FieldOS {
   async #hydrateGalaxy(id: GalaxyId) {
     const seq = ++this.#snapshotSeq;
     void unregisterStaleServiceWorkers();
+    if (id === "galaxy-zero") {
+      this.#live = null;
+      this.dataStatus = { store: "memory-fallback", coverage: "fresh", circuitBreaker: null, disclosure: "Protocol galaxy directory. No provider request is made from Galaxy Zero." };
+      this.#applySky();
+      this.#emit();
+      return;
+    }
     const delivery = await getIndexedGalaxySnapshot({ data: { galaxyId: id } });
     if (seq !== this.#snapshotSeq || id !== this.galaxy.id) return;
     let indexedSnapshot = delivery.snapshot;

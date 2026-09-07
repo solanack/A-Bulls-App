@@ -7,6 +7,7 @@ const ADDRESS_RE=/^0x[0-9a-f]{40}$/;
 const s=value=>String(value??'').trim();
 const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const bool=value=>s(value).toLowerCase()==='true';
+import { ponsRpc } from './intelligence-pons-rpc.mjs';
 const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const unix=value=>Math.floor(new Date(value).getTime()/1000);
 const bounded=(value,fallback,min,max)=>Math.max(min,Math.min(max,Math.trunc(n(value)||fallback)));
@@ -109,15 +110,7 @@ export function buildPonsOriginQuery(token,factory,dataset='combined'){
   return `query PonsOriginProof {\n  EVM(network: robinhood${datasetClause}) {\n    Events(\n      limit: {count: 5}\n      orderBy: {descending: Block_Time}\n      where: {\n        LogHeader: {Address: {is: \"${definition.address}\"}}\n        Topics: {includes: [\n          {Hash: {is: \"${definition.topic}\"}},\n          {Hash: {is: \"${topicAddress(normalized)}\"}}\n        ]}\n      }\n    ) {\n      Transaction { Hash }\n    }\n  }\n}`;
 }
 
-async function rpc(env,method,params=[]){
-  const endpoint=s(env.PONS_RPC_URL);
-  if(!endpoint)throw new Error('pons_rpc_unconfigured');
-  const response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
-  if(!response.ok)throw new Error(`pons_rpc_http_${response.status}`);
-  const body=await response.json();
-  if(body?.error)throw new Error(`pons_rpc_${s(body.error.code)||'error'}`);
-  return body?.result;
-}
+const rpc=(env,method,params=[])=>ponsRpc(env,method,params);
 
 async function persistVerifiedOrigin(db,launch,{blockTime,now}){
   await db.prepare(`INSERT INTO pons_launches(token,factory,factory_version,curve,deployer,dex_factory,pair_token,pool,launch_config_id,graduation_threshold,position_id,restrictions_end_block,initial_buy_amount,transaction_hash,log_index,block_number,block_hash,block_time,finality,launch_state,observed_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'confirmation-buffered','launched',?,?) ON CONFLICT(token) DO UPDATE SET factory=excluded.factory,factory_version=excluded.factory_version,curve=excluded.curve,deployer=excluded.deployer,dex_factory=excluded.dex_factory,pair_token=excluded.pair_token,pool=excluded.pool,launch_config_id=excluded.launch_config_id,graduation_threshold=excluded.graduation_threshold,position_id=excluded.position_id,restrictions_end_block=excluded.restrictions_end_block,initial_buy_amount=excluded.initial_buy_amount,transaction_hash=excluded.transaction_hash,log_index=excluded.log_index,block_number=excluded.block_number,block_hash=excluded.block_hash,block_time=excluded.block_time,finality=excluded.finality,updated_at=excluded.updated_at`).bind(launch.token,launch.factory,launch.factoryVersion,launch.curve,launch.deployer,launch.dexFactory,launch.pairToken,launch.pool,launch.launchConfigId,launch.graduationThreshold,launch.positionId,launch.restrictionsEndBlock,launch.initialBuyAmount,launch.transactionHash,launch.logIndex,launch.blockNumber,launch.blockHash,blockTime,now,now).run();

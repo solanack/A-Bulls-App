@@ -22,7 +22,7 @@ export type OrganismState =
 
 export type Coverage = "fresh" | "stale" | "degraded" | "empty";
 
-export type GalaxyId = "galaxy-zero" | "pump-fun" | "pons";
+export type GalaxyId = "galaxy-zero" | "solana-core" | "pump-fun" | "pons";
 export type GalaxyStatus = "populated" | "staging";
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -60,6 +60,7 @@ export type EntityKind =
   | "unknown";
 
 export type ParticleCategory =
+  | "galaxy"
   | "swap"
   | "transfer"
   | "nft"
@@ -168,6 +169,7 @@ export type IntelligenceResult = {
 
 export const CATEGORY_COLORS: Record<ParticleCategory, [number, number, number]> =
   {
+    galaxy: [0.76, 0.84, 1],
     swap: [0.42, 0.18, 1],
     transfer: [0.08, 0.82, 0.96],
     nft: [1, 0.34, 0.7],
@@ -178,12 +180,13 @@ export const CATEGORY_COLORS: Record<ParticleCategory, [number, number, number]>
   };
 
 export const CATEGORY_INDEX: Record<ParticleCategory, number> = {
-  swap: 0,
-  transfer: 1,
-  nft: 2,
-  staking: 3,
-  program: 4,
-  failure: 5,
+  galaxy: 0,
+  swap: 1,
+  transfer: 2,
+  nft: 3,
+  staking: 4,
+  program: 5,
+  failure: 6,
   unknown: 6,
 };
 

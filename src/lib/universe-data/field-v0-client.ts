@@ -19,6 +19,7 @@ import {
 } from "@/lib/field/indexer-field-v0";
 import type { GalaxyId, UniverseSnapshot } from "@/lib/field/types";
 import type { UniverseDataStatus } from "./contracts";
+import { fetchIntelligence } from "../intelligence-origin.ts";
 
 /** Live galaxy / frontend origin (a-bulls-app-frontend). */
 export const FIELD_V0_ORIGIN = "https://abullsapp.com";
@@ -86,7 +87,8 @@ function degraded(disclosure: string): FieldV0GalaxyDelivery {
 
 async function getJson<T>(url: string): Promise<{ ok: boolean; status: number; body: T | null }> {
   try {
-    const response = await fetch(url, {
+    const path = url.startsWith(FIELD_V0_ORIGIN) ? url.slice(FIELD_V0_ORIGIN.length) : url;
+    const response = await fetchIntelligence(path, {
       headers: { accept: "application/json" },
       cache: "no-store",
     });

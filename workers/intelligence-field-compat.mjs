@@ -6,9 +6,9 @@ import { ecosystemUniverseSnapshot } from './intelligence-ecosystem-universe-sna
 import { listUniverses } from './intelligence-ecosystem-universes.mjs';
 import { reserveProviderCredits } from './intelligence-provider-budget.mjs';
 
-const GALAXY_TO_UNIVERSE=Object.freeze({'galaxy-zero':'solana','pump-fun':'pump-fun'});
-const UNIVERSE_TO_GALAXY=Object.freeze({solana:'galaxy-zero','pump-fun':'pump-fun'});
-const CATEGORIES=new Set(['swap','transfer','nft','staking','program','failure','unknown']);
+const GALAXY_TO_UNIVERSE=Object.freeze({'solana-core':'solana','pump-fun':'pump-fun'});
+const UNIVERSE_TO_GALAXY=Object.freeze({solana:'solana-core','pump-fun':'pump-fun'});
+const CATEGORIES=new Set(['galaxy','swap','transfer','nft','staking','program','failure','unknown']);
 const s=value=>String(value??'').trim();
 const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const bool=value=>String(value??'').toLowerCase()==='true';

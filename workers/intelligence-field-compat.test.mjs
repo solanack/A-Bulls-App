@@ -6,7 +6,7 @@ test('compatibility layer reuses the rich Intelligence database',()=>{
   assert.equal(__fieldCompatibilityContract.usesExistingIntelligenceDb,true);
   assert.equal(__fieldCompatibilityContract.passiveSnapshotsUseIndexedDataOnly,true);
   assert.equal(__fieldCompatibilityContract.queryCacheTable,'bull_intelligence_cache');
-  assert.deepEqual(__fieldCompatibilityContract.galaxyMap,{'galaxy-zero':'solana','pump-fun':'pump-fun'});
+  assert.deepEqual(__fieldCompatibilityContract.galaxyMap,{'solana-core':'solana','pump-fun':'pump-fun'});
 });
 
 test('backend particles are converted to the Field OS contract without changing origin',()=>{

@@ -19,14 +19,14 @@ test("PONS remains additive inside the locked interface", () => {
   assert.doesNotMatch(appShell, /className="field-shell__galaxy-trigger"/);
 });
 
-test("PONS selection does not add alien narration", () => {
+test("Galaxy selection narrates only the sourced directory description", () => {
   assert.doesNotMatch(appShell, /observedGalaxySpeech|observedBodySpeech|unlockSpeech/);
-  assert.doesNotMatch(fieldOs, /observedGalaxySpeech|observedBodySpeech/);
-  assert.doesNotMatch(fieldOs, /setGalaxy[\s\S]{0,900}speakText/);
+  assert.match(fieldOs, /Tap again to enter/);
+  assert.doesNotMatch(fieldOs, /safe to buy|guaranteed|will pump/i);
 });
 
-test("the browser reads only the first-party cached PONS endpoint", () => {
-  assert.match(client, /https:\/\/abullsapp\.com/);
+test("the browser reads only first-party Intelligence endpoints", () => {
+  assert.match(client, /fetchIntelligence/);
   assert.doesNotMatch(client, /dexscreener|dexpaprika|rpc\.mainnet|eth_getLogs/i);
   assert.match(worker, /eth_getLogs/);
 });

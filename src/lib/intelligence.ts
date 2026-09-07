@@ -1,7 +1,6 @@
 import type { Coverage, EntityKind, IntelligenceResult } from "@/lib/field/types";
 import { shortId } from "@/lib/field/hash";
-
-const WORKER = "https://abullsapp.com";
+import { fetchIntelligence } from "./intelligence-origin.ts";
 
 type ResolveBody = {
   ok?: boolean;
@@ -269,8 +268,8 @@ export async function resolvePublicIdentifier({
     let forcedCoverage: Coverage | null = null;
     let budgetDisclosure: string | null = null;
     try {
-      const res = await fetch(
-        `${WORKER}/api/intelligence/field/resolve?query=${encodeURIComponent(query)}`,
+      const res = await fetchIntelligence(
+        `/api/intelligence/field/resolve?query=${encodeURIComponent(query)}`,
         { headers: { accept: "application/json" }, cache: "no-store" },
       );
       body = (await res.json()) as ResolveBody;

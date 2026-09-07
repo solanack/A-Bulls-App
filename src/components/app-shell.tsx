@@ -149,8 +149,15 @@ export function AppShell() {
       : null,
   );
   const symbol = typeof focus?.metadata?.symbol === "string" ? focus.metadata.symbol : null;
+  const focusedGalaxyId = typeof focus?.metadata?.targetGalaxyId === "string"
+    && GALAXIES.some((item) => item.id === focus.metadata?.targetGalaxyId)
+      ? focus.metadata.targetGalaxyId as GalaxyDefinition["id"]
+      : null;
+  const focusedGalaxy = focusedGalaxyId ? getGalaxy(focusedGalaxyId) : null;
   const slotValue = focus
-    ? `${symbol || focus.cosmicKind.replace("-", " ")} · ${heat || focus.kind} · ${galaxy.name}`
+    ? focusedGalaxy
+      ? `${focusedGalaxy.name.toUpperCase()} · TAP AGAIN OR ENTER`
+      : `${symbol || focus.cosmicKind.replace("-", " ")} · ${heat || focus.kind} · ${galaxy.name}`
     : `FIELD · ${GALAXY_CHAIN_LABEL[galaxy.id]} · ${galaxy.name}${liveStarCount ? ` · ${liveStarCount} LIVE` : ""}`;
 
   return (
@@ -185,6 +192,11 @@ export function AppShell() {
 
         <div className="gz-bottom" aria-label="Current field tags">
           <span>{slotValue}</span>
+          {focusedGalaxyId ? (
+            <button type="button" className="gz-origin" onClick={() => osRef.current?.setGalaxy(focusedGalaxyId)}>
+              ENTER {focusedGalaxy?.name.toUpperCase()}
+            </button>
+          ) : null}
           {GALAXY_ORIGIN_CHIPS.map((item) => (
             <button
               key={item.id}

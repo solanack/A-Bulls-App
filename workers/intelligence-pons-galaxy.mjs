@@ -3,6 +3,7 @@
  * This module never signs, submits, quotes, swaps, launches, or connects wallets.
  */
 import { intelligenceDb } from './intelligence-indexer.mjs';
+import { ponsRpc } from './intelligence-pons-rpc.mjs';
 
 const s=value=>String(value??'').trim();
 const n=value=>Number.isFinite(Number(value))?Number(value):0;
@@ -54,15 +55,7 @@ export function decodePonsLaunchLog(log={}){
   return Object.freeze({token,factory,factoryVersion:'v1',curve:null,deployer,dexFactory,pairToken,pool,launchConfigId:uintWord(words[3]),graduationThreshold:null,positionId:uintWord(words[4]),restrictionsEndBlock:uintWord(words[5]),initialBuyAmount:uintWord(words[6]),transactionHash:txHash,logIndex:hexNumber(log.logIndex),blockNumber:hexNumber(log.blockNumber),blockHash});
 }
 
-async function rpc(env,method,params=[]){
-  const endpoint=s(env.PONS_RPC_URL);
-  if(!endpoint)throw new Error('pons_rpc_unconfigured');
-  const response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
-  if(!response.ok)throw new Error(`pons_rpc_http_${response.status}`);
-  const body=await response.json();
-  if(body?.error)throw new Error(`pons_rpc_${s(body.error.code)||'error'}`);
-  return body?.result;
-}
+const rpc=(env,method,params=[])=>ponsRpc(env,method,params);
 
 async function persistLaunch(db,launch,{blockTime,finality,now}){
   await db.prepare(`INSERT INTO pons_launches(token,factory,factory_version,curve,deployer,dex_factory,pair_token,pool,launch_config_id,graduation_threshold,position_id,restrictions_end_block,initial_buy_amount,transaction_hash,log_index,block_number,block_hash,block_time,finality,launch_state,observed_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'launched',?,?) ON CONFLICT(token) DO UPDATE SET factory=excluded.factory,factory_version=excluded.factory_version,curve=excluded.curve,deployer=excluded.deployer,dex_factory=excluded.dex_factory,pair_token=excluded.pair_token,pool=excluded.pool,launch_config_id=excluded.launch_config_id,graduation_threshold=excluded.graduation_threshold,position_id=excluded.position_id,restrictions_end_block=excluded.restrictions_end_block,initial_buy_amount=excluded.initial_buy_amount,transaction_hash=excluded.transaction_hash,log_index=excluded.log_index,block_number=excluded.block_number,block_hash=excluded.block_hash,block_time=excluded.block_time,finality=excluded.finality,updated_at=excluded.updated_at`).bind(launch.token,launch.factory,launch.factoryVersion,launch.curve,launch.deployer,launch.dexFactory,launch.pairToken,launch.pool,launch.launchConfigId,launch.graduationThreshold,launch.positionId,launch.restrictionsEndBlock,launch.initialBuyAmount,launch.transactionHash,launch.logIndex,launch.blockNumber,launch.blockHash,blockTime,finality,now,now).run();

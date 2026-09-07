@@ -7,6 +7,7 @@ const DEXSCREENER_ENDPOINT='https://api.dexscreener.com/token-pairs/v1/robinhood
 const EVM_ADDRESS_RE=/^0x[0-9a-fA-F]{40}$/;
 const s=value=>String(value??'').trim();
 const n=value=>Number.isFinite(Number(value))?Number(value):null;
+import { ponsRpc } from './intelligence-pons-rpc.mjs';
 
 export function isRobinhoodContractAddress(value){return EVM_ADDRESS_RE.test(s(value));}
 
@@ -32,15 +33,7 @@ async function graphql(env,query,fetchImpl){
   return body?.data||{};
 }
 
-async function rpc(env,method,params,fetchImpl){
-  const endpoint=s(env.PONS_RPC_URL);
-  if(!endpoint)throw new Error('pons_rpc_unconfigured');
-  const response=await fetchImpl(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
-  if(!response.ok)throw new Error(`pons_rpc_http_${response.status}`);
-  const body=await response.json();
-  if(body?.error)throw new Error(`pons_rpc_${s(body.error.code)||'error'}`);
-  return body?.result;
-}
+const rpc=(env,method,params,fetchImpl)=>ponsRpc(env,method,params,fetchImpl);
 
 async function cachedRecord(env,address){
   const db=env.INTELLIGENCE_DB;

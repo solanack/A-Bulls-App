@@ -9,17 +9,25 @@ import {
   getGalaxy,
   isPopulatedGalaxy,
   preserveLaunchOrigin,
+  GALAXY_CONTENT,
 } from "../src/lib/field/galaxies.ts";
+import { createGalaxySnapshot } from "../src/lib/field/synthetic-universe.ts";
 
-test("Galaxy Zero, pump.fun, and PONS are populated through the shared contract", () => {
+test("Galaxy Zero contains the populated protocol galaxies", () => {
   const zero = getGalaxy("galaxy-zero");
   assert.equal(zero.status, "populated");
   assert.equal(zero.seed, 861);
   assert.equal(isPopulatedGalaxy("galaxy-zero"), true);
+  assert.equal(isPopulatedGalaxy("solana-core"), true);
   assert.equal(isPopulatedGalaxy("pump-fun"), true);
   assert.equal(isPopulatedGalaxy("pons"), true);
   assert.equal(getGalaxy("pons").ecosystem, "PONS launch origin on Robinhood Chain");
-  assert.equal(GALAXIES.length, 3);
+  assert.equal(GALAXIES.length, 4);
+  assert.deepEqual(GALAXY_CONTENT.pons.excludes, ["nft"]);
+  const map = createGalaxySnapshot(zero, 900);
+  assert.equal(map.observedEventCount, 0);
+  assert.deepEqual(new Set(map.particles.flatMap((particle) => typeof particle.metadata?.targetGalaxyId === "string" ? [particle.metadata.targetGalaxyId] : [])), new Set(["solana-core", "pump-fun", "pons"]));
+  assert.equal(map.particles.some((particle) => ["wallet", "transaction", "token", "nft", "program"].includes(particle.kind)), false);
 });
 
 test("existing entities map to the locked universe taxonomy", () => {
@@ -34,21 +42,21 @@ test("existing entities map to the locked universe taxonomy", () => {
 });
 
 test("launch origin can be set once but never rewritten", () => {
-  assert.equal(preserveLaunchOrigin(undefined, "galaxy-zero"), "galaxy-zero");
-  assert.equal(preserveLaunchOrigin("galaxy-zero", "galaxy-zero"), "galaxy-zero");
+  assert.equal(preserveLaunchOrigin(undefined, "solana-core"), "solana-core");
+  assert.equal(preserveLaunchOrigin("solana-core", "solana-core"), "solana-core");
   assert.throws(
-    () => preserveLaunchOrigin("galaxy-zero", "pump-fun"),
+    () => preserveLaunchOrigin("solana-core", "pump-fun"),
     /Launch origin is immutable/,
   );
 });
 
 test("wallet identity remains stable across galaxies", () => {
   assert.equal(
-    canonicalUniverseId("planet", "WalletABC", "galaxy-zero"),
+    canonicalUniverseId("planet", "WalletABC", "solana-core"),
     canonicalUniverseId("planet", "walletabc", "pump-fun"),
   );
   assert.notEqual(
-    canonicalUniverseId("star", "MintABC", "galaxy-zero"),
+    canonicalUniverseId("star", "MintABC", "solana-core"),
     canonicalUniverseId("star", "MintABC", "pump-fun"),
   );
   assert.notEqual(

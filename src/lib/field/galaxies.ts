@@ -4,13 +4,24 @@ export const GALAXIES = [
   {
     id: "galaxy-zero",
     name: "Galaxy Zero",
-    ecosystem: "A Bulls App indexed Solana field",
+    ecosystem: "A Bulls App universe map",
     status: "populated",
     seed: 861,
     accent: "var(--color-accent)",
-    description: "The original living field and reference galaxy for every universe mode.",
-    coverage: "Existing bounded field window",
-    sources: ["synthetic-prototype"],
+    description: "The navigable expanse containing every protocol galaxy, universal search, and Grey.",
+    coverage: "Spatial directory; no raw chain events",
+    sources: ["a-bulls-galaxy-directory"],
+  },
+  {
+    id: "solana-core",
+    name: "Solana Core",
+    ecosystem: "Indexed Solana activity",
+    status: "populated",
+    seed: 861,
+    accent: "var(--color-accent)",
+    description: "Tokens and programs are durable bodies; wallets orbit them and transactions move as trails.",
+    coverage: "Existing bounded Solana field window",
+    sources: ["Solana RPC", "Helius indexed history", "DexScreener"],
   },
   {
     id: "pump-fun",
@@ -40,13 +51,15 @@ export const GALAXIES = [
 export const DEFAULT_GALAXY_ID: GalaxyId = "galaxy-zero";
 
 export const GALAXY_CHAIN_LABEL: Record<GalaxyId, string> = {
-  "galaxy-zero": "SOLANA",
+  "galaxy-zero": "UNIVERSE MAP",
+  "solana-core": "SOLANA",
   "pump-fun": "SOLANA",
   pons: "ROBINHOOD CHAIN",
 };
 
 export const GALAXY_ORIGIN_CHIPS: readonly { id: GalaxyId; label: string }[] = [
   { id: "galaxy-zero", label: "ZERO" },
+  { id: "solana-core", label: "SOLANA" },
   { id: "pump-fun", label: "PUMP" },
   { id: "pons", label: "PONS" },
 ];
@@ -106,6 +119,13 @@ export function getGalaxy(id: GalaxyId): GalaxyDefinition {
 export function isPopulatedGalaxy(id: GalaxyId) {
   return getGalaxy(id).status === "populated";
 }
+
+export const GALAXY_CONTENT = Object.freeze({
+  "galaxy-zero": Object.freeze({ durable: ["galaxy"], transient: [], excludes: ["wallet", "transaction", "mint", "nft", "program"] }),
+  "solana-core": Object.freeze({ durable: ["token", "wallet", "program"], transient: ["transaction"], excludes: [] }),
+  "pump-fun": Object.freeze({ durable: ["token", "wallet", "liquidity-pool"], transient: ["trade", "launch", "migration"], excludes: ["nft"] }),
+  pons: Object.freeze({ durable: ["token", "wallet", "liquidity-pool"], transient: ["trade", "launch"], excludes: ["nft"] }),
+} satisfies Record<GalaxyId, { readonly durable: readonly string[]; readonly transient: readonly string[]; readonly excludes: readonly string[] }>);
 
 export function cosmicKindForEntity(kind: string): CosmicObjectKind {
   switch (kind) {
