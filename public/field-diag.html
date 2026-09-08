@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>A Bulls App · Field Diagnostic</title>
+  <style>
+    :root{color-scheme:dark;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#030307;color:#eef7ff}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;padding:18px;background:#030307}main{max-width:760px;margin:auto}h1{font:600 18px/1.2 system-ui,sans-serif;margin:0 0 8px}p{color:#aeb9c7;font-size:12px;line-height:1.5}.card{border:1px solid #26354b;border-radius:12px;padding:12px;margin:10px 0;background:#080b12}.row{display:grid;grid-template-columns:minmax(120px,.8fr) minmax(0,1.6fr);gap:8px;padding:5px 0;border-bottom:1px solid #151d29;font-size:11px}.row:last-child{border:0}.k{color:#7ad9ff}.v{overflow-wrap:anywhere}.pass{color:#5ce8b0}.fail{color:#ff7893}.warn{color:#e8c470}button{border:1px solid #3a5876;border-radius:999px;padding:10px 14px;background:#0c1622;color:#eef7ff;font:600 11px/1 system-ui,sans-serif}canvas{width:64px;height:64px;border:1px solid #26354b;margin-top:8px}
+  </style>
+</head>
+<body>
+<main>
+  <h1>A Bulls App · Field Diagnostic</h1>
+  <p>This page bypasses the React Field and tests the browser/GPU directly. It does not connect a wallet or make provider calls.</p>
+  <button id="run" type="button">RUN AGAIN</button>
+  <div id="out"></div>
+</main>
+<script>
+(function(){
+  var out=document.getElementById('out');
+  var run=document.getElementById('run');
+  function esc(v){return String(v==null?'—':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function card(title,rows,state){
+    var html='<section class="card"><div class="'+(state||'')+'">'+esc(title)+'</div>';
+    rows.forEach(function(row){html+='<div class="row"><span class="k">'+esc(row[0])+'</span><span class="v">'+esc(row[1])+'</span></div>'});
+    return html+'</section>';
+  }
+  async function release(){
+    try{var r=await fetch('/release.json?diag='+Date.now(),{cache:'no-store'});return await r.json()}catch(e){return {commit:'unavailable',error:String(e)}}
+  }
+  function glTest(power){
+    var canvas=document.createElement('canvas');canvas.width=64;canvas.height=64;
+    var gl=null;var error='';
+    try{gl=canvas.getContext('webgl2',{alpha:false,antialias:false,depth:true,stencil:false,powerPreference:power,preserveDrawingBuffer:false})}catch(e){error=String(e)}
+    if(!gl)return {ok:false,rows:[['powerPreference',power],['context','NULL'],['error',error||'No WebGL2 context']],canvas:null};
+    var debug=gl.getExtension('WEBGL_debug_renderer_info');
+    var renderer=debug?gl.getParameter(debug.UNMASKED_RENDERER_WEBGL):'hidden by browser';
+    var vendor=debug?gl.getParameter(debug.UNMASKED_VENDOR_WEBGL):'hidden by browser';
+    var maxRB=gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
+    var maxTex=gl.getParameter(gl.MAX_TEXTURE_SIZE);
+    gl.viewport(0,0,64,64);gl.clearColor(.08,.42,.72,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    var pixel=new Uint8Array(4);gl.readPixels(32,32,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
+    var err=gl.getError();
+    var ok=err===gl.NO_ERROR && pixel[2]>0;
+    var rows=[['powerPreference',power],['context','WebGL2'],['vendor',vendor],['renderer',renderer],['MAX_RENDERBUFFER_SIZE',maxRB],['MAX_TEXTURE_SIZE',maxTex],['clear/read pixel',Array.from(pixel).join(', ')],['gl.getError()',err]];
+    var lose=gl.getExtension('WEBGL_lose_context');if(lose)lose.loseContext();
+    return {ok:ok,rows:rows,canvas:canvas};
+  }
+  async function execute(){
+    out.innerHTML='<section class="card warn">Running…</section>';
+    var rel=await release();
+    var nav=navigator;
+    var base=[
+      ['release',rel.commit||'unknown'],['userAgent',nav.userAgent],['platform',nav.platform||''],['deviceMemory',nav.deviceMemory==null?'not exposed':nav.deviceMemory+' GB'],['hardwareConcurrency',nav.hardwareConcurrency||''],['devicePixelRatio',window.devicePixelRatio],['inner viewport',innerWidth+' × '+innerHeight],['screen',screen.width+' × '+screen.height],['visualViewport',window.visualViewport?Math.round(visualViewport.width)+' × '+Math.round(visualViewport.height):'not exposed'],['secureContext',window.isSecureContext]
+    ];
+    var html=card('BROWSER',base,'');
+    ['default','high-performance'].forEach(function(power){var result=glTest(power);html+=card('WEBGL2 · '+power+(result.ok?' · PASS':' · FAIL'),result.rows,result.ok?'pass':'fail')});
+    html+=card('INTERPRETATION',[['If default passes','The mobile-safe Field context should initialize.'],['If high-performance fails','The old Field context request was the likely startup problem.'],['If both fail','Send a screenshot of this page; the failure is below the app renderer.']], '');
+    out.innerHTML=html;
+  }
+  run.addEventListener('click',execute);execute();
+})();
+</script>
+</body>
+</html>
