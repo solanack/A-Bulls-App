@@ -15,7 +15,7 @@ const worker = readFileSync(
 
 test("PONS remains additive inside the locked interface", () => {
   assert.match(appShell, /GALAXY_ORIGIN_CHIPS/);
-  assert.match(appShell, /setGalaxy\(item\.id\)/);
+  assert.match(appShell, /openGalaxy\(item\.id\)/);
   assert.doesNotMatch(appShell, /className="field-shell__galaxy-trigger"/);
 });
 

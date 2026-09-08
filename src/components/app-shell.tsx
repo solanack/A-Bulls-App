@@ -23,6 +23,7 @@ import { formatHeat, particleMint } from "@/lib/field/volume-sky";
 import { isWatched, type WatchItem } from "@/lib/field/watchlist";
 import { PONS_TEACHING_TOKEN } from "@/lib/universe-data/pons-client";
 import { resolvePublicIdentifier } from "@/lib/intelligence";
+import { FallbackParticleField } from "@/components/fallback-particle-field";
 
 const EXAMPLES = [
   { label: "PONS TEACHING", value: PONS_TEACHING_TOKEN },
@@ -181,6 +182,11 @@ export function AppShell() {
     else osRef.current?.setMode(id);
   }
 
+  function openGalaxy(id: GalaxyDefinition["id"]) {
+    if (osRef.current) osRef.current.setGalaxy(id);
+    else setGalaxy(getGalaxy(id));
+  }
+
   const workspaceOpen = mode !== "explore" && mode !== "query" && !queryActive;
   const timelineOpen = mode === "replay" || mode === "evidence";
   const returnToField = () => {
@@ -217,6 +223,7 @@ export function AppShell() {
         .gz-top{position:absolute;top:max(12px,env(safe-area-inset-top));left:12px;right:12px;z-index:25;display:flex;align-items:center;gap:10px;pointer-events:none}.gz-menu-wrap{position:relative;flex:0 0 auto;pointer-events:auto}.gz-menu-button{width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--color-line-strong);border-radius:14px;background:rgba(8,8,12,.62);color:var(--color-fg);backdrop-filter:blur(14px);box-shadow:var(--shadow-field)}.gz-menu{position:absolute;top:52px;left:0;width:168px;display:grid;padding:6px;border:1px solid var(--color-line);border-radius:14px;background:rgba(7,7,11,.9);backdrop-filter:blur(20px);box-shadow:var(--shadow-field)}.gz-menu button{min-height:32px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--color-muted);text-align:left;font:600 9px/1 var(--font-display);letter-spacing:.12em}.gz-menu button:hover,.gz-menu button[aria-pressed=true]{background:rgba(255,255,255,.06);color:var(--color-fg)}.gz-menu-status{margin:5px 6px 3px;padding-top:7px;border-top:1px solid var(--color-line);color:var(--color-muted);font:600 8px/1.35 var(--font-mono);letter-spacing:.08em}.gz-search{pointer-events:auto;flex:1 1 auto;min-width:0;max-width:640px;margin:0 auto;height:44px;display:flex;align-items:center;gap:10px;padding:0 14px;border:1px solid var(--color-line-strong);border-radius:999px;background:rgba(8,8,12,.62);box-shadow:var(--shadow-field);backdrop-filter:blur(14px)}.gz-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--color-fg);font:500 14px/1 var(--font-sans)}.gz-search input::placeholder{color:var(--color-muted)}.gz-search button{height:28px;padding:0 12px;border:1px solid var(--color-line-strong);border-radius:999px;background:rgba(255,255,255,.08);color:var(--color-fg);font:600 10px/1 var(--font-display);letter-spacing:.14em}.gz-bottom{position:absolute;z-index:24;left:12px;right:12px;bottom:max(10px,env(safe-area-inset-bottom));min-height:32px;display:flex;align-items:center;justify-content:center;gap:8px;overflow-x:auto;white-space:nowrap;pointer-events:auto;color:var(--color-muted);font:600 9px/1 var(--font-mono);letter-spacing:.08em;scrollbar-width:none}.gz-bottom::-webkit-scrollbar{display:none}.gz-bottom span,.gz-bottom button{flex:0 0 auto}.gz-bottom button{border:0;border-left:1px solid var(--color-line);padding:2px 0 2px 8px;background:transparent;color:var(--color-muted);font:inherit;letter-spacing:inherit}.gz-origin{border:1px solid var(--color-line)!important;border-radius:999px;padding:5px 10px!important}.gz-origin[aria-pressed=true]{color:var(--color-fg);background:rgba(255,255,255,.1)}.field-shell__chrome{padding:0}.field-shell__tag,.field-shell__focus,.field-shell__chips,.field-shell__commands,.field-shell__mode-tools,.field-shell__galaxy-trigger,.field-shell__data-status,.field-shell__brand{display:none!important}@media(max-width:560px){.gz-top{gap:7px}.gz-menu-button{width:40px;height:40px}.gz-search{height:40px;padding:0 9px}.gz-search input{font-size:12px}.gz-search button{height:26px;padding:0 9px}.gz-bottom{justify-content:flex-start;font-size:8px}}
       `}</style>
       <div ref={hostRef} className="field-shell__field" />
+      {fieldUnavailable ? <FallbackParticleField galaxyId={galaxy.id} /> : null}
 
       <div className="field-shell__chrome" hidden={queryActive} aria-hidden={queryActive}>
         <header className="gz-top">
@@ -244,7 +251,7 @@ export function AppShell() {
         <div className="gz-bottom" aria-label="Current field tags">
           <span>{slotValue}</span>
           {focusedGalaxyId ? (
-            <button type="button" className="gz-origin" onClick={() => osRef.current?.setGalaxy(focusedGalaxyId)}>
+            <button type="button" className="gz-origin" onClick={() => openGalaxy(focusedGalaxyId)}>
               ENTER {focusedGalaxy?.name.toUpperCase()}
             </button>
           ) : null}
@@ -255,7 +262,7 @@ export function AppShell() {
               className="gz-origin"
               aria-pressed={galaxy.id === item.id}
               aria-label={`Open ${item.label} galaxy`}
-              onClick={() => osRef.current?.setGalaxy(item.id)}
+              onClick={() => openGalaxy(item.id)}
             >
               {item.label}
             </button>

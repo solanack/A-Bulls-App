@@ -29,8 +29,14 @@ test("the field favors crisp rendering and ignores decorative wallpaper", async 
 });
 
 test("live intelligence remains available when WebGL cannot initialize", async () => {
-  const shell = await read("src/components/app-shell.tsx");
+  const [shell, fallback] = await Promise.all([
+    read("src/components/app-shell.tsx"),
+    read("src/components/fallback-particle-field.tsx"),
+  ]);
   assert.match(shell, /graphics unavailable; live intelligence fallback active/);
   assert.match(shell, /await resolvePublicIdentifier/);
   assert.match(shell, /data-field-fallback/);
+  assert.match(shell, /FallbackParticleField/);
+  assert.match(fallback, /Interactive compatibility particle field/);
+  assert.match(fallback, /requestAnimationFrame/);
 });
