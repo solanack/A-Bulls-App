@@ -53,13 +53,13 @@ if (missingExecutionLocks.length) {
   process.exit(1);
 }
 
+const normalizedVision = universeVision.replace(/\s+/g, " ");
 const cosmologyLocks = [
-  "**token = PLANET**",
-  "**public wallet/holder/trader = STAR**",
-  "Missing holder/wallet evidence produces an honest empty sky",
-  "No scraping or undocumented third-party leaderboard dependency is allowed",
+  "**token = PLANET** and **public wallet/holder/trader = STAR**",
+  "Missing holder/wallet evidence produces an honest empty sky.",
+  "No scraping or undocumented third-party leaderboard dependency is allowed.",
 ];
-const missingCosmologyLocks = cosmologyLocks.filter((marker) => !universeVision.includes(marker));
+const missingCosmologyLocks = cosmologyLocks.filter((marker) => !normalizedVision.includes(marker));
 if (missingCosmologyLocks.length) {
   console.error("RELEASE BLOCKED: the approved token-planet / wallet-star research contract has changed.");
   console.error(`Missing cosmology locks: ${missingCosmologyLocks.join(" | ")}`);
