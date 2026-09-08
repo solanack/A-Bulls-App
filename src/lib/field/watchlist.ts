@@ -18,8 +18,9 @@ export type StorageLike = {
   removeItem?(key: string): void;
 };
 
-function mintKey(mint: string): string {
-  return mint.trim().toLowerCase();
+export function mintKey(mint: string): string {
+  const value = mint.trim();
+  return /^0x[0-9a-f]{40}$/i.test(value) ? value.toLowerCase() : value;
 }
 
 export function parseWatchlist(raw: string | null | undefined): WatchItem[] {
@@ -34,11 +35,11 @@ export function parseWatchlist(raw: string | null | undefined): WatchItem[] {
       const record = row as Record<string, unknown>;
       const mint = typeof record.mint === "string" ? record.mint.trim() : "";
       if (!mint) continue;
+      const galaxyId = record.galaxyId;
+      if (galaxyId !== "galaxy-zero" && galaxyId !== "solana-core" && galaxyId !== "pump-fun" && galaxyId !== "pons") continue;
       const key = mintKey(mint);
       if (seen.has(key)) continue;
       seen.add(key);
-      const galaxyId = record.galaxyId;
-      if (galaxyId !== "galaxy-zero" && galaxyId !== "pump-fun" && galaxyId !== "pons") continue;
       items.push({
         mint,
         galaxyId,
@@ -68,13 +69,15 @@ function getStore(storage?: StorageLike | null): StorageLike | null {
 }
 
 export function loadWatchlist(storage?: StorageLike | null): WatchItem[] {
-  return parseWatchlist(getStore(storage)?.getItem(WATCHLIST_STORAGE_KEY) ?? null);
+  try { return parseWatchlist(getStore(storage)?.getItem(WATCHLIST_STORAGE_KEY) ?? null); }
+  catch { return []; }
 }
 
 export function saveWatchlist(items: readonly WatchItem[], storage?: StorageLike | null): WatchItem[] {
   const next = items.slice(0, WATCHLIST_MAX);
   const store = getStore(storage);
-  store?.setItem(WATCHLIST_STORAGE_KEY, serializeWatchlist(next));
+  try { store?.setItem(WATCHLIST_STORAGE_KEY, serializeWatchlist(next)); }
+  catch { /* Keep this session's pins usable when browser storage is unavailable. */ }
   return next;
 }
 

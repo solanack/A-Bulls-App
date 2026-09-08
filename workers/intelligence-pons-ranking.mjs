@@ -8,6 +8,7 @@ const s=value=>String(value??'').trim();
 const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const bool=value=>s(value).toLowerCase()==='true';
 import { ponsRpc } from './intelligence-pons-rpc.mjs';
+import { providerFetch } from './intelligence-fetch.mjs';
 const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const unix=value=>Math.floor(new Date(value).getTime()/1000);
 const bounded=(value,fallback,min,max)=>Math.max(min,Math.min(max,Math.trunc(n(value)||fallback)));
@@ -30,22 +31,29 @@ export const PONS_TOP25_CONTRACT=Object.freeze({
 
 export function buildPonsCandidateQuery(limit=1000){
   const safeLimit=bounded(limit,1000,25,1000);
-  return `query PonsProtocolCandidates {\n  Trading {\n    Tokens(\n      limit: {count: ${safeLimit}}\n      limitBy: {count: 1, by: Token_Id}\n      orderBy: {descending: Block_Time}\n      where: {\n        Block: {Time: {since_relative: {days_ago: 30}}}\n        Interval: {Time: {Duration: {eq: 1}}}\n        Token: {Network: {is: \"Robinhood\"}}\n        Market: {Protocol: {is: \"pons_v2\"}}\n      }\n    ) {\n      Token { Address }\n    }\n  }\n}`;
+  return `query PonsProtocolCandidates {
+    Trading {
+      Trades(limit: {count: ${safeLimit}}, orderBy: {descending: Block_Time},
+        where: {Pair: {Market: {Protocol: {is: "pons_v2"}, Network: {is: "Robinhood"}}},
+          Block: {Time: {since_relative: {hours_ago: 24}}}}
+      ) { Pair { Token { Address } } }
+    }
+  }`;
 }
 
 export function buildPonsMarketRankQuery(limit=500,floor=500000,tokens=[]){
   const safeLimit=bounded(limit,500,25,1000);
-  const safeFloor=Math.max(PONS_TOP25_CONTRACT.marketCapFloorUsd,n(floor));
+  // Apply the floor after selecting each token's latest observation.
   const addresses=[...new Set((Array.isArray(tokens)?tokens:[]).map(value=>s(value).toLowerCase()).filter(value=>ADDRESS_RE.test(value)))].slice(0,1000);
   if(!addresses.length)throw new Error('pons_candidate_tokens_empty');
   const addressFilter=addresses.map(value=>`\"${value}\"`).join(', ');
-  return `query PonsMarketCapRank {\n  Trading {\n    Tokens(\n      limit: {count: ${safeLimit}}\n      limitBy: {count: 1, by: Token_Id}\n      orderBy: {descending: Supply_MarketCap}\n      where: {\n        Block: {Time: {since_relative: {hours_ago: 24}}}\n        Interval: {Time: {Duration: {eq: 1}}}\n        Token: {Network: {is: \"Robinhood\"}, Address: {in: [${addressFilter}]}}\n        Supply: {MarketCap: {ge: ${safeFloor}}}\n      }\n    ) {\n      Block { Time }\n      Token { Address Symbol Name }\n      Supply { MarketCap FullyDilutedValuationUsd CirculatingSupply TotalSupply }\n      Price { Ohlc { Close } }\n    }\n  }\n}`;
+  return `query PonsMarketCapRank {\n  Trading {\n    Tokens(\n      limit: {count: ${safeLimit}}\n      limitBy: {count: 1, by: Token_Id}\n      orderBy: {descending: Block_Time}\n      where: {\n        Block: {Time: {since_relative: {hours_ago: 24}}}\n        Interval: {Time: {Duration: {eq: 1}}}\n        Token: {Network: {is: \"Robinhood\"}, Address: {in: [${addressFilter}]}}\n      }\n    ) {\n      Block { Time }\n      Token { Address Symbol Name }\n      Supply { MarketCap FullyDilutedValuationUsd CirculatingSupply TotalSupply }\n      Price { Ohlc { Close } }\n    }\n  }\n}`;
 }
 
 async function bitquery(env,query){
   const token=s(env.PONS_BITQUERY_TOKEN||env.BITQUERY_API_TOKEN);
   if(!token)throw new Error('pons_bitquery_unconfigured');
-  const response=await fetch(BITQUERY_ENDPOINT,{method:'POST',headers:{accept:'application/json','content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({query})});
+  const response=await providerFetch(BITQUERY_ENDPOINT,{method:'POST',headers:{accept:'application/json','content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({query})});
   if(!response.ok)throw new Error(`pons_bitquery_http_${response.status}`);
   const body=await response.json();
   if(body?.errors?.length)throw new Error(`pons_bitquery_graphql_${s(body.errors[0]?.message)||'error'}`);
@@ -55,13 +63,19 @@ async function bitquery(env,query){
 export function normalizePonsMarketRows(rows=[],now=Math.floor(Date.now()/1000),options={}){
   const floor=Math.max(PONS_TOP25_CONTRACT.marketCapFloorUsd,n(options.floor));
   const maxAge=bounded(options.maxAgeSeconds,900,60,3600);
-  const normalized=(Array.isArray(rows)?rows:[]).flatMap(row=>{
+  const seenLatest=new Set();
+  const latest=(Array.isArray(rows)?rows:[]).slice().sort((a,b)=>unix(b?.Block?.Time)-unix(a?.Block?.Time)).filter(row=>{
+    const token=s(row?.Token?.Address).toLowerCase();
+    if(seenLatest.has(token))return false;
+    seenLatest.add(token);return true;
+  });
+  const normalized=latest.flatMap(row=>{
     const token=s(row?.Token?.Address).toLowerCase();
     const marketCap=Number(row?.Supply?.MarketCap);
     const observedAt=unix(row?.Block?.Time);
     if(!ADDRESS_RE.test(token)||!Number.isFinite(marketCap)||marketCap<floor)return[];
     if(!Number.isFinite(observedAt)||observedAt<now-maxAge||observedAt>now+120)return[];
-    const finite=value=>Number.isFinite(Number(value))?Number(value):null;
+    const finite=value=>value==null||value===''?null:Number.isFinite(Number(value))?Number(value):null;
     return [{token,symbol:s(row?.Token?.Symbol).slice(0,32)||null,name:s(row?.Token?.Name).slice(0,120)||null,marketCapUsd:marketCap,fdvUsd:finite(row?.Supply?.FullyDilutedValuationUsd),circulatingSupply:finite(row?.Supply?.CirculatingSupply),totalSupply:finite(row?.Supply?.TotalSupply),priceUsd:finite(row?.Price?.Ohlc?.Close),observedAt,source:'bitquery-trading-tokens',confidence:'provider-reported'}];
   }).sort((a,b)=>b.marketCapUsd-a.marketCapUsd);
   const seen=new Set();
@@ -75,7 +89,7 @@ export function selectStablePonsTop25(markets=[],previous=[],options={}){
   const exitCycles=bounded(options.exitCycles,2,1,10);
   const now=bounded(options.now,Math.floor(Date.now()/1000),1,Number.MAX_SAFE_INTEGER);
   const minimumCycleSeconds=bounded(options.minimumCycleSeconds,900,60,3600);
-  const marketByToken=new Map(markets.filter(item=>item.marketCapUsd>=floor).map(item=>[item.token,item]));
+  const marketByToken=new Map(markets.filter(item=>item.marketCapUsd>=floor).slice().sort((a,b)=>b.marketCapUsd-a.marketCapUsd||a.token.localeCompare(b.token)).slice(0,maximum).map(item=>[item.token,item]));
   const previousByToken=new Map(previous.map(item=>[s(item.token).toLowerCase(),item]));
   const tokens=new Set([...previousByToken.keys(),...marketByToken.keys()]);
   const candidates=[];
@@ -157,11 +171,13 @@ export async function refreshPonsTop25(env={},now=Math.floor(Date.now()/1000)){
   const maxAge=bounded(env.PONS_RANK_PRICE_MAX_AGE_SECONDS,900,60,3600);
   const verifiedRows=(await db.prepare('SELECT token FROM pons_launches').all())?.results||[];
   const verified=new Set(verifiedRows.map(row=>s(row.token).toLowerCase()));
-  const candidateData=await bitquery(env,buildPonsCandidateQuery(Math.max(discoveryLimit,500)));
-  const protocolTokens=(candidateData?.Trading?.Tokens||[]).map(row=>s(row?.Token?.Address).toLowerCase()).filter(token=>ADDRESS_RE.test(token));
+  let candidateData;
+  try{candidateData=await bitquery(env,buildPonsCandidateQuery(Math.max(discoveryLimit,500)));}
+  catch(error){if(!verified.size)throw error;console.error('[pons-discovery]',s(error?.message||error));}
+  const protocolTokens=(candidateData?.Trading?.Trades||[]).map(row=>s(row?.Pair?.Token?.Address).toLowerCase()).filter(token=>ADDRESS_RE.test(token));
   const candidateTokens=[...new Set([...verified,...protocolTokens])].slice(0,1000);
   if(!candidateTokens.length)return Object.freeze({enabled:true,marketCandidates:0,verifiedCandidates:0,originChecks:0,active:0,maximum,floor,snapshotId:null});
-  const data=await bitquery(env,buildPonsMarketRankQuery(discoveryLimit,floor,candidateTokens));
+  const data=await bitquery(env,buildPonsMarketRankQuery(candidateTokens.length,floor,candidateTokens));
   const markets=normalizePonsMarketRows(data?.Trading?.Tokens||[],now,{floor,maxAgeSeconds:maxAge});
   const verifyLimit=bounded(env.PONS_ORIGIN_VERIFY_LIMIT,12,1,50);
   let originChecks=0;

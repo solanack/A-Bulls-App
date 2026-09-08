@@ -4,6 +4,7 @@
  */
 import { intelligenceDb } from './intelligence-indexer.mjs';
 import { ponsRpc } from './intelligence-pons-rpc.mjs';
+import { providerFetch } from './intelligence-fetch.mjs';
 
 const s=value=>String(value??'').trim();
 const n=value=>Number.isFinite(Number(value))?Number(value):0;
@@ -57,8 +58,9 @@ export function decodePonsLaunchLog(log={}){
 
 const rpc=(env,method,params=[])=>ponsRpc(env,method,params);
 
-async function persistLaunch(db,launch,{blockTime,finality,now}){
+async function persistLaunch(db,launch,{blockTime,finality,now,rankEnabled}){
   await db.prepare(`INSERT INTO pons_launches(token,factory,factory_version,curve,deployer,dex_factory,pair_token,pool,launch_config_id,graduation_threshold,position_id,restrictions_end_block,initial_buy_amount,transaction_hash,log_index,block_number,block_hash,block_time,finality,launch_state,observed_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'launched',?,?) ON CONFLICT(token) DO UPDATE SET factory=excluded.factory,factory_version=excluded.factory_version,curve=excluded.curve,deployer=excluded.deployer,dex_factory=excluded.dex_factory,pair_token=excluded.pair_token,pool=excluded.pool,launch_config_id=excluded.launch_config_id,graduation_threshold=excluded.graduation_threshold,position_id=excluded.position_id,restrictions_end_block=excluded.restrictions_end_block,initial_buy_amount=excluded.initial_buy_amount,transaction_hash=excluded.transaction_hash,log_index=excluded.log_index,block_number=excluded.block_number,block_hash=excluded.block_hash,block_time=excluded.block_time,finality=excluded.finality,updated_at=excluded.updated_at`).bind(launch.token,launch.factory,launch.factoryVersion,launch.curve,launch.deployer,launch.dexFactory,launch.pairToken,launch.pool,launch.launchConfigId,launch.graduationThreshold,launch.positionId,launch.restrictionsEndBlock,launch.initialBuyAmount,launch.transactionHash,launch.logIndex,launch.blockNumber,launch.blockHash,blockTime,finality,now,now).run();
+  if(rankEnabled)return; // Ranking alone controls active membership when enabled.
   await db.prepare(`INSERT INTO intelligence_universe_membership(universe_id,entity_kind,entity_id,rank,active,qualifying_cycles,first_entered_at,last_entered_at,last_seen_at,last_exited_at,entry_count,source_snapshot_id,metadata_json) VALUES('pons','token',?,NULL,1,1,?,?,?,NULL,1,?,?) ON CONFLICT(universe_id,entity_kind,entity_id) DO UPDATE SET active=1,last_seen_at=MAX(last_seen_at,excluded.last_seen_at),metadata_json=excluded.metadata_json`).bind(launch.token,blockTime||now,blockTime||now,blockTime||now,`pons:${launch.transactionHash}:${launch.logIndex}`,JSON.stringify({originGalaxyId:'pons',chainId:PONS_CHAIN_ID,factory:launch.factory,factoryVersion:launch.factoryVersion,deployer:launch.deployer,pairToken:launch.pairToken,pool:launch.pool,curve:launch.curve,transactionHash:launch.transactionHash,blockNumber:launch.blockNumber,finality})).run();
 }
 
@@ -71,8 +73,22 @@ export function normalizePonsMarketPairs(token,pairs=[],observedAt=Date.now()){
   });
   candidates.sort((a,b)=>n(b?.liquidity?.usd)-n(a?.liquidity?.usd));
   const pair=candidates[0];if(!pair)return null;
-  const finiteOrNull=value=>Number.isFinite(Number(value))?Number(value):null;
+  const finiteOrNull=value=>value==null||value===''?null:Number.isFinite(Number(value))?Number(value):null;
   return Object.freeze({source:'dexscreener-token-pairs',observedAt,pairAddress:EVM_ADDRESS_RE.test(s(pair.pairAddress))?s(pair.pairAddress).toLowerCase():null,dexId:s(pair.dexId)||null,url:s(pair.url).slice(0,600)||null,symbol:s(pair.baseToken?.symbol).slice(0,32)||null,name:s(pair.baseToken?.name).slice(0,120)||null,priceUsd:finiteOrNull(pair.priceUsd),liquidityUsd:finiteOrNull(pair.liquidity?.usd),volumeH24:finiteOrNull(pair.volume?.h24),priceChangeH24:finiteOrNull(pair.priceChange?.h24),buysH24:finiteOrNull(pair.txns?.h24?.buys),sellsH24:finiteOrNull(pair.txns?.h24?.sells)});
+}
+
+export function ponsScanConfig(env={},finalHead=0){
+  const configuredStart=Math.max(0,Math.trunc(n(env.PONS_START_BLOCK)));
+  const chunk=Math.max(10,Math.min(2000,Math.trunc(n(env.PONS_BLOCK_CHUNK)||2000)));
+  const chunksPerRun=Math.max(1,Math.min(8,Math.trunc(n(env.PONS_SCAN_CHUNKS_PER_RUN)||8)));
+  const lookback=Math.max(10,Math.min(5_000_000,Math.trunc(n(env.PONS_BOOTSTRAP_LOOKBACK_BLOCKS)||chunk*chunksPerRun)));
+  return Object.freeze({
+    startBlock:configuredStart||Math.max(0,Math.trunc(n(finalHead))-lookback),
+    bootstrap:configuredStart?'configured':'bounded-lookback',
+    chunk,
+    chunksPerRun,
+    rewind:Math.max(2,Math.min(chunk-1,Math.trunc(n(env.PONS_REORG_REWIND)||32)))
+  });
 }
 
 async function enrichPonsMarkets(env,db,tokens=[],now=Date.now()){
@@ -81,7 +97,7 @@ async function enrichPonsMarkets(env,db,tokens=[],now=Date.now()){
   let enriched=0;
   for(const token of [...new Set(tokens)].slice(0,limit)){
     try{
-      const response=await fetch(`https://api.dexscreener.com/token-pairs/v1/robinhood/${encodeURIComponent(token)}`,{headers:{accept:'application/json'}});
+      const response=await providerFetch(`https://api.dexscreener.com/token-pairs/v1/robinhood/${encodeURIComponent(token)}`,{headers:{accept:'application/json'}});
       if(!response.ok)continue;
       const market=normalizePonsMarketPairs(token,await response.json(),now);
       if(!market)continue;
@@ -98,36 +114,38 @@ export async function maintainPonsIndex(env={},now=Math.floor(Date.now()/1000)){
   const head=hexNumber(await rpc(env,'eth_blockNumber'));
   const confirmations=Math.max(1,Math.min(500,Math.trunc(n(env.PONS_CONFIRMATIONS)||64)));
   const finalHead=Math.max(0,head-confirmations);
-  const startBlock=Math.max(0,Math.trunc(n(env.PONS_START_BLOCK)));
-  if(!startBlock)return Object.freeze({enabled:true,indexed:0,head,finalHead,waitingFor:'PONS_START_BLOCK'});
-  const chunk=Math.max(10,Math.min(2000,Math.trunc(n(env.PONS_BLOCK_CHUNK)||500)));
-  const rewind=Math.max(2,Math.min(1000,Math.trunc(n(env.PONS_REORG_REWIND)||32)));
-  let indexed=0,enriched=0;
+  const {startBlock,bootstrap,chunk,chunksPerRun,rewind}=ponsScanConfig(env,finalHead);
+  let indexed=0,enriched=0,scannedChunks=0;
   for(const definition of PONS_FACTORIES){
     const state=await db.prepare('SELECT last_scanned_block FROM pons_index_state WHERE factory=?').bind(definition.address).first();
-    const from=Math.max(startBlock,(Math.trunc(n(state?.last_scanned_block))||startBlock)-rewind);
-    const to=Math.min(finalHead,from+chunk-1);
-    if(to<from)continue;
-    const logs=await rpc(env,'eth_getLogs',[{address:definition.address,fromBlock:`0x${from.toString(16)}`,toBlock:`0x${to.toString(16)}`,topics:[definition.topic]}]);
-    const previous=(await db.prepare('SELECT token,market_json FROM pons_launches WHERE factory=? AND block_number BETWEEN ? AND ?').bind(definition.address,from,to).all())?.results||[];
-    const previousMarket=new Map(previous.map(row=>[s(row.token).toLowerCase(),s(row.market_json)]));
-    await db.prepare('DELETE FROM pons_launches WHERE factory=? AND block_number BETWEEN ? AND ?').bind(definition.address,from,to).run();
-    const restored=[];
-    for(const raw of(Array.isArray(logs)?logs:[])){
-      const launch=decodePonsLaunchLog(raw);if(!launch)continue;
-      const block=await rpc(env,'eth_getBlockByNumber',[`0x${launch.blockNumber.toString(16)}`,false]);
-      const blockTime=hexNumber(block?.timestamp)||null;
-      await persistLaunch(db,launch,{blockTime,finality:'confirmation-buffered',now});
-      const market=previousMarket.get(launch.token);if(market&&market!=='{}')await db.prepare('UPDATE pons_launches SET market_json=? WHERE token=?').bind(market,launch.token).run();
-      indexed+=1;restored.push(launch.token);
+    // Only choose the lookback on first use. A moving lookback must never skip an existing cursor.
+    let from=state?.last_scanned_block!=null?Math.max(0,Math.trunc(n(state.last_scanned_block))-rewind):startBlock;
+    for(let pass=0;pass<chunksPerRun&&from<=finalHead;pass+=1){
+      const to=Math.min(finalHead,from+chunk-1);
+      const logs=await rpc(env,'eth_getLogs',[{address:definition.address,fromBlock:`0x${from.toString(16)}`,toBlock:`0x${to.toString(16)}`,topics:[definition.topic]}]);
+      if(!Array.isArray(logs))throw new Error('pons_invalid_logs_response');
+      const previous=(await db.prepare('SELECT token,market_json FROM pons_launches WHERE factory=? AND block_number BETWEEN ? AND ?').bind(definition.address,from,to).all())?.results||[];
+      const previousMarket=new Map(previous.map(row=>[s(row.token).toLowerCase(),s(row.market_json)]));
+      await db.prepare('DELETE FROM pons_launches WHERE factory=? AND block_number BETWEEN ? AND ?').bind(definition.address,from,to).run();
+      const restored=[];
+      for(const raw of(Array.isArray(logs)?logs:[])){
+        const launch=decodePonsLaunchLog(raw);if(!launch)continue;
+        const block=await rpc(env,'eth_getBlockByNumber',[`0x${launch.blockNumber.toString(16)}`,false]);
+        const blockTime=hexNumber(block?.timestamp)||null;
+        await persistLaunch(db,launch,{blockTime,finality:'confirmation-buffered',now,rankEnabled:bool(env.PONS_RANK_ENABLED)});
+        const market=previousMarket.get(launch.token);if(market&&market!=='{}')await db.prepare('UPDATE pons_launches SET market_json=? WHERE token=?').bind(market,launch.token).run();
+        indexed+=1;restored.push(launch.token);
+      }
+      const restoredSet=new Set(restored);
+      for(const row of previous){const token=s(row.token).toLowerCase();if(!restoredSet.has(token))await db.prepare(`UPDATE intelligence_universe_membership SET active=0,last_exited_at=?,last_seen_at=? WHERE universe_id='pons' AND entity_kind='token' AND entity_id=?`).bind(now,now,token).run();}
+      enriched+=await enrichPonsMarkets(env,db,restored,now*1000);
+      const block=await rpc(env,'eth_getBlockByNumber',[`0x${to.toString(16)}`,false]);
+      await db.prepare(`INSERT INTO pons_index_state(factory,factory_version,last_scanned_block,last_scanned_hash,last_success_at,last_error,updated_at) VALUES(?,?,?,?,?,NULL,?) ON CONFLICT(factory) DO UPDATE SET factory_version=excluded.factory_version,last_scanned_block=excluded.last_scanned_block,last_scanned_hash=excluded.last_scanned_hash,last_success_at=excluded.last_success_at,last_error=NULL,updated_at=excluded.updated_at`).bind(definition.address,definition.version,to,s(block?.hash)||null,now,now).run();
+      scannedChunks+=1;
+      from=to+1;
     }
-    const restoredSet=new Set(restored);
-    for(const row of previous){const token=s(row.token).toLowerCase();if(!restoredSet.has(token))await db.prepare(`UPDATE intelligence_universe_membership SET active=0,last_exited_at=?,last_seen_at=? WHERE universe_id='pons' AND entity_kind='token' AND entity_id=?`).bind(now,now,token).run();}
-    enriched+=await enrichPonsMarkets(env,db,restored,now*1000);
-    const block=await rpc(env,'eth_getBlockByNumber',[`0x${to.toString(16)}`,false]);
-    await db.prepare(`INSERT INTO pons_index_state(factory,factory_version,last_scanned_block,last_scanned_hash,last_success_at,last_error,updated_at) VALUES(?,?,?,?,?,NULL,?) ON CONFLICT(factory) DO UPDATE SET factory_version=excluded.factory_version,last_scanned_block=excluded.last_scanned_block,last_scanned_hash=excluded.last_scanned_hash,last_success_at=excluded.last_success_at,last_error=NULL,updated_at=excluded.updated_at`).bind(definition.address,definition.version,to,s(block?.hash)||null,now,now).run();
   }
-  return Object.freeze({enabled:true,indexed,enriched,head,finalHead,confirmations});
+  return Object.freeze({enabled:true,indexed,enriched,head,finalHead,confirmations,startBlock,bootstrap,scannedChunks});
 }
 
 async function galaxyPayload(env,limit){

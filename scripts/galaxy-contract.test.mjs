@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { PerspectiveCamera, Vector3 } from 'three';
 
 import {
   GALAXIES,
@@ -12,6 +13,18 @@ import {
   GALAXY_CONTENT,
 } from "../src/lib/field/galaxies.ts";
 import { createGalaxySnapshot, GALAXY_ZERO_CAMERA_DISTANCE, GALAXY_ZERO_CENTERS } from "../src/lib/field/synthetic-universe.ts";
+
+test('all galaxy cores project inside portrait and desktop viewports',()=>{
+  for(const [width,height] of [[320,900],[390,844],[412,915],[1280,800]]){
+    const camera=new PerspectiveCamera(55,width/height,0.1,700), distance=GALAXY_ZERO_CAMERA_DISTANCE;
+    camera.position.set(Math.sin(0.4)*Math.cos(0.18)*distance,Math.sin(0.18)*distance,Math.cos(0.4)*Math.cos(0.18)*distance);
+    camera.lookAt(0,0,0);camera.updateMatrixWorld();
+    for(const position of GALAXY_ZERO_CENTERS){
+      const projected=new Vector3(...position).project(camera);
+      assert.ok(Math.abs(projected.x)<0.9 && Math.abs(projected.y)<0.9 && projected.z<1,`${width}x${height}: ${position} must be visible`);
+    }
+  }
+});
 
 test("Galaxy Zero contains the populated protocol galaxies", () => {
   const zero = getGalaxy("galaxy-zero");
@@ -55,7 +68,7 @@ test("launch origin can be set once but never rewritten", () => {
 test("wallet identity remains stable across galaxies", () => {
   assert.equal(
     canonicalUniverseId("planet", "WalletABC", "solana-core"),
-    canonicalUniverseId("planet", "walletabc", "pump-fun"),
+    canonicalUniverseId("planet", "WalletABC", "pump-fun"),
   );
   assert.notEqual(
     canonicalUniverseId("star", "MintABC", "solana-core"),

@@ -16,6 +16,15 @@ test('backend particles are converted to the Field OS contract without changing 
   assert.equal(snapshot.particles[0].cosmicKind,'star');
   assert.equal(snapshot.particles[0].category,'swap');
   assert.equal(snapshot.particles[0].magnitudeBand,1);
+  assert.equal(snapshot.windowEnd-snapshot.windowStart,10_000);
+  assert.equal(snapshot.particles[0].observedAt,15_000);
+});
+
+test('millisecond field timestamps are not multiplied again',()=>{
+  const now=1_788_842_769_000;
+  const snapshot=toFieldSnapshot('solana-core',{windowStart:now-300_000,windowEnd:now,particles:[{observedAt:now}]});
+  assert.equal(snapshot.windowEnd-snapshot.windowStart,300_000);
+  assert.equal(snapshot.particles[0].observedAt,now);
 });
 
 test('field routes remain disabled with the Universe subsystem',async()=>{

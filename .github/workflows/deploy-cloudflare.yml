@@ -5,9 +5,16 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
-    name: wrangler deploy
+    name: Test and publish both workers
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -16,20 +23,29 @@ jobs:
       CF_DEPLOY: "1"
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-
+      - name: Require deployment credentials
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Add CLOUDFLARE_API_TOKEN to repository Actions secrets. Nothing was deployed."; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Add CLOUDFLARE_ACCOUNT_ID to repository Actions secrets. Nothing was deployed."; exit 1; }
       - name: Install dependencies
         run: npm install --ignore-scripts --no-fund --no-audit
-
-      - name: Deploy frontend worker
-        run: |
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "CLOUDFLARE_API_TOKEN is not set. Skipping live deploy."
-            echo "Add a Cloudflare API token with Workers Scripts Edit, then re-run this workflow."
-            exit 0
-          fi
-          npm run deploy
+      - name: Verify release baseline
+        run: npm run verify:release
+      - name: All repository tests
+        run: npm test
+      - name: Build production frontend
+        run: npm run build
+      - name: Bundle intelligence worker before touching production
+        run: npx wrangler deploy --dry-run --config workers/wrangler.production.toml
+      - name: Apply intelligence migrations
+        run: npx wrangler d1 migrations apply INTELLIGENCE_DB --remote --config workers/wrangler.production.toml
+      - name: Publish intelligence worker
+        run: npx wrangler deploy --config workers/wrangler.production.toml
+      - name: Publish frontend worker
+        run: npx wrangler deploy
+      - name: Verify public application and resolver routes
+        run: node scripts/check-live.mjs

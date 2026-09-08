@@ -95,7 +95,7 @@ void main() {
   vec2 p = gl_PointCoord - vec2(0.5);
   float d = length(p);
   if (d > 0.5) discard;
-  float edge = smoothstep(0.5, 0.32, d);
+  float edge = 1.0 - smoothstep(0.32, 0.5, d);
   gl_FragColor = vec4(vec3(0.006, 0.011, 0.018), edge * uAlpha);
 }
 `;
@@ -149,7 +149,7 @@ void main() {
   vec3 tissue = vec3(0.055, 0.075, 0.088);
   vec3 color = tissue * (0.52 + keyLight * 1.28 + fillLight * 0.42);
   color += identity * (rim * 0.54 + vFeature * 0.08 + uSpeech * vFeature * 0.18);
-  float edge = smoothstep(1.0, 0.46, r2);
+  float edge = 1.0 - smoothstep(0.46, 1.0, r2);
   float pore = 0.88 + 0.12 * sin((q.x + q.y) * 18.0 + vLocal.y * 0.2);
   gl_FragColor = vec4(color * pore, edge * uAlpha);
 }

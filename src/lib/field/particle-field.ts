@@ -6,6 +6,7 @@ import { CameraGestures } from "./gestures";
 import { createStarfield, GALAXY_ZERO_CAMERA_DISTANCE } from "./synthetic-universe";
 import { ALIEN_BOUNDS, parentColorForCategory } from "./anatomy";
 import { isLiveSkyParticle, particleMint } from "./volume-sky";
+import { mintKey } from "./watchlist";
 
 function hostSize(host: HTMLElement) {
   const p = host.parentElement;
@@ -47,7 +48,7 @@ void main() {
   float pSize = length(vec3(instanceMatrix[0][0], instanceMatrix[1][0], instanceMatrix[2][0]));
   vec3 held = mix(center, uFocus, kin * 0.22);
   vec3 p = mix(held, origin, ease * 0.9);
-  float ang = ease * 4.2 + center.y * 0.014;
+  float ang = ease * (4.2 + center.y * 0.014);
   float c = cos(ang);
   float s = sin(ang);
   vec3 d = p - origin;
@@ -69,8 +70,8 @@ void main() {
   if (vReplayVisible < 0.5) discard;
   float d = length(vLocal);
   if (d > 1.0) discard;
-  float core = smoothstep(0.52, 0.06, d);
-  float halo = smoothstep(0.94, 0.38, d);
+  float core = 1.0 - smoothstep(0.06, 0.52, d);
+  float halo = 1.0 - smoothstep(0.38, 0.94, d);
   float alpha = max(core, halo * 0.18);
   gl_FragColor = vec4(vColor * (0.78 + core * 0.55), alpha);
 }
@@ -134,7 +135,7 @@ function particleWorldSize(entity: FieldParticle) {
 
 function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMaterial, limit: number) {
   const visible = snapshot.particles.slice(0, limit);
-  const count = Math.max(1, visible.length);
+  const count = visible.length;
   const positions = new Float32Array(visible.length * 3);
   const colors = new Float32Array(visible.length * 3);
   const cats = new Float32Array(visible.length);
@@ -235,6 +236,7 @@ export class ParticleFieldRenderer {
   #ro: ResizeObserver | null = null;
   #contextLost = false;
   #didRender = false;
+  #pageVisible = document.visibilityState !== "hidden";
 
   constructor(host: HTMLElement, snapshot: UniverseSnapshot) {
     this.host = host;
@@ -272,6 +274,7 @@ export class ParticleFieldRenderer {
     this.renderer.toneMapping = THREE.NoToneMapping;
     canvas.addEventListener("webglcontextlost", this.#onContextLost, false);
     canvas.addEventListener("webglcontextrestored", this.#onContextRestored, false);
+    document.addEventListener("visibilitychange", this.#onVisibilityChange);
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 700);
     this.#placeCamera();
@@ -370,15 +373,26 @@ export class ParticleFieldRenderer {
     console.info("[field-renderer] WebGL context restored");
   };
 
+  #onVisibilityChange = () => {
+    this.#pageVisible = document.visibilityState !== "hidden";
+    this.#last = performance.now();
+    if (this.#pageVisible && !this.#contextLost) this.resize();
+  };
+
   getParticleCount() {
     return Math.floor(this.basePositions.length / 3);
   }
 
   setSnapshot(snapshot: UniverseSnapshot) {
     if (this.destroyed) return;
+    const galaxyChanged = snapshot.galaxyId !== this.snapshot.galaxyId;
     const fieldMesh = buildFieldMesh(snapshot, this.material, deviceBudget().field);
     const previous = this.points;
     this.snapshot = snapshot;
+    if (galaxyChanged) {
+      this.cameraState = { yaw: 0.4, pitch: 0.18, distance: snapshot.galaxyId === "galaxy-zero" ? GALAXY_ZERO_CAMERA_DISTANCE : 125, target: [0, 0, 0] };
+      this.#placeCamera();
+    }
     this.basePositions = new Float32Array(fieldMesh.positions);
     this.colors = fieldMesh.colors;
     this.points = fieldMesh.mesh;
@@ -396,13 +410,13 @@ export class ParticleFieldRenderer {
   }
 
   setWatchlistMints(mints: readonly string[]) {
-    this.watchMints = new Set(mints.map((mint) => mint.toLowerCase()));
+    this.watchMints = new Set(mints.map(mintKey));
     this.#rebuildLiveLabels();
   }
 
   focusByMint(mint: string) {
     const entities = this.points.geometry.userData.entities as FieldParticle[];
-    const hit = entities.find((particle) => particleMint(particle)?.toLowerCase() === mint.toLowerCase());
+    const hit = entities.find((particle) => mintKey(particleMint(particle) ?? "") === mintKey(mint));
     if (!hit) return;
     this.focused = hit;
     this.material.uniforms.uFocus.value.set(hit.position[0], hit.position[1], hit.position[2]);
@@ -418,8 +432,8 @@ export class ParticleFieldRenderer {
     const candidates = entities
       .filter((particle) => particle.metadata?.skyRole !== "wallpaper" && Boolean(liveLabel(particle)))
       .sort((a, b) => {
-        const aMint = particleMint(a)?.toLowerCase() ?? "";
-        const bMint = particleMint(b)?.toLowerCase() ?? "";
+        const aMint = mintKey(particleMint(a) ?? "");
+        const bMint = mintKey(particleMint(b) ?? "");
         const aWatch = this.watchMints.has(aMint) || a.metadata?.skyRole === "watch" ? 1000 : 0;
         const bWatch = this.watchMints.has(bMint) || b.metadata?.skyRole === "watch" ? 1000 : 0;
         const aTeach = a.metadata?.skyRole === "teaching" ? 500 : 0;
@@ -549,9 +563,7 @@ export class ParticleFieldRenderer {
     const canvas = this.renderer.domElement;
     const rect = canvas.getBoundingClientRect();
     const entities = this.points.geometry.userData.entities as FieldParticle[];
-    const rotY = this.points.rotation.y;
-    const c = Math.cos(rotY);
-    const s = Math.sin(rotY);
+    this.points.updateWorldMatrix(true, false);
     this.camera.updateMatrixWorld();
     const mx = clientX - rect.left;
     const my = clientY - rect.top;
@@ -575,7 +587,12 @@ export class ParticleFieldRenderer {
       const x0 = pos[i * 3];
       const y0 = pos[i * 3 + 1];
       const z0 = pos[i * 3 + 2];
-      this.#pick.set(x0 * c - z0 * s, y0, x0 * s + z0 * c).project(this.camera);
+      this.#pick.set(x0, y0, z0);
+      const focusCat = this.material.uniforms.uFocusCat.value;
+      if (this.focused && (CATEGORY_INDEX[entities[i].category] ?? 6) === focusCat) {
+        this.#pick.lerp(this.material.uniforms.uFocus.value, this.material.uniforms.uFocusAmt.value * 0.22);
+      }
+      this.#pick.applyMatrix4(this.points.matrixWorld).project(this.camera);
       if (this.#pick.z > 1 || this.#pick.z < -1) continue;
       const sx = (this.#pick.x * 0.5 + 0.5) * w;
       const sy = (-this.#pick.y * 0.5 + 0.5) * h;
@@ -595,6 +612,11 @@ export class ParticleFieldRenderer {
 
   #frame = (now: number) => {
     if (this.destroyed) return;
+    if (!this.#pageVisible || this.#contextLost) {
+      this.#last = now;
+      this.#raf = requestAnimationFrame(this.#frame);
+      return;
+    }
     const elapsed = Math.min(0.1, (now - this.#last) / 1000);
     this.#last = now;
     if (this.replayActive && this.replayPlaying) {
@@ -633,7 +655,8 @@ export class ParticleFieldRenderer {
 
     this.material.uniforms.uIntensity.value = 1.15 - this.queryBlend * 0.96;
     this.material.uniforms.uPull.value = this.queryBlend;
-    this.points.scale.setScalar(1 - this.queryBlend * 0.06);
+    const fieldScale = 1 - this.queryBlend * 0.06;
+    this.points.scale.set(fieldScale, fieldScale * (this.snapshot.galaxyId === "pons" ? 0.72 : 1), fieldScale);
     this.points.visible = this.queryBlend < 0.97;
     this.starMaterial.opacity = 0.54 + this.queryBlend * 0.32;
 
@@ -672,6 +695,7 @@ export class ParticleFieldRenderer {
     this.#ro = null;
     globalThis.removeEventListener("resize", this.#onResize);
     globalThis.visualViewport?.removeEventListener("resize", this.#onResize);
+    document.removeEventListener("visibilitychange", this.#onVisibilityChange);
     this.points.geometry.dispose();
     for (const sprite of this.liveLabels) disposeLabelSprite(sprite);
     this.liveLabels = [];

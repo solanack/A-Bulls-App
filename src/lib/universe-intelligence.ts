@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-
-const WORKER = "https://black-bull-run-sol.ckdsigns1.workers.dev";
+import { fetchIntelligence } from "./intelligence-origin.ts";
 
 export type UniverseTool =
   | "replay"
@@ -55,7 +54,7 @@ export const callUniverseTool = createServerFn({ method: "POST" })
     } else {
       path = ROUTES[data.tool];
     }
-    const response = await fetch(`${WORKER}${path}`, {
+    const response = await fetchIntelligence(path, {
       method,
       headers: { accept: "application/json", ...(method === "POST" ? { "content-type": "application/json" } : {}) },
       body: method === "POST" ? JSON.stringify(input) : undefined,

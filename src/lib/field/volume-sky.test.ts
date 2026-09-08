@@ -90,6 +90,24 @@ describe("admitStar wash gates", () => {
 });
 
 describe("composeVolumeSky", () => {
+  it("keeps current PONS ranks without requiring Solana liquidity fields", () => {
+    const pons = {...snapshot([star('0x'+'1'.repeat(40), {rank:1, originVerified:true, marketCapUsd:700000, marketObservedAt:now}, {originGalaxyId:'pons'})]),galaxyId:'pons' as const};
+    const current = composeVolumeSky({prototype:pons,live:pons,now});
+    assert.equal(countLiveStars(current),1);
+    assert.match(current.coverageStatement,/Market-cap ranking/);
+    const stale = composeVolumeSky({prototype:pons,live:pons,now:now+901000});
+    assert.equal(countLiveStars(stale),0);
+    assert.equal(stale.particles[0].metadata?.skyRole,'observed');
+  });
+  it("prioritizes real tokens within a small budget and never counts wallpaper or pins as live", () => {
+    const background = snapshot(Array.from({length:30}, (_,i)=>star('background'+i,{})));
+    const live = snapshot([healthy('token',100),star('pin',{teaching:true}),star('wallet',{}, {cosmicKind:'planet'})]);
+    const result = composeVolumeSky({prototype:background,live,now,wallpaperLimit:5});
+    assert.equal(result.particles.length,5);
+    assert.ok(result.particles.some(p=>p.id==='token'));
+    assert.equal(countLiveStars(result),1);
+    assert.equal(composeVolumeSky({prototype:background,live:null,now}).observedEventCount,0);
+  });
   it("ranks admitted stars by 5m heat, caps live at 120, and keeps leftovers observed not safe", () => {
     const liveStars = Array.from({ length: 140 }, (_, i) =>
       healthy(`Mint${String(i).padStart(39, "0")}`, 10_000 - i),
@@ -105,7 +123,7 @@ describe("composeVolumeSky", () => {
     assert.ok(observed.length > 0);
     assert.equal(countLiveStars(composed), 120);
     assert.equal(composed.samplingPolicy.includes("Helius membership stays 10"), true);
-    assert.match(composed.coverageStatement, /No safety claim/);
+    assert.equal(composed.coverageStatement, "test");
     assert.equal(/\bSAFE\b/.test(JSON.stringify(composed)), false);
   });
 });

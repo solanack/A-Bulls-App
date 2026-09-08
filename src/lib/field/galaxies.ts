@@ -1,5 +1,7 @@
 import type { CosmicObjectKind, GalaxyDefinition, GalaxyId } from "./types";
 
+import { mintKey } from "./watchlist.ts";
+
 export const GALAXIES = [
   {
     id: "galaxy-zero",
@@ -166,7 +168,7 @@ export function canonicalUniverseId(
   sourceId: string,
   originGalaxyId: GalaxyId,
 ) {
-  const normalized = sourceId.trim().toLowerCase();
+  const normalized = mintKey(sourceId);
   if (!normalized) throw new Error("Universe identity requires a public source id");
   return kind === "planet"
     ? `planet:${normalized}`

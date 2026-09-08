@@ -26,7 +26,9 @@ test('Bitquery discovery starts with PONS protocol and scopes current market ran
   assert.match(discovery,/Network: \{is: \"Robinhood\"\}/);
   const query=buildPonsMarketRankQuery(500,1,[token(7)]);
   assert.match(query,/Address: \{in: \[\"0x0000000000000000000000000000000000000007\"\]\}/);
-  assert.match(query,/MarketCap: \{ge: 500000\}/);
+  assert.match(discovery,/Trades\(/);
+  assert.match(query,/descending: Block_Time/);
+  assert.doesNotMatch(query,/MarketCap: \{ge:/);
 });
 
 test('origin query binds both the allowlisted factory event and padded token topic',()=>{
@@ -42,6 +44,22 @@ test('normalizer rejects stale, malformed, below-floor, and FDV-only rows',()=>{
   const rows=[row(1,600000,now),row(2,499999,now),{...row(3,700000,now-901)}, {...row(4,700000,now),Token:{Address:'bad'}},{...row(5,0,now),Supply:{FullyDilutedValuationUsd:900000}}];
   const normalized=normalizePonsMarketRows(rows,now,{maxAgeSeconds:900});
   assert.deepEqual(normalized.map(item=>item.token),[token(1)]);
+});
+
+test('an older high market cap cannot replace a newer below-floor observation',()=>{
+  const now=2_000_000_000;
+  assert.deepEqual(normalizePonsMarketRows([row(1,900000,now-60),row(1,400000,now)],now),[]);
+});
+
+test('a stronger qualified entrant replaces an incumbent after two missed top-rank cycles',()=>{
+  const incumbent={token:token(1),market_cap_usd:600000,qualifying_cycles:2,disqualifying_cycles:0,active:1};
+  const markets=[{token:token(1),marketCapUsd:600000},{token:token(2),marketCapUsd:5000000}];
+  const first=selectStablePonsTop25(markets,[incumbent],{maximumMembers:1});
+  assert.equal(first.find(item=>item.token===token(1)).active,true);
+  const previous=first.map(item=>({token:item.token,market_cap_usd:item.marketCapUsd,qualifying_cycles:item.qualifyingCycles,disqualifying_cycles:item.disqualifyingCycles,active:Number(item.active)}));
+  const second=selectStablePonsTop25(markets,previous,{maximumMembers:1});
+  assert.equal(second.find(item=>item.token===token(2)).active,true);
+  assert.equal(second.find(item=>item.token===token(1)).active,false);
 });
 
 test('membership requires two cycles, caps at 25, and exits after two misses',()=>{

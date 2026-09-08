@@ -40,6 +40,6 @@ export function sparseHydrateDisclosure(
   floor: number,
 ): string {
   const base = String(deliveryDisclosure ?? "").trim();
-  const note = `Indexed snapshot has only ${particleCount} particles (visibility floor ${floor}); keeping the dense prototype field visible.`;
+  const note = `Indexed snapshot has only ${particleCount} particles (visibility floor ${floor}); keeping the background field visible while live coverage fills in.`;
   return base ? `${base} ${note}` : note;
 }

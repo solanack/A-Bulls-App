@@ -6,8 +6,9 @@ const BITQUERY_ENDPOINT='https://streaming.bitquery.io/graphql';
 const DEXSCREENER_ENDPOINT='https://api.dexscreener.com/token-pairs/v1/robinhood';
 const EVM_ADDRESS_RE=/^0x[0-9a-fA-F]{40}$/;
 const s=value=>String(value??'').trim();
-const n=value=>Number.isFinite(Number(value))?Number(value):null;
+const n=value=>value==null||value===''?null:Number.isFinite(Number(value))?Number(value):null;
 import { ponsRpc } from './intelligence-pons-rpc.mjs';
+import { providerFetch } from './intelligence-fetch.mjs';
 
 export function isRobinhoodContractAddress(value){return EVM_ADDRESS_RE.test(s(value));}
 
@@ -50,7 +51,7 @@ function normalizeDexPairs(address,rows){
   if(!pair)return null;
   const periods=['m5','h1','h6','h24'];
   const record=source=>Object.fromEntries(periods.map(period=>[period,n(source?.[period])]));
-  return {pairAddress:s(pair.pairAddress).toLowerCase()||null,dexId:s(pair.dexId)||null,url:s(pair.url).slice(0,600)||null,symbol:s(pair.baseToken?.symbol).slice(0,32)||null,name:s(pair.baseToken?.name).slice(0,120)||null,priceUsd:n(pair.priceUsd),liquidityUsd:n(pair.liquidity?.usd),marketCapUsd:n(pair.marketCap),fdvUsd:n(pair.fdv),volumeUsd:record(pair.volume),priceChangePct:record(pair.priceChange),transactions:Object.fromEntries(periods.map(period=>[period,{buys:n(pair.txns?.[period]?.buys),sells:n(pair.txns?.[period]?.sells)}])),source:'dexscreener-token-pairs'};
+  return {pairAddress:s(pair.pairAddress).toLowerCase()||null,dexId:s(pair.dexId)||null,pairCreatedAt:n(pair.pairCreatedAt),url:s(pair.url).slice(0,600)||null,symbol:s(pair.baseToken?.symbol).slice(0,32)||null,name:s(pair.baseToken?.name).slice(0,120)||null,priceUsd:n(pair.priceUsd),liquidityUsd:n(pair.liquidity?.usd),marketCapUsd:n(pair.marketCap),fdvUsd:n(pair.fdv),volumeUsd:record(pair.volume),priceChangePct:record(pair.priceChange),transactions:Object.fromEntries(periods.map(period=>[period,{buys:n(pair.txns?.[period]?.buys),sells:n(pair.txns?.[period]?.sells)}])),source:'dexscreener-token-pairs'};
 }
 
 export function summarizeRobinhoodPressure(transactions={}){
@@ -78,24 +79,25 @@ function normalizeHolders(data,totalSupply){
   return {count:n(stats?.holders),top10Pct:share(10),top20Pct:share(20),method:'raw current balances; contracts and pools are not excluded',coverage:stats||top.length?'available':'empty'};
 }
 
-export async function resolveRobinhoodToken(address,{env={},fetchImpl=fetch}={}){
+export async function resolveRobinhoodToken(address,{env={},fetchImpl=providerFetch}={}){
   const token=s(address).toLowerCase();
   if(!isRobinhoodContractAddress(token))return Object.freeze({ok:false,kind:'search-text',error:'invalid_robinhood_contract',query:s(address),readOnly:true});
-  let code=null,rpcAvailable=true,rpcError=null;
-  try{code=await rpc(env,'eth_getCode',[token,'latest'],fetchImpl);}
-  catch(error){rpcAvailable=false;rpcError=s(error?.message||error);}
+  const [codeResult,cached,bitqueryMarket,dex,holderResult]=await Promise.all([
+    rpc(env,'eth_getCode',[token,'latest'],fetchImpl).then(code=>({code,error:null})).catch(error=>({code:null,error:s(error?.message||error)})),
+    cachedRecord(env,token),
+    graphql(env,buildRobinhoodTokenMarketQuery(token),fetchImpl).then(normalizeBitqueryMarket).catch(()=>null),
+    fetchImpl(`${DEXSCREENER_ENDPOINT}/${token}`,{headers:{accept:'application/json'}}).then(async response=>response.ok?normalizeDexPairs(token,await response.json()):null).catch(()=>null),
+    graphql(env,buildRobinhoodHoldersQuery(token),fetchImpl).catch(()=>null),
+  ]);
+  const {code,error:rpcError}=codeResult;
+  const rpcAvailable=!rpcError;
   const codeObserved=rpcAvailable&&Boolean(code&&code!=='0x'&&code!=='0x0');
-
-  const cached=await cachedRecord(env,token);
-  const marketPromise=graphql(env,buildRobinhoodTokenMarketQuery(token),fetchImpl).then(normalizeBitqueryMarket).catch(()=>null);
-  const dexPromise=fetchImpl(`${DEXSCREENER_ENDPOINT}/${token}`,{headers:{accept:'application/json'}}).then(async response=>response.ok?normalizeDexPairs(token,await response.json()):null).catch(()=>null);
-  const [bitqueryMarket,dex]=await Promise.all([marketPromise,dexPromise]);
   const totalSupply=bitqueryMarket?.totalSupply??n(cached?.total_supply);
-  const holders=await graphql(env,buildRobinhoodHoldersQuery(token),fetchImpl).then(data=>normalizeHolders(data,totalSupply)).catch(()=>({count:null,top10Pct:null,top20Pct:null,method:'unavailable',coverage:'unavailable'}));
+  const holders=holderResult?normalizeHolders(holderResult,totalSupply):{count:null,top10Pct:null,top20Pct:null,method:'unavailable',coverage:'unavailable'};
   const ponsVerified=Boolean(cached?.factory);
   const marketCapUsd=bitqueryMarket?.marketCapUsd??dex?.marketCapUsd??n(cached?.market_cap_usd);
   const liquidityUsd=dex?.liquidityUsd??null;
-  const market={symbol:bitqueryMarket?.symbol??dex?.symbol??(s(cached?.symbol)||null),name:bitqueryMarket?.name??dex?.name??(s(cached?.name)||null),priceUsd:bitqueryMarket?.priceUsd??dex?.priceUsd??n(cached?.price_usd),marketCapUsd,fdvUsd:bitqueryMarket?.fdvUsd??dex?.fdvUsd??n(cached?.fdv_usd),circulatingSupply:bitqueryMarket?.circulatingSupply??n(cached?.circulating_supply),totalSupply,liquidityUsd,liquidityToMarketCapPct:liquidityUsd!=null&&marketCapUsd>0?liquidityUsd/marketCapUsd*100:null,volumeUsd:dex?.volumeUsd??{m5:null,h1:null,h6:null,h24:null},priceChangePct:dex?.priceChangePct??{m5:null,h1:null,h6:null,h24:null},transactions:dex?.transactions??null,pairAddress:dex?.pairAddress??null,dexId:dex?.dexId??null,observedAt:bitqueryMarket?.observedAt??null};
+  const market={symbol:bitqueryMarket?.symbol??dex?.symbol??(s(cached?.symbol)||null),name:bitqueryMarket?.name??dex?.name??(s(cached?.name)||null),priceUsd:bitqueryMarket?.priceUsd??dex?.priceUsd??n(cached?.price_usd),marketCapUsd,fdvUsd:bitqueryMarket?.fdvUsd??dex?.fdvUsd??n(cached?.fdv_usd),circulatingSupply:bitqueryMarket?.circulatingSupply??n(cached?.circulating_supply),totalSupply,liquidityUsd,liquidityToMarketCapPct:liquidityUsd!=null&&marketCapUsd>0?liquidityUsd/marketCapUsd*100:null,volumeUsd:dex?.volumeUsd??{m5:null,h1:null,h6:null,h24:null},priceChangePct:dex?.priceChangePct??{m5:null,h1:null,h6:null,h24:null},transactions:dex?.transactions??null,pairAddress:dex?.pairAddress??null,dexId:dex?.dexId??null,pairCreatedAt:dex?.pairCreatedAt??null,observedAt:bitqueryMarket?.observedAt??(dex?new Date().toISOString():cached?.market_observed_at?new Date(cached.market_observed_at*1000).toISOString():null)};
   const pressure=summarizeRobinhoodPressure(market.transactions);
   const flags=[];
   if(!rpcAvailable)flags.push('contract-code verification temporarily unavailable');
@@ -105,7 +107,7 @@ export async function resolveRobinhoodToken(address,{env={},fetchImpl=fetch}={})
   const hasMarket=Object.values(market).some(value=>value!=null&&typeof value!=='object')||Boolean(dex||bitqueryMarket||cached);
   if(!hasMarket&&!rpcAvailable)return Object.freeze({ok:false,kind:'evm-token',address:token,state:'not-found',error:'all_robinhood_sources_unavailable',message:rpcError,coverage:'degraded',readOnly:true});
   if(!hasMarket&&!codeObserved)return Object.freeze({ok:true,kind:'evm-token',address:token,state:'not-found',label:'unresolved-robinhood-address',chainId:4663,network:'Robinhood Chain',source:'robinhood-chain-rpc',coverage:'empty',readOnly:true});
-  return Object.freeze({ok:true,kind:'evm-token',address:token,state:'resolved',label:ponsVerified?'pons-token':'robinhood-token',chainId:4663,network:'Robinhood Chain',readOnly:true,source:[bitqueryMarket&&'bitquery',dex&&'dexscreener',codeObserved&&'robinhood-chain-rpc'].filter(Boolean).join('+'),coverage:hasMarket&&codeObserved?'fresh':'partial',pons:{verified:ponsVerified,rank:n(cached?.current_rank),factory:s(cached?.factory)||null,factoryVersion:s(cached?.factory_version)||null,deployer:s(cached?.deployer)||null,pool:s(cached?.pool)||null,transactionHash:s(cached?.transaction_hash)||null},launchpad:{name:ponsVerified?'PONS':null,associated:ponsVerified,status:ponsVerified?(s(cached?.pool)?'graduated/open-market':'launched'):'unverified',evidence:ponsVerified?'allowlisted PONS factory record':'unavailable'},market,activity:{pressure},holders,creator:{coverage:ponsVerified&&cached?.deployer?'launch-deployer-only':'unavailable',address:s(cached?.deployer)||null,statement:'Deployer holdings are not asserted without current verified balance coverage.'},bundles:{coverage:'unavailable',statement:'Bundled and linked-wallet ownership is not inferred from balances alone.'},smartMoney:{coverage:'unavailable',statement:'Wallets are not labeled smart money without a verified performance methodology.'},risk:{level:flags.length?'observed-flags':'insufficient-evidence',flags,statement:'Observed facts only. This is not a safety rating or price prediction.'},disclosure:[ponsVerified?'PONS origin is verified from an allowlisted factory record.':'PONS origin is not yet verified, so the app does not claim PONS membership.',codeObserved?'Robinhood contract code was observed.':rpcAvailable?'The configured RPC did not return contract code; market data was cross-checked instead.':'Robinhood contract-code verification is temporarily unavailable.', 'Market fields are provider observations and may be delayed.'].join(' ')});
+  return Object.freeze({ok:true,kind:'evm-token',address:token,state:'resolved',label:ponsVerified?'pons-token':'robinhood-token',chainId:4663,network:'Robinhood Chain',readOnly:true,source:[bitqueryMarket&&'bitquery',dex&&'dexscreener',codeObserved&&'robinhood-chain-rpc'].filter(Boolean).join('+'),coverage:(bitqueryMarket||dex)&&codeObserved?'fresh':cached&&!bitqueryMarket&&!dex?'stale':'partial',pons:{verified:ponsVerified,rank:n(cached?.current_rank),factory:s(cached?.factory)||null,factoryVersion:s(cached?.factory_version)||null,deployer:s(cached?.deployer)||null,pool:s(cached?.pool)||null,transactionHash:s(cached?.transaction_hash)||null},launchpad:{name:ponsVerified?'PONS':null,associated:ponsVerified,status:ponsVerified?(s(cached?.pool)?'graduated/open-market':'launched'):'unverified',evidence:ponsVerified?'allowlisted PONS factory record':'unavailable'},market,activity:{pressure},holders,creator:{coverage:ponsVerified&&cached?.deployer?'launch-deployer-only':'unavailable',address:s(cached?.deployer)||null,statement:'Deployer holdings are not asserted without current verified balance coverage.'},bundles:{coverage:'unavailable',statement:'Bundled and linked-wallet ownership is not inferred from balances alone.'},smartMoney:{coverage:'unavailable',statement:'Wallets are not labeled smart money without a verified performance methodology.'},risk:{level:flags.length?'observed-flags':'insufficient-evidence',flags,statement:'Observed facts only. This is not a safety rating or price prediction.'},disclosure:[ponsVerified?'PONS origin is verified from an allowlisted factory record.':'PONS origin is not yet verified, so the app does not claim PONS membership.',codeObserved?'Robinhood contract code was observed.':rpcAvailable?'The configured RPC did not return contract code; market data was cross-checked instead.':'Robinhood contract-code verification is temporarily unavailable.', 'Market fields are provider observations and may be delayed.'].join(' ')});
 }
 
 export const __ponsTokenResolverContract=Object.freeze({chainId:4663,readOnly:true,addressPattern:'0x + 40 hexadecimal characters'});

@@ -59,6 +59,7 @@ export function AppShell() {
   const osRef = useRef<FieldOS | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const queryInputRef = useRef<HTMLInputElement>(null);
+  const querySequence = useRef(0);
   const [mode, setMode] = useState<FieldMode>("explore");
   const [menuOpen, setMenuOpen] = useState(false);
   const [queryActive, setQueryActive] = useState(false);
@@ -115,6 +116,7 @@ export function AppShell() {
     });
     return () => {
       cancelled = true;
+      querySequence.current++;
       os?.destroy();
       osRef.current = null;
     };
@@ -139,14 +141,18 @@ export function AppShell() {
       void osRef.current.submitQuery(query);
       return;
     }
+    const sequence = ++querySequence.current;
     setQueryActive(true);
+    setResult(null);
     setMode("query");
     setOrganismState("analyzing");
     try {
       const resolved = await resolvePublicIdentifier({ data: { query } });
+      if (sequence !== querySequence.current) return;
       setResult(resolved);
       setOrganismState("complete");
     } catch (error) {
+      if (sequence !== querySequence.current) return;
       console.error("[field-shell] live intelligence fallback failed", { query, error: String(error) });
       setResult({
         ok: false,
@@ -178,7 +184,8 @@ export function AppShell() {
   function selectMode(id: FieldMode) {
     setMenuOpen(false);
     if (id === "query") onQueryMode();
-    else osRef.current?.setMode(id);
+    else if (osRef.current) osRef.current.setMode(id);
+    else setMode(id);
   }
 
   function openGalaxy(id: GalaxyDefinition["id"]) {
@@ -189,6 +196,7 @@ export function AppShell() {
   const workspaceOpen = mode !== "explore" && mode !== "query" && !queryActive;
   const timelineOpen = mode === "replay" || mode === "evidence";
   const returnToField = () => {
+    querySequence.current++;
     if (osRef.current) void osRef.current.returnToField();
     else {
       setQueryActive(false);
@@ -235,7 +243,7 @@ export function AppShell() {
                   <button key={item.id} type="button" aria-pressed={mode === item.id} onClick={() => selectMode(item.id)}>{item.label}</button>
                 ))}
                 <p className="gz-menu-status" title={dataStatus.disclosure}>
-                  {dataStatus.store === "d1" ? "INDEXED" : "PROTOTYPE"} · {dataStatus.coverage.toUpperCase()}
+                  {dataStatus.store === "d1" ? "INDEXED" : "LIVE CHECK"} · {dataStatus.coverage.toUpperCase()}
                 </p>
               </nav>
             ) : null}
@@ -302,7 +310,7 @@ export function AppShell() {
       <section className={`field-shell__workspace${timelineOpen ? " field-shell__workspace--timeline" : ""}`} hidden={!workspaceOpen}>
         <div className="field-shell__workspace-head">
           <strong>{mode.toUpperCase().replace("WHAT-IF", "WHAT-IF · ESTIMATE")}</strong>
-          <button type="button" className="field-shell__close" onClick={() => osRef.current?.setMode("explore")}>RETURN TO FIELD</button>
+          <button type="button" className="field-shell__close" onClick={returnToField}>RETURN TO FIELD</button>
         </div>
         <div className="field-shell__workspace-body">
           {mode === "intelligence" ? (

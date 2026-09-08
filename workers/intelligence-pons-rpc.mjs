@@ -1,4 +1,5 @@
 const s=value=>String(value??'').trim();
+import { providerFetch } from './intelligence-fetch.mjs';
 const DEFAULT_PUBLIC_RPC='https://rpc.mainnet.chain.robinhood.com';
 
 export function ponsRpcEndpoints(env={}){
@@ -6,7 +7,7 @@ export function ponsRpcEndpoints(env={}){
   return Object.freeze([...new Set(configured)]);
 }
 
-export async function ponsRpc(env,method,params=[],fetchImpl=fetch){
+export async function ponsRpc(env,method,params=[],fetchImpl=providerFetch){
   const errors=[];
   for(const endpoint of ponsRpcEndpoints(env)){
     try{

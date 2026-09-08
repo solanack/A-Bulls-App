@@ -79,6 +79,6 @@ describe("sparseHydrateDisclosure", () => {
     const text = sparseHydrateDisclosure("Indexed · fresh.", 4, 224);
     assert.match(text, /only 4 particles/);
     assert.match(text, /floor 224/);
-    assert.match(text, /prototype/);
+    assert.match(text, /background field/);
   });
 });

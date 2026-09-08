@@ -19,6 +19,7 @@ export async function proxyIntelligenceRequest(request: Request): Promise<Respon
       headers,
       body: method === "GET" ? undefined : request.body,
       redirect: "manual",
+      signal: AbortSignal.timeout(14_000),
     });
     const outputHeaders = new Headers(response.headers);
     outputHeaders.set("cache-control", response.headers.get("cache-control") || "no-store");

@@ -6,6 +6,8 @@ import {
   __ponsGalaxyContract,
   decodePonsLaunchLog,
   normalizePonsMarketPairs,
+  ponsScanConfig,
+  maintainPonsIndex,
   handlePonsGalaxyRequest
 } from './intelligence-pons-galaxy.mjs';
 
@@ -15,10 +17,27 @@ const topicAddress=value=>`0x${'0'.repeat(24)}${value.slice(2)}`;
 const wordAddress=value=>`${'0'.repeat(24)}${value.slice(2)}`;
 const wordUint=value=>BigInt(value).toString(16).padStart(64,'0');
 
+test('malformed RPC logs cannot delete indexed launches or advance the cursor',async()=>{
+  const original=globalThis.fetch;
+  let writes=0;
+  const db={prepare(){return {bind(){return {first:async()=>({last_scanned_block:100}),run:async()=>{writes++;},all:async()=>({results:[]})};}}}};
+  globalThis.fetch=async(_url,init)=>Response.json({result:JSON.parse(init.body).method==='eth_blockNumber'?'0x1000':{error:'invalid logs'}});
+  try{
+    await assert.rejects(maintainPonsIndex({PONS_INDEX_ENABLED:'true',INTELLIGENCE_DB:db}),/pons_invalid_logs_response/);
+    assert.equal(writes,0);
+  }finally{globalThis.fetch=original;}
+});
+
 test('PONS contract is read-only and pinned to Robinhood Chain',()=>{
   assert.equal(PONS_CHAIN_ID,4663);
   assert.equal(__ponsGalaxyContract.readOnly,true);
   assert.deepEqual(PONS_FACTORIES.map(item=>item.version),['v1','v2']);
+});
+
+test('PONS index self-starts with a bounded lookback while honoring explicit deployment blocks',()=>{
+  assert.deepEqual(ponsScanConfig({},1_000_000),{startBlock:984_000,bootstrap:'bounded-lookback',chunk:2000,chunksPerRun:8,rewind:32});
+  assert.equal(ponsScanConfig({PONS_START_BLOCK:'1234'},1_000_000).startBlock,1234);
+  assert.equal(ponsScanConfig({PONS_SCAN_CHUNKS_PER_RUN:'999'},1_000_000).chunksPerRun,8);
 });
 
 test('decodes V2 TokenLaunched only from the allowlisted factory and topic',()=>{

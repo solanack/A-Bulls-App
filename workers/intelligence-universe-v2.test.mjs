@@ -39,7 +39,7 @@ test('Helius rotation adds before retire and is bounded',()=>{
 test('Helius ingest remains bounded to active universe mints',()=>{
   assert.equal(__heliusUniverseIngestContract.maxBatch,100);
   assert.equal(__heliusUniverseIngestContract.filtersAgainstActiveUniverseMints,true);
-  assert.equal(__heliusUniverseIngestContract.legacyPumpIngestAlias,true);
+  assert.equal(__heliusUniverseIngestContract.legacyPumpIngestAlias,false);
 });
 
 test('Universe scheduler keeps fast cron work behind subsystem leases',()=>{

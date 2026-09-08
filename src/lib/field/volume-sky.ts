@@ -1,4 +1,5 @@
 import type { FieldParticle, GalaxyId, JsonValue, UniverseSnapshot } from "./types.ts";
+import { mintKey } from "./watchlist.ts";
 
 export const SKY_CAP = 120;
 export const LIQ_FLOOR_USD = 10_000;
@@ -116,10 +117,12 @@ export function tapeM5(particle: FieldParticle): { buys: number | null; sells: n
   const buys =
     numeric(particle.metadata?.buysM5) ??
     numeric(nested(particle.metadata, ["transactions", "m5", "buys"])) ??
+    numeric(nested(particle.metadata, ["market", "transactions", "m5", "buys"])) ??
     numeric(nested(particle.metadata, ["activity", "pressure", "m5", "buys"]));
   const sells =
     numeric(particle.metadata?.sellsM5) ??
     numeric(nested(particle.metadata, ["transactions", "m5", "sells"])) ??
+    numeric(nested(particle.metadata, ["market", "transactions", "m5", "sells"])) ??
     numeric(nested(particle.metadata, ["activity", "pressure", "m5", "sells"]));
   return { buys, sells };
 }
@@ -149,10 +152,6 @@ export function formatHeat(heat: FiveMinuteHeat | null | undefined): string | nu
 
 export function isTeachingBody(particle: FieldParticle): boolean {
   return particle.metadata?.teaching === true || particle.metadata?.skyRole === "teaching";
-}
-
-function mintKey(value: string): string {
-  return value.trim().toLowerCase();
 }
 
 function watchedMint(particle: FieldParticle, watchlist: readonly WatchPin[]): boolean {
@@ -189,7 +188,7 @@ export function admitStar(
   }
 
   if (heat && (liqUsd != null || liqSol != null)) {
-    const liq = liqUsd ?? (liqSol != null && heat.unit === "sol" ? liqSol : null);
+    const liq = heat.unit === "usd" ? liqUsd : liqSol;
     if (liq != null && liq > 0 && heat.value / liq > MAX_M5_VOL_TO_LIQ) flags.push("wash-like-velocity");
   }
 
@@ -235,7 +234,7 @@ export function isLiveSkyParticle(particle: FieldParticle): boolean {
 export function countLiveStars(snapshot: UniverseSnapshot): number {
   return snapshot.particles.filter((particle) => {
     const role = particle.metadata?.skyRole;
-    return role === "live" || role === "watch" || role === "teaching";
+    return (particle.cosmicKind === "star" || particle.cosmicKind === "black-hole" || particle.cosmicKind === "supernova") && role === "live";
   }).length;
 }
 
@@ -271,7 +270,13 @@ export function composeVolumeSky(input: {
   for (const star of stars) {
     const teaching = isTeachingBody(star);
     const watched = watchedMint(star, watchlist);
-    const verdict = admitStar(star, snapshotWindow, now);
+    const ponsRank = numeric(star.metadata?.rank);
+    const ponsMarketAt = numeric(star.metadata?.marketObservedAt);
+    const ponsCap = numeric(star.metadata?.marketCapUsd);
+    const verifiedPonsRank = galaxyId === "pons" && star.metadata?.originVerified === true && ponsRank != null && ponsRank >= 1 && ponsRank <= 25 && ponsCap != null && ponsCap >= 500_000;
+    const verdict = verifiedPonsRank
+      ? { admitted: ponsMarketAt != null && now - ponsMarketAt <= 15 * 60_000 && ponsMarketAt <= now + 120_000, flags: ponsMarketAt == null || now - ponsMarketAt > 15 * 60_000 ? ["stale-market"] : [] }
+      : admitStar(star, snapshotWindow, now);
     const flags = [...verdict.flags];
     if (watched) flags.push("watch-pin");
     if (teaching && !flags.includes("teaching-body")) flags.push("teaching-body");
@@ -289,7 +294,7 @@ export function composeVolumeSky(input: {
     });
   }
 
-  ranked.sort((a, b) => Number(b.pin) - Number(a.pin) || heatScore(b.heat) - heatScore(a.heat));
+  ranked.sort((a, b) => Number(b.pin) - Number(a.pin) || (galaxyId === "pons" ? (numeric(a.particle.metadata?.rank) ?? 26) - (numeric(b.particle.metadata?.rank) ?? 26) : heatScore(b.heat) - heatScore(a.heat)));
   const pinCount = ranked.filter((row) => row.pin).length;
   const liveRoom = Math.max(SKY_CAP, pinCount);
   const board = ranked.filter((row) => row.admitted || row.pin);
@@ -342,13 +347,14 @@ export function composeVolumeSky(input: {
 
   const liveParticles = [...skyStars, ...observed, ...liveComets, ...livePlanets, ...liveOther];
   const liveIds = new Set(liveParticles.map((particle) => particle.id));
-  const wallpaperBudget = Math.max(400, (input.wallpaperLimit ?? 2800) - liveParticles.length);
+  const particleBudget = Math.max(1, input.wallpaperLimit ?? 2800);
+  const wallpaperBudget = Math.max(0, particleBudget - liveParticles.length);
   const wallpaper = prototype.particles
     .filter((particle) => !liveIds.has(particle.id))
     .slice(0, wallpaperBudget)
     .map((particle) => withSkyMeta(particle, { skyRole: "wallpaper" }));
 
-  const particles = [...wallpaper, ...liveParticles];
+  const particles = [...liveParticles, ...wallpaper].slice(0, particleBudget);
   const times = particles.map((particle) => particle.observedAt);
   const windowStart = live?.windowStart ?? (times.length ? Math.min(...times) : now);
   const windowEnd = live?.windowEnd ?? (times.length ? Math.max(...times) : now);
@@ -358,9 +364,9 @@ export function composeVolumeSky(input: {
     galaxyId,
     windowStart,
     windowEnd,
-    observedEventCount: live?.observedEventCount ?? particles.length,
-    samplingPolicy: `volume-sky-5m-only cap ${SKY_CAP}; wash gates; watchlist pins; Helius membership stays ${HELIUS_MEMBERSHIP_LIMIT}`,
-    coverageStatement: `${live?.coverageStatement ?? prototype.coverageStatement} Volume sky · 5m heat · ${liveCount} live stars (cap ${SKY_CAP}). Observed bodies stay flagged, never certified. No safety claim.`,
+    observedEventCount: live?.observedEventCount ?? 0,
+    samplingPolicy: galaxyId === "pons" ? "PONS verified market-cap top 25; $500,000 floor; stale observations flagged; watchlist pins" : `volume-sky-5m-only cap ${SKY_CAP}; wash gates; watchlist pins; Helius membership stays ${HELIUS_MEMBERSHIP_LIMIT}`,
+    coverageStatement: galaxyId === "galaxy-zero" ? prototype.coverageStatement : `${live?.coverageStatement ?? prototype.coverageStatement} ${galaxyId === "pons" ? "Market-cap ranking" : "5m market activity"} · ${liveCount} current tokens. Other observed tokens remain available to query.`,
     sources: [...new Set([...(live?.sources ?? []), ...prototype.sources, "volume-sky-5m"])],
     particles,
   };

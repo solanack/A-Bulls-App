@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "node scripts/with-app-env.mjs vite dev --host 0.0.0.0 --port 8080",
     "dev:qa": "LOCAL_BROWSER_QA=1 NODE_OPTIONS=--import=./scripts/network-interfaces-qa.mjs node scripts/with-app-env.mjs vite dev --host 0.0.0.0 --port 8080",
-    "build": "npm run verify:release && node scripts/with-app-env.mjs vite build && tsc --noEmit",
+    "build": "npm run verify:release && node scripts/release-info.mjs && node scripts/with-app-env.mjs vite build && tsc --noEmit",
     "db:migrate": "node scripts/migrate.mjs",
     "build:dev": "node scripts/with-app-env.mjs vite build --mode development",
     "preview": "node scripts/with-app-env.mjs vite preview",
@@ -18,12 +18,13 @@
     "typecheck": "tsc --noEmit",
     "verify:release": "node scripts/verify-release-baseline.mjs",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/field/indexer-field-v0.test.ts src/lib/field/field-os.hydrate.test.ts src/lib/field/volume-sky.test.ts src/routes/document-cache-headers.test.ts src/lib/universe-data/field-v0-client.test.ts src/lib/universe-data/pons-client.test.ts",
-    "test:worker": "node --test '../integrated-worker/workers/*.test.mjs' '../integrated-worker/js/*.test.mjs'",
+    "test": "node scripts/run-tests.mjs",
+    "test:worker": "node --test workers/*.test.mjs js/*.test.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "deploy": "npm run verify:release && CF_DEPLOY=1 node scripts/with-app-env.mjs vite build && wrangler deploy",
-    "cf-typegen": "wrangler types"
+    "deploy": "CF_DEPLOY=1 npm run build && wrangler deploy",
+    "cf-typegen": "wrangler types",
+    "deploy:all": "node scripts/deploy-all.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",

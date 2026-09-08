@@ -3,9 +3,10 @@
  * come from standard Solana RPC; holder count uses Helius DAS when configured.
  */
 const DEXSCREENER_ENDPOINT='https://api.dexscreener.com/token-pairs/v1/solana';
+import { providerFetch } from './intelligence-fetch.mjs';
 const ADDRESS_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const s=value=>String(value??'').trim();
-const n=value=>Number.isFinite(Number(value))?Number(value):null;
+const n=value=>value==null||value===''?null:Number.isFinite(Number(value))?Number(value):null;
 
 async function rpc(source,method,params,fetchImpl){
   const response=await fetchImpl(source.url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
@@ -69,7 +70,7 @@ function launchpadSnapshot(dex,pump){
   return Object.freeze({name:associated?'Pump.fun':null,associated,status,rank24h:n(pump?.rank_24h),rank1h:n(pump?.rank_1h),firstObservedAt:n(pump?.first_seen)?Number(pump.first_seen)*1000:(dex?.pairCreatedAt??null),evidence:pump?'locally observed Pump activity':dexId.includes('pump')?'observed Pump market venue':'unavailable'});
 }
 
-export async function resolveSolanaToken(mint,{env={},source,account,fetchImpl=fetch}={}){
+export async function resolveSolanaToken(mint,{env={},source,account,fetchImpl=providerFetch}={}){
   const address=s(mint);if(!ADDRESS_RE.test(address))throw new Error('invalid_solana_mint');
   const info=account?.data?.parsed?.info||{};
   const tokenAmount=info?.supply;

@@ -13,3 +13,6 @@
 
 /*.css
   Content-Type: text/css; charset=utf-8
+
+/release.json
+  Cache-Control: no-store

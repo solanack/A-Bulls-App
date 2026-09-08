@@ -1,5 +1,5 @@
 import type { Coverage, EntityKind, IntelligenceResult } from "@/lib/field/types";
-import { shortId } from "@/lib/field/hash";
+import { shortId } from "./field/hash.ts";
 import { fetchIntelligence } from "./intelligence-origin.ts";
 
 type ResolveBody = {
@@ -113,7 +113,7 @@ function coverageFrom(body: ResolveBody): Coverage {
   return "degraded";
 }
 
-function speakFromResolve(query: string, body: ResolveBody, extra: string[] = []): string {
+export function speakFromResolve(query: string, body: ResolveBody, extra: string[] = []): string {
   const id = shortId(body.address || body.signature || query);
   if (!body?.ok || body.state === "not-found") {
     return `This identifier ending in ${id} is not covered in the public record I can see. The memory is empty, or the address has not been observed. I will not guess.`;
@@ -125,27 +125,32 @@ function speakFromResolve(query: string, body: ResolveBody, extra: string[] = []
     const tokenName = market.symbol || market.name || `token ending in ${id}`;
     parts.push(`${tokenName} on ${network}.`);
     const firstObservedAt = market.pairCreatedAt ?? body.launchpad?.firstObservedAt;
-    if (typeof firstObservedAt === "number") parts.push(`Its primary market was first observed ${observedAge(firstObservedAt)} ago.`);
+    if (body.coverage === "stale") parts.push("These are cached observations; current market data is unavailable.");
     const valuation: string[] = [];
     if (typeof market.priceUsd === "number") valuation.push(`price ${usd(market.priceUsd)}`);
     if (typeof market.marketCapUsd === "number") valuation.push(`market cap ${usd(market.marketCapUsd)}`);
     if (typeof market.fdvUsd === "number") valuation.push(`FDV ${usd(market.fdvUsd)}`);
     if (valuation.length) parts.push(`${valuation.join(", ")}.`);
-    const oneHour: string[] = [];
-    if (typeof market.priceChangePct?.h1 === "number") oneHour.push(`${market.priceChangePct.h1 >= 0 ? "up" : "down"} ${Math.abs(market.priceChangePct.h1).toFixed(1)} percent`);
-    if (typeof market.volumeUsd?.h1 === "number") oneHour.push(`${usd(market.volumeUsd.h1)} volume`);
-    if (oneHour.length) parts.push(`Over one hour: ${oneHour.join(", ")}.`);
-    const pressure = body.activity?.pressure?.h1;
-    if (typeof pressure?.buys === "number" && typeof pressure?.sells === "number") parts.push(`${pressure.buys.toLocaleString()} buys versus ${pressure.sells.toLocaleString()} sells in the last hour.`);
+    const period = typeof market.volumeUsd?.m5 === "number" || typeof market.priceChangePct?.m5 === "number" ? "m5" : "h1";
+    const periodLabel = period === "m5" ? "five minutes" : "one hour";
+    const movement: string[] = [];
+    const change = market.priceChangePct?.[period];
+    const volume = market.volumeUsd?.[period];
+    if (typeof change === "number") movement.push(`${change >= 0 ? "up" : "down"} ${Math.abs(change).toFixed(1)} percent`);
+    if (typeof volume === "number") movement.push(`${usd(volume)} volume`);
+    if (movement.length) parts.push(`Over ${periodLabel}: ${movement.join(", ")}.`);
+    const pressure = body.activity?.pressure?.[period] ?? market.transactions?.[period];
+    if (typeof pressure?.buys === "number" && typeof pressure?.sells === "number") parts.push(`${pressure.buys.toLocaleString()} buys versus ${pressure.sells.toLocaleString()} sells in that window.`);
     if (typeof market.liquidityUsd === "number") parts.push(`Liquidity is ${usd(market.liquidityUsd)}${typeof market.liquidityToMarketCapPct === "number" ? `, ${market.liquidityToMarketCapPct.toFixed(1)} percent of market cap` : ""}.`);
     if (typeof body.holders?.top10Pct === "number") parts.push(`The raw top ten accounts hold ${percent(body.holders.top10Pct)} of supply.`);
+    if (typeof firstObservedAt === "number") parts.push(`Market age: ${observedAge(firstObservedAt)}.`);
     if (body.launchpad?.name) parts.push(`${body.launchpad.name} status: ${body.launchpad.status || "observed"}${body.pons?.rank ? `, galaxy rank ${body.pons.rank}` : body.launchpad.rank24h ? `, twenty-four-hour rank ${body.launchpad.rank24h}` : ""}.`);
     const authorityFlags: string[] = [];
     if (body.token?.mintAuthorityRevoked === false) authorityFlags.push("mint authority active");
     if (body.token?.freezeAuthorityRevoked === false) authorityFlags.push("freeze authority active");
     if (authorityFlags.length) parts.push(`Observed flags: ${authorityFlags.join(" and ")}.`);
     else if (body.risk?.flags?.length) parts.push(`Observed flag: ${body.risk.flags[0]}.`);
-    parts.push("Observed data only. No safety claim or price prediction.");
+    if (!valuation.length && !movement.length) parts.push("Current price and trading activity are unavailable for this token.");
     return parts.join(" ");
   }
   const parts: string[] = [];
@@ -299,7 +304,7 @@ export async function resolvePublicIdentifier({
         label: "degraded",
         facts: ["The intelligence resolver could not be reached. No label was guessed."],
         spokenText:
-          "The intelligence record is degraded. I could not reach the resolver. I will not invent an answer.",
+          "Market lookup is temporarily unavailable. Please try this token again shortly.",
         disclosure: budgetDisclosure ?? "Degraded · resolver unavailable",
         source: null,
       };
@@ -316,7 +321,7 @@ export async function resolvePublicIdentifier({
       label: body?.label || "unknown",
       facts: factsFromResolve(body ?? {}, extra),
       spokenText: spoken,
-      disclosure: [body?.disclosure, budgetDisclosure].filter(Boolean).join(" · ") || null,
+      disclosure: [...new Set([body?.disclosure, budgetDisclosure].filter(Boolean))].join(" · ") || null,
       source: body?.source ?? null,
     };
   }

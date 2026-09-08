@@ -21,10 +21,10 @@ export function ponsTeachingParticle(): FieldParticle {
     metadata: {
       mint: PONS_TEACHING_TOKEN,
       symbol: "PONS",
-      name: "PONS teaching body",
+      name: "PONS",
       teaching: true,
       skyRole: "teaching",
-      originVerified: true,
+      originVerified: false,
       chainId: 4663,
     },
   };
@@ -39,9 +39,9 @@ export function ponsTeachingSnapshot(): UniverseSnapshot {
     windowEnd: now,
     observedEventCount: 0,
     samplingPolicy:
-      "teaching star only; production PONS top-25 keeps the $500,000 floor and is not rewritten",
+      "pinned PONS query token; not a ranked member",
     coverageStatement:
-      "PONS production index is empty at the five-hundred-thousand dollar floor. A teaching star is shown so the galaxy is tappable. Not a live ranking.",
+      "No ranked PONS tokens are available yet. Tap PONS to request its current market data.",
     sources: ["pons-teaching"],
     particles: [particle],
   };
@@ -96,6 +96,7 @@ function hashUnit(input: string) {
 
 function marketNumber(market: Record<string, unknown> | undefined, key: string) {
   const value = market?.[key];
+  if (value == null || value === "") return null;
   const numeric = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
 }
@@ -191,7 +192,7 @@ export async function loadPonsGalaxyDelivery(): Promise<PonsGalaxyDelivery> {
       const disabled = response.status === 404 || body.error === "feature_disabled";
       return degraded(
         disabled
-          ? "PONS top-25 index is staged but disabled. The prototype fabric remains visible."
+          ? "PONS rankings are disabled. Tap the pinned PONS token to query its market data."
           : "PONS top-25 index is unavailable. No unverified token feed was substituted.",
       );
     }
@@ -203,7 +204,7 @@ export async function loadPonsGalaxyDelivery(): Promise<PonsGalaxyDelivery> {
           store: "d1",
           coverage: "empty",
           circuitBreaker: null,
-          disclosure: `${body.data.coverage?.statement ?? "PONS top-25 index is available."} Honest empty: no token currently passes every origin, market-cap, freshness, and stability gate.`,
+          disclosure: body.data.coverage?.statement ?? "No ranked PONS tokens are available yet.",
         },
       };
     }
@@ -214,7 +215,10 @@ export async function loadPonsGalaxyDelivery(): Promise<PonsGalaxyDelivery> {
       }),
       status: {
         store: "d1",
-        coverage: body.data.coverage?.complete === true ? "fresh" : "stale",
+        coverage: launches.every((launch) => {
+          const observed = marketNumber(launch.market, "observedAt");
+          return observed != null && Date.now() - observed <= 900_000 && observed <= Date.now() + 120_000;
+        }) ? "fresh" : "stale",
         circuitBreaker: null,
         disclosure:
           body.data.coverage?.statement ?? "Bounded verified PONS top-25 market-cap coverage.",

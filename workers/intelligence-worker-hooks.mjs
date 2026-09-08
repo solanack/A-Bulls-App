@@ -78,8 +78,11 @@ export async function handleIntelligenceScheduled(env = {}) {
   if (String(env.UNIVERSE_ENABLED || '').toLowerCase() === 'true') maintenance.push(pruneUniverseObservations(env));
   if (String(env.TRICKSTER_SHARE_ENABLED || '').toLowerCase() === 'true') maintenance.push(pruneTricksterShareManifests(env));
   if (String(env.PUMP_INDEX_ENABLED || '').toLowerCase() === 'true') maintenance.push(maintainPumpIndex(env));
-  if (String(env.PONS_INDEX_ENABLED || '').toLowerCase() === 'true') maintenance.push(maintainPonsIndex(env));
-  if (String(env.PONS_RANK_ENABLED || '').toLowerCase() === 'true') maintenance.push(refreshPonsTop25(env));
+  maintenance.push((async()=>{
+    try { await maintainPonsIndex(env); }
+    catch(error) { console.error('[pons-index]',String(error?.message||error)); }
+    return refreshPonsTop25(env);
+  })());
   if(maintenance.length){
     const settled=await Promise.allSettled(maintenance);
     for(const [index,result] of settled.entries()){

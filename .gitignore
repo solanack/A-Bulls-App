@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.output/
+.wrangler/
+.env
+.env.local
+*.log
+public/release.json
+
+.vercel/

@@ -1,6 +1,7 @@
 import { resolveHistoryRpc } from './intelligence-history-engine.mjs';
 import { isRobinhoodContractAddress, resolveRobinhoodToken } from './intelligence-pons-token-resolver.mjs';
 import { resolveSolanaToken } from './intelligence-solana-token-resolver.mjs';
+import { providerFetch } from './intelligence-fetch.mjs';
 
 const BASE58=/^[1-9A-HJ-NP-Za-km-z]+$/;
 const ADDRESS_MIN=32,ADDRESS_MAX=50,SIGNATURE_MIN=64,SIGNATURE_MAX=90;
@@ -19,7 +20,7 @@ function classify(query){
   return'search-text';
 }
 
-async function rpc(source,method,params,fetchImpl=fetch){
+async function rpc(source,method,params,fetchImpl=providerFetch){
   const response=await fetchImpl(source.url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   if(!response.ok)throw new Error(`${source.name}:${method}:http_${response.status}`);
   const payload=await response.json();
@@ -66,7 +67,7 @@ function transactionContext(tx={}){
   });
 }
 
-export async function resolvePublicChainEntity(query,{env={},fetchImpl=fetch}={}){
+export async function resolvePublicChainEntity(query,{env={},fetchImpl=providerFetch}={}){
   const value=s(query),kind=classify(value);
   if(kind==='evm-token')return resolveRobinhoodToken(value,{env,fetchImpl});
   const source=resolveHistoryRpc(env);
@@ -82,7 +83,7 @@ export async function resolvePublicChainEntity(query,{env={},fetchImpl=fetch}={}
     });
   }
   const account=await rpc(source,'getAccountInfo',[value,{commitment:'confirmed',encoding:'jsonParsed'}],fetchImpl);
-  const resolvedAccount=account?.value??account;
+  const resolvedAccount=account&&Object.hasOwn(account,'value')?account.value:account;
   if(TOKEN_PROGRAMS.has(s(resolvedAccount?.owner))&&s(resolvedAccount?.data?.parsed?.type)==='mint')return resolveSolanaToken(value,{env,source,account:resolvedAccount,fetchImpl});
   return accountResolution(value,resolvedAccount,source);
 }
@@ -100,4 +101,3 @@ export async function handleEntityResolverRequest(request,env={}){
     return json({ok:false,error:'resolver_unavailable',message:s(error?.message||error)},503);
   }
 }
-

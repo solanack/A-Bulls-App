@@ -16,7 +16,7 @@ import {
   type FieldV0Event,
   type FieldV0PlanetSnapshot,
   type FieldV0StarSnapshot,
-} from "@/lib/field/indexer-field-v0";
+} from "../field/indexer-field-v0.ts";
 import type { GalaxyId, UniverseSnapshot } from "@/lib/field/types";
 import type { UniverseDataStatus } from "./contracts";
 import { fetchIntelligence } from "../intelligence-origin.ts";

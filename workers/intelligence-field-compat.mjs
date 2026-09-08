@@ -5,6 +5,7 @@ import { resolveHistoryRpc } from './intelligence-history-engine.mjs';
 import { ecosystemUniverseSnapshot } from './intelligence-ecosystem-universe-snapshot.mjs';
 import { listUniverses } from './intelligence-ecosystem-universes.mjs';
 import { reserveProviderCredits } from './intelligence-provider-budget.mjs';
+import { loadFieldMarkets } from './intelligence-field-markets.mjs';
 
 const GALAXY_TO_UNIVERSE=Object.freeze({'solana-core':'solana','pump-fun':'pump-fun'});
 const UNIVERSE_TO_GALAXY=Object.freeze({solana:'solana-core','pump-fun':'pump-fun'});
@@ -15,6 +16,7 @@ const bool=value=>String(value??'').toLowerCase()==='true';
 const clamp=value=>Math.max(0,Math.min(1,n(value)));
 const json=(body,status=200,cache='no-store')=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':cache,'x-content-type-options':'nosniff'}});
 const parse=value=>{try{return typeof value==='object'&&value?value:JSON.parse(String(value||'null'));}catch{return null;}};
+const milliseconds=value=>n(value)>10_000_000_000?n(value):n(value)*1000;
 
 function enabled(env={}){
   if(env.FIELD_COMPAT_ENABLED!=null)return bool(env.FIELD_COMPAT_ENABLED);
@@ -65,7 +67,7 @@ export function toFieldSnapshot(galaxyId,input={}){
     cosmicKind:cosmicKind(item.kind,item.metadata),
     originGalaxyId:id,
     verificationState:s(item.verificationState)||'observed',
-    observedAt:n(item.observedAt),
+    observedAt:milliseconds(item.observedAt),
     category:category(item.category),
     source:s(item.source)||null,
     slot:n(item.slot)||null,
@@ -75,8 +77,8 @@ export function toFieldSnapshot(galaxyId,input={}){
   }));
   return Object.freeze({
     galaxyId:id,
-    windowStart:n(input.windowStart),
-    windowEnd:n(input.windowEnd),
+    windowStart:milliseconds(input.windowStart),
+    windowEnd:milliseconds(input.windowEnd),
     observedEventCount:Math.max(0,Math.trunc(n(input.observedEventCount))),
     samplingPolicy:s(input.samplingPolicy)||'bounded indexed universe snapshot',
     coverageStatement:s(input.coverageStatement)||'No indexed observations are available.',
@@ -124,7 +126,8 @@ async function writeCache(db,key,value,source,ttlSeconds,now=Math.floor(Date.now
 }
 
 async function resolveFieldQuery(query,env={}){
-  const db=intelligenceDb(env),key=`field:resolve:${s(query).toLowerCase()}`,ttl=Math.max(10,Math.min(3600,Math.trunc(n(env.FIELD_QUERY_CACHE_TTL_SECONDS)||60)));
+  const canonical=isRobinhoodContractAddress(query)?s(query).toLowerCase():s(query);
+  const db=intelligenceDb(env),key=`field:resolve:v2:${canonical}`,ttl=Math.max(10,Math.min(3600,Math.trunc(n(env.FIELD_QUERY_CACHE_TTL_SECONDS)||60)));
   let cached=await readCache(db,key);
   if(cached?.value?.state==='resolved')return{...cached.value,coverage:cached.coverage,cache:'fresh'};
   cached=null;
@@ -151,7 +154,8 @@ async function resolveFieldQuery(query,env={}){
 
 function deliveryStatus(snapshot,db,budget){
   const latest=Math.max(0,...snapshot.particles.map(item=>n(item.observedAt)));
-  const age=latest?Math.max(0,Math.floor(Date.now()/1000)-latest):Infinity;
+  const latestSeconds=latest>10_000_000_000?latest/1000:latest;
+  const age=latestSeconds?Math.max(0,Math.floor(Date.now()/1000)-latestSeconds):Infinity;
   const coverage=!db?'degraded':!snapshot.particles.length?'empty':age>300?'stale':'fresh';
   return{store:db?'d1':'memory-fallback',coverage,circuitBreaker:budget,disclosure:!db?'The production Intelligence D1 binding is unavailable. No live fallback was attempted.':snapshot.particles.length?`Indexed Intelligence Worker snapshot · ${snapshot.sources.join(', ')||'stored evidence'} · no provider request made by this view.`:'The Intelligence D1 database is attached, but this galaxy has no indexed observations in the selected window. No live fallback was attempted.'};
 }
@@ -161,6 +165,12 @@ export async function handleFieldCompatibilityRequest(request,env={}){
   if(!path.startsWith('/api/intelligence/field/'))return null;
   if(request.method!=='GET')return json({ok:false,error:'method_not_allowed'},405);
   if(!enabled(env))return json({ok:false,error:'feature_disabled'},404);
+  if(path==='/api/intelligence/field/markets'){
+    const mints=s(url.searchParams.get('mints')).split(',');
+    if(mints.length>30||mints.some(mint=>!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)))return json({ok:false,error:'invalid_mints'},400);
+    try{return json({ok:true,markets:await loadFieldMarkets(env,mints)},200,'public, max-age=15');}
+    catch{return json({ok:false,error:'market_unavailable'},503);}
+  }
   if(path==='/api/intelligence/field/resolve'){
     const query=s(url.searchParams.get('query'));if(!query)return json({ok:false,error:'query_required'},400);
     const result=await resolveFieldQuery(query,env);

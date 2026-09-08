@@ -119,7 +119,7 @@ export function speakObservedParticle(particle: FieldParticle, snapshot: Univers
     ? (particle.metadata?.skyFlags as string[])
     : [];
   if (particle.metadata?.skyRole === "wallpaper") {
-    return "This is prototype fabric, not a live market body. Observed data only. No safety claim or price prediction.";
+    return "This is a background field marker, not a live market body. Select a live token star for observed market data.";
   }
   const heatMeta = particle.metadata?.skyHeat;
   const unit = particle.metadata?.skyHeatUnit;

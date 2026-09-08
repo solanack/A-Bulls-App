@@ -87,6 +87,7 @@ export class FieldOS {
   #lastSpokenId: string | null = null;
   #focusResolveSeq = 0;
   #pendingFocusMint: string | null = null;
+  #destroyed = false;
 
   constructor(host: HTMLElement, listener: FieldOSListener) {
     this.host = host;
@@ -157,15 +158,17 @@ export class FieldOS {
       };
       this.#emit();
     };
-    this.muted = globalThis.localStorage?.getItem("abulls-mute") === "1";
+    try { this.muted = globalThis.localStorage?.getItem("abulls-mute") === "1"; }
+    catch { this.muted = false; }
     this.#emit();
     void this.#hydrateGalaxy(this.galaxy.id);
     this.#hydrateTimer = globalThis.setInterval(() => {
-      void this.#hydrateGalaxy(this.galaxy.id);
+      if (!this.queryActive && this.galaxy.id !== "galaxy-zero" && document.visibilityState !== "hidden") void this.#hydrateGalaxy(this.galaxy.id);
     }, 60_000) as unknown as number;
   }
 
   #emit() {
+    if (this.#destroyed) return;
     this.#listener?.({
       mode: this.mode,
       queryActive: this.queryActive,
@@ -252,6 +255,7 @@ export class FieldOS {
       return true;
     }
     this.galaxy = nextGalaxy;
+    this.#stopVoice();
     this.#focusResolveSeq++;
     this.#prototype = createGalaxySnapshot(nextGalaxy, deviceBudget().field);
     this.#live = null;
@@ -259,6 +263,7 @@ export class FieldOS {
     this.evidence = null;
     this.askPrefill = this.#pendingFocusMint ?? "";
     this.result = null;
+    this.dataStatus = { store: "memory-fallback", coverage: "degraded", circuitBreaker: null, disclosure: `Loading ${nextGalaxy.name} market coverage.` };
     this.mode = "explore";
     this.#applySky();
     this.#emit();
@@ -276,8 +281,10 @@ export class FieldOS {
       this.#emit();
       return;
     }
-    const delivery = await getIndexedGalaxySnapshot({ data: { galaxyId: id } });
-    if (seq !== this.#snapshotSeq || id !== this.galaxy.id) return;
+    let delivery;
+    try { delivery = await getIndexedGalaxySnapshot({ data: { galaxyId: id } }); }
+    catch { delivery = { snapshot: null, status: { store: "memory-fallback" as const, coverage: "degraded" as const, circuitBreaker: null, disclosure: "Live galaxy data is temporarily unavailable. Token search is still available." } }; }
+    if (this.#destroyed || this.queryActive || seq !== this.#snapshotSeq || id !== this.galaxy.id) return;
     let indexedSnapshot = delivery.snapshot;
     if (id === "pons" && (!indexedSnapshot || indexedSnapshot.particles.length === 0)) {
       indexedSnapshot = ponsTeachingSnapshot();
@@ -288,12 +295,12 @@ export class FieldOS {
     if (shouldReplacePrototypeField(indexedSnapshot, budgetField) || this.#live) {
       this.dataStatus = {
         ...delivery.status,
-        disclosure: `${delivery.status.disclosure} Volume sky ranks 5-minute heat, cap 120. Helius membership stays 10.`,
+        disclosure: delivery.status.disclosure,
       };
     } else {
       const floor = visibilityFloor(budgetField);
       const emptyNote =
-        "The indexed snapshot contains no particles, so the visible prototype field remains active.";
+        "The indexed snapshot contains no particles, so the background field remains visible while live coverage is restored.";
       this.dataStatus = {
         ...delivery.status,
         store: "memory-fallback",
@@ -411,11 +418,14 @@ export class FieldOS {
   }
 
   async returnToField() {
+    this.#querySeq++;
+    this.#focusResolveSeq++;
     this.#stopVoice();
     this.organismState = "return";
     this.#emit();
     this.organism?.setState("return");
     await this.organism?.dissolve();
+    if (this.#destroyed) return;
     this.organism?.destroy();
     this.organism = null;
     this.field.setQueryActive(false);
@@ -425,11 +435,13 @@ export class FieldOS {
     this.mode = "explore";
     this.result = null;
     this.#emit();
+    void this.#hydrateGalaxy(this.galaxy.id);
   }
 
   setMuted(muted: boolean) {
     this.muted = muted;
-    globalThis.localStorage?.setItem("abulls-mute", muted ? "1" : "0");
+    try { globalThis.localStorage?.setItem("abulls-mute", muted ? "1" : "0"); }
+    catch { /* Muting still works for the current session. */ }
     if (muted) this.#stopVoice();
     this.#emit();
   }
@@ -463,6 +475,7 @@ export class FieldOS {
     this.#stopVoice();
     if (!this.queryActive || !this.organism) await this.enterQuery();
     const seq = ++this.#querySeq;
+    this.result = null;
     this.organismState = "listening";
     this.organism?.setState("listening");
     this.#emit();
@@ -517,6 +530,8 @@ export class FieldOS {
   }
 
   destroy() {
+    this.#destroyed = true;
+    this.#snapshotSeq++;
     this.#querySeq++;
     this.#focusResolveSeq++;
     if (this.#hydrateTimer) globalThis.clearInterval(this.#hydrateTimer);

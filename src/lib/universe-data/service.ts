@@ -4,6 +4,7 @@ import type { UniverseDataStatus } from "./contracts";
 import { loadFieldV0GalaxyDelivery } from "./field-v0-client";
 import { loadPonsGalaxyDelivery } from "./pons-client";
 import { fetchIntelligence } from "../intelligence-origin.ts";
+import { enrichFieldMarkets } from './market-enrichment.ts';
 
 export type GalaxySnapshotDelivery = {
   snapshot: UniverseSnapshot | null;
@@ -21,7 +22,7 @@ export const getIndexedGalaxySnapshot = createServerFn({ method: "GET" })
     if (data.galaxyId === "pump-fun") {
       const fieldV0 = await loadFieldV0GalaxyDelivery(data);
       if (fieldV0.snapshot && fieldV0.snapshot.particles.length > 0) {
-        return { snapshot: fieldV0.snapshot, status: fieldV0.status };
+        return { snapshot: await enrichFieldMarkets(fieldV0.snapshot), status: fieldV0.status };
       }
       // Fall through to legacy snapshot only when v0 is empty/unavailable.
     }
@@ -56,7 +57,7 @@ export const getIndexedGalaxySnapshot = createServerFn({ method: "GET" })
         status?: UniverseDataStatus;
       };
       if (response.ok && body.ok && body.status) {
-        return { snapshot: body.snapshot ?? null, status: body.status };
+        return { snapshot: body.snapshot ? await enrichFieldMarkets(body.snapshot) : null, status: body.status };
       }
       return {
         snapshot: null,
