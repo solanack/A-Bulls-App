@@ -3,7 +3,7 @@ import type { CameraState, FieldParticle, UniverseSnapshot } from "./types";
 import { CATEGORY_COLORS, CATEGORY_INDEX } from "./types";
 import { clamp, deviceBudget } from "./hash";
 import { CameraGestures } from "./gestures";
-import { createStarfield } from "./synthetic-universe";
+import { createStarfield, GALAXY_ZERO_CAMERA_DISTANCE } from "./synthetic-universe";
 import { ALIEN_BOUNDS, parentColorForCategory } from "./anatomy";
 import { isLiveSkyParticle, particleMint } from "./volume-sky";
 
@@ -233,10 +233,13 @@ export class ParticleFieldRenderer {
   #queryFrameWeight = 0;
   #lastReplayEmit = 0;
   #ro: ResizeObserver | null = null;
+  #contextLost = false;
+  #didRender = false;
 
   constructor(host: HTMLElement, snapshot: UniverseSnapshot) {
     this.host = host;
     this.snapshot = snapshot;
+    if (snapshot.galaxyId === "galaxy-zero") this.cameraState.distance = GALAXY_ZERO_CAMERA_DISTANCE;
     this.reducedMotion =
       globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     const budget = deviceBudget();
@@ -267,6 +270,8 @@ export class ParticleFieldRenderer {
     this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, budget.dpr));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
+    canvas.addEventListener("webglcontextlost", this.#onContextLost, false);
+    canvas.addEventListener("webglcontextrestored", this.#onContextRestored, false);
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 700);
     this.#placeCamera();
@@ -350,6 +355,20 @@ export class ParticleFieldRenderer {
     );
     this.camera.lookAt(tx, ty, tz);
   }
+
+  #onContextLost = (event: Event) => {
+    event.preventDefault();
+    this.#contextLost = true;
+    this.host.dataset.fieldReady = "context-lost";
+    console.warn("[field-renderer] WebGL context lost; waiting for browser restoration");
+  };
+
+  #onContextRestored = () => {
+    this.#contextLost = false;
+    this.#didRender = false;
+    this.resize();
+    console.info("[field-renderer] WebGL context restored");
+  };
 
   getParticleCount() {
     return Math.floor(this.basePositions.length / 3);
@@ -635,7 +654,13 @@ export class ParticleFieldRenderer {
     this.camera.position.z += (desiredZ - this.camera.position.z) * follow;
     this.camera.lookAt(tx, ty, tz);
     this.onAfterUpdate?.(elapsed, now);
-    this.renderer.render(this.scene, this.camera);
+    if (!this.#contextLost) {
+      this.renderer.render(this.scene, this.camera);
+      if (!this.#didRender) {
+        this.#didRender = true;
+        this.host.dataset.fieldReady = "true";
+      }
+    }
     this.#raf = requestAnimationFrame(this.#frame);
   };
 
@@ -653,6 +678,8 @@ export class ParticleFieldRenderer {
     this.stars.geometry.dispose();
     this.material.dispose();
     this.starMaterial.dispose();
+    this.renderer.domElement.removeEventListener("webglcontextlost", this.#onContextLost, false);
+    this.renderer.domElement.removeEventListener("webglcontextrestored", this.#onContextRestored, false);
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

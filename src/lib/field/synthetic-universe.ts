@@ -64,18 +64,26 @@ export function createGalaxySnapshot(
 }
 
 /** Galaxy Zero contains protocol galaxies, never synthetic chain entities. */
+export const GALAXY_ZERO_CENTERS: readonly [number, number, number][] = [
+  [-28, 18, -10],
+  [28, 14, -6],
+  [0, -24, 18],
+];
+
+export const GALAXY_ZERO_CAMERA_DISTANCE = 205;
+
 export function createUniverseMapSnapshot(count = 2800, seed = 861): UniverseSnapshot {
   const random = mulberry(seed);
   const bounded = Math.max(600, Math.min(6000, Math.trunc(count)));
   const definitions = [getGalaxy("solana-core"), getGalaxy("pump-fun"), getGalaxy("pons")];
-  const centers: [number, number, number][] = [[-58, 18, -20], [54, 12, -8], [4, -28, 54]];
+  const centers = GALAXY_ZERO_CENTERS;
   const particles: FieldParticle[] = [];
   const perGalaxy = Math.floor(bounded * 0.78 / definitions.length);
   for (const [galaxyIndex, target] of definitions.entries()) {
     const center = centers[galaxyIndex];
     for (let index = 0; index < perGalaxy; index += 1) {
       const arm = index % 3;
-      const radius = 3 + Math.pow(random(), 0.62) * 25;
+      const radius = 2.5 + Math.pow(random(), 0.62) * 17;
       const angle = radius * 0.31 + arm * Math.PI * 2 / 3 + (random() - 0.5) * 0.7;
       particles.push({
         id: `galaxy-map:${target.id}:${index}`,

@@ -24,6 +24,8 @@ test("the field favors crisp rendering and ignores decorative wallpaper", async 
   ]);
   assert.match(field, /antialias:\s*false/);
   assert.match(field, /stencil:\s*false/);
+  assert.match(field, /webglcontextrestored/);
+  assert.match(field, /fieldReady = "true"/);
   assert.match(field, /skyRole === "wallpaper"/);
   assert.match(budget, /dpr:\s*1\.75/);
 });

@@ -11,7 +11,7 @@ import {
   preserveLaunchOrigin,
   GALAXY_CONTENT,
 } from "../src/lib/field/galaxies.ts";
-import { createGalaxySnapshot } from "../src/lib/field/synthetic-universe.ts";
+import { createGalaxySnapshot, GALAXY_ZERO_CAMERA_DISTANCE, GALAXY_ZERO_CENTERS } from "../src/lib/field/synthetic-universe.ts";
 
 test("Galaxy Zero contains the populated protocol galaxies", () => {
   const zero = getGalaxy("galaxy-zero");
@@ -28,6 +28,8 @@ test("Galaxy Zero contains the populated protocol galaxies", () => {
   assert.equal(map.observedEventCount, 0);
   assert.deepEqual(new Set(map.particles.flatMap((particle) => typeof particle.metadata?.targetGalaxyId === "string" ? [particle.metadata.targetGalaxyId] : [])), new Set(["solana-core", "pump-fun", "pons"]));
   assert.equal(map.particles.some((particle) => ["wallet", "transaction", "token", "nft", "program"].includes(particle.kind)), false);
+  assert.ok(GALAXY_ZERO_CAMERA_DISTANCE >= 190, "portrait camera must frame the complete directory");
+  assert.ok(GALAXY_ZERO_CENTERS.every(([x, y]) => Math.abs(x) <= 30 && Math.abs(y) <= 25), "galaxy cores must remain inside the portrait field");
 });
 
 test("existing entities map to the locked universe taxonomy", () => {
