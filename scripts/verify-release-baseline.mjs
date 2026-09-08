@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("../src/components/app-shell.tsx", import.meta.url), "utf8");
+const fieldOS = readFileSync(new URL("../src/lib/field/field-os.ts", import.meta.url), "utf8");
 const socialPolicy = readFileSync(new URL("../workers/socialfi-policy.mjs", import.meta.url), "utf8");
 const universeVision = readFileSync(new URL("../UNIVERSE_VISION.md", import.meta.url), "utf8");
 const tokenSystemWorker = readFileSync(new URL("../workers/intelligence-token-system.mjs", import.meta.url), "utf8");
@@ -74,9 +75,20 @@ if (!tokenSystemWorker.includes("No provider lookup") || !tokenSystemWorker.incl
   console.error("RELEASE BLOCKED: token-system honest-empty disclosures are missing.");
   process.exit(1);
 }
+
+const tokenSystemNavigation = fieldOS.match(/async enterTokenSystem[\s\S]*?\n\s*exitTokenSystem/)?.[0] ?? "";
+if (!tokenSystemNavigation || tokenSystemNavigation.includes("#narrateResolvedMarket") || tokenSystemNavigation.includes("resolvePublicIdentifier")) {
+  console.error("RELEASE BLOCKED: entering a token planet must not silently invoke the live QUERY/provider path.");
+  process.exit(1);
+}
+if (!tokenSystemNavigation.includes("getTokenSystem") || !tokenSystemNavigation.includes("speakObservedParticle")) {
+  console.error("RELEASE BLOCKED: token-planet entry must use retained system evidence and local observed narration.");
+  process.exit(1);
+}
+
 if (!observatoryWorker.includes("reference-only") || !observatoryWorker.includes("ingested:false") || !observatoryWorker.includes("Unmatched sells")) {
   console.error("RELEASE BLOCKED: weekly trader observatory evidence/disclosure rules have changed.");
   process.exit(1);
 }
 
-console.log("Release baseline verified: simplified Field, token planets, wallet stars, read-only observatory/watchlist, and execution locks are active.");
+console.log("Release baseline verified: simplified Field, D1-only token planets, wallet stars, read-only observatory/watchlist, and execution locks are active.");
