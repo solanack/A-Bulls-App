@@ -22,7 +22,7 @@ test("every governing analysis mode is wired to a real Worker route", async () =
   ]);
   for (const mode of ["replay", "evidence", "compare", "what-if", "sequences", "ghost"]) {
     assert.match(types, new RegExp(`id: \\"${mode}\\"`));
-    assert.match(workspace, new RegExp(`mode === \\"${mode}\\"`));
+    assert.match(workspace, new RegExp(`mode\\s*===\\s*\\"${mode}\\"`));
   }
   for (const route of [
     "replay-bundle",
