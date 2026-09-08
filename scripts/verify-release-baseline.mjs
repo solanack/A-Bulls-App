@@ -6,7 +6,9 @@ const socialPolicy=readFileSync(new URL("../workers/socialfi-policy.mjs",import.
 const universeVision=readFileSync(new URL("../UNIVERSE_VISION.md",import.meta.url),"utf8");
 const tokenSystemWorker=readFileSync(new URL("../workers/intelligence-token-system.mjs",import.meta.url),"utf8");
 const fomoWorker=readFileSync(new URL("../workers/intelligence-fomo-galaxy.mjs",import.meta.url),"utf8");
+const fomoLiveWorker=readFileSync(new URL("../workers/intelligence-fomo-live.mjs",import.meta.url),"utf8");
 const ponsFamilyWorker=readFileSync(new URL("../workers/intelligence-ponsfamily-ranking.mjs",import.meta.url),"utf8");
+const ponsFamilyLiveWorker=readFileSync(new URL("../workers/intelligence-ponsfamily-live.mjs",import.meta.url),"utf8");
 const voiceServer=readFileSync(new URL("../src/lib/alien-voice.ts",import.meta.url),"utf8");
 
 const required=['const MENU_ITEMS','className="gz-menu-button"','className="gz-search"','className="gz-bottom"','aria-label="Galaxy Zero modes"','id:"watchlist"','label:"WATCHLIST"'];
@@ -27,8 +29,12 @@ const tokenSystemNavigation=fieldOS.match(/async enterTokenSystem[\s\S]*?\n\s*ex
 
 const fomoLocks=["/leaderboard/all?limit=50","fomoapi.io","Fomo-reported","maximumTraders:50","maximumPositions:10","latestTrades:3","No copy-trade or execution action exists","reserveProviderCredits"];
 const missingFomo=fomoLocks.filter(marker=>!fomoWorker.includes(marker));if(missingFomo.length){console.error("RELEASE BLOCKED: Fomo Galaxy provider/evidence boundaries changed.");console.error(`Missing: ${missingFomo.join(" | ")}`);process.exit(1);}
+const fomoLiveLocks=["payloadArray(payload,'traders'","FOMOAPI_API_KEY","fomo_trader_positions","fomo_trader_trades","pageReadsProviderFree:true","requiresApiKey:true"];
+const missingFomoLive=fomoLiveLocks.filter(marker=>!fomoLiveWorker.includes(marker));if(missingFomoLive.length){console.error("RELEASE BLOCKED: Fomo self-population/cache wiring changed.");console.error(`Missing: ${missingFomoLive.join(" | ")}`);process.exit(1);}
 const ponsLocks=["maximumMembers:50","marketCapFloorUsd:75000","minimumHolders:750","volume-h24-usd-desc","verified PONS-origin","holder count above"];
 const missingPons=ponsLocks.filter(marker=>!ponsFamilyWorker.includes(marker));if(missingPons.length){console.error("RELEASE BLOCKED: PonsFamily trend qualification changed.");console.error(`Missing: ${missingPons.join(" | ")}`);process.exit(1);}
-if(!voiceServer.includes("ELEVENLABS_GREY_VOICE_ID")||!voiceServer.includes("ELEVENLABS_API_KEY")||!voiceServer.includes("grey-v2-natural-unknown")){console.error("RELEASE BLOCKED: Grey's server-side ElevenLabs voice profile is missing.");process.exit(1);}
+const ponsLiveLocks=["robinhoodchain.blockscout.com","token_holders_count","PONS_BLOCKSCOUT_DISCOVERY_PAGES","entryCycles:1","holderSource:'robinhood-blockscout'","marketCapFloorUsd:75000","minimumHolders:750"];
+const missingPonsLive=ponsLiveLocks.filter(marker=>!ponsFamilyLiveWorker.includes(marker));if(missingPonsLive.length){console.error("RELEASE BLOCKED: PonsFamily self-population wiring changed.");console.error(`Missing: ${missingPonsLive.join(" | ")}`);process.exit(1);}
+if(!voiceServer.includes("ELEVENLABS_GREY_VOICE_ID")||!voiceServer.includes("ELEVENLABS_API_KEY")||!voiceServer.includes("grey-v3-human-rachel")||!voiceServer.includes("21m00Tcm4TlvDq8ikWAM")||!voiceServer.includes("eleven_multilingual_v2")){console.error("RELEASE BLOCKED: Grey's human ElevenLabs voice profile is missing.");process.exit(1);}
 
-console.log("Release baseline verified: simplified Field, Fomo trader research, PonsFamily trend filters, D1-only planet systems, Grey voice isolation, watchlists, and execution locks are active.");
+console.log("Release baseline verified: simplified Field, live Fomo trader research, self-populating PonsFamily filters, D1-only planet systems, human Grey voice isolation, watchlists, and execution locks are active.");
