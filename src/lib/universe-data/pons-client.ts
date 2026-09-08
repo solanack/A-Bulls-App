@@ -7,10 +7,10 @@ export const PONS_TEACHING_TOKEN = "0x39dbed3a2bd333467115de45665cc57f813c4571";
 
 export function ponsTeachingParticle(): FieldParticle {
   return {
-    id: `star:pons:${PONS_TEACHING_TOKEN}`,
+    id: `planet:pons:${PONS_TEACHING_TOKEN}`,
     eventId: "pons:teaching",
     kind: "token",
-    cosmicKind: "star",
+    cosmicKind: "planet",
     originGalaxyId: "pons",
     verificationState: "teaching",
     observedAt: Date.now(),
@@ -41,7 +41,7 @@ export function ponsTeachingSnapshot(): UniverseSnapshot {
     samplingPolicy:
       "pinned PONS query token; not a ranked member",
     coverageStatement:
-      "No ranked PONS tokens are available yet. Tap PONS to request its current market data.",
+      "No ranked PONS tokens are available yet. Tap the pinned PONS token to query its market data.",
     sources: ["pons-teaching"],
     particles: [particle],
   };
@@ -116,10 +116,10 @@ export function ponsLaunchToParticle(launch: PonsLaunch): FieldParticle {
   const observedAt = launch.blockTime ?? Date.now();
 
   return {
-    id: `star:pons:${launch.token.toLowerCase()}`,
+    id: `planet:pons:${launch.token.toLowerCase()}`,
     eventId: `pons:${launch.transactionHash.toLowerCase()}`,
     kind: "token",
-    cosmicKind: "star",
+    cosmicKind: "planet",
     originGalaxyId: "pons",
     verificationState: launch.finality || "observed",
     observedAt,
