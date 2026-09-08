@@ -36,7 +36,7 @@ const dyingIncomplete: FieldV0DyingEvent = {
 };
 
 describe("field-v0-client", () => {
-  it("builds trade pulses without inventing black holes from incomplete dying", () => {
+  it("normalizes legacy producer names into token planets and wallet stars", () => {
     const snapshot = snapshotFromFieldV0Payloads({
       stars: [
         {
@@ -47,12 +47,21 @@ describe("field-v0-client", () => {
           lastTrade: { side: "sell", priceSol: 0.01, ts: trade.ts },
         },
       ],
+      planets: [
+        {
+          wallet,
+          linkedMints: [mint],
+          exits: [],
+          incomplete: false,
+        },
+      ],
       events: [trade, dyingIncomplete],
       galaxyId: "pump-fun",
     });
 
     assert.ok(snapshot.particles.some((p) => p.cosmicKind === "comet"));
-    assert.ok(snapshot.particles.some((p) => p.cosmicKind === "star"));
+    assert.ok(snapshot.particles.some((p) => p.cosmicKind === "planet" && p.metadata?.mint === mint));
+    assert.ok(snapshot.particles.some((p) => p.cosmicKind === "star" && p.metadata?.wallet === wallet));
     assert.ok(
       !snapshot.particles.some((p) => p.cosmicKind === "black-hole"),
       "producer incomplete dying must not become black-hole visuals",
