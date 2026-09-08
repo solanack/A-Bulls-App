@@ -10,19 +10,18 @@ If your prompt already says `root@localhost`, you are inside Ubuntu. Do not run 
 proot-distro login ubuntu
 ```
 
-Then, inside Ubuntu:
+Then, inside Ubuntu, use the existing installed dependencies first:
 
 ```bash
 cd /root/a-bulls-pons-top25 &&
 git checkout main &&
 git pull --ff-only origin main &&
-npm install --ignore-scripts --no-fund --no-audit &&
 npm run deploy:all
 ```
 
-If Git reports a conflicting local edit, stop and preserve it; do not reset or overwrite it. The existing modified lockfile need not be discarded.
+If Git reports a conflicting local edit, stop and preserve it; do not reset, clean, stash-and-drop, or overwrite it. The existing modified `package-lock.json` need not be discarded. This release does not change `package.json` or the lockfile, so a fresh install is not part of the normal phone deployment. Only if Node reports that dependencies are actually missing should you run `npm install --ignore-scripts --no-fund --no-audit`, then rerun `npm run deploy:all`.
 
-`deploy:all` runs all repository tests, verifies the locked interface, builds and typechecks the production frontend, bundles the intelligence Worker, applies outstanding D1 migrations, publishes intelligence, publishes the frontend, and checks the public domain. It stops at the first failure. Wrangler uses the Cloudflare login already present on your phone; if it reports authentication is required, run `npx wrangler login` there.
+`deploy:all` runs all repository tests, verifies the locked interface, builds and typechecks the production frontend, bundles the intelligence Worker, applies outstanding D1 migrations, publishes intelligence, publishes the frontend, and checks the public domain. It stops at the first failure. Wrangler uses the Cloudflare login already present on your phone; if it reports authentication is required, run `npx wrangler login` there and rerun `npm run deploy:all`.
 
 The token-planet local system and weekly trader observatory reuse existing retained D1/index/cache tables. They do not require a new holder provider or a new database. The observatory cache is produced by scheduled Intelligence Worker maintenance; immediately after the first deployment it may honestly report that no cache has been produced yet until a scheduled run completes.
 
