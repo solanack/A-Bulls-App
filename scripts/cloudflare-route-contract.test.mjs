@@ -20,5 +20,5 @@ test("the live release check waits for Cloudflare propagation", async () => {
   const check = await read("scripts/check-live.mjs");
   assert.match(check, /waitForRelease/);
   assert.match(check, /setTimeout/);
-  assert.match(check, /release\.commit/);
+  assert.match(check, /release\?\.commit===expected/);
 });
