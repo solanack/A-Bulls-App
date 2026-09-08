@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { ponsLaunchToParticle, snapshotFromPonsLaunches, type PonsLaunch } from "./pons-client.ts";
+import { ponsLaunchToParticle, ponsTeachingParticle, snapshotFromPonsLaunches, type PonsLaunch } from "./pons-client.ts";
 
 const launch: PonsLaunch = {
   rank: 1,
@@ -22,20 +22,31 @@ const launch: PonsLaunch = {
 };
 
 describe("PONS verified-origin top-25 client", () => {
-  it("maps rank and market cap without inventing a risk state", () => {
+  it("maps ranked PONS tokens to planets without inventing a risk state", () => {
     const particle = ponsLaunchToParticle(launch);
     assert.equal(particle.originGalaxyId, "pons");
-    assert.equal(particle.cosmicKind, "star");
+    assert.equal(particle.kind, "token");
+    assert.equal(particle.cosmicKind, "planet");
+    assert.match(particle.id, /^planet:pons:/);
     assert.equal(particle.source, "verified-pons-factory-event");
     assert.equal(particle.metadata?.originVerified, true);
     assert.equal(particle.metadata?.rank, 1);
     assert.equal(particle.metadata?.marketCapUsd, 2_000_000);
   });
 
+  it("keeps the pinned PONS teaching token in the same token-planet taxonomy", () => {
+    const particle = ponsTeachingParticle();
+    assert.equal(particle.kind, "token");
+    assert.equal(particle.cosmicKind, "planet");
+    assert.match(particle.id, /^planet:pons:/);
+    assert.equal(particle.metadata?.teaching, true);
+  });
+
   it("builds a flattened, evidence-only top-25 snapshot", () => {
     const snapshot = snapshotFromPonsLaunches([launch], { generatedAt: 1_800_000_100_000 });
     assert.equal(snapshot.galaxyId, "pons");
     assert.equal(snapshot.particles.length, 1);
+    assert.equal(snapshot.particles[0].cosmicKind, "planet");
     assert.ok(Math.abs(snapshot.particles[0].position[1]) <= 9);
     assert.match(snapshot.samplingPolicy, /top 25/);
     assert.match(snapshot.samplingPolicy, /\$500,000/);
