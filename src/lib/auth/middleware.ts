@@ -43,5 +43,7 @@ export const authMiddleware = createMiddleware({ type: "function" })
     // Reject scripted cross-site/sibling requests before touching per-user data.
     assertSameSiteRequest();
     const userId = await requireUserId(context.bearerToken);
-    return next({ context: { userId } });
+    // Preserve the already-verified preview bearer server-side so downstream
+    // account verifiers can prove the same session without trusting a user id.
+    return next({ context: { userId, bearerToken: context.bearerToken } });
   });

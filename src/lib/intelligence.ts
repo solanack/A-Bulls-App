@@ -2,6 +2,17 @@ import type { Coverage, EntityKind, IntelligenceResult } from "@/lib/field/types
 import { shortId } from "./field/hash.ts";
 import { fetchIntelligence } from "./intelligence-origin.ts";
 
+type ThesisSpeechResolution = {
+  atPublishMarketCap?: number | null;
+  atResolveMarketCap?: number | null;
+  atPublishLiquidity?: number | null;
+  atResolveLiquidity?: number | null;
+  atPublishTopHolderPct?: number | null;
+  atResolveTopHolderPct?: number | null;
+  evidenceQuality?: string;
+  resolvedAt?: number | null;
+};
+
 type ResolveBody = {
   ok?: boolean;
   kind?: string;
@@ -69,6 +80,16 @@ type ResolveBody = {
   bundles?: { coverage?: string; statement?: string };
   smartMoney?: { coverage?: string; statement?: string };
   risk?: { level?: string; flags?: string[]; statement?: string };
+  theses?: {
+    coverage?: string;
+    count?: number;
+    records?: Array<{
+      id?: string;
+      claim?: string;
+      status?: string;
+      resolution?: ThesisSpeechResolution | null;
+    }>;
+  };
   error?: string;
 };
 
@@ -113,6 +134,42 @@ function coverageFrom(body: ResolveBody): Coverage {
   return "degraded";
 }
 
+function comparableResolutionParts(resolution: ThesisSpeechResolution): string[] {
+  const parts: string[] = [];
+  if (typeof resolution.atPublishMarketCap === "number" && typeof resolution.atResolveMarketCap === "number") {
+    const delta = resolution.atResolveMarketCap - resolution.atPublishMarketCap;
+    parts.push(`market cap ${usd(resolution.atPublishMarketCap)} to ${usd(resolution.atResolveMarketCap)}, a ${delta >= 0 ? "rise" : "fall"} of ${usd(Math.abs(delta))}`);
+  }
+  if (typeof resolution.atPublishLiquidity === "number" && typeof resolution.atResolveLiquidity === "number") {
+    const delta = resolution.atResolveLiquidity - resolution.atPublishLiquidity;
+    parts.push(`liquidity ${usd(resolution.atPublishLiquidity)} to ${usd(resolution.atResolveLiquidity)}, a ${delta >= 0 ? "rise" : "fall"} of ${usd(Math.abs(delta))}`);
+  }
+  if (typeof resolution.atPublishTopHolderPct === "number" && typeof resolution.atResolveTopHolderPct === "number") {
+    const delta = resolution.atResolveTopHolderPct - resolution.atPublishTopHolderPct;
+    parts.push(`raw top-holder concentration ${resolution.atPublishTopHolderPct.toFixed(1)} to ${resolution.atResolveTopHolderPct.toFixed(1)} percent, ${Math.abs(delta).toFixed(1)} percentage points ${delta >= 0 ? "higher" : "lower"}`);
+  }
+  return parts;
+}
+
+function appendThesisSpeech(parts: string[], body: ResolveBody) {
+  const records = body.theses?.records ?? [];
+  const count = typeof body.theses?.count === "number" ? body.theses.count : records.length;
+  if (!count || !records.length) return;
+  parts.push(`${count} cited claim${count === 1 ? " is" : "s are"} on record for this star.`);
+  for (const record of records.slice(0, 3)) {
+    const claim = String(record.claim || "").trim();
+    if (claim) parts.push(`User claim: “${claim.replaceAll("“", "\"").replaceAll("”", "\"")}”`);
+    const resolution = record.resolution;
+    if (!resolution) {
+      parts.push("A 24-hour resolution is not available yet.");
+      continue;
+    }
+    const observed = comparableResolutionParts(resolution);
+    if (observed.length) parts.push(`Observed after 24 hours: ${observed.join("; ")}. Evidence quality: ${resolution.evidenceQuality || "partial"}.`);
+    else parts.push(`Observed after 24 hours: comparable market-cap, liquidity, and concentration evidence is unavailable. Evidence quality: ${resolution.evidenceQuality || "unavailable"}.`);
+  }
+}
+
 export function speakFromResolve(query: string, body: ResolveBody, extra: string[] = []): string {
   const id = shortId(body.address || body.signature || query);
   if (!body?.ok || body.state === "not-found") {
@@ -151,6 +208,7 @@ export function speakFromResolve(query: string, body: ResolveBody, extra: string
     if (authorityFlags.length) parts.push(`Observed flags: ${authorityFlags.join(" and ")}.`);
     else if (body.risk?.flags?.length) parts.push(`Observed flag: ${body.risk.flags[0]}.`);
     if (!valuation.length && !movement.length) parts.push("Current price and trading activity are unavailable for this token.");
+    appendThesisSpeech(parts, body);
     return parts.join(" ");
   }
   const parts: string[] = [];
@@ -245,6 +303,37 @@ function factsFromResolve(body: ResolveBody, extra: string[]): string[] {
   return facts;
 }
 
+async function attachCitedClaims(body: ResolveBody, query: string) {
+  if (!body.ok || body.kind !== "solana-token") return;
+  const targetId = String(body.address || query || "").trim();
+  if (!targetId) return;
+  try {
+    const params = new URLSearchParams({ targetKind: "star", targetId, limit: "10" });
+    const response = await fetchIntelligence(`/api/intelligence/theses?${params.toString()}`, {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!response.ok) return;
+    const payload = await response.json() as { coverage?: string; items?: ResolveBody["theses"] extends infer _T ? unknown[] : never };
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    body.theses = {
+      coverage: payload.coverage,
+      count: items.length,
+      records: items.map((item) => {
+        const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+        return {
+          id: typeof row.id === "string" ? row.id : undefined,
+          claim: typeof row.claim === "string" ? row.claim : undefined,
+          status: typeof row.status === "string" ? row.status : undefined,
+          resolution: row.resolution && typeof row.resolution === "object" ? row.resolution as ThesisSpeechResolution : null,
+        };
+      }),
+    };
+  } catch {
+    // Thesis speech is an optional D1-only layer. Market facts still answer if it is unavailable.
+  }
+}
+
 export async function resolvePublicIdentifier({
   data,
 }: {
@@ -310,6 +399,7 @@ export async function resolvePublicIdentifier({
       };
     }
 
+    if (body) await attachCitedClaims(body, query);
     const spoken = speakFromResolve(query, body ?? {}, extra);
     return {
       ok: Boolean(body?.ok && body.state !== "not-found"),

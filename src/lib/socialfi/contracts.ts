@@ -1,3 +1,5 @@
+import type { ThesisCitation, ThesisResolution } from "@/lib/universe-data/contracts";
+
 export type SocialFeedScope = "discover" | "following" | "watchlist" | "creators";
 
 export type SocialCapabilities = {
@@ -44,6 +46,67 @@ export type SocialFeedResponse = {
   nextCursor: string | null;
   disclosure: string;
 };
+
+export type ThesisTargetKind = "star" | "planet";
+export type ThesisStatus = "draft" | "open" | "resolved";
+
+export type ThesisRecord = {
+  id: string;
+  targetKind: ThesisTargetKind;
+  targetId: string;
+  galaxyId: string;
+  claim: string;
+  body: string;
+  replayWindowId: string | null;
+  fromTs: number;
+  toTs: number;
+  status: ThesisStatus;
+  createdAt: number;
+  updatedAt: number;
+  citations: readonly ThesisCitation[];
+  resolution: ThesisResolution | null;
+};
+
+export type ThesisListResponse = {
+  ok: boolean;
+  coverage: "fresh" | "empty" | "degraded";
+  items: readonly ThesisRecord[];
+  disclosure: string;
+  targetKind?: ThesisTargetKind;
+  targetId?: string;
+  error?: string;
+};
+
+export type PublishThesisInput = {
+  targetKind: "star";
+  targetId: string;
+  galaxyId: string;
+  claim: string;
+  body: string;
+  replayWindowId?: string | null;
+  fromTs: number;
+  toTs: number;
+  citations: readonly ThesisCitation[];
+};
+
+export type PublishThesisResponse = {
+  ok: boolean;
+  id?: string;
+  status?: "open";
+  targetKind?: "star";
+  targetId?: string;
+  citations?: readonly ThesisCitation[];
+  createdAt?: number;
+  error?: string;
+  coverage?: "degraded";
+};
+
+export const THESIS_ACCOUNT_POLICY = Object.freeze({
+  identityRequired: true,
+  walletProofStored: false,
+  walletConnectionEnabled: false,
+  chainExecutionEnabled: false,
+});
 
 export const SOCIAL_RELEASE_POLICY =
   "Account-based SocialFi only. Public-chain observation is enabled; wallet connection, wallet signing, trading, token launch, custody, and the A Bulls App token are disabled.";

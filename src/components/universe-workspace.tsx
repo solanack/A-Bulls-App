@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BookOpen, CheckCircle2, LoaderCircle, Play, Share2 } from "lucide-react";
 import { callUniverseTool, type UniverseTool } from "@/lib/universe-intelligence";
 import type { EvidenceRecord, FieldMode, GalaxyDefinition } from "@/lib/field/types";
+import { ThesisCreatePanel, ThesisEvidencePanel } from "@/components/thesis-layer";
 
 const WSOL = "So11111111111111111111111111111111111111112";
 type Data = Record<string, unknown>;
@@ -90,6 +91,7 @@ export function UniverseWorkspace({
         <InputGrid wallet={wallet} setWallet={setWallet} mint={eventMint} setMint={setMint} quoteMint={quoteMint} setQuoteMint={setQuoteMint} hideQuote />
         <Action onClick={() => void execute("evidence", { mint: eventMint, subjectWallet: evidence?.wallet ?? wallet, signature: evidence?.signature, timestamp: evidence ? evidence.observedAt * (evidence.observedAt < 10_000_000_000 ? 1000 : 1) : Date.now() })} disabled={!eventMint}>LOAD VERIFIED CONTEXT</Action>
         <EvidenceContext context={context} />
+        <ThesisEvidencePanel mint={eventMint} />
       </WorkspaceFrame>
     );
   }
@@ -148,6 +150,7 @@ export function UniverseWorkspace({
           <Action onClick={() => void publishStory(replayBundle, execute)} disabled={!arr(replayBundle.events).length}><Share2 size={14} /> VALIDATE & SHARE</Action>
         </div>
         <ReplayView bundle={replayBundle} compact />
+        <ThesisCreatePanel mint={mint} galaxyId={galaxy.id} replayBundle={replayBundle} />
         {result?.shareId ? <ShareReceipt id={text(result.shareId)} /> : null}
         <Disclosure>Every narration claim is derived from the loaded Replay events. Missing evidence blocks publishing.</Disclosure>
       </WorkspaceFrame>

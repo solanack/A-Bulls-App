@@ -25,6 +25,7 @@ import { handleFieldCompatibilityRequest } from './intelligence-field-compat.mjs
 import { handleSocialFiRequest } from './socialfi-router.mjs';
 import { handlePonsGalaxyRequest, maintainPonsIndex } from './intelligence-pons-galaxy.mjs';
 import { handlePonsRankingRequest, refreshPonsTop25 } from './intelligence-pons-ranking.mjs';
+import { handleThesisRequest, resolveDueTheses } from './intelligence-theses.mjs';
 
 export async function handleIntelligenceFetch(request, env = {}, ctx = null) {
   if(ctx)env.__EXECUTION_CTX=ctx;
@@ -32,6 +33,8 @@ export async function handleIntelligenceFetch(request, env = {}, ctx = null) {
   if (ponsRanking) return ponsRanking;
   const pons = await handlePonsGalaxyRequest(request, env);
   if (pons) return pons;
+  const theses = await handleThesisRequest(request, env);
+  if (theses) return theses;
   const social = await handleSocialFiRequest(request, env);
   if (social) return social;
   const fieldV0 = await handleFieldV0Request(request, env);
@@ -78,6 +81,7 @@ export async function handleIntelligenceScheduled(env = {}) {
   if (String(env.UNIVERSE_ENABLED || '').toLowerCase() === 'true') maintenance.push(pruneUniverseObservations(env));
   if (String(env.TRICKSTER_SHARE_ENABLED || '').toLowerCase() === 'true') maintenance.push(pruneTricksterShareManifests(env));
   if (String(env.PUMP_INDEX_ENABLED || '').toLowerCase() === 'true') maintenance.push(maintainPumpIndex(env));
+  maintenance.push(resolveDueTheses(env));
   maintenance.push((async()=>{
     try { await maintainPonsIndex(env); }
     catch(error) { console.error('[pons-index]',String(error?.message||error)); }

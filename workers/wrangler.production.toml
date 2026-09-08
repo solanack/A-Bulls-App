@@ -81,6 +81,12 @@ namespace_id = "8262026"
 enabled = true
 head_sampling_rate = 0.1
 
+# Account verification stays on the app's existing Better Auth surface. Thesis
+# writes fail closed when this service cannot verify the bearer session.
+[[services]]
+binding = "SOCIAL_AUTH"
+service = "a-bulls-app-frontend"
+
 # Dedicated A Bulls App Intelligence database
 [[d1_databases]]
 binding = "INTELLIGENCE_DB"

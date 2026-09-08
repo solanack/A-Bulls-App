@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
 import { Route as ApiIntelligenceSplatRouteImport } from './routes/api.intelligence.$'
+import { Route as ApiSocialAuthVerifyRouteImport } from './routes/api.social-auth.verify'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,44 @@ const ApiIntelligenceSplatRoute = ApiIntelligenceSplatRouteImport.update({
   path: '/api/intelligence/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSocialAuthVerifyRoute = ApiSocialAuthVerifyRouteImport.update({
+  id: '/api/social-auth/verify',
+  path: '/api/social-auth/verify',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
   '/api/intelligence/$': typeof ApiIntelligenceSplatRoute
+  '/api/social-auth/verify': typeof ApiSocialAuthVerifyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
   '/api/intelligence/$': typeof ApiIntelligenceSplatRoute
+  '/api/social-auth/verify': typeof ApiSocialAuthVerifyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
   '/api/intelligence/$': typeof ApiIntelligenceSplatRoute
+  '/api/social-auth/verify': typeof ApiSocialAuthVerifyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/health' | '/api/intelligence/$'
+  fullPaths: '/' | '/api/health' | '/api/intelligence/$' | '/api/social-auth/verify'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/health' | '/api/intelligence/$'
-  id: '__root__' | '/' | '/api/health' | '/api/intelligence/$'
+  to: '/' | '/api/health' | '/api/intelligence/$' | '/api/social-auth/verify'
+  id: '__root__' | '/' | '/api/health' | '/api/intelligence/$' | '/api/social-auth/verify'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiIntelligenceSplatRoute: typeof ApiIntelligenceSplatRoute
+  ApiSocialAuthVerifyRoute: typeof ApiSocialAuthVerifyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiIntelligenceSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/social-auth/verify': {
+      id: '/api/social-auth/verify'
+      path: '/api/social-auth/verify'
+      fullPath: '/api/social-auth/verify'
+      preLoaderRoute: typeof ApiSocialAuthVerifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiIntelligenceSplatRoute: ApiIntelligenceSplatRoute,
+  ApiSocialAuthVerifyRoute: ApiSocialAuthVerifyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
