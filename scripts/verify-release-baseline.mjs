@@ -86,9 +86,19 @@ if (!tokenSystemNavigation.includes("getTokenSystem") || !tokenSystemNavigation.
   process.exit(1);
 }
 
-if (!observatoryWorker.includes("reference-only") || !observatoryWorker.includes("ingested:false") || !observatoryWorker.includes("Unmatched sells")) {
-  console.error("RELEASE BLOCKED: weekly trader observatory evidence/disclosure rules have changed.");
+const observatoryLocks = [
+  "reference-only",
+  "ingested:false",
+  "Unmatched sells",
+  "INPUT_ROW_LIMIT=50000",
+  "mayBeTruncated",
+  "ORDER BY block_time DESC",
+];
+const missingObservatoryLocks = observatoryLocks.filter((marker) => !observatoryWorker.includes(marker));
+if (missingObservatoryLocks.length) {
+  console.error("RELEASE BLOCKED: weekly trader observatory evidence/sample rules have changed.");
+  console.error(`Missing observatory locks: ${missingObservatoryLocks.join(" | ")}`);
   process.exit(1);
 }
 
-console.log("Release baseline verified: simplified Field, D1-only token planets, wallet stars, read-only observatory/watchlist, and execution locks are active.");
+console.log("Release baseline verified: simplified Field, D1-only token planets, wallet stars, bounded read-only observatory/watchlist, and execution locks are active.");
