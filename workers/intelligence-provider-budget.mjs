@@ -5,9 +5,11 @@ const s=value=>String(value==null?'':value).trim();
 const monthKey=(timestamp=Date.now())=>new Date(timestamp).toISOString().slice(0,7);
 
 export function providerBudgetPolicy(env={},provider='helius'){
-  const monthlyLimit=Math.max(1,Math.trunc(n(env.HELIUS_MONTHLY_CREDITS)||1_000_000));
-  const breakerRatio=Math.min(.95,Math.max(.5,n(env.HELIUS_BREAKER_RATIO)||.75));
-  return Object.freeze({provider:s(provider)||'helius',monthlyLimit,breakerRatio,hardLimit:Math.floor(monthlyLimit*breakerRatio)});
+  const name=s(provider)||'helius';
+  const fomo=name==='fomoapi';
+  const monthlyLimit=Math.max(1,Math.trunc(n(fomo?env.FOMOAPI_MONTHLY_CREDITS:env.HELIUS_MONTHLY_CREDITS)||(fomo?1_000:1_000_000)));
+  const breakerRatio=Math.min(.95,Math.max(.5,n(fomo?env.FOMOAPI_BREAKER_RATIO:env.HELIUS_BREAKER_RATIO)||(fomo?.8:.75)));
+  return Object.freeze({provider:name,monthlyLimit,breakerRatio,hardLimit:Math.floor(monthlyLimit*breakerRatio)});
 }
 
 export async function reserveProviderCredits(env={},requestedCredits=1,provider='helius',timestamp=Date.now()){

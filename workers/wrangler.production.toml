@@ -14,15 +14,22 @@ PLAYABLE_DATA_ENABLED = "true"
 FIELD_COMPAT_ENABLED = "true"
 FIELD_V0_ENABLED = "true"
 FIELD_QUERY_CACHE_TTL_SECONDS = "60"
+
+FOMO_GALAXY_ENABLED = "true"
+FOMO_REFRESH_MINUTES = "180"
+FOMO_PROFILE_LOOKUPS_PER_REFRESH = "1"
+FOMOAPI_MONTHLY_CREDITS = "1000"
+FOMOAPI_BREAKER_RATIO = "0.80"
+
 PONS_GALAXY_ENABLED = "true"
 PONS_INDEX_ENABLED = "true"
 PONS_RANK_ENABLED = "true"
-PONS_MARKET_CAP_MIN_USD = "500000"
-PONS_RANK_MAX_MEMBERS = "25"
-PONS_RANK_DISCOVERY_LIMIT = "500"
-PONS_RANK_PRICE_MAX_AGE_SECONDS = "900"
+PONS_MARKET_CAP_MIN_USD = "75000"
+PONS_MIN_HOLDERS = "750"
+PONS_RANK_MAX_MEMBERS = "50"
+PONS_TRENDING_ENRICH_LIMIT = "12"
+PONS_TRENDING_METRIC_MAX_AGE_SECONDS = "3600"
 PONS_RANK_REFRESH_MINUTES = "15"
-PONS_ORIGIN_VERIFY_LIMIT = "50"
 PONS_CONFIRMATIONS = "64"
 PONS_BLOCK_CHUNK = "2000"
 PONS_REORG_REWIND = "32"
@@ -57,12 +64,12 @@ PUMP_CANDLE_RETENTION_DAYS = "365"
 PUMP_INGEST_CREDIT_MODE = "webhook"
 PUMP_HELIUS_WEBHOOK_ID = "06af243a-c7a6-445f-8966-31d3d46b9ddc"
 
-# Enable the PONS top-25 only after migrations 0022/0023 and secrets are configured.
 PONS_BOOTSTRAP_LOOKBACK_BLOCKS = "16000"
 PONS_SCAN_CHUNKS_PER_RUN = "8"
 # npx wrangler secret put PONS_RPC_URL
 # npx wrangler secret put PONS_BITQUERY_TOKEN
 # npx wrangler secret put PONS_INDEX_SECRET
+# npx wrangler secret put FOMOAPI_API_KEY
 
 Z500_UNIVERSE_ENABLED = "false"
 Z500_HELIUS_ROTATION_ENABLED = "false"
@@ -81,13 +88,10 @@ namespace_id = "8262026"
 enabled = true
 head_sampling_rate = 0.1
 
-# Account verification stays on the app's existing Better Auth surface. Thesis
-# writes fail closed when this service cannot verify the bearer session.
 [[services]]
 binding = "SOCIAL_AUTH"
 service = "a-bulls-app-frontend"
 
-# Dedicated A Bulls App Intelligence database
 [[d1_databases]]
 binding = "INTELLIGENCE_DB"
 database_name = "a-bulls-app-intelligence"

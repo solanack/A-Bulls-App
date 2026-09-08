@@ -16,7 +16,7 @@ export type FieldMode =
 
 export type OrganismState = "idle" | "listening" | "analyzing" | "speaking" | "complete" | "return";
 export type Coverage = "fresh" | "stale" | "degraded" | "empty";
-export type GalaxyId = "galaxy-zero" | "solana-core" | "pump-fun" | "pons";
+export type GalaxyId = "galaxy-zero" | "fomo" | "solana-core" | "pump-fun" | "pons";
 export type GalaxyStatus = "populated" | "staging";
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
@@ -36,6 +36,7 @@ export type IntelligenceResult = { ok: boolean; kind: EntityKind; query: string;
 export type FieldSection =
   | { kind: "galaxy"; label: string; count: number }
   | { kind: "token-system"; label: string; mint: string; count: number }
+  | { kind: "trader-system"; label: string; handle: string; wallet: string | null; count: number }
   | { kind: "observatory"; label: string; count: number }
   | { kind: "watchlist"; label: string; count: number };
 
@@ -51,5 +52,5 @@ export const ANALYSIS_MODES: { id: FieldMode; label: string }[] = [
 ];
 export const MODE_HINT: Record<FieldMode, string> = {
   explore: "INTELLIGENCE IS VISIBLE. THE FUTURE IS PARTICLE.",
-  intelligence: "Inspect verified activity. Facts only.", query: "Paste a public identifier. ASK wakes the Field.", trickster: "Compose a data story. Every claim keeps its receipt.", games: "Learn from narrated, indexed events. No scores. No missions.", compare: "Compare evidence side by side.", "what-if": "Simulate from observed evidence. Estimates stay labeled.", sequences: "Discover bounded market sequences.", evidence: "Verify sources, coverage, and original chain time.", replay: "Play, pause, and step through chain time.", ghost: "See the indexed counterfactual portfolio. Estimates stay labeled.", social: "Follow evidence, creators, wallets, tokens, and galaxies without connecting a wallet.", observatory: "Study the weekly top observed traders from cached indexed evidence. No copy trading.", watchlist: "Your saved token planets and wallet stars. Local-first and read-only.",
+  intelligence: "Inspect verified activity. Facts only.", query: "Paste a public identifier. ASK wakes the Field.", trickster: "Compose a data story. Every claim keeps its receipt.", games: "Learn from narrated, indexed events. No scores. No missions.", compare: "Compare evidence side by side.", "what-if": "Simulate from observed evidence. Estimates stay labeled.", sequences: "Discover bounded market sequences.", evidence: "Verify sources, coverage, and original chain time.", replay: "Play, pause, and step through chain time.", ghost: "See the indexed counterfactual portfolio. Estimates stay labeled.", social: "Follow evidence, creators, wallets, tokens, and galaxies without connecting a wallet.", observatory: "Open the Fomo Galaxy and study its cached all-time trader stars. No copy trading.", watchlist: "Your saved token planets and wallet stars. Local-first and read-only.",
 };

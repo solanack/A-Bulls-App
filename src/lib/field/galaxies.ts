@@ -1,195 +1,44 @@
 import type { CosmicObjectKind, GalaxyDefinition, GalaxyId } from "./types";
 import { mintKey } from "./watchlist.ts";
 
-export const GALAXIES = [
-  {
-    id: "galaxy-zero",
-    name: "Galaxy Zero",
-    ecosystem: "A Bulls App universe map",
-    status: "populated",
-    seed: 861,
-    accent: "var(--color-accent)",
-    description: "The navigable expanse containing every protocol galaxy, universal search, and Grey.",
-    coverage: "Spatial directory; no raw chain events",
-    sources: ["a-bulls-galaxy-directory"],
-  },
-  {
-    id: "solana-core",
-    name: "Solana Core",
-    ecosystem: "Indexed Solana activity",
-    status: "populated",
-    seed: 861,
-    accent: "var(--color-accent)",
-    description: "Token planets hold local skies of observed wallet stars; indexed trades cross them as comets.",
-    coverage: "Existing bounded Solana field window",
-    sources: ["Solana RPC", "Helius indexed history", "DexScreener"],
-  },
-  {
-    id: "pump-fun",
-    name: "pump.fun",
-    ecosystem: "pump.fun launch origin",
-    status: "populated",
-    seed: 2205,
-    accent: "var(--color-live)",
-    description: "Token planets from the indexed pump.fun lifecycle feed, with wallet-star and Replay evidence where retained.",
-    coverage: "Indexed births, trades, graduations, migrations, and terminal states",
-    sources: ["pump.fun indexed stream", "Helius indexed history"],
-  },
-  {
-    id: "pons",
-    name: "PONS",
-    ecosystem: "PONS launch origin on Robinhood Chain",
-    status: "populated",
-    seed: 4663,
-    accent: "#c7f05f",
-    description: "Token planets proven to originate from verified PONS factory events on Robinhood Chain.",
-    coverage: "Verified V1 and V2 factory launches with explicit finality",
-    sources: ["Robinhood Chain RPC", "verified PONS factories"],
-  },
+const GALAXY_REGISTRY = [
+  {id:"galaxy-zero",name:"Galaxy Zero",ecosystem:"A Bulls App universe map",status:"populated",seed:861,accent:"var(--color-accent)",description:"The navigable expanse containing Fomo, pump.fun, PonsFamily, universal search, and Grey.",coverage:"Spatial directory; no raw chain events",sources:["a-bulls-galaxy-directory"]},
+  {id:"fomo",name:"Fomo",ecosystem:"Trader research galaxy",status:"populated",seed:1299,accent:"#6f80ff",description:"The cached Fomo all-time top 50 become public-wallet stars. Enter a trader to study mapped token positions and retained trade evidence.",coverage:"fomoapi.io all-time leaderboard as reported + retained A Bulls App public-chain evidence",sources:["fomoapi.io","A Bulls App indexed public-chain evidence"]},
+  {id:"solana-core",name:"Solana Core",ecosystem:"Internal Solana provenance",status:"staging",seed:861,accent:"var(--color-accent)",description:"Compatibility provenance for generic Solana evidence. It is not a public Galaxy Zero destination.",coverage:"Internal compatibility provenance",sources:["Solana RPC","Helius indexed history","DexScreener"]},
+  {id:"pump-fun",name:"pump.fun",ecosystem:"pump.fun launch origin",status:"populated",seed:2205,accent:"var(--color-live)",description:"Token planets from the indexed pump.fun lifecycle feed, with wallet-star and Replay evidence where retained.",coverage:"Indexed births, trades, graduations, migrations, and terminal states",sources:["pump.fun indexed stream","Helius indexed history"]},
+  {id:"pons",name:"PonsFamily",ecosystem:"PONS launch origin on Robinhood Chain",status:"populated",seed:4663,accent:"#c7f05f",description:"Trending verified PONS-origin token planets with fresh market cap, holder count, and 24-hour volume evidence.",coverage:"Verified PONS factory origin; market cap > $75,000; holders > 750; ranked by fresh reported 24h volume",sources:["Robinhood Chain RPC","verified PONS factories","DexScreener","Bitquery holders"]},
 ] as const satisfies readonly GalaxyDefinition[];
 
+export const GALAXIES = GALAXY_REGISTRY.filter(item=>item.id!=="solana-core") as readonly GalaxyDefinition[];
 export const DEFAULT_GALAXY_ID: GalaxyId = "galaxy-zero";
 
-export const GALAXY_CHAIN_LABEL: Record<GalaxyId, string> = {
-  "galaxy-zero": "UNIVERSE MAP",
-  "solana-core": "SOLANA",
-  "pump-fun": "SOLANA",
-  pons: "ROBINHOOD CHAIN",
+export const GALAXY_CHAIN_LABEL: Record<GalaxyId, string> = {"galaxy-zero":"UNIVERSE MAP",fomo:"TRADER RESEARCH","solana-core":"SOLANA","pump-fun":"SOLANA",pons:"ROBINHOOD CHAIN"};
+export const GALAXY_ORIGIN_CHIPS: readonly { id: GalaxyId; label: string }[] = [{id:"galaxy-zero",label:"ZERO"},{id:"fomo",label:"FOMO"},{id:"pump-fun",label:"PUMP"},{id:"pons",label:"PONSFAMILY"}];
+
+export const COSMOLOGY_RULES: Record<CosmicObjectKind,{readonly onChainMeaning:string;readonly visualRule:string}> = {
+  galaxy:{onChainMeaning:"Research ecosystem or launch-origin lens",visualRule:"Largest durable body; Fomo is a research lens while token planets retain their true launch origin"},
+  star:{onChainMeaning:"Public wallet / observed holder or trader",visualRule:"Bright sky body around token planets or inside Fomo; size follows observed/provider-ranked relationship only when disclosed"},
+  planet:{onChainMeaning:"Token or mint",visualRule:"Major navigable world; touch to inspect its local holder/trader sky"},
+  moon:{onChainMeaning:"Related NFT collection",visualRule:"Small body orbiting the relevant token planet"},
+  "asteroid-belt":{onChainMeaning:"Liquidity pools and LP positions",visualRule:"Wide ring around a token planet; radius/density follow observed liquidity depth"},
+  comet:{onChainMeaning:"Near-real-time large trade",visualRule:"Elongated live trajectory with a bright head and fading tail"},
+  "black-hole":{onChainMeaning:"Rugged or dead token",visualRule:"Collapsed token world with dark center and visible accretion ring; requires indexed collapse evidence"},
+  supernova:{onChainMeaning:"Fast pump-and-death cycle",visualRule:"Large radial burst leaving a permanent discoverable historical scar"},
+  wormhole:{onChainMeaning:"Migration or bridge event",visualRule:"Large portal ring; token planet keeps immutable launch origin"},
+  ghost:{onChainMeaning:"Dormant or collapsed historical trace",visualRule:"Faint translucent trace linked to indexed historical evidence"},
+  dust:{onChainMeaning:"No on-chain meaning — decorative field fabric only",visualRule:"Tiny subdued background point; never interactive market evidence"},
 };
 
-export const GALAXY_ORIGIN_CHIPS: readonly { id: GalaxyId; label: string }[] = [
-  { id: "galaxy-zero", label: "ZERO" },
-  { id: "solana-core", label: "SOLANA" },
-  { id: "pump-fun", label: "PUMP" },
-  { id: "pons", label: "PONS" },
-];
+export function getGalaxy(id:GalaxyId):GalaxyDefinition{const galaxy=GALAXY_REGISTRY.find(candidate=>candidate.id===id);if(!galaxy)throw new Error(`Unknown galaxy: ${id}`);return galaxy;}
+export function isPopulatedGalaxy(id:GalaxyId){return getGalaxy(id).status==="populated";}
+export const GALAXY_CONTENT=Object.freeze({
+  "galaxy-zero":Object.freeze({durable:["galaxy"],transient:[],excludes:["wallet","transaction","mint","nft","program"]}),
+  fomo:Object.freeze({durable:["wallet","token"],transient:["trade"],excludes:["program","nft"]}),
+  "solana-core":Object.freeze({durable:["token","wallet","program"],transient:["transaction"],excludes:[]}),
+  "pump-fun":Object.freeze({durable:["token","wallet","liquidity-pool"],transient:["trade","launch","migration"],excludes:["nft"]}),
+  pons:Object.freeze({durable:["token","wallet","liquidity-pool"],transient:["trade","launch"],excludes:["nft"]}),
+} satisfies Record<GalaxyId,{readonly durable:readonly string[];readonly transient:readonly string[];readonly excludes:readonly string[]}>);
 
-export const COSMOLOGY_RULES: Record<
-  CosmicObjectKind,
-  { readonly onChainMeaning: string; readonly visualRule: string }
-> = {
-  galaxy: {
-    onChainMeaning: "Origin ecosystem or launchpad",
-    visualRule: "Largest durable body; permanent launch origin",
-  },
-  star: {
-    onChainMeaning: "Public wallet / observed holder or trader",
-    visualRule: "Bright sky body around token planets; size follows observed relationship weight when available",
-  },
-  planet: {
-    onChainMeaning: "Token or mint",
-    visualRule: "Major navigable world; touch to enter its local holder/trader sky",
-  },
-  moon: {
-    onChainMeaning: "Related NFT collection",
-    visualRule: "Small body orbiting the relevant token planet",
-  },
-  "asteroid-belt": {
-    onChainMeaning: "Liquidity pools and LP positions",
-    visualRule: "Wide ring around a token planet; radius/density follow observed liquidity depth",
-  },
-  comet: {
-    onChainMeaning: "Near-real-time large trade",
-    visualRule: "Elongated live trajectory with a bright head and fading tail",
-  },
-  "black-hole": {
-    onChainMeaning: "Rugged or dead token",
-    visualRule: "Collapsed token world with dark center and visible accretion ring; requires indexed collapse evidence",
-  },
-  supernova: {
-    onChainMeaning: "Fast pump-and-death cycle",
-    visualRule: "Large radial burst leaving a permanent discoverable historical scar",
-  },
-  wormhole: {
-    onChainMeaning: "Migration or bridge event",
-    visualRule: "Large portal ring; token planet keeps immutable launch origin",
-  },
-  ghost: {
-    onChainMeaning: "Dormant or collapsed historical trace",
-    visualRule: "Faint translucent trace linked to indexed historical evidence",
-  },
-  dust: {
-    onChainMeaning: "No on-chain meaning — decorative field fabric only",
-    visualRule: "Tiny subdued background point; never interactive market evidence",
-  },
-};
-
-export function getGalaxy(id: GalaxyId): GalaxyDefinition {
-  const galaxy = GALAXIES.find((candidate) => candidate.id === id);
-  if (!galaxy) throw new Error(`Unknown galaxy: ${id}`);
-  return galaxy;
-}
-
-export function isPopulatedGalaxy(id: GalaxyId) {
-  return getGalaxy(id).status === "populated";
-}
-
-export const GALAXY_CONTENT = Object.freeze({
-  "galaxy-zero": Object.freeze({ durable: ["galaxy"], transient: [], excludes: ["wallet", "transaction", "mint", "nft", "program"] }),
-  "solana-core": Object.freeze({ durable: ["token", "wallet", "program"], transient: ["transaction"], excludes: [] }),
-  "pump-fun": Object.freeze({ durable: ["token", "wallet", "liquidity-pool"], transient: ["trade", "launch", "migration"], excludes: ["nft"] }),
-  pons: Object.freeze({ durable: ["token", "wallet", "liquidity-pool"], transient: ["trade", "launch"], excludes: ["nft"] }),
-} satisfies Record<GalaxyId, { readonly durable: readonly string[]; readonly transient: readonly string[]; readonly excludes: readonly string[] }>);
-
-export function cosmicKindForEntity(kind: string): CosmicObjectKind {
-  switch (kind) {
-    case "token":
-    case "mint":
-      return "planet";
-    case "wallet":
-    case "holder":
-    case "trader":
-      return "star";
-    case "nft":
-    case "collection":
-      return "moon";
-    case "transaction":
-    case "trade":
-    case "large-trade":
-      return "comet";
-    case "cluster":
-    case "liquidity-pool":
-    case "lp-position":
-      return "asteroid-belt";
-    case "program":
-    case "launchpad":
-      return "galaxy";
-    case "migration":
-    case "bridge":
-      return "wormhole";
-    case "rugged":
-    case "dead-token":
-      return "black-hole";
-    case "pump-death":
-    case "supernova":
-      return "supernova";
-    case "dormant":
-    case "collapsed-trace":
-      return "ghost";
-    default:
-      return "dust";
-  }
-}
-
-export function preserveLaunchOrigin(
-  existingOrigin: GalaxyId | undefined,
-  observedOrigin: GalaxyId,
-): GalaxyId {
-  if (existingOrigin && existingOrigin !== observedOrigin) {
-    throw new Error(`Launch origin is immutable: ${existingOrigin} cannot become ${observedOrigin}`);
-  }
-  return existingOrigin ?? observedOrigin;
-}
-
-export function canonicalUniverseId(
-  kind: CosmicObjectKind,
-  sourceId: string,
-  originGalaxyId: GalaxyId,
-) {
-  const normalized = mintKey(sourceId);
-  if (!normalized) throw new Error("Universe identity requires a public source id");
-  // Public wallet identity is stable across token planets and launch galaxies.
-  return kind === "star"
-    ? `star:${normalized}`
-    : `${kind}:${originGalaxyId}:${normalized}`;
-}
+export function cosmicKindForEntity(kind:string):CosmicObjectKind{switch(kind){case"token":case"mint":return"planet";case"wallet":case"holder":case"trader":return"star";case"nft":case"collection":return"moon";case"transaction":case"trade":case"large-trade":return"comet";case"cluster":case"liquidity-pool":case"lp-position":return"asteroid-belt";case"program":case"launchpad":return"galaxy";case"migration":case"bridge":return"wormhole";case"rugged":case"dead-token":return"black-hole";case"pump-death":case"supernova":return"supernova";case"dormant":case"collapsed-trace":return"ghost";default:return"dust";}}
+export function preserveLaunchOrigin(existingOrigin:GalaxyId|undefined,observedOrigin:GalaxyId):GalaxyId{if(existingOrigin&&existingOrigin!==observedOrigin)throw new Error(`Launch origin is immutable: ${existingOrigin} cannot become ${observedOrigin}`);return existingOrigin??observedOrigin;}
+export function canonicalUniverseId(kind:CosmicObjectKind,sourceId:string,originGalaxyId:GalaxyId){const normalized=mintKey(sourceId);if(!normalized)throw new Error("Universe identity requires a public source id");return kind==="star"?`star:${normalized}`:`${kind}:${originGalaxyId}:${normalized}`;}
