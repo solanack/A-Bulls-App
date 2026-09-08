@@ -1,11 +1,14 @@
 import type { GalaxyId } from "./types.ts";
 
 export const WATCHLIST_STORAGE_KEY = "abulls-watchlist";
-export const WATCHLIST_MAX = 50;
-export const WATCHLIST_VERSION = 1;
+export const WATCHLIST_MAX = 100;
+export const WATCHLIST_VERSION = 2;
+
+export type WatchSubjectKind = "token" | "wallet";
 
 export type WatchItem = {
-  mint: string;
+  subjectKind: WatchSubjectKind;
+  subjectId: string;
   galaxyId: GalaxyId;
   symbol: string | null;
   name: string | null;
@@ -18,35 +21,56 @@ export type StorageLike = {
   removeItem?(key: string): void;
 };
 
-export function mintKey(mint: string): string {
-  const value = mint.trim();
-  return /^0x[0-9a-f]{40}$/i.test(value) ? value.toLowerCase() : value;
+export function mintKey(value: string): string {
+  const text = value.trim();
+  return /^0x[0-9a-f]{40}$/i.test(text) ? text.toLowerCase() : text;
+}
+
+export function watchKey(kind: WatchSubjectKind, subjectId: string) {
+  return `${kind}:${mintKey(subjectId)}`;
+}
+
+function validGalaxy(value: unknown): value is GalaxyId {
+  return value === "galaxy-zero" || value === "solana-core" || value === "pump-fun" || value === "pons";
+}
+
+function parseRow(record: Record<string, unknown>, legacy = false): WatchItem | null {
+  const subjectKind: WatchSubjectKind = legacy
+    ? "token"
+    : record.subjectKind === "wallet"
+      ? "wallet"
+      : record.subjectKind === "token"
+        ? "token"
+        : "token";
+  const rawId = legacy ? record.mint : record.subjectId ?? record.mint;
+  const subjectId = typeof rawId === "string" ? rawId.trim() : "";
+  if (!subjectId) return null;
+  const galaxyId = validGalaxy(record.galaxyId) ? record.galaxyId : "solana-core";
+  return {
+    subjectKind,
+    subjectId,
+    galaxyId,
+    symbol: typeof record.symbol === "string" ? record.symbol : null,
+    name: typeof record.name === "string" ? record.name : null,
+    addedAt: typeof record.addedAt === "number" && Number.isFinite(record.addedAt) ? record.addedAt : Date.now(),
+  };
 }
 
 export function parseWatchlist(raw: string | null | undefined): WatchItem[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as { v?: number; items?: unknown };
-    if (!parsed || parsed.v !== WATCHLIST_VERSION || !Array.isArray(parsed.items)) return [];
+    if (!parsed || !Array.isArray(parsed.items) || (parsed.v !== 1 && parsed.v !== WATCHLIST_VERSION)) return [];
     const seen = new Set<string>();
     const items: WatchItem[] = [];
     for (const row of parsed.items) {
       if (!row || typeof row !== "object") continue;
-      const record = row as Record<string, unknown>;
-      const mint = typeof record.mint === "string" ? record.mint.trim() : "";
-      if (!mint) continue;
-      const galaxyId = record.galaxyId;
-      if (galaxyId !== "galaxy-zero" && galaxyId !== "solana-core" && galaxyId !== "pump-fun" && galaxyId !== "pons") continue;
-      const key = mintKey(mint);
+      const item = parseRow(row as Record<string, unknown>, parsed.v === 1);
+      if (!item) continue;
+      const key = watchKey(item.subjectKind, item.subjectId);
       if (seen.has(key)) continue;
       seen.add(key);
-      items.push({
-        mint,
-        galaxyId,
-        symbol: typeof record.symbol === "string" ? record.symbol : null,
-        name: typeof record.name === "string" ? record.name : null,
-        addedAt: typeof record.addedAt === "number" && Number.isFinite(record.addedAt) ? record.addedAt : Date.now(),
-      });
+      items.push(item);
       if (items.length >= WATCHLIST_MAX) break;
     }
     return items;
@@ -61,11 +85,8 @@ export function serializeWatchlist(items: readonly WatchItem[]): string {
 
 function getStore(storage?: StorageLike | null): StorageLike | null {
   if (storage) return storage;
-  try {
-    return globalThis.localStorage ?? null;
-  } catch {
-    return null;
-  }
+  try { return globalThis.localStorage ?? null; }
+  catch { return null; }
 }
 
 export function loadWatchlist(storage?: StorageLike | null): WatchItem[] {
@@ -75,34 +96,47 @@ export function loadWatchlist(storage?: StorageLike | null): WatchItem[] {
 
 export function saveWatchlist(items: readonly WatchItem[], storage?: StorageLike | null): WatchItem[] {
   const next = items.slice(0, WATCHLIST_MAX);
-  const store = getStore(storage);
-  try { store?.setItem(WATCHLIST_STORAGE_KEY, serializeWatchlist(next)); }
-  catch { /* Keep this session's pins usable when browser storage is unavailable. */ }
+  try { getStore(storage)?.setItem(WATCHLIST_STORAGE_KEY, serializeWatchlist(next)); }
+  catch { /* Session state still remains usable. */ }
   return next;
 }
 
-export function isWatched(items: readonly WatchItem[], mint: string | null | undefined): boolean {
-  if (!mint) return false;
-  const key = mintKey(mint);
-  return items.some((item) => mintKey(item.mint) === key);
+export function isWatched(
+  items: readonly WatchItem[],
+  subjectKind: WatchSubjectKind,
+  subjectId: string | null | undefined,
+): boolean {
+  if (!subjectId) return false;
+  const key = watchKey(subjectKind, subjectId);
+  return items.some((item) => watchKey(item.subjectKind, item.subjectId) === key);
 }
 
 export function toggleWatchItem(
   items: readonly WatchItem[],
-  next: { mint: string; galaxyId: GalaxyId; symbol?: string | null; name?: string | null },
+  next: {
+    subjectKind: WatchSubjectKind;
+    subjectId: string;
+    galaxyId: GalaxyId;
+    symbol?: string | null;
+    name?: string | null;
+  },
 ): WatchItem[] {
-  const key = mintKey(next.mint);
-  if (items.some((item) => mintKey(item.mint) === key)) {
-    return items.filter((item) => mintKey(item.mint) !== key);
+  const subjectId = next.subjectId.trim();
+  if (!subjectId) return [...items];
+  const key = watchKey(next.subjectKind, subjectId);
+  if (items.some((item) => watchKey(item.subjectKind, item.subjectId) === key)) {
+    return items.filter((item) => watchKey(item.subjectKind, item.subjectId) !== key);
   }
-  return [
-    {
-      mint: next.mint.trim(),
-      galaxyId: next.galaxyId,
-      symbol: next.symbol ?? null,
-      name: next.name ?? null,
-      addedAt: Date.now(),
-    },
-    ...items,
-  ].slice(0, WATCHLIST_MAX);
+  return [{
+    subjectKind: next.subjectKind,
+    subjectId,
+    galaxyId: next.galaxyId,
+    symbol: next.symbol ?? null,
+    name: next.name ?? null,
+    addedAt: Date.now(),
+  }, ...items].slice(0, WATCHLIST_MAX);
+}
+
+export function tokenWatchMints(items: readonly WatchItem[]) {
+  return items.filter((item) => item.subjectKind === "token").map((item) => item.subjectId);
 }

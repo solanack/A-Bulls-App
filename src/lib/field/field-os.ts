@@ -2,555 +2,75 @@ import { ParticleFieldRenderer } from "./particle-field";
 import { LivingAlienOrganism } from "./query-organism";
 import { createGalaxySnapshot } from "./synthetic-universe";
 import { deviceBudget } from "./hash";
-import type {
-  CameraState,
-  FieldMode,
-  FocusedParticle,
-  GalaxyDefinition,
-  GalaxyId,
-  EvidenceRecord,
-  IntelligenceResult,
-  OrganismState,
-  ReplayState,
-  UniverseSnapshot,
-} from "./types";
+import type { CameraState, Coverage, FieldMode, FieldParticle, FieldSection, FocusedParticle, GalaxyDefinition, GalaxyId, EvidenceRecord, IntelligenceResult, OrganismState, ReplayState, UniverseSnapshot } from "./types";
 import { DEFAULT_GALAXY_ID, GALAXIES, getGalaxy, isPopulatedGalaxy } from "./galaxies";
 import { speakText, unlockSpeech, type VoiceHandle } from "./voice";
 import { resolvePublicIdentifier } from "@/lib/intelligence";
 import { getIndexedGalaxySnapshot } from "@/lib/universe-data/service";
-import {
-  shouldReplacePrototypeField,
-  sparseHydrateDisclosure,
-  visibilityFloor,
-} from "./hydrate-gate";
+import { getTokenSystem } from "@/lib/universe-data/token-system-client";
+import { getWeeklyTraderObservatory } from "@/lib/universe-data/trader-observatory-client";
+import { shouldReplacePrototypeField, sparseHydrateDisclosure, visibilityFloor } from "./hydrate-gate";
 import type { UniverseDataStatus } from "@/lib/universe-data/contracts";
-import {
-  createReplayState,
-  evidenceForParticle,
-  stepReplayCursor,
-  visibleReplayCount,
-} from "./replay";
-import { composeVolumeSky, countLiveStars, particleMint } from "./volume-sky";
-import { isWatched, loadWatchlist, saveWatchlist, toggleWatchItem, type WatchItem } from "./watchlist";
+import { createReplayState, evidenceForParticle, stepReplayCursor, visibleReplayCount } from "./replay";
+import { composeVolumeSky, countLivePlanets, particleMint } from "./volume-sky";
+import { isWatched, loadWatchlist, saveWatchlist, toggleWatchItem, tokenWatchMints, type WatchItem, type WatchSubjectKind } from "./watchlist";
 import { speakObservedParticle } from "./observed-speech";
+import { buildTokenSystemSnapshot } from "./token-system";
+import { buildTraderObservatorySnapshot } from "./trader-observatory";
+import { buildWatchlistSnapshot } from "./watchlist-sky";
 import { ponsTeachingSnapshot, PONS_TEACHING_TOKEN } from "@/lib/universe-data/pons-client";
 
-export type FieldOSListener = (event: {
-  mode: FieldMode;
-  queryActive: boolean;
-  organismState: OrganismState;
-  result: IntelligenceResult | null;
-  speaking: boolean;
-  muted: boolean;
-  focus: FocusedParticle | null;
-  galaxy: GalaxyDefinition;
-  galaxies: readonly GalaxyDefinition[];
-  replay: ReplayState;
-  evidence: EvidenceRecord | null;
-  dataStatus: UniverseDataStatus;
-  askPrefill: string;
-  watchlist: readonly WatchItem[];
-  liveStarCount: number;
-}) => void;
+export type FieldOSListener=(event:{mode:FieldMode;queryActive:boolean;organismState:OrganismState;result:IntelligenceResult|null;speaking:boolean;muted:boolean;focus:FocusedParticle|null;galaxy:GalaxyDefinition;galaxies:readonly GalaxyDefinition[];replay:ReplayState;evidence:EvidenceRecord|null;dataStatus:UniverseDataStatus;askPrefill:string;watchlist:readonly WatchItem[];livePlanetCount:number;fieldSection:FieldSection;})=>void;
 
 export class FieldOS {
-  host: HTMLElement;
-  field: ParticleFieldRenderer;
-  organism: LivingAlienOrganism | null = null;
-  mode: FieldMode = "explore";
-  queryActive = false;
-  organismState: OrganismState = "idle";
-  result: IntelligenceResult | null = null;
-  muted = false;
-  volume = 0.92;
-  focus: FocusedParticle | null = null;
-  galaxy: GalaxyDefinition = getGalaxy(DEFAULT_GALAXY_ID);
-  replay: ReplayState;
-  evidence: EvidenceRecord | null = null;
-  dataStatus: UniverseDataStatus = {
-    store: "memory-fallback",
-    coverage: "degraded",
-    circuitBreaker: null,
-    disclosure: "Checking indexed universe coverage.",
-  };
-  askPrefill = "";
-  watchlist: WatchItem[] = [];
-  liveStarCount = 0;
-  #cameraSnapshot: CameraState | null = null;
-  #voice: VoiceHandle | null = null;
-  #listener: FieldOSListener | null = null;
-  #querySeq = 0;
-  #snapshotSeq = 0;
-  #prototype = createGalaxySnapshot(getGalaxy(DEFAULT_GALAXY_ID), deviceBudget().field);
-  #live: UniverseSnapshot | null = null;
-  #hydrateTimer = 0;
-  #lastSpokenId: string | null = null;
-  #focusResolveSeq = 0;
-  #pendingFocusMint: string | null = null;
-  #destroyed = false;
+  host:HTMLElement;field:ParticleFieldRenderer;organism:LivingAlienOrganism|null=null;mode:FieldMode="explore";queryActive=false;organismState:OrganismState="idle";result:IntelligenceResult|null=null;muted=false;volume=.92;focus:FocusedParticle|null=null;galaxy:GalaxyDefinition=getGalaxy(DEFAULT_GALAXY_ID);replay:ReplayState;evidence:EvidenceRecord|null=null;dataStatus:UniverseDataStatus={store:"memory-fallback",coverage:"degraded",circuitBreaker:null,disclosure:"Checking indexed universe coverage."};askPrefill="";watchlist:WatchItem[]=[];livePlanetCount=0;fieldSection:FieldSection={kind:"galaxy",label:"Galaxy Zero",count:0};
+  #cameraSnapshot:CameraState|null=null;#voice:VoiceHandle|null=null;#listener:FieldOSListener|null=null;#querySeq=0;#snapshotSeq=0;#prototype=createGalaxySnapshot(getGalaxy(DEFAULT_GALAXY_ID),deviceBudget().field);#live:UniverseSnapshot|null=null;#baseSky:UniverseSnapshot|null=null;#hydrateTimer=0;#lastSpokenId:string|null=null;#focusResolveSeq=0;#pendingFocusMint:string|null=null;#destroyed=false;
 
-  constructor(host: HTMLElement, listener: FieldOSListener) {
-    this.host = host;
-    this.#listener = listener;
-    this.watchlist = loadWatchlist();
-    const budget = deviceBudget();
-    this.#prototype = createGalaxySnapshot(this.galaxy, budget.field);
-    const initial = composeVolumeSky({
-      prototype: this.#prototype,
-      live: null,
-      watchlist: this.watchlist,
-      wallpaperLimit: budget.field,
-    });
-    this.field = new ParticleFieldRenderer(host, initial);
-    this.field.setWatchlistMints(this.watchlist.map((item) => item.mint));
-    this.replay = createReplayState(initial);
-    this.liveStarCount = countLiveStars(initial);
-    this.field.onFocus = (particle) => {
-      const previousTarget = typeof this.focus?.metadata?.targetGalaxyId === "string" ? this.focus.metadata.targetGalaxyId : null;
-      this.focus = particle
-        ? {
-            id: particle.id,
-            kind: particle.kind,
-            cosmicKind: particle.cosmicKind,
-            originGalaxyId: particle.originGalaxyId,
-            category: particle.category,
-            observedAt: particle.observedAt,
-            verificationState: particle.verificationState,
-            magnitudeBand: particle.magnitudeBand,
-            eventId: particle.eventId,
-            source: particle.source,
-            slot: particle.slot,
-            metadata: particle.metadata,
-          }
-        : null;
-      this.evidence = particle ? evidenceForParticle(this.field.snapshot, particle) : null;
-      const mint = particleMint(particle);
-      if (particle && mint) this.askPrefill = mint;
-      this.#emit();
-      if (!particle) {
-        this.#focusResolveSeq++;
-        this.#lastSpokenId = null;
-        return;
-      }
-      const target = typeof particle.metadata?.targetGalaxyId === "string" ? particle.metadata.targetGalaxyId as GalaxyId : null;
-      if (target && target === previousTarget) {
-        this.setGalaxy(target);
-        return;
-      }
-      if (!this.queryActive && particle.id !== this.#lastSpokenId) {
-        this.#lastSpokenId = particle.id;
-        unlockSpeech();
-        if (target) {
-          this.narrateObserved(`${String(particle.metadata?.name || "Protocol galaxy")}. ${String(particle.metadata?.description || "Tap again to enter.")} Tap again to enter.`);
-        } else if (mint && particle.metadata?.skyRole !== "wallpaper") {
-          void this.#narrateResolvedMarket(particle.id, mint);
-        } else {
-          this.narrateObserved(speakObservedParticle(particle, this.field.snapshot));
-        }
-      }
-    };
-    this.field.onReplayTick = (cursor, playing) => {
-      this.replay = {
-        ...this.replay,
-        cursor,
-        status: playing ? "playing" : cursor >= 1 ? "complete" : "paused",
-        visibleEventCount: visibleReplayCount(this.field.snapshot, cursor),
-      };
-      this.#emit();
-    };
-    try { this.muted = globalThis.localStorage?.getItem("abulls-mute") === "1"; }
-    catch { this.muted = false; }
-    this.#emit();
-    void this.#hydrateGalaxy(this.galaxy.id);
-    this.#hydrateTimer = globalThis.setInterval(() => {
-      if (!this.queryActive && this.galaxy.id !== "galaxy-zero" && document.visibilityState !== "hidden") void this.#hydrateGalaxy(this.galaxy.id);
-    }, 60_000) as unknown as number;
+  constructor(host:HTMLElement,listener:FieldOSListener){
+    this.host=host;this.#listener=listener;this.watchlist=loadWatchlist();const budget=deviceBudget();this.#prototype=createGalaxySnapshot(this.galaxy,budget.field);const initial=composeVolumeSky({prototype:this.#prototype,live:null,watchlist:this.watchlist,wallpaperLimit:budget.field});this.#baseSky=initial;this.field=new ParticleFieldRenderer(host,initial);this.field.setWatchlistMints(tokenWatchMints(this.watchlist));this.replay=createReplayState(initial);this.livePlanetCount=countLivePlanets(initial);this.fieldSection={kind:"galaxy",label:this.galaxy.name,count:this.livePlanetCount};
+    this.field.onFocus=(particle)=>this.#onFocus(particle);this.field.onReplayTick=(cursor,playing)=>{this.replay={...this.replay,cursor,status:playing?"playing":cursor>=1?"complete":"paused",visibleEventCount:visibleReplayCount(this.field.snapshot,cursor)};this.#emit();};
+    try{this.muted=globalThis.localStorage?.getItem("abulls-mute")==="1";}catch{this.muted=false;}this.#emit();void this.#hydrateGalaxy(this.galaxy.id);this.#hydrateTimer=globalThis.setInterval(()=>{if(!this.queryActive&&this.fieldSection.kind==="galaxy"&&this.galaxy.id!=="galaxy-zero"&&document.visibilityState!=="hidden")void this.#hydrateGalaxy(this.galaxy.id);},60_000) as unknown as number;
   }
 
-  #emit() {
-    if (this.#destroyed) return;
-    this.#listener?.({
-      mode: this.mode,
-      queryActive: this.queryActive,
-      organismState: this.organismState,
-      result: this.result,
-      speaking: Boolean(this.#voice?.speaking),
-      muted: this.muted,
-      focus: this.focus,
-      galaxy: this.galaxy,
-      galaxies: GALAXIES,
-      replay: this.replay,
-      evidence: this.evidence,
-      dataStatus: this.dataStatus,
-      askPrefill: this.askPrefill,
-      watchlist: this.watchlist,
-      liveStarCount: this.liveStarCount,
-    });
+  #onFocus(particle:FieldParticle|null){
+    const previousTarget=typeof this.focus?.metadata?.targetGalaxyId==="string"?this.focus.metadata.targetGalaxyId:null;
+    this.focus=particle?{id:particle.id,kind:particle.kind,cosmicKind:particle.cosmicKind,originGalaxyId:particle.originGalaxyId,category:particle.category,observedAt:particle.observedAt,verificationState:particle.verificationState,magnitudeBand:particle.magnitudeBand,eventId:particle.eventId,source:particle.source,slot:particle.slot,metadata:particle.metadata}:null;this.evidence=particle?evidenceForParticle(this.field.snapshot,particle):null;const mint=particleMint(particle);if(particle&&mint)this.askPrefill=mint;this.#emit();
+    if(!particle){this.#focusResolveSeq++;this.#lastSpokenId=null;return;}const target=typeof particle.metadata?.targetGalaxyId==="string"?particle.metadata.targetGalaxyId as GalaxyId:null;if(target&&target===previousTarget){this.setGalaxy(target);return;}if(this.queryActive||particle.id===this.#lastSpokenId)return;this.#lastSpokenId=particle.id;unlockSpeech();
+    if(target){this.narrateObserved(`${String(particle.metadata?.name||"Protocol galaxy")}. ${String(particle.metadata?.description||"Tap again to enter.")} Tap again to enter.`);return;}
+    if(particle.cosmicKind==="planet"&&mint){if(this.fieldSection.kind!=="token-system"||this.fieldSection.mint!==mint){void this.enterTokenSystem(particle);return;}void this.#narrateResolvedMarket(particle.id,mint);return;}this.narrateObserved(speakObservedParticle(particle,this.field.snapshot));
   }
 
-  #applySky() {
-    const composed = composeVolumeSky({
-      prototype: this.#prototype,
-      live: this.#live,
-      watchlist: this.watchlist,
-      wallpaperLimit: deviceBudget().field,
-    });
-    this.field.setSnapshot(composed);
-    this.field.setWatchlistMints(this.watchlist.map((item) => item.mint));
-    this.liveStarCount = countLiveStars(composed);
-    this.replay = createReplayState(composed);
-    const want = particleMint(this.focus) ?? this.#pendingFocusMint;
-    if (want) {
-      this.field.focusByMint(want);
-      if (this.field.focused) this.#pendingFocusMint = null;
-    }
-  }
+  #emit(){if(this.#destroyed)return;this.#listener?.({mode:this.mode,queryActive:this.queryActive,organismState:this.organismState,result:this.result,speaking:Boolean(this.#voice?.speaking),muted:this.muted,focus:this.focus,galaxy:this.galaxy,galaxies:GALAXIES,replay:this.replay,evidence:this.evidence,dataStatus:this.dataStatus,askPrefill:this.askPrefill,watchlist:this.watchlist,livePlanetCount:this.livePlanetCount,fieldSection:this.fieldSection});}
+  #applySky(){const composed=composeVolumeSky({prototype:this.#prototype,live:this.#live,watchlist:this.watchlist,wallpaperLimit:deviceBudget().field});this.#baseSky=composed;this.livePlanetCount=countLivePlanets(composed);if(this.fieldSection.kind==="galaxy"){this.field.setSnapshot(composed);this.fieldSection={kind:"galaxy",label:this.galaxy.name,count:this.livePlanetCount};this.replay=createReplayState(composed);const want=particleMint(this.focus)??this.#pendingFocusMint;if(want){this.field.focusByMint(want);if(this.field.focused)this.#pendingFocusMint=null;}}this.field.setWatchlistMints(tokenWatchMints(this.watchlist));}
 
-  focusMint(mint: string) {
-    const trimmed = mint.trim();
-    if (!trimmed) return;
-    this.#pendingFocusMint = trimmed;
-    this.askPrefill = trimmed;
-    if (this.queryActive) {
-      void this.returnToField().then(() => this.focusMint(trimmed));
-      return;
-    }
-    this.mode = "explore";
-    const teaching = trimmed.toLowerCase() === PONS_TEACHING_TOKEN.toLowerCase();
-    if (teaching && this.galaxy.id !== "pons") {
-      this.setGalaxy("pons");
-      return;
-    }
-    this.field.focusByMint(trimmed);
-    this.#emit();
-  }
+  focusMint(mint:string){const trimmed=mint.trim();if(!trimmed)return;this.#pendingFocusMint=trimmed;this.askPrefill=trimmed;if(this.queryActive){void this.returnToField().then(()=>this.focusMint(trimmed));return;}if(this.fieldSection.kind!=="galaxy")this.exitSpecialSection(false);this.mode="explore";const teaching=trimmed.toLowerCase()===PONS_TEACHING_TOKEN.toLowerCase();if(teaching&&this.galaxy.id!=="pons"){this.setGalaxy("pons");return;}this.field.focusByMint(trimmed);this.#emit();}
+  #focusedWatchSubject():{subjectKind:WatchSubjectKind;subjectId:string}|null{if(!this.focus)return null;if(this.focus.cosmicKind==="planet"||this.focus.cosmicKind==="black-hole"||this.focus.cosmicKind==="supernova"){const mint=particleMint(this.focus);return mint?{subjectKind:"token",subjectId:mint}:null;}if(this.focus.cosmicKind==="star"&&typeof this.focus.metadata?.wallet==="string"&&this.focus.metadata.wallet.trim())return{subjectKind:"wallet",subjectId:this.focus.metadata.wallet.trim()};return null;}
+  toggleWatch(){const subject=this.#focusedWatchSubject();if(!subject)return false;const symbol=typeof this.focus?.metadata?.symbol==="string"?this.focus.metadata.symbol:null,name=typeof this.focus?.metadata?.name==="string"?this.focus.metadata.name:null;this.watchlist=saveWatchlist(toggleWatchItem(this.watchlist,{...subject,galaxyId:this.galaxy.id,symbol,name}));this.field.setWatchlistMints(tokenWatchMints(this.watchlist));if(this.fieldSection.kind==="watchlist")this.enterWatchlist();else this.#applySky();this.#emit();return isWatched(this.watchlist,subject.subjectKind,subject.subjectId);}
+  isFocusedWatched(){const subject=this.#focusedWatchSubject();return Boolean(subject&&isWatched(this.watchlist,subject.subjectKind,subject.subjectId));}
 
-  toggleWatch() {
-    const mint = particleMint(this.focus);
-    if (!mint) return false;
-    const symbol = typeof this.focus?.metadata?.symbol === "string" ? this.focus.metadata.symbol : null;
-    const name = typeof this.focus?.metadata?.name === "string" ? this.focus.metadata.name : null;
-    this.watchlist = saveWatchlist(
-      toggleWatchItem(this.watchlist, {
-        mint,
-        galaxyId: this.galaxy.id,
-        symbol,
-        name,
-      }),
-    );
-    this.#applySky();
-    this.#emit();
-    return isWatched(this.watchlist, mint);
-  }
+  setGalaxy(id:GalaxyId){if(this.queryActive||!isPopulatedGalaxy(id))return false;const next=getGalaxy(id);if(next.id===this.galaxy.id&&this.fieldSection.kind==="galaxy"){this.#emit();return true;}this.galaxy=next;this.#stopVoice();this.#focusResolveSeq++;this.#prototype=createGalaxySnapshot(next,deviceBudget().field);this.#live=null;this.focus=null;this.evidence=null;this.askPrefill=this.#pendingFocusMint??"";this.result=null;this.fieldSection={kind:"galaxy",label:next.name,count:0};this.dataStatus={store:"memory-fallback",coverage:"degraded",circuitBreaker:null,disclosure:`Loading ${next.name} market coverage.`};this.mode="explore";this.#applySky();this.#emit();void this.#hydrateGalaxy(id);return true;}
+  async #hydrateGalaxy(id:GalaxyId){const seq=++this.#snapshotSeq;void unregisterStaleServiceWorkers();if(id==="galaxy-zero"){this.#live=null;this.dataStatus={store:"memory-fallback",coverage:"fresh",circuitBreaker:null,disclosure:"Protocol galaxy directory. No provider request is made from Galaxy Zero."};this.#applySky();this.#emit();return;}let delivery;try{delivery=await getIndexedGalaxySnapshot({data:{galaxyId:id}});}catch{delivery={snapshot:null,status:{store:"memory-fallback" as const,coverage:"degraded" as const,circuitBreaker:null,disclosure:"Live galaxy data is temporarily unavailable. Token search is still available."}};}if(this.#destroyed||this.queryActive||seq!==this.#snapshotSeq||id!==this.galaxy.id)return;let indexed=delivery.snapshot;if(id==="pons"&&(!indexed||indexed.particles.length===0))indexed=ponsTeachingSnapshot();const count=indexed?.particles.length??0,budget=deviceBudget().field;this.#live=indexed&&count>0?indexed:id==="pons"?ponsTeachingSnapshot():null;if(shouldReplacePrototypeField(indexed,budget)||this.#live)this.dataStatus={...delivery.status};else{const floor=visibilityFloor(budget),empty="The indexed snapshot contains no particles, so the background field remains visible while live coverage is restored.";this.dataStatus={...delivery.status,store:"memory-fallback",coverage:count>0?"stale":delivery.status.coverage,disclosure:count>0?sparseHydrateDisclosure(delivery.status.disclosure,count,floor):`${delivery.status.disclosure} ${empty}`.trim()};}this.#applySky();this.#emit();}
 
-  isFocusedWatched() {
-    return isWatched(this.watchlist, particleMint(this.focus));
-  }
+  async enterTokenSystem(tokenPlanet:FieldParticle){const mint=particleMint(tokenPlanet);if(!mint)return false;this.#stopVoice();this.#focusResolveSeq++;this.mode="explore";this.fieldSection={kind:"token-system",label:typeof tokenPlanet.metadata?.symbol==="string"?tokenPlanet.metadata.symbol:mint.slice(0,8),mint,count:0};this.dataStatus={store:"memory-fallback",coverage:"degraded",circuitBreaker:null,disclosure:"Reading retained holder-star evidence for this token planet."};this.#emit();const data=await getTokenSystem({data:{mint,galaxyId:this.galaxy.id,limit:50}});if(this.#destroyed||this.fieldSection.kind!=="token-system"||this.fieldSection.mint!==mint)return false;if(!data.ok&&data.coverage==="degraded"){this.dataStatus={store:"memory-fallback",coverage:"degraded",circuitBreaker:null,disclosure:data.disclosure};this.narrateObserved(data.disclosure);this.#emit();return false;}const snapshot=buildTokenSystemSnapshot(tokenPlanet,data);this.field.setSnapshot(snapshot);this.field.cameraState={yaw:.28,pitch:.16,distance:88,target:[0,9,0]};this.replay=createReplayState(snapshot);this.focus=null;this.evidence=null;this.fieldSection={kind:"token-system",label:typeof tokenPlanet.metadata?.symbol==="string"?tokenPlanet.metadata.symbol:mint.slice(0,8),mint,count:data.holders.length};this.dataStatus={store:"d1",coverage:data.coverage,circuitBreaker:null,disclosure:data.disclosure};this.#emit();void this.#narrateResolvedMarket(snapshot.particles[0]?.id??tokenPlanet.id,mint,true);return true;}
+  exitTokenSystem(){if(this.fieldSection.kind==="token-system")this.exitSpecialSection();}
+  exitSpecialSection(emit=true){this.fieldSection={kind:"galaxy",label:this.galaxy.name,count:this.livePlanetCount};this.mode="explore";this.focus=null;this.evidence=null;this.result=null;if(this.#baseSky){this.field.setSnapshot(this.#baseSky);this.field.cameraState={yaw:.4,pitch:.18,distance:this.galaxy.id==="galaxy-zero"?205:125,target:[0,0,0]};this.replay=createReplayState(this.#baseSky);}if(emit)this.#emit();}
+  async enterObservatory(){if(this.queryActive)return;this.#stopVoice();this.#focusResolveSeq++;this.mode="observatory";this.fieldSection={kind:"observatory",label:"Weekly Trader Observatory",count:0};this.dataStatus={store:"memory-fallback",coverage:"degraded",circuitBreaker:null,disclosure:"Reading the cached seven-day trader observatory."};this.#emit();const data=await getWeeklyTraderObservatory();if(this.#destroyed||this.mode!=="observatory")return;if(!data.ok&&data.coverage==="degraded"){this.dataStatus={store:"memory-fallback",coverage:"degraded",circuitBreaker:null,disclosure:data.disclosure};this.narrateObserved(data.disclosure);this.#emit();return;}const snapshot=buildTraderObservatorySnapshot(data);this.field.setSnapshot(snapshot);this.field.cameraState={yaw:.2,pitch:.12,distance:108,target:[0,12,0]};this.replay=createReplayState(snapshot);this.focus=null;this.evidence=null;this.fieldSection={kind:"observatory",label:"Weekly Trader Observatory",count:data.items.length};const coverage:Coverage=data.coverage==="partial"?"fresh":data.coverage;this.dataStatus={store:"d1",coverage,circuitBreaker:null,disclosure:data.disclosure};this.#emit();}
+  enterWatchlist(){if(this.queryActive)return;this.#stopVoice();this.mode="watchlist";const snapshot=buildWatchlistSnapshot(this.watchlist,this.#baseSky);this.field.setSnapshot(snapshot);this.field.cameraState={yaw:.18,pitch:.12,distance:105,target:[0,7,0]};this.replay=createReplayState(snapshot);this.focus=null;this.evidence=null;this.fieldSection={kind:"watchlist",label:"My Watchlist",count:this.watchlist.length};this.dataStatus={store:"memory-fallback",coverage:this.watchlist.length?"fresh":"empty",circuitBreaker:null,disclosure:snapshot.coverageStatement};this.#emit();}
 
-  setGalaxy(id: GalaxyId) {
-    if (this.queryActive || !isPopulatedGalaxy(id)) return false;
-    const nextGalaxy = getGalaxy(id);
-    if (nextGalaxy.id === this.galaxy.id) {
-      this.#emit();
-      return true;
-    }
-    this.galaxy = nextGalaxy;
-    this.#stopVoice();
-    this.#focusResolveSeq++;
-    this.#prototype = createGalaxySnapshot(nextGalaxy, deviceBudget().field);
-    this.#live = null;
-    this.focus = null;
-    this.evidence = null;
-    this.askPrefill = this.#pendingFocusMint ?? "";
-    this.result = null;
-    this.dataStatus = { store: "memory-fallback", coverage: "degraded", circuitBreaker: null, disclosure: `Loading ${nextGalaxy.name} market coverage.` };
-    this.mode = "explore";
-    this.#applySky();
-    this.#emit();
-    void this.#hydrateGalaxy(id);
-    return true;
-  }
-
-  async #hydrateGalaxy(id: GalaxyId) {
-    const seq = ++this.#snapshotSeq;
-    void unregisterStaleServiceWorkers();
-    if (id === "galaxy-zero") {
-      this.#live = null;
-      this.dataStatus = { store: "memory-fallback", coverage: "fresh", circuitBreaker: null, disclosure: "Protocol galaxy directory. No provider request is made from Galaxy Zero." };
-      this.#applySky();
-      this.#emit();
-      return;
-    }
-    let delivery;
-    try { delivery = await getIndexedGalaxySnapshot({ data: { galaxyId: id } }); }
-    catch { delivery = { snapshot: null, status: { store: "memory-fallback" as const, coverage: "degraded" as const, circuitBreaker: null, disclosure: "Live galaxy data is temporarily unavailable. Token search is still available." } }; }
-    if (this.#destroyed || this.queryActive || seq !== this.#snapshotSeq || id !== this.galaxy.id) return;
-    let indexedSnapshot = delivery.snapshot;
-    if (id === "pons" && (!indexedSnapshot || indexedSnapshot.particles.length === 0)) {
-      indexedSnapshot = ponsTeachingSnapshot();
-    }
-    const indexedParticleCount = indexedSnapshot?.particles.length ?? 0;
-    const budgetField = deviceBudget().field;
-    this.#live = indexedSnapshot && indexedParticleCount > 0 ? indexedSnapshot : id === "pons" ? ponsTeachingSnapshot() : null;
-    if (shouldReplacePrototypeField(indexedSnapshot, budgetField) || this.#live) {
-      this.dataStatus = {
-        ...delivery.status,
-        disclosure: delivery.status.disclosure,
-      };
-    } else {
-      const floor = visibilityFloor(budgetField);
-      const emptyNote =
-        "The indexed snapshot contains no particles, so the background field remains visible while live coverage is restored.";
-      this.dataStatus = {
-        ...delivery.status,
-        store: "memory-fallback",
-        coverage: indexedParticleCount > 0 ? "stale" : delivery.status.coverage,
-        disclosure:
-          indexedParticleCount > 0
-            ? sparseHydrateDisclosure(delivery.status.disclosure, indexedParticleCount, floor)
-            : `${delivery.status.disclosure} ${emptyNote}`.trim(),
-      };
-    }
-    this.#applySky();
-    this.#emit();
-  }
-
-  setMode(mode: FieldMode) {
-    if (mode === "query") {
-      if (this.queryActive) {
-        this.#emit();
-        return;
-      }
-      this.mode = "query";
-      this.#emit();
-      return;
-    }
-    if (this.queryActive) void this.returnToField();
-    if (mode === "replay") {
-      this.enterReplay();
-      return;
-    }
-    if (mode === "evidence") {
-      this.field.setReplay({ active: true, playing: false, cursor: this.replay.cursor });
-      this.replay = { ...this.replay, active: true, status: "paused" };
-      this.mode = "evidence";
-      this.#emit();
-      return;
-    }
-    if (this.replay.active) {
-      this.field.setReplay({ active: false, cursor: 1, playing: false });
-      this.replay = { ...this.replay, active: false, status: "paused", cursor: 1 };
-    }
-    this.mode = mode;
-    this.#emit();
-  }
-
-  enterReplay() {
-    if (this.queryActive) return;
-    const cursor = this.replay.active ? this.replay.cursor : 0;
-    this.mode = "replay";
-    this.replay = {
-      ...this.replay,
-      active: true,
-      status: "paused",
-      cursor,
-      visibleEventCount: visibleReplayCount(this.field.snapshot, cursor),
-    };
-    this.field.setReplay({ active: true, cursor, playing: false });
-    this.field.clearFocus();
-    this.#emit();
-  }
-
-  toggleReplay() {
-    if (!this.replay.active) this.enterReplay();
-    const restart = this.replay.cursor >= 1;
-    const cursor = restart ? 0 : this.replay.cursor;
-    const playing = this.replay.status !== "playing";
-    this.replay = {
-      ...this.replay,
-      active: true,
-      cursor,
-      status: playing ? "playing" : "paused",
-      visibleEventCount: visibleReplayCount(this.field.snapshot, cursor),
-    };
-    this.field.setReplay({ active: true, cursor, playing });
-    this.#emit();
-  }
-
-  seekReplay(cursor: number) {
-    const safeCursor = Math.min(1, Math.max(0, cursor));
-    this.replay = {
-      ...this.replay,
-      active: true,
-      status: "paused",
-      cursor: safeCursor,
-      visibleEventCount: visibleReplayCount(this.field.snapshot, safeCursor),
-    };
-    this.field.setReplay({ active: true, cursor: safeCursor, playing: false });
-    this.field.clearFocus();
-    this.#emit();
-  }
-
-  stepReplay(direction: -1 | 1) {
-    this.seekReplay(stepReplayCursor(this.field.snapshot, this.replay.cursor, direction));
-  }
-
-  async enterQuery() {
-    if (this.queryActive && this.organism) return;
-    this.mode = "query";
-    this.#focusResolveSeq++;
-    this.queryActive = true;
-    this.organismState = "idle";
-    this.focus = null;
-    this.evidence = null;
-    this.field.setReplay({ active: false, cursor: 1, playing: false });
-    this.#cameraSnapshot = this.field.snapshotCamera();
-    this.field.setQueryActive(true);
-    this.organism?.destroy();
-    this.organism = new LivingAlienOrganism(
-      this.field,
-      this.field.getParentPositions(),
-      this.field.getParentColors(),
-      this.field.getParticleCount(),
-    );
-    this.organism.setState("idle");
-    this.#emit();
-  }
-
-  async returnToField() {
-    this.#querySeq++;
-    this.#focusResolveSeq++;
-    this.#stopVoice();
-    this.organismState = "return";
-    this.#emit();
-    this.organism?.setState("return");
-    await this.organism?.dissolve();
-    if (this.#destroyed) return;
-    this.organism?.destroy();
-    this.organism = null;
-    this.field.setQueryActive(false);
-    if (this.#cameraSnapshot) this.field.restoreCamera(this.#cameraSnapshot);
-    this.queryActive = false;
-    this.organismState = "idle";
-    this.mode = "explore";
-    this.result = null;
-    this.#emit();
-    void this.#hydrateGalaxy(this.galaxy.id);
-  }
-
-  setMuted(muted: boolean) {
-    this.muted = muted;
-    try { globalThis.localStorage?.setItem("abulls-mute", muted ? "1" : "0"); }
-    catch { /* Muting still works for the current session. */ }
-    if (muted) this.#stopVoice();
-    this.#emit();
-  }
-
-  narrateObserved(text: string) {
-    this.#stopVoice();
-    this.#voice = speakText(text, {
-      muted: this.muted,
-      volume: this.volume,
-      onEnd: () => {
-        this.#voice = null;
-        this.#emit();
-      },
-    });
-    this.#emit();
-  }
-
-  async #narrateResolvedMarket(particleId: string, mint: string) {
-    const seq = ++this.#focusResolveSeq;
-    const result = await resolvePublicIdentifier({ data: { query: mint } });
-    if (seq !== this.#focusResolveSeq || this.focus?.id !== particleId || this.queryActive) return;
-    this.result = result;
-    this.#emit();
-    this.narrateObserved(result.spokenText);
-  }
-
-  async submitQuery(value: string) {
-    const query = value.trim();
-    if (!query) return;
-    unlockSpeech();
-    this.#stopVoice();
-    if (!this.queryActive || !this.organism) await this.enterQuery();
-    const seq = ++this.#querySeq;
-    this.result = null;
-    this.organismState = "listening";
-    this.organism?.setState("listening");
-    this.#emit();
-    await wait(280);
-    if (seq !== this.#querySeq) return;
-    this.organismState = "analyzing";
-    this.organism?.setState("analyzing");
-    this.#emit();
-    const result = await resolvePublicIdentifier({ data: { query } });
-    if (seq !== this.#querySeq) return;
-    this.result = result;
-    this.organismState = "speaking";
-    this.organism?.setState("speaking");
-    this.#emit();
-    this.#voice = speakText(result.spokenText, {
-      muted: this.muted,
-      volume: this.volume,
-      onStart: () => {
-        this.#pulseSpeech(true);
-      },
-      onBoundary: () => {
-        this.organism?.setSpeech(0.34);
-      },
-      onEnergy: (energy) => {
-        this.organism?.setSpeech(energy);
-      },
-      onEnd: () => {
-        this.#pulseSpeech(false);
-        this.organism?.setSpeech(0);
-        if (seq !== this.#querySeq) return;
-        this.organismState = "complete";
-        this.organism?.setState("complete");
-        this.#voice = null;
-        this.#emit();
-      },
-    });
-    if (this.muted) {
-      this.organismState = "complete";
-      this.organism?.setState("complete");
-      this.#emit();
-    }
-  }
-
-  #pulseSpeech(on: boolean) {
-    this.organism?.setSpeech(on ? 0.52 : 0);
-  }
-
-  #stopVoice() {
-    this.#voice?.stop();
-    this.#voice = null;
-    this.#pulseSpeech(false);
-  }
-
-  destroy() {
-    this.#destroyed = true;
-    this.#snapshotSeq++;
-    this.#querySeq++;
-    this.#focusResolveSeq++;
-    if (this.#hydrateTimer) globalThis.clearInterval(this.#hydrateTimer);
-    this.#stopVoice();
-    this.organism?.destroy();
-    this.field.destroy();
-  }
+  setMode(mode:FieldMode){if(mode==="query"){if(this.queryActive){this.#emit();return;}this.mode="query";this.#emit();return;}if(this.queryActive)void this.returnToField();if(mode==="observatory"){void this.enterObservatory();return;}if(mode==="watchlist"){this.enterWatchlist();return;}if(mode==="explore"&&this.fieldSection.kind!=="galaxy"){this.exitSpecialSection();return;}if(mode==="replay"){this.enterReplay();return;}if(mode==="evidence"){this.field.setReplay({active:true,playing:false,cursor:this.replay.cursor});this.replay={...this.replay,active:true,status:"paused"};this.mode="evidence";this.#emit();return;}if(this.replay.active){this.field.setReplay({active:false,cursor:1,playing:false});this.replay={...this.replay,active:false,status:"paused",cursor:1};}this.mode=mode;this.#emit();}
+  enterReplay(){if(this.queryActive)return;const cursor=this.replay.active?this.replay.cursor:0;this.mode="replay";this.replay={...this.replay,active:true,status:"paused",cursor,visibleEventCount:visibleReplayCount(this.field.snapshot,cursor)};this.field.setReplay({active:true,cursor,playing:false});this.field.clearFocus();this.#emit();}
+  toggleReplay(){if(!this.replay.active)this.enterReplay();const restart=this.replay.cursor>=1,cursor=restart?0:this.replay.cursor,playing=this.replay.status!=="playing";this.replay={...this.replay,active:true,cursor,status:playing?"playing":"paused",visibleEventCount:visibleReplayCount(this.field.snapshot,cursor)};this.field.setReplay({active:true,cursor,playing});this.#emit();}
+  seekReplay(cursor:number){const safe=Math.min(1,Math.max(0,cursor));this.replay={...this.replay,active:true,status:"paused",cursor:safe,visibleEventCount:visibleReplayCount(this.field.snapshot,safe)};this.field.setReplay({active:true,cursor:safe,playing:false});this.field.clearFocus();this.#emit();}
+  stepReplay(direction:-1|1){this.seekReplay(stepReplayCursor(this.field.snapshot,this.replay.cursor,direction));}
+  async enterQuery(){if(this.queryActive&&this.organism)return;this.mode="query";this.#focusResolveSeq++;this.queryActive=true;this.organismState="idle";this.focus=null;this.evidence=null;this.field.setReplay({active:false,cursor:1,playing:false});this.#cameraSnapshot=this.field.snapshotCamera();this.field.setQueryActive(true);this.organism?.destroy();this.organism=new LivingAlienOrganism(this.field,this.field.getParentPositions(),this.field.getParentColors(),this.field.getParticleCount());this.organism.setState("idle");this.#emit();}
+  async returnToField(){this.#querySeq++;this.#focusResolveSeq++;this.#stopVoice();this.organismState="return";this.#emit();this.organism?.setState("return");await this.organism?.dissolve();if(this.#destroyed)return;this.organism?.destroy();this.organism=null;this.field.setQueryActive(false);this.queryActive=false;this.organismState="idle";this.mode="explore";this.result=null;this.fieldSection={kind:"galaxy",label:this.galaxy.name,count:this.livePlanetCount};if(this.#baseSky){this.field.setSnapshot(this.#baseSky);this.field.cameraState={yaw:.4,pitch:.18,distance:this.galaxy.id==="galaxy-zero"?205:125,target:[0,0,0]};}else if(this.#cameraSnapshot)this.field.restoreCamera(this.#cameraSnapshot);this.#emit();void this.#hydrateGalaxy(this.galaxy.id);}
+  setMuted(muted:boolean){this.muted=muted;try{globalThis.localStorage?.setItem("abulls-mute",muted?"1":"0");}catch{}if(muted)this.#stopVoice();this.#emit();}
+  narrateObserved(text:string){this.#stopVoice();this.#voice=speakText(text,{muted:this.muted,volume:this.volume,onEnd:()=>{this.#voice=null;this.#emit();}});this.#emit();}
+  async #narrateResolvedMarket(particleId:string,mint:string,allowMissingFocus=false){const seq=++this.#focusResolveSeq,result=await resolvePublicIdentifier({data:{query:mint}});if(seq!==this.#focusResolveSeq||this.queryActive)return;if(!allowMissingFocus&&this.focus?.id!==particleId)return;this.result=result;this.#emit();this.narrateObserved(result.spokenText);}
+  async submitQuery(value:string){const query=value.trim();if(!query)return;unlockSpeech();this.#stopVoice();if(!this.queryActive||!this.organism)await this.enterQuery();const seq=++this.#querySeq;this.result=null;this.organismState="listening";this.organism?.setState("listening");this.#emit();await wait(280);if(seq!==this.#querySeq)return;this.organismState="analyzing";this.organism?.setState("analyzing");this.#emit();const result=await resolvePublicIdentifier({data:{query}});if(seq!==this.#querySeq)return;this.result=result;this.organismState="speaking";this.organism?.setState("speaking");this.#emit();this.#voice=speakText(result.spokenText,{muted:this.muted,volume:this.volume,onStart:()=>this.#pulseSpeech(true),onBoundary:()=>this.organism?.setSpeech(.34),onEnergy:e=>this.organism?.setSpeech(e),onEnd:()=>{this.#pulseSpeech(false);this.organism?.setSpeech(0);if(seq!==this.#querySeq)return;this.organismState="complete";this.organism?.setState("complete");this.#voice=null;this.#emit();}});if(this.muted){this.organismState="complete";this.organism?.setState("complete");this.#emit();}}
+  #pulseSpeech(on:boolean){this.organism?.setSpeech(on ? .52 : 0);}
+  #stopVoice(){this.#voice?.stop();this.#voice=null;this.#pulseSpeech(false);}
+  destroy(){this.#destroyed=true;this.#snapshotSeq++;this.#querySeq++;this.#focusResolveSeq++;if(this.#hydrateTimer)globalThis.clearInterval(this.#hydrateTimer);this.#stopVoice();this.organism?.destroy();this.field.destroy();}
 }
-
-async function unregisterStaleServiceWorkers() {
-  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
-  try {
-    const registrations = await navigator.serviceWorker.getRegistrations();
-    await Promise.all(registrations.map((registration) => registration.unregister()));
-  } catch {
-    // Best-effort cache bust for leftover PWA service workers.
-  }
-}
-
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+async function unregisterStaleServiceWorkers(){if(typeof navigator==="undefined"||!("serviceWorker" in navigator))return;try{const registrations=await navigator.serviceWorker.getRegistrations();await Promise.all(registrations.map(registration=>registration.unregister()));}catch{}}
+function wait(ms:number){return new Promise(resolve=>setTimeout(resolve,ms));}

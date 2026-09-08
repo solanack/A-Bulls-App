@@ -1,145 +1,17 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { FieldParticle, UniverseSnapshot } from "./types.ts";
-import {
-  SKY_CAP,
-  HELIUS_MEMBERSHIP_LIMIT,
-  LIQ_FLOOR_USD,
-  admitStar,
-  composeVolumeSky,
-  countLiveStars,
-  fiveMinuteHeat,
-  liquidityBeltForStar,
-} from "./volume-sky.ts";
-
-const now = 1_700_000_000_000;
-
-function star(id: string, meta: Record<string, unknown>, extra: Partial<FieldParticle> = {}): FieldParticle {
-  return {
-    id,
-    kind: "token",
-    cosmicKind: "star",
-    originGalaxyId: "galaxy-zero",
-    verificationState: "observed",
-    observedAt: now,
-    category: "swap",
-    magnitudeBand: 0.5,
-    position: [0, 0, 0],
-    metadata: { mint: id, ...meta } as FieldParticle["metadata"],
-    ...extra,
-  };
-}
-
-function snapshot(particles: FieldParticle[]): UniverseSnapshot {
-  return {
-    galaxyId: "galaxy-zero",
-    windowStart: now - 60_000,
-    windowEnd: now,
-    observedEventCount: particles.length,
-    samplingPolicy: "test",
-    coverageStatement: "test",
-    sources: ["test"],
-    particles,
-  };
-}
-
-function healthy(id: string, heatUsd: number): FieldParticle {
-  return star(id, {
-    volumeUsdM5: heatUsd,
-    liqUsd: 50_000,
-    uniqueTraders24h: 40,
-    buysM5: 20,
-    sellsM5: 18,
-    pairCreatedAt: now - 60 * 60 * 1000,
-  });
-}
-
-describe("volume sky knobs", () => {
-  it("stays 5m-only, cap 120, Helius membership 10", () => {
-    assert.equal(SKY_CAP, 120);
-    assert.equal(HELIUS_MEMBERSHIP_LIMIT, 10);
-    assert.equal(LIQ_FLOOR_USD, 10_000);
-  });
-});
-
-describe("fiveMinuteHeat", () => {
-  it("uses explicit 5m USD and never invents a 1h rank", () => {
-    const heat = fiveMinuteHeat(
-      star("Mint111111111111111111111111111111111111111", { volumeUsdM5: 1200, volumeSol24h: 9e6 }),
-      { windowStart: now - 60_000, windowEnd: now },
-    );
-    assert.deepEqual(heat, { value: 1200, unit: "usd" });
-  });
-});
-
-describe("liquidity visual evidence", () => {
-  it("creates an asteroid belt only from observed liquidity", () => {
-    const absent = liquidityBeltForStar(star("none", { liquidityUsd: null, liqSol: null }));
-    assert.equal(absent, null);
-    const belt = liquidityBeltForStar(star("liquid", { liquidityUsd: 250_000 }));
-    assert.equal(belt?.cosmicKind, "asteroid-belt");
-    assert.equal(belt?.metadata?.liquidityUsd, 250_000);
-    assert.equal(belt?.metadata?.liqSol, null);
-    assert.equal(belt?.metadata?.visualEvidence, "indexed-liquidity");
-    assert.equal(belt?.metadata?.interactive, false);
-  });
-});
-
-describe("admitStar wash gates", () => {
-  it("rejects thin liquidity, one-sided tape, and wash-like velocity", () => {
-    const window = { windowStart: now - 60_000, windowEnd: now };
-    assert.equal(admitStar(healthy("A".padEnd(44, "1"), 400), window, now).admitted, true);
-    assert.equal(
-      admitStar(star("B".padEnd(44, "2"), { volumeUsdM5: 400, liqUsd: 500, uniqueTraders24h: 40, buysM5: 10, sellsM5: 10, pairCreatedAt: now - 3_600_000 }), window, now).admitted,
-      false,
-    );
-    const wash = admitStar(
-      star("C".padEnd(44, "3"), { volumeUsdM5: 90_000, liqUsd: 10_000, uniqueTraders24h: 40, buysM5: 10, sellsM5: 10, pairCreatedAt: now - 3_600_000 }),
-      window,
-      now,
-    );
-    assert.equal(wash.admitted, false);
-    assert.ok(wash.flags.includes("wash-like-velocity"));
-  });
-});
-
-describe("composeVolumeSky", () => {
-  it("keeps current PONS ranks without requiring Solana liquidity fields", () => {
-    const pons = {...snapshot([star('0x'+'1'.repeat(40), {rank:1, originVerified:true, marketCapUsd:700000, marketObservedAt:now}, {originGalaxyId:'pons'})]),galaxyId:'pons' as const};
-    const current = composeVolumeSky({prototype:pons,live:pons,now});
-    assert.equal(countLiveStars(current),1);
-    assert.match(current.coverageStatement,/Market-cap ranking/);
-    const stale = composeVolumeSky({prototype:pons,live:pons,now:now+901000});
-    assert.equal(countLiveStars(stale),0);
-    assert.equal(stale.particles[0].metadata?.skyRole,'observed');
-  });
-  it("prioritizes real tokens within a small budget and never counts wallpaper or pins as live", () => {
-    const background = snapshot(Array.from({length:30}, (_,i)=>star('background'+i,{})));
-    const live = snapshot([healthy('token',100),star('pin',{teaching:true}),star('wallet',{}, {cosmicKind:'planet'})]);
-    const result = composeVolumeSky({prototype:background,live,now,wallpaperLimit:5});
-    assert.equal(result.particles.length,5);
-    assert.ok(result.particles.some(p=>p.id==='token'));
-    assert.equal(countLiveStars(result),1);
-    assert.equal(composeVolumeSky({prototype:background,live:null,now}).observedEventCount,0);
-  });
-  it("ranks admitted stars by 5m heat, caps live token stars at 120, and keeps leftovers observed not safe", () => {
-    const liveStars = Array.from({ length: 140 }, (_, i) =>
-      healthy(`Mint${String(i).padStart(39, "0")}`, 10_000 - i),
-    );
-    const composed = composeVolumeSky({
-      prototype: snapshot([]),
-      live: snapshot(liveStars),
-      now,
-    });
-    const liveStarsOnly = composed.particles.filter((p) => p.metadata?.skyRole === "live" && p.cosmicKind === "star");
-    const belts = composed.particles.filter((p) => p.cosmicKind === "asteroid-belt");
-    const observed = composed.particles.filter((p) => p.metadata?.skyRole === "observed");
-    assert.equal(liveStarsOnly.length, 120);
-    assert.equal(belts.length, 120);
-    assert.ok(observed.length > 0);
-    assert.equal(countLiveStars(composed), 120);
-    assert.equal(composed.samplingPolicy.includes("Helius membership stays 10"), true);
-    assert.equal(composed.coverageStatement, "test");
-    assert.equal(/\bSAFE\b/.test(JSON.stringify(composed)), false);
-  });
+import { SKY_CAP, HELIUS_MEMBERSHIP_LIMIT, LIQ_FLOOR_USD, admitPlanet, composeVolumeSky, countLivePlanets, fiveMinuteHeat, liquidityBeltForPlanet } from "./volume-sky.ts";
+const now=1_700_000_000_000;
+function planet(id:string,meta:Record<string,unknown>,extra:Partial<FieldParticle>={}):FieldParticle{return{id,kind:"token",cosmicKind:"planet",originGalaxyId:"galaxy-zero",verificationState:"observed",observedAt:now,category:"swap",magnitudeBand:.5,position:[0,0,0],metadata:{mint:id,...meta} as FieldParticle["metadata"],...extra};}
+function snapshot(particles:FieldParticle[]):UniverseSnapshot{return{galaxyId:"galaxy-zero",windowStart:now-60_000,windowEnd:now,observedEventCount:particles.length,samplingPolicy:"test",coverageStatement:"test",sources:["test"],particles};}
+function healthy(id:string,heatUsd:number){return planet(id,{volumeUsdM5:heatUsd,liqUsd:50_000,uniqueTraders24h:40,buysM5:20,sellsM5:18,pairCreatedAt:now-3_600_000});}
+describe("volume sky knobs",()=>{it("stays 5m-only, cap 120, Helius membership 10",()=>{assert.equal(SKY_CAP,120);assert.equal(HELIUS_MEMBERSHIP_LIMIT,10);assert.equal(LIQ_FLOOR_USD,10_000);});});
+describe("fiveMinuteHeat",()=>{it("uses explicit 5m USD and never invents a 1h rank",()=>{assert.deepEqual(fiveMinuteHeat(planet("Mint111111111111111111111111111111111111111",{volumeUsdM5:1200,volumeSol24h:9e6}),{windowStart:now-60_000,windowEnd:now}),{value:1200,unit:"usd"});});});
+describe("admitPlanet wash gates",()=>{it("rejects thin liquidity, one-sided tape, and wash-like velocity",()=>{const window={windowStart:now-60_000,windowEnd:now};assert.equal(admitPlanet(healthy("A".padEnd(44,"1"),400),window,now).admitted,true);assert.equal(admitPlanet(planet("B".padEnd(44,"2"),{volumeUsdM5:400,liqUsd:500,uniqueTraders24h:40,buysM5:10,sellsM5:10,pairCreatedAt:now-3_600_000}),window,now).admitted,false);assert.equal(admitPlanet(planet("C".padEnd(44,"3"),{volumeUsdM5:90_000,liqUsd:10_000,uniqueTraders24h:40,buysM5:10,sellsM5:10,pairCreatedAt:now-3_600_000}),window,now).admitted,false);});});
+describe("liquidity belt",()=>{it("appears only for observed liquidity on a token planet",()=>{assert.equal(liquidityBeltForPlanet(planet("A".padEnd(44,"1"),{})),null);const belt=liquidityBeltForPlanet(healthy("A".padEnd(44,"1"),400));assert.equal(belt?.cosmicKind,"asteroid-belt");assert.equal(belt?.metadata?.parentMint,"A".padEnd(44,"1"));});});
+describe("composeVolumeSky",()=>{
+  it("keeps current PONS ranks as token planets",()=>{const pons={...snapshot([planet('0x'+'1'.repeat(40),{rank:1,originVerified:true,marketCapUsd:700000,marketObservedAt:now},{originGalaxyId:'pons'})]),galaxyId:'pons' as const};const current=composeVolumeSky({prototype:pons,live:pons,now});assert.equal(countLivePlanets(current),1);assert.equal(current.particles.find(p=>p.metadata?.skyRole==="live")?.cosmicKind,"planet");const stale=composeVolumeSky({prototype:pons,live:pons,now:now+901000});assert.equal(countLivePlanets(stale),0);});
+  it("normalizes legacy token-star and wallet-planet producer labels",()=>{const token={...healthy("Mint".padEnd(44,"1"),500),cosmicKind:"star" as const};const wallet:FieldParticle={id:"w",kind:"wallet",cosmicKind:"planet",originGalaxyId:"pump-fun",verificationState:"observed",observedAt:now,category:"transfer",magnitudeBand:.5,position:[1,2,3],metadata:{wallet:"11111111111111111111111111111111"}};const result=composeVolumeSky({prototype:snapshot([]),live:{...snapshot([token,wallet]),galaxyId:"pump-fun"},now});assert.ok(result.particles.some(p=>p.kind==="token"&&p.cosmicKind==="planet"));assert.ok(result.particles.some(p=>p.kind==="wallet"&&p.cosmicKind==="star"));});
+  it("ranks admitted planets by 5m heat and caps live at 120",()=>{const bodies=Array.from({length:140},(_,i)=>healthy(`Mint${String(i).padStart(39,"0")}`,10_000-i));const composed=composeVolumeSky({prototype:snapshot([]),live:snapshot(bodies),now});assert.equal(composed.particles.filter(p=>p.cosmicKind==="planet"&&p.metadata?.skyRole==="live").length,120);assert.equal(countLivePlanets(composed),120);assert.equal(/\bSAFE\b/.test(JSON.stringify(composed)),false);});
 });

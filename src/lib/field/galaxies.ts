@@ -1,5 +1,4 @@
 import type { CosmicObjectKind, GalaxyDefinition, GalaxyId } from "./types";
-
 import { mintKey } from "./watchlist.ts";
 
 export const GALAXIES = [
@@ -21,7 +20,7 @@ export const GALAXIES = [
     status: "populated",
     seed: 861,
     accent: "var(--color-accent)",
-    description: "Tokens and programs are durable bodies; wallets orbit them and transactions move as trails.",
+    description: "Token planets hold local skies of observed wallet stars; indexed trades cross them as comets.",
     coverage: "Existing bounded Solana field window",
     sources: ["Solana RPC", "Helius indexed history", "DexScreener"],
   },
@@ -32,7 +31,7 @@ export const GALAXIES = [
     status: "populated",
     seed: 2205,
     accent: "var(--color-live)",
-    description: "The first additional galaxy, populated from the indexed pump.fun lifecycle feed.",
+    description: "Token planets from the indexed pump.fun lifecycle feed, with wallet-star and Replay evidence where retained.",
     coverage: "Indexed births, trades, graduations, migrations, and terminal states",
     sources: ["pump.fun indexed stream", "Helius indexed history"],
   },
@@ -43,8 +42,7 @@ export const GALAXIES = [
     status: "populated",
     seed: 4663,
     accent: "#c7f05f",
-    description:
-      "Tokens proven to originate from verified PONS factory events on Robinhood Chain.",
+    description: "Token planets proven to originate from verified PONS factory events on Robinhood Chain.",
     coverage: "Verified V1 and V2 factory launches with explicit finality",
     sources: ["Robinhood Chain RPC", "verified PONS factories"],
   },
@@ -75,20 +73,20 @@ export const COSMOLOGY_RULES: Record<
     visualRule: "Largest durable body; permanent launch origin",
   },
   star: {
-    onChainMeaning: "Token or mint",
-    visualRule: "Bright body; size/brightness follow observed market depth and activity",
+    onChainMeaning: "Public wallet / observed holder or trader",
+    visualRule: "Bright sky body around token planets; size follows observed relationship weight when available",
   },
   planet: {
-    onChainMeaning: "Important public holder wallet",
-    visualRule: "Solid orbiting body; size follows observed holder share when available",
+    onChainMeaning: "Token or mint",
+    visualRule: "Major navigable world; touch to enter its local holder/trader sky",
   },
   moon: {
     onChainMeaning: "Related NFT collection",
-    visualRule: "Small body orbiting its relevant planet or star",
+    visualRule: "Small body orbiting the relevant token planet",
   },
   "asteroid-belt": {
     onChainMeaning: "Liquidity pools and LP positions",
-    visualRule: "Wide ring; radius/density follow observed liquidity depth",
+    visualRule: "Wide ring around a token planet; radius/density follow observed liquidity depth",
   },
   comet: {
     onChainMeaning: "Near-real-time large trade",
@@ -96,7 +94,7 @@ export const COSMOLOGY_RULES: Record<
   },
   "black-hole": {
     onChainMeaning: "Rugged or dead token",
-    visualRule: "Dark center with a visible accretion ring; requires indexed collapse evidence",
+    visualRule: "Collapsed token world with dark center and visible accretion ring; requires indexed collapse evidence",
   },
   supernova: {
     onChainMeaning: "Fast pump-and-death cycle",
@@ -104,10 +102,10 @@ export const COSMOLOGY_RULES: Record<
   },
   wormhole: {
     onChainMeaning: "Migration or bridge event",
-    visualRule: "Large portal ring; launch origin remains immutable",
+    visualRule: "Large portal ring; token planet keeps immutable launch origin",
   },
   ghost: {
-    onChainMeaning: "Dormant or collapsed object",
+    onChainMeaning: "Dormant or collapsed historical trace",
     visualRule: "Faint translucent trace linked to indexed historical evidence",
   },
   dust: {
@@ -137,10 +135,11 @@ export function cosmicKindForEntity(kind: string): CosmicObjectKind {
   switch (kind) {
     case "token":
     case "mint":
-      return "star";
+      return "planet";
     case "wallet":
     case "holder":
-      return "planet";
+    case "trader":
+      return "star";
     case "nft":
     case "collection":
       return "moon";
@@ -177,9 +176,7 @@ export function preserveLaunchOrigin(
   observedOrigin: GalaxyId,
 ): GalaxyId {
   if (existingOrigin && existingOrigin !== observedOrigin) {
-    throw new Error(
-      `Launch origin is immutable: ${existingOrigin} cannot become ${observedOrigin}`,
-    );
+    throw new Error(`Launch origin is immutable: ${existingOrigin} cannot become ${observedOrigin}`);
   }
   return existingOrigin ?? observedOrigin;
 }
@@ -191,7 +188,8 @@ export function canonicalUniverseId(
 ) {
   const normalized = mintKey(sourceId);
   if (!normalized) throw new Error("Universe identity requires a public source id");
-  return kind === "planet"
-    ? `planet:${normalized}`
+  // Public wallet identity is stable across token planets and launch galaxies.
+  return kind === "star"
+    ? `star:${normalized}`
     : `${kind}:${originGalaxyId}:${normalized}`;
 }
