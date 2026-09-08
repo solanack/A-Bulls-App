@@ -23,6 +23,14 @@ test("the field favors crisp rendering and ignores decorative wallpaper", async 
     read("src/lib/field/hash.ts"),
   ]);
   assert.match(field, /antialias:\s*true/);
+  assert.match(field, /retrying compatibility mode/);
   assert.match(field, /skyRole === "wallpaper"/);
   assert.match(budget, /dpr:\s*2/);
+});
+
+test("live intelligence remains available when WebGL cannot initialize", async () => {
+  const shell = await read("src/components/app-shell.tsx");
+  assert.match(shell, /graphics unavailable; live intelligence fallback active/);
+  assert.match(shell, /await resolvePublicIdentifier/);
+  assert.match(shell, /data-field-fallback/);
 });
