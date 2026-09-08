@@ -7,6 +7,7 @@ const PATH='/api/intelligence/trader-observatory';
 const CACHE_KEY='trader-observatory:7d:v1';
 const WINDOW_SECONDS=7*86400;
 const CACHE_SECONDS=1800;
+const INPUT_ROW_LIMIT=50000;
 const SOLANA_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const s=value=>String(value??'').trim();
 const n=value=>Number.isFinite(Number(value))?Number(value):0;
@@ -68,18 +69,22 @@ export function rankWeeklyTraders(rows=[],{limit=50,windowStartMs=0,windowEndMs=
 }
 
 async function loadTrades(db,cutoffSec){
-  let rows=await all(db.prepare(`SELECT wallet,mint,side,token_amount,sol_amount,block_time,signature,source FROM pump_trades WHERE block_time>=? AND wallet IS NOT NULL AND mint IS NOT NULL AND side IN ('buy','sell') ORDER BY block_time ASC,event_id ASC LIMIT 50000`).bind(cutoffSec));
-  if(rows.length)return rows;
-  rows=await all(db.prepare(`SELECT wallet,mint,token_delta,sol_delta,block_time,signature,source FROM bull_wallet_events WHERE block_time>=? AND wallet IS NOT NULL AND mint<>'' AND token_delta<>0 AND sol_delta<>0 ORDER BY block_time ASC,id ASC LIMIT 50000`).bind(cutoffSec));
-  return rows.map(row=>({...row,side:n(row.token_delta)>0?'buy':'sell',token_amount:Math.abs(n(row.token_delta)),sol_amount:Math.abs(n(row.sol_delta))}));
+  let rows=await all(db.prepare(`SELECT wallet,mint,side,token_amount,sol_amount,block_time,signature,source FROM pump_trades WHERE block_time>=? AND wallet IS NOT NULL AND mint IS NOT NULL AND side IN ('buy','sell') ORDER BY block_time DESC,event_id DESC LIMIT ?`).bind(cutoffSec,INPUT_ROW_LIMIT));
+  if(rows.length)return {rows,inputSource:'pump_trades'};
+  rows=await all(db.prepare(`SELECT wallet,mint,token_delta,sol_delta,block_time,signature,source FROM bull_wallet_events WHERE block_time>=? AND wallet IS NOT NULL AND mint<>'' AND token_delta<>0 AND sol_delta<>0 ORDER BY block_time DESC,id DESC LIMIT ?`).bind(cutoffSec,INPUT_ROW_LIMIT));
+  return {rows:rows.map(row=>({...row,side:n(row.token_delta)>0?'buy':'sell',token_amount:Math.abs(n(row.token_delta)),sol_amount:Math.abs(n(row.sol_delta))})),inputSource:'bull_wallet_events'};
 }
 
 export async function refreshTraderObservatory(env={},nowMs=Date.now()){
   const db=intelligenceDb(env);if(!db)return Object.freeze({ok:false,error:'database_unavailable'});
   const windowEndMs=Math.trunc(nowMs),windowStartMs=windowEndMs-WINDOW_SECONDS*1000;
-  const rows=await loadTrades(db,Math.floor(windowStartMs/1000));
+  const loaded=await loadTrades(db,Math.floor(windowStartMs/1000)),rows=loaded.rows;
   const items=rankWeeklyTraders(rows,{limit:50,windowStartMs,windowEndMs});
-  const generatedAt=Math.floor(nowMs/1000);
+  const generatedAt=Math.floor(nowMs/1000),mayBeTruncated=rows.length>=INPUT_ROW_LIMIT;
+  const sample={inputSource:loaded.inputSource,rowsRead:rows.length,rowLimit:INPUT_ROW_LIMIT,mayBeTruncated};
+  const sampleDisclosure=mayBeTruncated
+    ? `The ${INPUT_ROW_LIMIT}-row input cap was reached, so older trades inside the seven-day window may be omitted.`
+    : `The bounded input read ${rows.length} retained trades, below the ${INPUT_ROW_LIMIT}-row cap.`;
   const payload={
     ok:true,
     coverage:items.length?'partial':'empty',
@@ -87,10 +92,11 @@ export async function refreshTraderObservatory(env={},nowMs=Date.now()){
     method:'matched-in-window-average-cost-realized-sol',
     items,
     source:'a-bulls-indexed-solana',
+    sample,
     fomoReference:{provider:'fomo.family',timeframe:'7D',status:'reference-only',ingested:false},
     disclosure:items.length
-      ? 'Weekly trader stars rank realized SOL from sells matched to buys inside the same retained seven-day indexed window. Unmatched sells are excluded. This is an observed research ranking, not a skill score, identity claim, recommendation, or copy-trading instruction.'
-      : 'No wallets have enough matched indexed buy/sell evidence in the retained seven-day window to rank. No trader ranking was invented.',
+      ? `Weekly trader stars rank realized SOL from sells matched to buys inside the same retained seven-day indexed window. Unmatched sells are excluded. ${sampleDisclosure} Input source: ${loaded.inputSource}. This is an observed research ranking, not a skill score, identity claim, recommendation, or copy-trading instruction.`
+      : `No wallets have enough matched indexed buy/sell evidence in the retained seven-day window to rank. ${sampleDisclosure} Input source: ${loaded.inputSource}. No trader ranking was invented.`,
   };
   await db.prepare(`INSERT INTO bull_intelligence_cache(cache_key,payload_json,source,coverage,generated_at,expires_at) VALUES(?,?,?,?,?,?) ON CONFLICT(cache_key) DO UPDATE SET payload_json=excluded.payload_json,source=excluded.source,coverage=excluded.coverage,generated_at=excluded.generated_at,expires_at=excluded.expires_at`).bind(CACHE_KEY,JSON.stringify(payload),'a-bulls-indexed-solana',payload.coverage,generatedAt,generatedAt+CACHE_SECONDS).run();
   return payload;
@@ -100,7 +106,7 @@ export async function handleTraderObservatoryRequest(request,env={}){
   const url=new URL(request.url);if(url.pathname!==PATH||request.method!=='GET')return null;
   const db=intelligenceDb(env);if(!db)return json({ok:false,error:'database_unavailable',coverage:'degraded',items:[],disclosure:'The Intelligence D1 binding is unavailable. No public leaderboard fallback was scraped.'},503);
   let row=null;try{row=await db.prepare('SELECT payload_json,generated_at,expires_at FROM bull_intelligence_cache WHERE cache_key=? LIMIT 1').bind(CACHE_KEY).first();}catch{}
-  if(!row)return json({ok:true,coverage:'empty',items:[],method:'matched-in-window-average-cost-realized-sol',source:'a-bulls-indexed-solana',fomoReference:{provider:'fomo.family',timeframe:'7D',status:'reference-only',ingested:false},disclosure:'The weekly trader cache has not been produced yet. No Fomo data was scraped and no ranking was invented.'},200,'public, max-age=15, stale-while-revalidate=30');
+  if(!row)return json({ok:true,coverage:'empty',items:[],method:'matched-in-window-average-cost-realized-sol',source:'a-bulls-indexed-solana',sample:null,fomoReference:{provider:'fomo.family',timeframe:'7D',status:'reference-only',ingested:false},disclosure:'The weekly trader cache has not been produced yet. No Fomo data was scraped and no ranking was invented.'},200,'public, max-age=15, stale-while-revalidate=30');
   let payload;try{payload=JSON.parse(s(row.payload_json)||'{}');}catch{payload={ok:false,coverage:'degraded',items:[],disclosure:'Cached trader observatory payload could not be decoded.'};}
   const stale=Math.floor(Date.now()/1000)>n(row.expires_at);
   return json({...payload,coverage:stale&&payload.coverage!=='empty'?'stale':payload.coverage,cache:stale?'stale':'fresh'},200,'public, max-age=15, stale-while-revalidate=30');
