@@ -1,7 +1,6 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
-import { MODULE_BOOT_INLINE } from "@/lib/field/module-boot-inline";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "A Bulls App";
@@ -34,11 +33,6 @@ export const Route = createRootRoute({
       { rel: "stylesheet", href: appCss },
       { rel: "manifest", href: "/__grok/manifest.webmanifest" },
       { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
-    ],
-    scripts: [
-      {
-        children: MODULE_BOOT_INLINE,
-      },
     ],
   }),
   component: () => (
