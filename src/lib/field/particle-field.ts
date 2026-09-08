@@ -69,9 +69,9 @@ void main() {
   if (vReplayVisible < 0.5) discard;
   float d = length(vLocal);
   if (d > 1.0) discard;
-  float core = smoothstep(0.42, 0.0, d);
-  float halo = smoothstep(1.0, 0.22, d);
-  float alpha = max(core, halo * 0.34);
+  float core = smoothstep(0.52, 0.06, d);
+  float halo = smoothstep(0.94, 0.38, d);
+  float alpha = max(core, halo * 0.18);
   gl_FragColor = vec4(vColor * (0.78 + core * 0.55), alpha);
 }
 `;
@@ -155,7 +155,7 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
     cats[i] = CATEGORY_INDEX[entity.category] ?? 6;
     observed[i] = clamp((entity.observedAt - snapshot.windowStart) / duration, 0, 1);
   });
-  const geometry = new THREE.CircleGeometry(1, 10);
+  const geometry = new THREE.CircleGeometry(1, 16);
   geometry.setAttribute("aCat", new THREE.InstancedBufferAttribute(cats, 1));
   geometry.setAttribute("aObserved", new THREE.InstancedBufferAttribute(observed, 1));
   geometry.setAttribute("aColor", new THREE.InstancedBufferAttribute(colors, 3));
@@ -256,7 +256,7 @@ export class ParticleFieldRenderer {
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       alpha: false,
-      antialias: false,
+      antialias: true,
       powerPreference: "high-performance",
       premultipliedAlpha: true,
     });
@@ -541,6 +541,10 @@ export class ParticleFieldRenderer {
     let bestAnyD = 72;
     const pos = this.basePositions;
     for (let i = 0; i < entities.length; i++) {
+      const metadata = entities[i].metadata;
+      const targetGalaxy = typeof metadata?.targetGalaxyId === "string";
+      const liveIdentity = Boolean(particleMint(entities[i]) || entities[i].eventId);
+      if (metadata?.interactive === false || (metadata?.skyRole === "wallpaper" && !targetGalaxy && !liveIdentity)) continue;
       if (this.replayActive) {
         const duration = Math.max(1, this.snapshot.windowEnd - this.snapshot.windowStart);
         const observed = (entities[i].observedAt - this.snapshot.windowStart) / duration;

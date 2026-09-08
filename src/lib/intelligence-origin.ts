@@ -1,6 +1,6 @@
 export const INTELLIGENCE_ORIGINS = Object.freeze([
-  "https://black-bull-run-sol.ckdsigns1.workers.dev",
   "https://abullsapp.com",
+  "https://black-bull-run-sol.ckdsigns1.workers.dev",
 ]);
 
 export async function fetchIntelligence(path: string, init: RequestInit = {}) {

@@ -85,6 +85,7 @@ export class FieldOS {
   #live: UniverseSnapshot | null = null;
   #hydrateTimer = 0;
   #lastSpokenId: string | null = null;
+  #focusResolveSeq = 0;
   #pendingFocusMint: string | null = null;
 
   constructor(host: HTMLElement, listener: FieldOSListener) {
@@ -126,6 +127,7 @@ export class FieldOS {
       if (particle && mint) this.askPrefill = mint;
       this.#emit();
       if (!particle) {
+        this.#focusResolveSeq++;
         this.#lastSpokenId = null;
         return;
       }
@@ -137,9 +139,13 @@ export class FieldOS {
       if (!this.queryActive && particle.id !== this.#lastSpokenId) {
         this.#lastSpokenId = particle.id;
         unlockSpeech();
-        this.narrateObserved(target
-          ? `${String(particle.metadata?.name || "Protocol galaxy")}. ${String(particle.metadata?.description || "Tap again to enter.")} Tap again to enter.`
-          : speakObservedParticle(particle, this.field.snapshot));
+        if (target) {
+          this.narrateObserved(`${String(particle.metadata?.name || "Protocol galaxy")}. ${String(particle.metadata?.description || "Tap again to enter.")} Tap again to enter.`);
+        } else if (mint && particle.metadata?.skyRole !== "wallpaper") {
+          void this.#narrateResolvedMarket(particle.id, mint);
+        } else {
+          this.narrateObserved(speakObservedParticle(particle, this.field.snapshot));
+        }
       }
     };
     this.field.onReplayTick = (cursor, playing) => {
@@ -246,6 +252,7 @@ export class FieldOS {
       return true;
     }
     this.galaxy = nextGalaxy;
+    this.#focusResolveSeq++;
     this.#prototype = createGalaxySnapshot(nextGalaxy, deviceBudget().field);
     this.#live = null;
     this.focus = null;
@@ -384,6 +391,7 @@ export class FieldOS {
   async enterQuery() {
     if (this.queryActive && this.organism) return;
     this.mode = "query";
+    this.#focusResolveSeq++;
     this.queryActive = true;
     this.organismState = "idle";
     this.focus = null;
@@ -437,6 +445,15 @@ export class FieldOS {
       },
     });
     this.#emit();
+  }
+
+  async #narrateResolvedMarket(particleId: string, mint: string) {
+    const seq = ++this.#focusResolveSeq;
+    const result = await resolvePublicIdentifier({ data: { query: mint } });
+    if (seq !== this.#focusResolveSeq || this.focus?.id !== particleId || this.queryActive) return;
+    this.result = result;
+    this.#emit();
+    this.narrateObserved(result.spokenText);
   }
 
   async submitQuery(value: string) {
@@ -501,6 +518,7 @@ export class FieldOS {
 
   destroy() {
     this.#querySeq++;
+    this.#focusResolveSeq++;
     if (this.#hydrateTimer) globalThis.clearInterval(this.#hydrateTimer);
     this.#stopVoice();
     this.organism?.destroy();
@@ -521,4 +539,3 @@ async function unregisterStaleServiceWorkers() {
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
