@@ -38,15 +38,32 @@ describe("Grey cosmology speech", () => {
     assert.match(speech, /not a live token/i);
   });
 
-  it("describes planets as public wallets without claiming ownership", () => {
+  it("describes token planets as tokens rather than public wallets", () => {
     const speech = speakObservedParticle(
-      particle("planet", { wallet: "Wallet1111111111111111111111111111111111111", linkedMints: ["Mint1"] }),
+      particle("planet", {
+        mint: "Mint111111111111111111111111111111111111111",
+        symbol: "TOK",
+      }),
       snapshot,
     );
     assert.match(speech, /^PLANET\./);
+    assert.match(speech, /token \/ mint/i);
+    assert.match(speech, /wallet-star sky/i);
+    assert.doesNotMatch(speech, /public wallet identity/i);
+  });
+
+  it("describes wallet stars as public-wallet evidence without claiming ownership", () => {
+    const speech = speakObservedParticle(
+      particle("star", {
+        wallet: "Wallet1111111111111111111111111111111111111",
+        linkedMints: ["Mint1"],
+      }),
+      snapshot,
+    );
+    assert.match(speech, /^STAR\./);
     assert.match(speech, /public wallet/i);
     assert.match(speech, /not proof/i);
-    assert.doesNotMatch(speech, /market cap/i);
+    assert.match(speech, /identity or ownership/i);
   });
 
   it("describes migration as a wormhole while preserving launch origin", () => {
@@ -63,6 +80,6 @@ describe("Grey cosmology speech", () => {
     const speech = speakObservedParticle(particle("asteroid-belt", { liquidityUsd: null, liqSol: null }), snapshot);
     assert.match(speech, /^ASTEROID BELT\./);
     assert.match(speech, /unavailable/i);
-    assert.match(speech, /should not be certified/i);
+    assert.match(speech, /not certified/i);
   });
 });
