@@ -69,6 +69,13 @@ export type TraderObservatoryItem = {
   lastObservedAt: number;
 };
 
+export type TraderObservatorySample = {
+  inputSource: "pump_trades" | "bull_wallet_events";
+  rowsRead: number;
+  rowLimit: number;
+  mayBeTruncated: boolean;
+};
+
 export type TraderObservatoryResponse = {
   ok: boolean;
   coverage: "fresh" | "partial" | "stale" | "empty" | "degraded";
@@ -76,6 +83,7 @@ export type TraderObservatoryResponse = {
   method?: string;
   items: readonly TraderObservatoryItem[];
   source?: string;
+  sample?: TraderObservatorySample | null;
   fomoReference?: {
     provider: "fomo.family";
     timeframe: "7D";
