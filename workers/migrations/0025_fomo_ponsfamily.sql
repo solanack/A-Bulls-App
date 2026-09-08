@@ -81,7 +81,7 @@ DROP TABLE pons_rank_snapshots_v1;
 CREATE INDEX idx_pons_rank_snapshot_time ON pons_rank_snapshots(observed_at DESC,rank);
 
 UPDATE intelligence_universes
-SET name='PonsFamily',
+SET label='PonsFamily',
     description='Trending verified PONS-origin tokens ranked by fresh reported 24-hour volume after market-cap and holder-count qualification.',
     selector_version='ponsfamily-volume-holders-v1',
     refresh_seconds=900
