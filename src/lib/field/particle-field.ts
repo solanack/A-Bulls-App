@@ -253,26 +253,16 @@ export class ParticleFieldRenderer {
     });
     host.append(canvas);
 
-    try {
-      this.renderer = new THREE.WebGLRenderer({
-        canvas,
-        alpha: false,
-        antialias: true,
-        powerPreference: "high-performance",
-        premultipliedAlpha: true,
-      });
-    } catch (error) {
-      console.warn("[field-renderer] antialias context unavailable; retrying compatibility mode", {
-        error: String(error),
-      });
-      this.renderer = new THREE.WebGLRenderer({
-        canvas,
-        alpha: false,
-        antialias: false,
-        powerPreference: "default",
-        premultipliedAlpha: true,
-      });
-    }
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      alpha: false,
+      antialias: false,
+      depth: true,
+      stencil: false,
+      powerPreference: "high-performance",
+      premultipliedAlpha: true,
+      preserveDrawingBuffer: false,
+    });
     this.renderer.setClearColor(0x030307, 1);
     this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, budget.dpr));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;

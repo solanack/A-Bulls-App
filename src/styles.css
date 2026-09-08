@@ -135,11 +135,6 @@
   touch-action: none;
 }
 
-.fallback-particle-field {
-  z-index: 1;
-  background: #030307;
-}
-
 .field-shell__chrome {
   position: absolute;
   inset: 0;

@@ -35,7 +35,7 @@ export function deviceBudget() {
   );
   const reduced =
     globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-  if (reduced || saveData || memory < 4) return { field: 1600, organism: 260000, dpr: 1.5 };
-  if (memory >= 8) return { field: 4200, organism: 660000, dpr: 2 };
-  return { field: 2800, organism: 450000, dpr: 1.75 };
+  if (reduced || saveData || memory < 4) return { field: 1800, organism: 288000, dpr: 1.2 };
+  if (memory >= 8) return { field: 4200, organism: 660000, dpr: 1.75 };
+  return { field: 2800, organism: 450000, dpr: 1.5 };
 }

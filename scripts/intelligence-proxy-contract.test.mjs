@@ -22,21 +22,16 @@ test("the field favors crisp rendering and ignores decorative wallpaper", async 
     read("src/lib/field/particle-field.ts"),
     read("src/lib/field/hash.ts"),
   ]);
-  assert.match(field, /antialias:\s*true/);
-  assert.match(field, /retrying compatibility mode/);
+  assert.match(field, /antialias:\s*false/);
+  assert.match(field, /stencil:\s*false/);
   assert.match(field, /skyRole === "wallpaper"/);
-  assert.match(budget, /dpr:\s*2/);
+  assert.match(budget, /dpr:\s*1\.75/);
 });
 
 test("live intelligence remains available when WebGL cannot initialize", async () => {
-  const [shell, fallback] = await Promise.all([
-    read("src/components/app-shell.tsx"),
-    read("src/components/fallback-particle-field.tsx"),
-  ]);
+  const shell = await read("src/components/app-shell.tsx");
   assert.match(shell, /graphics unavailable; live intelligence fallback active/);
   assert.match(shell, /await resolvePublicIdentifier/);
   assert.match(shell, /data-field-fallback/);
-  assert.match(shell, /FallbackParticleField/);
-  assert.match(fallback, /Interactive compatibility particle field/);
-  assert.match(fallback, /requestAnimationFrame/);
+  assert.doesNotMatch(shell, /FallbackParticleField/);
 });
