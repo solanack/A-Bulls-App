@@ -17,7 +17,9 @@ FIELD_QUERY_CACHE_TTL_SECONDS = "60"
 
 FOMO_GALAXY_ENABLED = "true"
 FOMO_REFRESH_MINUTES = "180"
-FOMO_PROFILE_LOOKUPS_PER_REFRESH = "1"
+FOMO_PROFILE_LOOKUPS_PER_REFRESH = "0"
+FOMO_BOOTSTRAP_ENRICH_LIMIT = "10"
+FOMO_ENRICH_TRADERS_PER_REFRESH = "1"
 FOMOAPI_MONTHLY_CREDITS = "1000"
 FOMOAPI_BREAKER_RATIO = "0.80"
 
@@ -27,8 +29,9 @@ PONS_RANK_ENABLED = "true"
 PONS_MARKET_CAP_MIN_USD = "75000"
 PONS_MIN_HOLDERS = "750"
 PONS_RANK_MAX_MEMBERS = "50"
-PONS_TRENDING_ENRICH_LIMIT = "12"
+PONS_TRENDING_ENRICH_LIMIT = "30"
 PONS_TRENDING_METRIC_MAX_AGE_SECONDS = "3600"
+PONS_BLOCKSCOUT_DISCOVERY_PAGES = "4"
 PONS_RANK_REFRESH_MINUTES = "15"
 PONS_CONFIRMATIONS = "64"
 PONS_BLOCK_CHUNK = "2000"
@@ -66,10 +69,10 @@ PUMP_HELIUS_WEBHOOK_ID = "06af243a-c7a6-445f-8966-31d3d46b9ddc"
 
 PONS_BOOTSTRAP_LOOKBACK_BLOCKS = "16000"
 PONS_SCAN_CHUNKS_PER_RUN = "8"
-# npx wrangler secret put PONS_RPC_URL
-# npx wrangler secret put PONS_BITQUERY_TOKEN
-# npx wrangler secret put PONS_INDEX_SECRET
-# npx wrangler secret put FOMOAPI_API_KEY
+# Optional private RPC override: npx wrangler secret put PONS_RPC_URL --config workers/wrangler.production.toml
+# Optional legacy Bitquery holder fallback is no longer required for PonsFamily self-population.
+# Protected manual ranking route only: npx wrangler secret put PONS_INDEX_SECRET --config workers/wrangler.production.toml
+# Required for Fomo Galaxy source data: npx wrangler secret put FOMOAPI_API_KEY --config workers/wrangler.production.toml
 
 Z500_UNIVERSE_ENABLED = "false"
 Z500_HELIUS_ROTATION_ENABLED = "false"

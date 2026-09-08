@@ -3,9 +3,9 @@ import { fetchIntelligence } from "../intelligence-origin.ts";
 
 export type FomoTopToken={mint?:string|null;address?:string|null;symbol?:string|null;name?:string|null;reported?:boolean};
 export type FomoTrader={rank:number;handle:string;displayName:string;reportedPnlUsd:number|null;reportedVolumeUsd:number|null;reportedTradeCount:number|null;followerCount:number|null;solanaWallet:string|null;evmWallet:string|null;avatarUrl:string|null;coverPhotoUrl?:string|null;thumbhash?:string|null;topTokens:readonly FomoTopToken[];capturedAt:number;source:"fomoapi.io"};
-export type FomoGalaxyResponse={ok:boolean;coverage:"fresh"|"empty"|"degraded";items:readonly FomoTrader[];source?:string;capturedAt?:number|null;disclosure:string;error?:string};
-export type FomoPosition={rank:number;mint:string;symbol:string|null;name:string|null;sourceKind:"fomo-reported"|"a-bulls-observed"|"fomo-reported+a-bulls-observed";observedNetTokenFlow:number|null;tradeCount:number|null;eventCount:number|null;lastObservedAt:number|null};
-export type FomoTrade={signature:string|null;wallet:string;mint:string;side:"buy"|"sell";solAmount:number;tokenAmount:number;priceSol:number|null;observedAt:number;source:string};
+export type FomoGalaxyResponse={ok:boolean;coverage:"fresh"|"empty"|"degraded";items:readonly FomoTrader[];source?:string;capturedAt?:number|null;disclosure:string;error?:string;configuration?:{providerConfigured?:boolean;scheduled?:boolean;lastSuccessAt?:number|null}};
+export type FomoPosition={rank:number;mint:string;symbol:string|null;name:string|null;chain?:string|null;networkId?:string|null;sourceKind:"fomo-reported"|"a-bulls-observed"|"fomo-reported+a-bulls-observed";amount?:number|null;priceUsd?:number|null;valueUsd?:number|null;change24h?:number|null;observedNetTokenFlow:number|null;tradeCount:number|null;eventCount:number|null;lastObservedAt:number|null};
+export type FomoTrade={signature:string|null;wallet:string;mint:string;side:"buy"|"sell";solAmount:number;tokenAmount:number;priceSol:number|null;priceUsd?:number|null;status?:string|null;realizedPnlUsd?:number|null;unrealizedPnlUsd?:number|null;observedAt:number;source:string;sourceKind?:"fomo-reported-position-event"|"a-bulls-observed"};
 export type FomoTraderSystemResponse={ok:boolean;coverage:"partial"|"empty"|"degraded";trader?:FomoTrader;positions:readonly FomoPosition[];latestTrades:readonly FomoTrade[];source?:string;disclosure:string;error?:string};
 
 export const getFomoGalaxy=createServerFn({method:"GET"}).handler(async():Promise<FomoGalaxyResponse>=>{

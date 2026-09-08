@@ -26,12 +26,14 @@ import { handlePonsGalaxyRequest, maintainPonsIndex } from './intelligence-pons-
 import { handleThesisRequest, resolveDueTheses } from './intelligence-theses.mjs';
 import { handleTokenSystemRequest } from './intelligence-token-system.mjs';
 import { handleTraderObservatoryRequest } from './intelligence-trader-observatory.mjs';
-import { handleFomoGalaxyRequest, refreshFomoGalaxy } from './intelligence-fomo-galaxy.mjs';
-import { handlePonsFamilyRequest, refreshPonsFamily } from './intelligence-ponsfamily-ranking.mjs';
+import { handleFomoGalaxyRequest } from './intelligence-fomo-galaxy.mjs';
+import { handlePonsFamilyRequest } from './intelligence-ponsfamily-ranking.mjs';
+import { handleFomoLiveRequest, refreshFomoLive } from './intelligence-fomo-live.mjs';
+import { handlePonsFamilyLiveRequest, refreshPonsFamilyLive } from './intelligence-ponsfamily-live.mjs';
 
 export async function handleIntelligenceFetch(request,env={},ctx=null){
   if(ctx)env.__EXECUTION_CTX=ctx;
-  for(const handler of [handleFomoGalaxyRequest,handlePonsFamilyRequest,handlePonsGalaxyRequest,handleTokenSystemRequest,handleTraderObservatoryRequest,handleThesisRequest,handleSocialFiRequest,handleFieldV0Request,handleFieldCompatibilityRequest,handleHeliusUniverseWebhook,handlePumpTop10Request,handleExternalRetrievalTaskRequest,handleIntelligenceMeshIngestRequest,handleIntelligenceAdapterRequest,handleUniverseRequest,handleWalletTokenIndexRequest,handleEventMarketContextRequest,handleMarketReplayRequest,handleMarketBackfillPlanRequest,handleMarketBackfillRequest,handleIndexJobStatusRequest,handleReplayBundleRequest,handleTricksterRequest]){
+  for(const handler of [handleFomoLiveRequest,handlePonsFamilyLiveRequest,handleFomoGalaxyRequest,handlePonsFamilyRequest,handlePonsGalaxyRequest,handleTokenSystemRequest,handleTraderObservatoryRequest,handleThesisRequest,handleSocialFiRequest,handleFieldV0Request,handleFieldCompatibilityRequest,handleHeliusUniverseWebhook,handlePumpTop10Request,handleExternalRetrievalTaskRequest,handleIntelligenceMeshIngestRequest,handleIntelligenceAdapterRequest,handleUniverseRequest,handleWalletTokenIndexRequest,handleEventMarketContextRequest,handleMarketReplayRequest,handleMarketBackfillPlanRequest,handleMarketBackfillRequest,handleIndexJobStatusRequest,handleReplayBundleRequest,handleTricksterRequest]){
     const response=await handler(request,env);if(response)return response;
   }
   return handleIntelligenceVNext(request,env);
@@ -45,8 +47,8 @@ export async function handleIntelligenceScheduled(env={}){
   if(String(env.TRICKSTER_SHARE_ENABLED||'').toLowerCase()==='true')maintenance.push(pruneTricksterShareManifests(env));
   if(String(env.PUMP_INDEX_ENABLED||'').toLowerCase()==='true')maintenance.push(maintainPumpIndex(env));
   maintenance.push(resolveDueTheses(env));
-  maintenance.push(refreshFomoGalaxy(env));
-  maintenance.push((async()=>{try{await maintainPonsIndex(env);}catch(error){console.error('[pons-index]',String(error?.message||error));}return refreshPonsFamily(env);})());
+  maintenance.push(refreshFomoLive(env));
+  maintenance.push((async()=>{try{await maintainPonsIndex(env);}catch(error){console.error('[pons-index]',String(error?.message||error));}return refreshPonsFamilyLive(env);})());
   if(maintenance.length){const settled=await Promise.allSettled(maintenance);for(const [index,result] of settled.entries())if(result.status==='rejected')console.error('[scheduled-maintenance-error]',index,String(result.reason?.stack||result.reason?.message||result.reason));}
   return mesh;
 }
