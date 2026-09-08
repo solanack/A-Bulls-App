@@ -7,10 +7,24 @@ async function get(path){
   assert.equal(response.status,200,`${path}: HTTP ${response.status}`);
   return response;
 }
+const sleep=(ms)=>new Promise(resolve=>setTimeout(resolve,ms));
+async function waitForRelease(expected){
+  let release=null;
+  for(let attempt=0;attempt<12;attempt++){
+    release=await (await get(`/release.json?commit=${expected}&attempt=${attempt}`)).json();
+    if(release?.commit===expected)return release;
+    if(attempt<11){
+      console.log(`Waiting for Cloudflare route propagation (${attempt+1}/12): public=${release?.commit||'unknown'} expected=${expected}`);
+      await sleep(5000);
+    }
+  }
+  assert.equal(release?.commit,expected,'The public domain is serving a different frontend release');
+  return release;
+}
+
 const document=await (await get('/')).text();
 const expected=process.env.GITHUB_SHA||execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
-const release=await (await get(`/release.json?commit=${expected}`)).json();
-assert.equal(release.commit,expected,'The public domain is serving a different frontend release');
+await waitForRelease(expected);
 assert.match(document,/Galaxy Zero|A Bulls/i,'Application HTML is missing');
 const assets=[...new Set([...document.matchAll(/(?:src|href)="(\/assets\/[^"?]+\.js)(?:\?[^" ]*)?"/g)].map(match=>match[1]))];
 assert.ok(assets.length,'Application JavaScript references are missing');
