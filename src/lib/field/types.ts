@@ -49,7 +49,8 @@ export type CosmicObjectKind =
   | "black-hole"
   | "supernova"
   | "wormhole"
-  | "ghost";
+  | "ghost"
+  | "dust";
 
 export type EntityKind =
   | "wallet"

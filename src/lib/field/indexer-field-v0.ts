@@ -4,8 +4,8 @@
  *
  * Evidence-only: never invent metrics. Missing lifecycle signals stay
  * incomplete:true (or are omitted). Trade + planet linked-mints are the
- * first live path; dying / exit / birth / wormhole light up when Indexer
- * emits real derived evidence.
+ * first live path; dying / exit / birth / wormhole light up only when the
+ * Indexer emits real derived or indexed evidence.
  */
 
 import type {
@@ -159,8 +159,8 @@ function positionForId(id: string, radiusBase = 28, radiusSpan = 70): [number, n
 
 function starCosmicKind(star: FieldV0StarSnapshot): CosmicObjectKind {
   if (star.state === "dying" && star.incomplete !== true) return "black-hole";
-  if (star.state === "migrated" && star.wormhole) return "wormhole";
-  if (star.state === "birth") return "star";
+  // A migration does not rewrite the identity of a token. The token remains a
+  // star and a separate evidence-backed wormhole represents the migration.
   return cosmicKindForEntity("token");
 }
 
@@ -179,7 +179,7 @@ function magnitudeFromDrivers(star: FieldV0StarSnapshot): number {
   return 0.35;
 }
 
-/** Map an Indexer star snapshot into a Field particle (token → star / black-hole / wormhole). */
+/** Map an Indexer star snapshot into a Field particle (token → star / black-hole). */
 export function starToParticle(
   star: FieldV0StarSnapshot,
   options: FieldV0AdaptOptions = {},
@@ -187,7 +187,7 @@ export function starToParticle(
   const galaxyId = options.galaxyId ?? "pump-fun";
   const originGalaxyId = preserveLaunchOrigin(undefined, galaxyId);
   const cosmicKind = starCosmicKind(star);
-  const id = canonicalUniverseId(cosmicKind === "wormhole" ? "wormhole" : cosmicKind === "black-hole" ? "black-hole" : "star", star.mint, originGalaxyId);
+  const id = canonicalUniverseId(cosmicKind === "black-hole" ? "black-hole" : "star", star.mint, originGalaxyId);
   const observedAt = star.lastTrade?.ts ?? options.windowEnd ?? Date.now();
   const incomplete = star.incomplete === true;
 
@@ -229,9 +229,10 @@ export function planetToParticle(
   const originGalaxyId = preserveLaunchOrigin(undefined, galaxyId);
   const id = canonicalUniverseId("planet", planet.wallet, originGalaxyId);
   const exits = planet.exits ?? [];
-  const latestExit = exits.reduce<
-    (typeof exits)[number] | null
-  >((best, exit) => (!best || exit.ts > best.ts ? exit : best), null);
+  const latestExit = exits.reduce<(typeof exits)[number] | null>(
+    (best, exit) => (!best || exit.ts > best.ts ? exit : best),
+    null,
+  );
   const observedAt = latestExit?.ts ?? options.windowEnd ?? Date.now();
   const incomplete = planet.incomplete === true;
 
@@ -297,6 +298,63 @@ export function tradeToParticle(
       fieldContract: "v0",
     },
   };
+}
+
+/** A migration is a portal event beside a token star; it never replaces that star. */
+export function migrationToParticle(
+  migration: FieldV0GraduatedEvent,
+  options: FieldV0AdaptOptions = {},
+): FieldParticle {
+  const galaxyId = options.galaxyId ?? "pump-fun";
+  const originGalaxyId = preserveLaunchOrigin(undefined, galaxyId);
+  const sourceId = migration.sig ?? `${migration.mint}:${migration.ts}:${migration.from}:${migration.to}`;
+  return {
+    id: canonicalUniverseId("wormhole", sourceId, originGalaxyId),
+    eventId: migration.sig ?? undefined,
+    kind: "migration",
+    cosmicKind: "wormhole",
+    originGalaxyId,
+    verificationState: "observed",
+    observedAt: migration.ts,
+    category: "program",
+    magnitudeBand: 0.82,
+    position: positionForId(migration.mint),
+    source: migration.source,
+    metadata: {
+      type: migration.type,
+      mint: migration.mint,
+      from: migration.from,
+      to: migration.to,
+      pool: migration.pool,
+      sig: migration.sig,
+      fieldContract: "v0",
+    },
+  };
+}
+
+/** Create a wormhole companion only when the star snapshot contains migration evidence. */
+export function wormholeFromStar(
+  star: FieldV0StarSnapshot,
+  options: FieldV0AdaptOptions = {},
+): FieldParticle | null {
+  if (!star.wormhole || star.incomplete === true) return null;
+  const observedAt = star.lastTrade?.ts ?? options.windowEnd;
+  if (observedAt == null) return null;
+  return migrationToParticle(
+    {
+      v: FIELD_V0_VERSION,
+      chain: "solana",
+      ts: observedAt,
+      source: "derived",
+      mint: star.mint,
+      sig: null,
+      type: "token.migrated",
+      from: star.wormhole.from,
+      to: star.wormhole.to,
+      pool: star.wormhole.pool,
+    },
+    options,
+  );
 }
 
 /**
@@ -385,6 +443,8 @@ export function buildUniverseSnapshotFromFieldV0(input: {
 
   for (const star of input.stars ?? []) {
     particles.push(starToParticle(star, options));
+    const wormhole = wormholeFromStar(star, options);
+    if (wormhole) particles.push(wormhole);
   }
   for (const planet of input.planets ?? []) {
     particles.push(planetToParticle(planet, options));
@@ -392,6 +452,10 @@ export function buildUniverseSnapshotFromFieldV0(input: {
   for (const event of input.events ?? []) {
     if (event.type === "token.trade") {
       particles.push(tradeToParticle(event, options));
+      continue;
+    }
+    if (event.type === "token.graduated" || event.type === "token.migrated") {
+      particles.push(migrationToParticle(event, options));
       continue;
     }
     if (event.type === "token.dying") {
@@ -405,7 +469,10 @@ export function buildUniverseSnapshotFromFieldV0(input: {
     }
   }
 
-  const times = particles.map((p) => p.observedAt);
+  const unique = new Map<string, FieldParticle>();
+  for (const particle of particles) if (!unique.has(particle.id)) unique.set(particle.id, particle);
+  const deduped = [...unique.values()];
+  const times = deduped.map((p) => p.observedAt);
   const windowStart = options.windowStart ?? (times.length ? Math.min(...times) : Date.now());
   const windowEnd = options.windowEnd ?? (times.length ? Math.max(...times) : windowStart);
 
@@ -413,13 +480,13 @@ export function buildUniverseSnapshotFromFieldV0(input: {
     galaxyId,
     windowStart,
     windowEnd,
-    observedEventCount: particles.length,
+    observedEventCount: deduped.length,
     samplingPolicy: "indexer-field-v0 evidence-only; incomplete signals omitted or labeled",
     coverageStatement:
-      particles.length > 0
+      deduped.length > 0
         ? "Field v0 adapter · evidence-backed particles only"
         : "Field v0 adapter · no evidence yet (honest empty)",
     sources: ["indexer-field-v0"],
-    particles,
+    particles: deduped,
   };
 }

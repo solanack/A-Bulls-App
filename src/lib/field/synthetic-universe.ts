@@ -83,8 +83,9 @@ export function createUniverseMapSnapshot(count = 2800, seed = 861): UniverseSna
     const center = centers[galaxyIndex];
     for (let index = 0; index < perGalaxy; index += 1) {
       const arm = index % 3;
-      const radius = 2.5 + Math.pow(random(), 0.62) * 17;
+      const radius = index === 0 ? 0 : 2.5 + Math.pow(random(), 0.62) * 17;
       const angle = radius * 0.31 + arm * Math.PI * 2 / 3 + (random() - 0.5) * 0.7;
+      const isCore = index === 0;
       particles.push({
         id: `galaxy-map:${target.id}:${index}`,
         kind: "galaxy-node",
@@ -93,17 +94,17 @@ export function createUniverseMapSnapshot(count = 2800, seed = 861): UniverseSna
         verificationState: "directory",
         observedAt: 1_000_000,
         category: galaxyIndex === 0 ? "swap" : galaxyIndex === 1 ? "staking" : "program",
-        magnitudeBand: index < 10 ? 1 : 0.22 + random() * 0.62,
-        position: [center[0] + Math.cos(angle) * radius, center[1] + (random() - 0.5) * 4, center[2] + Math.sin(angle) * radius],
+        magnitudeBand: isCore ? 1 : 0.22 + random() * 0.62,
+        position: [center[0] + Math.cos(angle) * radius, center[1] + (isCore ? 0 : (random() - 0.5) * 4), center[2] + Math.sin(angle) * radius],
         source: "a-bulls-galaxy-directory",
-        metadata: { targetGalaxyId: target.id, name: target.name, description: target.description, galaxyRole: index < 10 ? "core" : "fabric", interactive: true },
+        metadata: { targetGalaxyId: target.id, name: target.name, description: target.description, galaxyRole: isCore ? "core" : "fabric", interactive: true },
       });
     }
   }
   while (particles.length < bounded) {
     const radius = 105 + random() * 135;
     const angle = random() * Math.PI * 2;
-    particles.push({ id: `galaxy-zero:expanse:${particles.length}`, kind: "expanse", cosmicKind: "ghost", originGalaxyId: "galaxy-zero", verificationState: "decorative", observedAt: 1_000_000, category: "unknown", magnitudeBand: 0.08 + random() * 0.22, position: [Math.cos(angle) * radius, (random() - 0.5) * 130, Math.sin(angle) * radius], source: "a-bulls-galaxy-directory", metadata: { galaxyRole: "expanse", interactive: false } });
+    particles.push({ id: `galaxy-zero:expanse:${particles.length}`, kind: "expanse", cosmicKind: "dust", originGalaxyId: "galaxy-zero", verificationState: "decorative", observedAt: 1_000_000, category: "unknown", magnitudeBand: 0.08 + random() * 0.22, position: [Math.cos(angle) * radius, (random() - 0.5) * 130, Math.sin(angle) * radius], source: "a-bulls-galaxy-directory", metadata: { galaxyRole: "expanse", interactive: false } });
   }
   return { galaxyId: "galaxy-zero", windowStart: 1_000_000, windowEnd: 1_000_060, observedEventCount: 0, samplingPolicy: "protocol galaxy directory; decorative expanse is not chain evidence", coverageStatement: "Galaxy Zero maps available protocol galaxies. Enter a galaxy for indexed activity.", sources: ["a-bulls-galaxy-directory"], particles };
 }

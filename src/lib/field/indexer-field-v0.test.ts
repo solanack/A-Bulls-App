@@ -4,10 +4,12 @@ import {
   buildUniverseSnapshotFromFieldV0,
   dyingToParticle,
   holderExitToParticle,
+  migrationToParticle,
   planetToParticle,
   starToParticle,
   tradeToParticle,
   type FieldV0DyingEvent,
+  type FieldV0GraduatedEvent,
   type FieldV0HolderExitEvent,
   type FieldV0TradeEvent,
 } from "./indexer-field-v0.ts";
@@ -28,6 +30,19 @@ const trade: FieldV0TradeEvent = {
   slot: 42,
 };
 
+const migration: FieldV0GraduatedEvent = {
+  v: 1,
+  chain: "solana",
+  ts: trade.ts + 10_000,
+  source: "pumpfun",
+  mint: trade.mint,
+  sig: "SigMigration111",
+  type: "token.migrated",
+  from: "bonding-curve",
+  to: "amm",
+  pool: "Pool111",
+};
+
 describe("indexer-field-v0 adapter", () => {
   it("maps token.trade to a comet pulse", () => {
     const particle = tradeToParticle(trade);
@@ -37,6 +52,20 @@ describe("indexer-field-v0 adapter", () => {
     assert.equal(particle.metadata?.side, "buy");
     assert.equal(particle.metadata?.mint, trade.mint);
     assert.equal(particle.source, "pumpfun");
+  });
+
+  it("keeps migrated tokens as stars and renders migration as a separate wormhole", () => {
+    const migratedStar = starToParticle({
+      mint: trade.mint,
+      state: "migrated",
+      wormhole: { from: migration.from, to: migration.to, pool: migration.pool },
+      lastTrade: { side: "buy", priceSol: 0.01, ts: migration.ts },
+    });
+    assert.equal(migratedStar.cosmicKind, "star");
+    const portal = migrationToParticle(migration);
+    assert.equal(portal.cosmicKind, "wormhole");
+    assert.equal(portal.metadata?.mint, trade.mint);
+    assert.equal(portal.metadata?.pool, migration.pool);
   });
 
   it("maps active stars and dying stars with evidence to black-holes", () => {
@@ -120,18 +149,19 @@ describe("indexer-field-v0 adapter", () => {
     assert.equal(holderExitToParticle(exitIncomplete), null);
   });
 
-  it("builds a universe snapshot from trade evidence without inventing dying", () => {
+  it("builds a universe snapshot with a star and separate wormhole when migration evidence exists", () => {
     const snapshot = buildUniverseSnapshotFromFieldV0({
       stars: [{ mint: trade.mint, state: "active", lastTrade: { side: "sell", priceSol: 0.1, ts: trade.ts } }],
       planets: [{ wallet: trade.wallet, linkedMints: [trade.mint] }],
-      events: [trade],
+      events: [trade, migration],
       options: { galaxyId: "pump-fun" },
     });
     assert.equal(snapshot.galaxyId, "pump-fun");
-    assert.equal(snapshot.particles.length, 3);
+    assert.equal(snapshot.particles.length, 4);
     assert.ok(snapshot.particles.some((p) => p.cosmicKind === "comet"));
     assert.ok(snapshot.particles.some((p) => p.cosmicKind === "star"));
     assert.ok(snapshot.particles.some((p) => p.cosmicKind === "planet"));
+    assert.ok(snapshot.particles.some((p) => p.cosmicKind === "wormhole"));
     assert.ok(!snapshot.particles.some((p) => p.cosmicKind === "black-hole"));
     assert.match(snapshot.samplingPolicy, /evidence-only/);
   });

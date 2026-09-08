@@ -72,43 +72,47 @@ export const COSMOLOGY_RULES: Record<
 > = {
   galaxy: {
     onChainMeaning: "Origin ecosystem or launchpad",
-    visualRule: "Permanent launch origin",
+    visualRule: "Largest durable body; permanent launch origin",
   },
   star: {
     onChainMeaning: "Token or mint",
-    visualRule: "Brightness follows liquidity and volume; color follows health",
+    visualRule: "Bright body; size/brightness follow observed market depth and activity",
   },
   planet: {
-    onChainMeaning: "Major holder wallet",
-    visualRule: "Size follows bag share; orbit follows trading frequency",
+    onChainMeaning: "Important public holder wallet",
+    visualRule: "Solid orbiting body; size follows observed holder share when available",
   },
   moon: {
     onChainMeaning: "Related NFT collection",
-    visualRule: "Orbits its relevant planet or star",
+    visualRule: "Small body orbiting its relevant planet or star",
   },
   "asteroid-belt": {
     onChainMeaning: "Liquidity pools and LP positions",
-    visualRule: "Density follows liquidity depth",
+    visualRule: "Wide ring; radius/density follow observed liquidity depth",
   },
   comet: {
     onChainMeaning: "Near-real-time large trade",
-    visualRule: "Live trajectory, never a batch-only signal",
+    visualRule: "Elongated live trajectory with a bright head and fading tail",
   },
   "black-hole": {
     onChainMeaning: "Rugged or dead token",
-    visualRule: "Pulls in planets as holders exit",
+    visualRule: "Dark center with a visible accretion ring; requires indexed collapse evidence",
   },
   supernova: {
     onChainMeaning: "Fast pump-and-death cycle",
-    visualRule: "Leaves a permanent discoverable scar",
+    visualRule: "Large radial burst leaving a permanent discoverable historical scar",
   },
   wormhole: {
     onChainMeaning: "Migration or bridge event",
-    visualRule: "Traversable route without changing origin",
+    visualRule: "Large portal ring; launch origin remains immutable",
   },
   ghost: {
     onChainMeaning: "Dormant or collapsed object",
-    visualRule: "Translucent trace linked to chart evidence",
+    visualRule: "Faint translucent trace linked to indexed historical evidence",
+  },
+  dust: {
+    onChainMeaning: "No on-chain meaning — decorative field fabric only",
+    visualRule: "Tiny subdued background point; never interactive market evidence",
   },
 };
 
@@ -132,22 +136,39 @@ export const GALAXY_CONTENT = Object.freeze({
 export function cosmicKindForEntity(kind: string): CosmicObjectKind {
   switch (kind) {
     case "token":
+    case "mint":
       return "star";
     case "wallet":
+    case "holder":
       return "planet";
     case "nft":
+    case "collection":
       return "moon";
     case "transaction":
+    case "trade":
+    case "large-trade":
       return "comet";
     case "cluster":
+    case "liquidity-pool":
+    case "lp-position":
       return "asteroid-belt";
     case "program":
+    case "launchpad":
       return "galaxy";
     case "migration":
     case "bridge":
       return "wormhole";
-    default:
+    case "rugged":
+    case "dead-token":
+      return "black-hole";
+    case "pump-death":
+    case "supernova":
+      return "supernova";
+    case "dormant":
+    case "collapsed-trace":
       return "ghost";
+    default:
+      return "dust";
   }
 }
 

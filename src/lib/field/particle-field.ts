@@ -7,6 +7,12 @@ import { createStarfield, GALAXY_ZERO_CAMERA_DISTANCE } from "./synthetic-univer
 import { ALIEN_BOUNDS, parentColorForCategory } from "./anatomy";
 import { isLiveSkyParticle, particleMint } from "./volume-sky";
 import { mintKey } from "./watchlist";
+import {
+  COSMIC_KIND_INDEX,
+  cosmicLabel,
+  cosmicWorldSize,
+  renderCosmicKind,
+} from "./cosmic-visuals";
 
 function hostSize(host: HTMLElement) {
   const p = host.parentElement;
@@ -26,6 +32,8 @@ const _dummy = new THREE.Object3D();
 const FIELD_VERT = /* glsl */ `
 attribute float aCat;
 attribute float aObserved;
+attribute float aCosmic;
+attribute float aPhase;
 attribute vec3 aColor;
 uniform float uIntensity;
 uniform float uPull;
@@ -34,9 +42,13 @@ uniform float uFocusAmt;
 uniform float uFocusCat;
 uniform float uReplayActive;
 uniform float uReplayCursor;
+uniform float uTime;
+uniform float uMotion;
 varying vec3 vColor;
 varying float vReplayVisible;
 varying vec2 vLocal;
+varying float vCosmic;
+varying float vPhase;
 void main() {
   float replayVisible = 1.0 - step(uReplayCursor + 0.0005, aObserved);
   vReplayVisible = mix(1.0, replayVisible, uReplayActive);
@@ -55,9 +67,17 @@ void main() {
   p = origin + vec3(d.x * c - d.z * s, d.y * (1.0 - ease * 0.38), d.x * s + d.z * c);
   vColor = aColor * uIntensity * (1.0 + kin * 1.45);
   vLocal = position.xy;
+  vCosmic = aCosmic;
+  vPhase = aPhase;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  float size = pSize * mix(1.0, 0.28, ease) * (1.0 + kin * 1.6) * max(vReplayVisible, 0.04);
-  mv.xy += position.xy * size;
+  float pulse = 1.0;
+  if (abs(aCosmic - 1.0) < 0.45) pulse += sin(uTime * 1.8 + aPhase * 6.28318) * 0.055 * uMotion;
+  if (abs(aCosmic - 7.0) < 0.45) pulse += sin(uTime * 2.7 + aPhase * 6.28318) * 0.09 * uMotion;
+  if (abs(aCosmic - 9.0) < 0.45) pulse += sin(uTime * 0.9 + aPhase * 6.28318) * 0.045 * uMotion;
+  float size = pSize * pulse * mix(1.0, 0.28, ease) * (1.0 + kin * 1.6) * max(vReplayVisible, 0.04);
+  vec2 displayLocal = position.xy;
+  if (abs(aCosmic - 5.0) < 0.45) displayLocal.x *= 2.25;
+  mv.xy += displayLocal * size;
   gl_Position = projectionMatrix * mv;
 }
 `;
@@ -66,45 +86,147 @@ const FIELD_FRAG = /* glsl */ `
 varying vec3 vColor;
 varying float vReplayVisible;
 varying vec2 vLocal;
+varying float vCosmic;
+varying float vPhase;
+uniform float uTime;
+uniform float uMotion;
+
+float ring(float d, float radius, float width) {
+  return 1.0 - smoothstep(width * 0.55, width, abs(d - radius));
+}
+
 void main() {
   if (vReplayVisible < 0.5) discard;
   float d = length(vLocal);
-  if (d > 1.0) discard;
-  float core = 1.0 - smoothstep(0.06, 0.52, d);
-  float halo = 1.0 - smoothstep(0.38, 0.94, d);
-  float alpha = max(core, halo * 0.18);
-  gl_FragColor = vec4(vColor * (0.78 + core * 0.55), alpha);
+  float a = atan(vLocal.y, vLocal.x);
+  float alpha = 0.0;
+  float light = 1.0;
+
+  if (vCosmic < 0.5) {
+    // GALAXY — broad spiral body with a dense center.
+    if (d > 1.0) discard;
+    float core = 1.0 - smoothstep(0.05, 0.34, d);
+    float arms = 1.0 - smoothstep(0.12, 0.72, abs(sin(a * 3.0 - d * 11.0)));
+    arms *= 1.0 - smoothstep(0.22, 1.0, d);
+    alpha = max(core, arms * 0.58);
+    light = 0.82 + core * 0.8 + arms * 0.34;
+  } else if (vCosmic < 1.5) {
+    // STAR — bright token body with short rays.
+    if (d > 1.0) discard;
+    float core = 1.0 - smoothstep(0.04, 0.52, d);
+    float halo = 1.0 - smoothstep(0.3, 0.94, d);
+    float rays = pow(abs(cos(a * 4.0)), 12.0) * (1.0 - smoothstep(0.18, 0.92, d));
+    alpha = max(core, max(halo * 0.2, rays * 0.34));
+    light = 0.9 + core * 0.65 + rays * 0.5;
+  } else if (vCosmic < 2.5) {
+    // PLANET — solid holder body with a defined limb.
+    if (d > 1.0) discard;
+    float disc = 1.0 - smoothstep(0.86, 1.0, d);
+    float limb = ring(d, 0.79, 0.18);
+    alpha = max(disc * 0.82, limb * 0.42);
+    light = 0.62 + (1.0 - d) * 0.45 + limb * 0.25;
+  } else if (vCosmic < 3.5) {
+    // MOON — smaller, crisp related collection.
+    if (d > 1.0) discard;
+    float disc = 1.0 - smoothstep(0.82, 1.0, d);
+    float rim = ring(d, 0.76, 0.16);
+    alpha = max(disc * 0.72, rim * 0.35);
+    light = 0.58 + (1.0 - d) * 0.4;
+  } else if (vCosmic < 4.5) {
+    // ASTEROID BELT — liquidity is a segmented ring, not another token point.
+    if (d > 1.0) discard;
+    float belt = ring(d, 0.68, 0.15);
+    float chunks = 0.36 + 0.64 * smoothstep(-0.28, 0.3, sin(a * 15.0 + vPhase * 6.28318));
+    alpha = belt * chunks * 0.78;
+    light = 0.88 + chunks * 0.38;
+  } else if (vCosmic < 5.5) {
+    // COMET — stretched in the vertex shader; bright head, narrow fading tail.
+    float head = 1.0 - smoothstep(0.05, 0.48, length(vec2((vLocal.x - 0.52) * 1.5, vLocal.y * 1.9)));
+    float tailWidth = (1.0 - smoothstep(-0.95, 0.55, vLocal.x)) * 0.42 + 0.05;
+    float tail = (1.0 - smoothstep(tailWidth * 0.45, tailWidth, abs(vLocal.y))) * (1.0 - smoothstep(-0.9, 0.68, vLocal.x));
+    alpha = max(head, tail * 0.62);
+    if (alpha < 0.02) discard;
+    light = 0.86 + head * 0.95;
+  } else if (vCosmic < 6.5) {
+    // BLACK HOLE — deliberately empty center with an accretion ring.
+    if (d > 1.0) discard;
+    float accretion = ring(d, 0.62, 0.18);
+    float outer = ring(d, 0.82, 0.22) * 0.28;
+    alpha = max(accretion * 0.88, outer);
+    if (d < 0.34) alpha *= 0.08;
+    light = 0.55 + accretion * 0.95;
+  } else if (vCosmic < 7.5) {
+    // SUPERNOVA — historical radial burst / permanent scar.
+    if (d > 1.0) discard;
+    float shell = ring(d, 0.55, 0.2);
+    float rays = pow(abs(cos(a * 7.0 + vPhase * 6.28318)), 10.0) * (1.0 - smoothstep(0.16, 1.0, d));
+    float core = 1.0 - smoothstep(0.02, 0.28, d);
+    alpha = max(core * 0.9, max(shell * 0.58, rays * 0.68));
+    light = 0.9 + core * 0.9 + rays * 0.55;
+  } else if (vCosmic < 8.5) {
+    // WORMHOLE — two concentric portal rings; the token itself remains a star.
+    if (d > 1.0) discard;
+    float inner = ring(d, 0.48, 0.13);
+    float outer = ring(d, 0.76, 0.15);
+    float ripple = 0.65 + 0.35 * sin(a * 6.0 + uTime * 0.7 * uMotion + vPhase * 6.28318);
+    alpha = max(inner * 0.82, outer * ripple * 0.64);
+    light = 0.92 + inner * 0.5;
+  } else if (vCosmic < 9.5) {
+    // GHOST — faint broken historical trace, never decorative wallpaper.
+    if (d > 1.0) discard;
+    float outline = ring(d, 0.62, 0.24);
+    float breaks = 0.38 + 0.62 * smoothstep(-0.35, 0.35, sin(a * 5.0 + vPhase * 8.0));
+    float haze = (1.0 - smoothstep(0.15, 0.92, d)) * 0.14;
+    alpha = max(outline * breaks * 0.34, haze);
+    light = 0.58 + outline * 0.25;
+  } else {
+    // DUST — decorative field fabric only. Tiny and intentionally subdued.
+    if (d > 0.72) discard;
+    float core = 1.0 - smoothstep(0.05, 0.48, d);
+    alpha = core * 0.32;
+    light = 0.62;
+  }
+
+  if (alpha < 0.012) discard;
+  gl_FragColor = vec4(vColor * light, alpha);
 }
 `;
 
 function liveLabel(particle: FieldParticle) {
+  const kind = renderCosmicKind(particle);
+  if (kind === "dust") return null;
+  const prefix = cosmicLabel(kind);
+  const galaxyName = particle.metadata?.name;
+  if (kind === "galaxy" && typeof galaxyName === "string" && galaxyName.trim()) {
+    return `${prefix} · ${galaxyName.trim().slice(0, 18).toUpperCase()}`;
+  }
   const symbol = particle.metadata?.symbol;
   const name = particle.metadata?.name;
-  if (typeof symbol === "string" && symbol.trim()) return symbol.trim().slice(0, 14).toUpperCase();
-  if (typeof name === "string" && name.trim()) return name.trim().slice(0, 18).toUpperCase();
-  const address = particle.metadata?.mint;
-  return typeof address === "string" ? `${address.slice(0, 6)}…${address.slice(-4)}` : null;
+  if (typeof symbol === "string" && symbol.trim()) return `${prefix} · ${symbol.trim().slice(0, 12).toUpperCase()}`;
+  if (typeof name === "string" && name.trim()) return `${prefix} · ${name.trim().slice(0, 16).toUpperCase()}`;
+  const address = particle.metadata?.mint ?? particle.metadata?.wallet;
+  return typeof address === "string" ? `${prefix} · ${address.slice(0, 5)}…${address.slice(-4)}` : prefix;
 }
 
 function createLabelSprite(text: string) {
   const canvas = document.createElement("canvas");
-  canvas.width = 384;
+  canvas.width = 448;
   canvas.height = 72;
   const context = canvas.getContext("2d");
   if (!context) return null;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.font = "700 28px sans-serif";
+  context.font = "700 25px sans-serif";
   context.textAlign = "center";
   context.textBaseline = "middle";
   context.fillStyle = "rgba(7,7,11,.78)";
   context.strokeStyle = "rgba(199,240,95,.58)";
   context.lineWidth = 2;
   context.beginPath();
-  context.roundRect(28, 12, 328, 48, 20);
+  context.roundRect(24, 12, 400, 48, 20);
   context.fill();
   context.stroke();
   context.fillStyle = "rgba(238,246,228,.96)";
-  context.fillText(text, 192, 37);
+  context.fillText(text, 224, 37);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(
@@ -116,7 +238,7 @@ function createLabelSprite(text: string) {
       toneMapped: false,
     }),
   );
-  sprite.scale.set(22, 4.1, 1);
+  sprite.scale.set(25, 4.1, 1);
   sprite.renderOrder = 6;
   return sprite;
 }
@@ -127,18 +249,14 @@ function disposeLabelSprite(sprite: THREE.Sprite) {
   sprite.material.dispose();
 }
 
-function particleWorldSize(entity: FieldParticle) {
-  const role = entity.metadata?.skyRole;
-  const liveBoost = role === "live" || role === "watch" || role === "teaching" ? 1.55 : 1;
-  return (0.72 + entity.magnitudeBand * 2.05) * liveBoost;
-}
-
 function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMaterial, limit: number) {
   const visible = snapshot.particles.slice(0, limit);
   const count = visible.length;
   const positions = new Float32Array(visible.length * 3);
   const colors = new Float32Array(visible.length * 3);
   const cats = new Float32Array(visible.length);
+  const cosmic = new Float32Array(visible.length);
+  const phases = new Float32Array(visible.length);
   const observed = new Float32Array(visible.length);
   const duration = Math.max(1, snapshot.windowEnd - snapshot.windowStart);
   visible.forEach((entity, i) => {
@@ -154,11 +272,15 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
         : base;
     colors.set(color, i * 3);
     cats[i] = CATEGORY_INDEX[entity.category] ?? 6;
+    cosmic[i] = COSMIC_KIND_INDEX[renderCosmicKind(entity)] ?? COSMIC_KIND_INDEX.dust;
+    phases[i] = (i * 0.61803398875) % 1;
     observed[i] = clamp((entity.observedAt - snapshot.windowStart) / duration, 0, 1);
   });
   const geometry = new THREE.CircleGeometry(1, 16);
   geometry.setAttribute("aCat", new THREE.InstancedBufferAttribute(cats, 1));
   geometry.setAttribute("aObserved", new THREE.InstancedBufferAttribute(observed, 1));
+  geometry.setAttribute("aCosmic", new THREE.InstancedBufferAttribute(cosmic, 1));
+  geometry.setAttribute("aPhase", new THREE.InstancedBufferAttribute(phases, 1));
   geometry.setAttribute("aColor", new THREE.InstancedBufferAttribute(colors, 3));
   geometry.userData.entities = visible;
   const mesh = new THREE.InstancedMesh(geometry, material, count);
@@ -166,7 +288,7 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
   mesh.renderOrder = 2;
   visible.forEach((entity, i) => {
     _dummy.position.set(entity.position[0], entity.position[1], entity.position[2]);
-    _dummy.scale.setScalar(particleWorldSize(entity));
+    _dummy.scale.setScalar(cosmicWorldSize(entity));
     _dummy.rotation.set(0, 0, 0);
     _dummy.updateMatrix();
     mesh.setMatrixAt(i, _dummy.matrix);
@@ -258,6 +380,8 @@ export class ParticleFieldRenderer {
     });
     host.append(canvas);
 
+    // Keep the known-good production context/lifecycle. Visual differentiation
+    // happens inside the existing instanced draw path, not by adding canvases.
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       alpha: false,
@@ -293,6 +417,8 @@ export class ParticleFieldRenderer {
         uFocusCat: { value: -1 },
         uReplayActive: { value: 0 },
         uReplayCursor: { value: 1 },
+        uTime: { value: 0 },
+        uMotion: { value: this.reducedMotion ? 0 : 1 },
       },
       vertexShader: FIELD_VERT,
       fragmentShader: FIELD_FRAG,
@@ -429,24 +555,40 @@ export class ParticleFieldRenderer {
     for (const sprite of this.liveLabels) disposeLabelSprite(sprite);
     this.liveLabels = [];
     const entities = this.points.geometry.userData.entities as FieldParticle[];
-    const candidates = entities
-      .filter((particle) => particle.metadata?.skyRole !== "wallpaper" && Boolean(liveLabel(particle)))
+    const ranked = entities
+      .filter((particle) => {
+        const galaxyCore = typeof particle.metadata?.targetGalaxyId === "string" && particle.metadata?.galaxyRole === "core";
+        return (galaxyCore || particle.metadata?.skyRole !== "wallpaper") && Boolean(liveLabel(particle));
+      })
       .sort((a, b) => {
         const aMint = mintKey(particleMint(a) ?? "");
         const bMint = mintKey(particleMint(b) ?? "");
+        const aGalaxy = a.metadata?.galaxyRole === "core" ? 1600 : 0;
+        const bGalaxy = b.metadata?.galaxyRole === "core" ? 1600 : 0;
         const aWatch = this.watchMints.has(aMint) || a.metadata?.skyRole === "watch" ? 1000 : 0;
         const bWatch = this.watchMints.has(bMint) || b.metadata?.skyRole === "watch" ? 1000 : 0;
         const aTeach = a.metadata?.skyRole === "teaching" ? 500 : 0;
         const bTeach = b.metadata?.skyRole === "teaching" ? 500 : 0;
-        return bWatch + bTeach + b.magnitudeBand - (aWatch + aTeach + a.magnitudeBand);
-      })
-      .slice(0, 8);
+        return bGalaxy + bWatch + bTeach + b.magnitudeBand - (aGalaxy + aWatch + aTeach + a.magnitudeBand);
+      });
+    const candidates: FieldParticle[] = [];
+    const seen = new Set<string>();
+    for (const particle of ranked) {
+      const target = typeof particle.metadata?.targetGalaxyId === "string" ? particle.metadata.targetGalaxyId : null;
+      const mint = particleMint(particle);
+      const key = target ? `galaxy:${target}` : mint ? `mint:${mintKey(mint)}` : `id:${particle.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push(particle);
+      if (candidates.length >= 8) break;
+    }
     for (const particle of candidates) {
       const label = liveLabel(particle);
       if (!label) continue;
       const sprite = createLabelSprite(label);
       if (!sprite) continue;
-      sprite.position.set(particle.position[0], particle.position[1] + 4.5, particle.position[2]);
+      const yOffset = Math.min(14, cosmicWorldSize(particle) + 2.4);
+      sprite.position.set(particle.position[0], particle.position[1] + yOffset, particle.position[2]);
       this.points.add(sprite);
       this.liveLabels.push(sprite);
     }
@@ -578,7 +720,7 @@ export class ParticleFieldRenderer {
       const metadata = entities[i].metadata;
       const targetGalaxy = typeof metadata?.targetGalaxyId === "string";
       const liveIdentity = Boolean(particleMint(entities[i]) || entities[i].eventId);
-      if (metadata?.interactive === false || (metadata?.skyRole === "wallpaper" && !targetGalaxy && !liveIdentity)) continue;
+      if (metadata?.interactive === false || renderCosmicKind(entities[i]) === "dust" || (metadata?.skyRole === "wallpaper" && !targetGalaxy && !liveIdentity)) continue;
       if (this.replayActive) {
         const duration = Math.max(1, this.snapshot.windowEnd - this.snapshot.windowStart);
         const observed = (entities[i].observedAt - this.snapshot.windowStart) / duration;
@@ -653,6 +795,7 @@ export class ParticleFieldRenderer {
       this.stars.rotation.y += elapsed * 0.05;
     }
 
+    this.material.uniforms.uTime.value = now / 1000;
     this.material.uniforms.uIntensity.value = 1.15 - this.queryBlend * 0.96;
     this.material.uniforms.uPull.value = this.queryBlend;
     const fieldScale = 1 - this.queryBlend * 0.06;

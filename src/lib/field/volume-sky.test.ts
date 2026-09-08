@@ -9,6 +9,7 @@ import {
   composeVolumeSky,
   countLiveStars,
   fiveMinuteHeat,
+  liquidityBeltForStar,
 } from "./volume-sky.ts";
 
 const now = 1_700_000_000_000;
@@ -71,6 +72,19 @@ describe("fiveMinuteHeat", () => {
   });
 });
 
+describe("liquidity visual evidence", () => {
+  it("creates an asteroid belt only from observed liquidity", () => {
+    const absent = liquidityBeltForStar(star("none", { liquidityUsd: null, liqSol: null }));
+    assert.equal(absent, null);
+    const belt = liquidityBeltForStar(star("liquid", { liquidityUsd: 250_000 }));
+    assert.equal(belt?.cosmicKind, "asteroid-belt");
+    assert.equal(belt?.metadata?.liquidityUsd, 250_000);
+    assert.equal(belt?.metadata?.liqSol, null);
+    assert.equal(belt?.metadata?.visualEvidence, "indexed-liquidity");
+    assert.equal(belt?.metadata?.interactive, false);
+  });
+});
+
 describe("admitStar wash gates", () => {
   it("rejects thin liquidity, one-sided tape, and wash-like velocity", () => {
     const window = { windowStart: now - 60_000, windowEnd: now };
@@ -108,7 +122,7 @@ describe("composeVolumeSky", () => {
     assert.equal(countLiveStars(result),1);
     assert.equal(composeVolumeSky({prototype:background,live:null,now}).observedEventCount,0);
   });
-  it("ranks admitted stars by 5m heat, caps live at 120, and keeps leftovers observed not safe", () => {
+  it("ranks admitted stars by 5m heat, caps live token stars at 120, and keeps leftovers observed not safe", () => {
     const liveStars = Array.from({ length: 140 }, (_, i) =>
       healthy(`Mint${String(i).padStart(39, "0")}`, 10_000 - i),
     );
@@ -117,9 +131,11 @@ describe("composeVolumeSky", () => {
       live: snapshot(liveStars),
       now,
     });
-    const live = composed.particles.filter((p) => p.metadata?.skyRole === "live");
+    const liveStarsOnly = composed.particles.filter((p) => p.metadata?.skyRole === "live" && p.cosmicKind === "star");
+    const belts = composed.particles.filter((p) => p.cosmicKind === "asteroid-belt");
     const observed = composed.particles.filter((p) => p.metadata?.skyRole === "observed");
-    assert.equal(live.length, 120);
+    assert.equal(liveStarsOnly.length, 120);
+    assert.equal(belts.length, 120);
     assert.ok(observed.length > 0);
     assert.equal(countLiveStars(composed), 120);
     assert.equal(composed.samplingPolicy.includes("Helius membership stays 10"), true);

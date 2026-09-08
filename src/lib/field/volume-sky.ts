@@ -13,7 +13,7 @@ export const OBSERVED_CAP = 80;
 
 export type HeatUnit = "usd" | "sol";
 export type FiveMinuteHeat = { value: number; unit: HeatUnit };
-export type SkyRole = "live" | "watch" | "teaching" | "observed" | "wallpaper";
+export type SkyRole = "live" | "watch" | "teaching" | "observed" | "context" | "wallpaper";
 
 export type WatchPin = {
   mint: string;
@@ -218,6 +218,42 @@ function withSkyMeta(
   };
 }
 
+/**
+ * Liquidity is rendered as a real asteroid belt only when an indexed/cache-backed
+ * liquidity observation exists on the star. Missing evidence produces no belt;
+ * null is never converted to zero and no provider request is made here.
+ */
+export function liquidityBeltForStar(star: FieldParticle): FieldParticle | null {
+  const usd = liquidityUsd(star);
+  const sol = liquiditySol(star);
+  if ((usd == null || usd <= 0) && (sol == null || sol <= 0)) return null;
+  const mint = particleMint(star);
+  const raw = usd != null && usd > 0 ? Math.log10(1 + usd) / 8 : Math.log10(1 + (sol ?? 0)) / 5;
+  return {
+    id: `liquidity:${star.id}`,
+    kind: "liquidity-pool",
+    cosmicKind: "asteroid-belt",
+    originGalaxyId: star.originGalaxyId,
+    verificationState: star.verificationState,
+    observedAt: star.observedAt,
+    category: "program",
+    magnitudeBand: clamp01(raw),
+    position: [...star.position],
+    source: star.source,
+    slot: star.slot,
+    metadata: {
+      skyRole: "context",
+      interactive: false,
+      visualCompanion: true,
+      visualEvidence: "indexed-liquidity",
+      parentMint: mint,
+      mint,
+      liquidityUsd: usd,
+      liqSol: sol,
+    },
+  };
+}
+
 function heatScore(heat: FiveMinuteHeat | null): number {
   if (!heat) return 0;
   return heat.unit === "usd" ? heat.value + 1e12 : heat.value;
@@ -226,7 +262,7 @@ function heatScore(heat: FiveMinuteHeat | null): number {
 export function isLiveSkyParticle(particle: FieldParticle): boolean {
   const role = particle.metadata?.skyRole;
   if (role === "wallpaper") return false;
-  if (role === "live" || role === "watch" || role === "teaching" || role === "observed") return true;
+  if (role === "live" || role === "watch" || role === "teaching" || role === "observed" || role === "context") return true;
   const mint = particleMint(particle);
   return Boolean(mint && particle.source && particle.source !== "synthetic-prototype");
 }
@@ -325,6 +361,10 @@ export function composeVolumeSky(input: {
     );
   });
 
+  const liquidityBelts = skyStars
+    .map(liquidityBeltForStar)
+    .filter((particle): particle is FieldParticle => Boolean(particle));
+
   const observed = ranked
     .filter((row) => !chosenIds.has(row.particle.id))
     .slice(0, OBSERVED_CAP)
@@ -345,7 +385,7 @@ export function composeVolumeSky(input: {
   const livePlanets = planets.slice(0, 40).map((particle) => withSkyMeta(particle, { skyRole: "live" }));
   const liveOther = other.slice(0, 20).map((particle) => withSkyMeta(particle, { skyRole: "live" }));
 
-  const liveParticles = [...skyStars, ...observed, ...liveComets, ...livePlanets, ...liveOther];
+  const liveParticles = [...skyStars, ...liquidityBelts, ...observed, ...liveComets, ...livePlanets, ...liveOther];
   const liveIds = new Set(liveParticles.map((particle) => particle.id));
   const particleBudget = Math.max(1, input.wallpaperLimit ?? 2800);
   const wallpaperBudget = Math.max(0, particleBudget - liveParticles.length);
