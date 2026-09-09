@@ -31,6 +31,7 @@ import { handlePonsFamilyRequest } from './intelligence-ponsfamily-ranking.mjs';
 import { handleFomoLiveRequest, refreshFomoLive } from './intelligence-fomo-live.mjs';
 import { handlePonsFamilyLiveRequest, refreshPonsFamilyLive } from './intelligence-ponsfamily-live.mjs';
 import { handleResearchIndexRequest } from './intelligence-research-index.mjs';
+import { materializeResearchIndex } from './intelligence-research-materializer.mjs';
 
 export async function handleIntelligenceFetch(request,env={},ctx=null){
   if(ctx)env.__EXECUTION_CTX=ctx;
@@ -50,6 +51,7 @@ export async function handleIntelligenceScheduled(env={}){
   maintenance.push(resolveDueTheses(env));
   maintenance.push(refreshFomoLive(env));
   maintenance.push((async()=>{try{await maintainPonsIndex(env);}catch(error){console.error('[pons-index]',String(error?.message||error));}return refreshPonsFamilyLive(env);})());
+  maintenance.push(materializeResearchIndex(env));
   if(maintenance.length){const settled=await Promise.allSettled(maintenance);for(const [index,result] of settled.entries())if(result.status==='rejected')console.error('[scheduled-maintenance-error]',index,String(result.reason?.stack||result.reason?.message||result.reason));}
   return mesh;
 }
