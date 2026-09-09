@@ -1,4 +1,4 @@
-import { createResearchThreadContext, decodeResearchThread, encodeResearchThread, mergeResearchThreadContext } from "./research-thread";
+import { createResearchThreadContext, decodeResearchThread, encodeResearchThread, mergeResearchThreadContext, type ResearchThreadContext } from "./research-thread";
 
 const STORAGE_KEY="abulls:research-thread:v1";
 
@@ -9,7 +9,7 @@ export function loadResearchThread(){
   try{return createResearchThreadContext(JSON.parse(window.sessionStorage.getItem(STORAGE_KEY)||"{}"));}catch{return createResearchThreadContext();}
 }
 
-export function saveResearchThread(patch:Parameters<typeof createResearchThreadContext>[0]){
+export function saveResearchThread(patch:Partial<ResearchThreadContext>={}){
   const current=loadResearchThread(),next=mergeResearchThreadContext(current,patch);
   if(typeof window!=="undefined")try{window.sessionStorage.setItem(STORAGE_KEY,JSON.stringify(next));}catch{/* session persistence is best effort */}
   return next;
