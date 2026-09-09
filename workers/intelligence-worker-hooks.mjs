@@ -30,10 +30,11 @@ import { handleFomoGalaxyRequest } from './intelligence-fomo-galaxy.mjs';
 import { handlePonsFamilyRequest } from './intelligence-ponsfamily-ranking.mjs';
 import { handleFomoLiveRequest, refreshFomoLive } from './intelligence-fomo-live.mjs';
 import { handlePonsFamilyLiveRequest, refreshPonsFamilyLive } from './intelligence-ponsfamily-live.mjs';
+import { handleResearchIndexRequest } from './intelligence-research-index.mjs';
 
 export async function handleIntelligenceFetch(request,env={},ctx=null){
   if(ctx)env.__EXECUTION_CTX=ctx;
-  for(const handler of [handleFomoLiveRequest,handlePonsFamilyLiveRequest,handleFomoGalaxyRequest,handlePonsFamilyRequest,handlePonsGalaxyRequest,handleTokenSystemRequest,handleTraderObservatoryRequest,handleThesisRequest,handleSocialFiRequest,handleFieldV0Request,handleFieldCompatibilityRequest,handleHeliusUniverseWebhook,handlePumpTop10Request,handleExternalRetrievalTaskRequest,handleIntelligenceMeshIngestRequest,handleIntelligenceAdapterRequest,handleUniverseRequest,handleWalletTokenIndexRequest,handleEventMarketContextRequest,handleMarketReplayRequest,handleMarketBackfillPlanRequest,handleMarketBackfillRequest,handleIndexJobStatusRequest,handleReplayBundleRequest,handleTricksterRequest]){
+  for(const handler of [handleResearchIndexRequest,handleFomoLiveRequest,handlePonsFamilyLiveRequest,handleFomoGalaxyRequest,handlePonsFamilyRequest,handlePonsGalaxyRequest,handleTokenSystemRequest,handleTraderObservatoryRequest,handleThesisRequest,handleSocialFiRequest,handleFieldV0Request,handleFieldCompatibilityRequest,handleHeliusUniverseWebhook,handlePumpTop10Request,handleExternalRetrievalTaskRequest,handleIntelligenceMeshIngestRequest,handleIntelligenceAdapterRequest,handleUniverseRequest,handleWalletTokenIndexRequest,handleEventMarketContextRequest,handleMarketReplayRequest,handleMarketBackfillPlanRequest,handleMarketBackfillRequest,handleIndexJobStatusRequest,handleReplayBundleRequest,handleTricksterRequest]){
     const response=await handler(request,env);if(response)return response;
   }
   return handleIntelligenceVNext(request,env);
