@@ -35,7 +35,7 @@ test("every governing analysis mode is wired to a real Worker route", async () =
     "trickster/validate",
     "trickster/share",
   ]) assert.match(dispatcher, new RegExp(route.replace("/", "\\/")));
-  assert.match(workspace, /No indexed OHLC series exists/);
+  assert.match(workspace, /No indexed price series exists/);
   assert.match(workspace, /No price series was invented/);
 });
 
