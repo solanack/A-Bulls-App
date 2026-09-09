@@ -33,11 +33,12 @@ import { handleFomoLiveRequest, refreshFomoLive } from './intelligence-fomo-live
 import { handlePonsFamilyLiveRequest, refreshPonsFamilyLive } from './intelligence-ponsfamily-live.mjs';
 import { handleResearchIndexRequest } from './intelligence-research-index.mjs';
 import { handleGhostSimilarityRequest } from './intelligence-ghost-similarity.mjs';
+import { handleBehaviorFingerprintRequest } from './intelligence-behavior-fingerprint.mjs';
 import { materializeResearchIndex } from './intelligence-research-materializer.mjs';
 
 export async function handleIntelligenceFetch(request,env={},ctx=null){
   if(ctx)env.__EXECUTION_CTX=ctx;
-  for(const handler of [handleFullChainStreamRequest,handleGhostSimilarityRequest,handleResearchIndexRequest,handleFomoLiveRequest,handlePonsFamilyLiveRequest,handleFomoGalaxyRequest,handlePonsFamilyRequest,handlePonsGalaxyRequest,handleTokenSystemRequest,handleTraderObservatoryRequest,handleThesisRequest,handleSocialFiRequest,handleFieldV0Request,handleFieldCompatibilityRequest,handleHeliusUniverseWebhook,handlePumpTop10Request,handleExternalRetrievalTaskRequest,handleIntelligenceMeshIngestRequest,handleIntelligenceAdapterRequest,handleUniverseRequest,handleWalletTokenIndexRequest,handleEventMarketContextRequest,handleMarketReplayRequest,handleMarketBackfillPlanRequest,handleMarketBackfillRequest,handleIndexJobStatusRequest,handleReplayBundleRequest,handleTricksterRequest]){
+  for(const handler of [handleFullChainStreamRequest,handleGhostSimilarityRequest,handleBehaviorFingerprintRequest,handleResearchIndexRequest,handleFomoLiveRequest,handlePonsFamilyLiveRequest,handleFomoGalaxyRequest,handlePonsFamilyRequest,handlePonsGalaxyRequest,handleTokenSystemRequest,handleTraderObservatoryRequest,handleThesisRequest,handleSocialFiRequest,handleFieldV0Request,handleFieldCompatibilityRequest,handleHeliusUniverseWebhook,handlePumpTop10Request,handleExternalRetrievalTaskRequest,handleIntelligenceMeshIngestRequest,handleIntelligenceAdapterRequest,handleUniverseRequest,handleWalletTokenIndexRequest,handleEventMarketContextRequest,handleMarketReplayRequest,handleMarketBackfillPlanRequest,handleMarketBackfillRequest,handleIndexJobStatusRequest,handleReplayBundleRequest,handleTricksterRequest]){
     const response=await handler(request,env);if(response)return response;
   }
   return handleIntelligenceVNext(request,env);
