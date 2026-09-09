@@ -1,6 +1,7 @@
 export type ResearchVisibility = "private" | "unlisted" | "public";
 export type ResearchObjectKind = "planet" | "star" | "trade" | "matched_round" | "research_thread" | "replay" | "evidence" | "cut" | "thesis" | "resolution" | "ghost" | "sequence" | "comparison";
 export type EvidenceEpistemicKind = "observed" | "provider-reported" | "derived" | "user-claim" | "unavailable";
+export type ResearchJson = string | number | boolean | null | ResearchJson[] | { [key: string]: ResearchJson };
 
 export type ResearchThreadContext = {
   id: string | null;
@@ -56,7 +57,7 @@ export type ResearchIndexObject = {
   observedTs: number | null;
   coverage: string | null;
   visibility: ResearchVisibility;
-  payload: Readonly<Record<string, unknown>>;
+  payload: Readonly<Record<string, ResearchJson>>;
   createdAt: number;
   updatedAt: number;
 };
