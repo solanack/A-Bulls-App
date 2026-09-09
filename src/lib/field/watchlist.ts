@@ -5,30 +5,14 @@ export const WATCHLIST_MAX = 100;
 export const WATCHLIST_VERSION = 3;
 
 export type WatchSubjectKind = "token" | "wallet" | "research-thread" | "cut";
-
-export type WatchItem = {
-  subjectKind: any;
-  subjectId: string;
-  galaxyId: GalaxyId;
-  symbol: string | null;
-  name: string | null;
-  addedAt: number;
-  mint?: string;
-  wallet?: string;
-};
-
+export type WatchItem = {subjectKind:WatchSubjectKind;subjectId:string;galaxyId:GalaxyId;symbol:string|null;name:string|null;addedAt:number;mint?:string;wallet?:string;};
 export type StorageLike = { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem?(key: string): void; };
 
-export function mintKey(value: string): string { const text=value.trim(); return /^0x[0-9a-f]{40}$/i.test(text)?text.toLowerCase():text; }
-export function watchKey(kind: WatchSubjectKind, subjectId: string) { return `${kind}:${mintKey(subjectId)}`; }
-function validGalaxy(value: unknown): value is GalaxyId { return value==="galaxy-zero"||value==="fomo"||value==="solana-core"||value==="pump-fun"||value==="pons"; }
+export function mintKey(value:string):string{const text=value.trim();return /^0x[0-9a-f]{40}$/i.test(text)?text.toLowerCase():text;}
+export function watchKey(kind:WatchSubjectKind,subjectId:string){return `${kind}:${mintKey(subjectId)}`;}
+function validGalaxy(value:unknown):value is GalaxyId{return value==="galaxy-zero"||value==="fomo"||value==="solana-core"||value==="pump-fun"||value==="pons";}
 function validKind(value:unknown):WatchSubjectKind|null{return value==="token"||value==="wallet"||value==="research-thread"||value==="cut"?value:null;}
-
-function parseRow(record: Record<string, unknown>, legacy = false): WatchItem | null {
-  const subjectKind:WatchSubjectKind=legacy?"token":validKind(record.subjectKind)??"token";
-  const rawId=legacy?record.mint:record.subjectId??record.mint,subjectId=typeof rawId==="string"?rawId.trim():"";if(!subjectId)return null;
-  return {subjectKind,subjectId,galaxyId:validGalaxy(record.galaxyId)?record.galaxyId:"solana-core",symbol:typeof record.symbol==="string"?record.symbol:null,name:typeof record.name==="string"?record.name:null,addedAt:typeof record.addedAt==="number"&&Number.isFinite(record.addedAt)?record.addedAt:Date.now(),mint:typeof record.mint==="string"?record.mint:undefined,wallet:typeof record.wallet==="string"?record.wallet:undefined};
-}
+function parseRow(record:Record<string,unknown>,legacy=false):WatchItem|null{const subjectKind:WatchSubjectKind=legacy?"token":validKind(record.subjectKind)??"token",rawId=legacy?record.mint:record.subjectId??record.mint,subjectId=typeof rawId==="string"?rawId.trim():"";if(!subjectId)return null;return{subjectKind,subjectId,galaxyId:validGalaxy(record.galaxyId)?record.galaxyId:"solana-core",symbol:typeof record.symbol==="string"?record.symbol:null,name:typeof record.name==="string"?record.name:null,addedAt:typeof record.addedAt==="number"&&Number.isFinite(record.addedAt)?record.addedAt:Date.now(),mint:typeof record.mint==="string"?record.mint:undefined,wallet:typeof record.wallet==="string"?record.wallet:undefined};}
 export function parseWatchlist(raw:string|null|undefined):WatchItem[]{if(!raw)return[];try{const parsed=JSON.parse(raw) as{v?:number;items?:unknown};if(!parsed||!Array.isArray(parsed.items)||![1,2,WATCHLIST_VERSION].includes(parsed.v??0))return[];const seen=new Set<string>(),items:WatchItem[]=[];for(const row of parsed.items){if(!row||typeof row!=="object")continue;const item=parseRow(row as Record<string,unknown>,parsed.v===1);if(!item)continue;const key=watchKey(item.subjectKind,item.subjectId);if(seen.has(key))continue;seen.add(key);items.push(item);if(items.length>=WATCHLIST_MAX)break;}return items;}catch{return[];}}
 export function serializeWatchlist(items:readonly WatchItem[]):string{return JSON.stringify({v:WATCHLIST_VERSION,items:items.slice(0,WATCHLIST_MAX)});}
 function getStore(storage?:StorageLike|null):StorageLike|null{if(storage)return storage;try{return globalThis.localStorage??null;}catch{return null;}}
