@@ -46,6 +46,9 @@ HELIUS_MONTHLY_CREDITS = "1000000"
 ECOSYSTEM_UNIVERSES_ENABLED = "true"
 INTELLIGENCE_MESH_ENABLED = "true"
 INTELLIGENCE_SCHEDULER_BATCH_SIZE = "1"
+# Authenticated normalized Yellowstone/Richat/Carbon bridge is production-ready but stays
+# disabled until an upstream stream and INTELLIGENCE_MESH_INGEST_TOKEN are intentionally configured.
+FULL_CHAIN_STREAM_ENABLED = "false"
 BULL_INDEXER_ENABLED = "false"
 BULL_NFT_INDEXER_ENABLED = "false"
 BULL_ARCHIVAL_ENABLED = "false"
@@ -73,6 +76,7 @@ PONS_SCAN_CHUNKS_PER_RUN = "8"
 # Optional legacy Bitquery holder fallback is no longer required for PonsFamily self-population.
 # Protected manual ranking route only: npx wrangler secret put PONS_INDEX_SECRET --config workers/wrangler.production.toml
 # Required for Fomo Galaxy source data: npx wrangler secret put FOMOAPI_API_KEY --config workers/wrangler.production.toml
+# Future full-chain stream bridge: npx wrangler secret put INTELLIGENCE_MESH_INGEST_TOKEN --config workers/wrangler.production.toml
 
 Z500_UNIVERSE_ENABLED = "false"
 Z500_HELIUS_ROTATION_ENABLED = "false"

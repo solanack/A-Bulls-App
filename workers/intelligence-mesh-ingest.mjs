@@ -1,5 +1,5 @@
 /* A Bulls App — Intelligence Mesh adapter ingest bridge
- * Internal-only normalized event intake for Yellowstone/Richat, Substreams SVM,
+ * Internal-only normalized event intake for Yellowstone/Richat/Carbon, Substreams SVM,
  * Old Faithful, standard RPC repair workers, and future approved read-only sources.
  */
 
@@ -7,7 +7,7 @@ import { ingestDecodedObservations, intelligenceDb, normalizeIndexedEvents } fro
 import { persistUniverseObservations } from './intelligence-universe-runtime.mjs';
 import { projectIndexedEventsToUniverse } from './intelligence-universe-projection.mjs';
 
-const SOURCE_KINDS = new Set(['yellowstone', 'richat', 'substreams', 'old-faithful', 'rpc', 'repair', 'snapshot', 'test']);
+const SOURCE_KINDS = new Set(['yellowstone', 'richat', 'carbon', 'substreams', 'old-faithful', 'rpc', 'repair', 'snapshot', 'test']);
 const s = value => String(value == null ? '' : value).trim();
 const n = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 
