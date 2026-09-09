@@ -3,8 +3,9 @@ import { fetchIntelligence } from "../intelligence-origin.ts";
 import type { MatchedTradeRound, ResearchIndexObject } from "../research-thread";
 
 type CoverageSource={source:string;last_observed_slot?:number|null;last_verified_slot?:number|null;gap_from_slot?:number|null;gap_to_slot?:number|null;status:string;detail?:string|null;updated_at:number};
+type ResearchGraphEdge={id:string;from_id:string;to_id:string;relation:string;observed_ts:number|null;evidence_id:string|null;source_kind:string;created_at:number};
 export type ResearchIndexListResponse={ok:boolean;coverage:"fresh"|"empty"|"degraded";items:readonly ResearchIndexObject[];disclosure:string;error?:string};
-export type ResearchIndexDetailResponse={ok:boolean;item?:ResearchIndexObject;graph?:{outbound:readonly Record<string,unknown>[];inbound:readonly Record<string,unknown>[]};disclosure?:string;error?:string};
+export type ResearchIndexDetailResponse={ok:boolean;item?:ResearchIndexObject;graph?:{outbound:readonly ResearchGraphEdge[];inbound:readonly ResearchGraphEdge[]};disclosure?:string;error?:string};
 export type MatchedRoundListResponse={ok:boolean;coverage:"fresh"|"empty"|"degraded";items:readonly MatchedTradeRound[];disclosure?:string;error?:string};
 export type ResearchCoverageResponse={ok:boolean;coverage:"fresh"|"degraded";sources:readonly CoverageSource[];disclosure?:string;error?:string};
 
