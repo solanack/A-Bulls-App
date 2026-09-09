@@ -1,0 +1,31 @@
+import { intelligenceDb } from './intelligence-indexer.mjs';
+
+const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'private, max-age=30'}});
+const finite=value=>typeof value==='number'&&Number.isFinite(value)?value:null;
+const duration=row=>row.entry_ts!=null&&row.exit_ts!=null?Math.max(0,row.exit_ts-row.entry_ts):null;
+const ratio=(a,b)=>a!=null&&b!=null&&a>0&&b>0?Math.min(a,b)/Math.max(a,b):null;
+
+export function ghostSimilarityScore(subject,candidate){
+  if(!subject||!candidate||subject.id===candidate.id)return null;
+  let score=0,weight=0;const reasons=[];
+  if(subject.status===candidate.status){score+=.24;weight+=.24;reasons.push(`same ${subject.status} round status`);}else weight+=.24;
+  const hold=ratio(duration(subject),duration(candidate));if(hold!=null){score+=hold*.30;weight+=.30;if(hold>=.65)reasons.push('similar observed hold duration');}
+  const size=ratio(finite(subject.buy_sol),finite(candidate.buy_sol));if(size!=null){score+=size*.22;weight+=.22;if(size>=.65)reasons.push('similar observed buy size');}
+  weight+=.16;if(subject.mint===candidate.mint){score+=.16;reasons.push('same token planet');}
+  weight+=.08;if(subject.wallet===candidate.wallet){score+=.08;reasons.push('same wallet star');}
+  if(weight<.45)return null;return{score:Math.round(score/weight*1000)/1000,reasons};
+}
+
+function map(row){return{id:row.id,wallet:row.wallet,mint:row.mint,status:row.status,entryTs:row.entry_ts??null,exitTs:row.exit_ts??null,buySol:finite(row.buy_sol),sellSol:finite(row.sell_sol),matchedRealizedSol:finite(row.matched_realized_sol),coverage:row.coverage??'unknown',evidenceIds:JSON.parse(row.evidence_ids_json||'[]')};}
+
+export async function handleGhostSimilarityRequest(request,env={}){
+  const url=new URL(request.url);if(url.pathname!=='/api/intelligence/research/ghosts'||request.method!=='GET')return null;
+  const id=String(url.searchParams.get('roundId')||'').trim();if(!id)return json({ok:false,error:'roundId is required',matches:[]},400);
+  const db=intelligenceDb(env);if(!db)return json({ok:false,coverage:'unavailable',matches:[],disclosure:'Ghost requires retained matched-round evidence. No historical similarity was invented.'},503);
+  try{
+    const subjectRow=await db.prepare('SELECT * FROM matched_trade_rounds WHERE id=? LIMIT 1').bind(id).first();if(!subjectRow)return json({ok:false,coverage:'empty',matches:[],disclosure:'The selected matched round is not retained. No historical similarity was invented.'},404);
+    const result=await db.prepare('SELECT * FROM matched_trade_rounds WHERE id<>? AND status IN (\'closed\',\'open\') AND entry_ts IS NOT NULL ORDER BY entry_ts DESC LIMIT 240').bind(id).all();
+    const subject=map(subjectRow),matches=(result.results||[]).map(map).map(row=>({row,similarity:ghostSimilarityScore({id:subject.id,wallet:subject.wallet,mint:subject.mint,status:subject.status,entry_ts:subject.entryTs,exit_ts:subject.exitTs,buy_sol:subject.buySol},{id:row.id,wallet:row.wallet,mint:row.mint,status:row.status,entry_ts:row.entryTs,exit_ts:row.exitTs,buy_sol:row.buySol})})).filter(item=>item.similarity&&item.similarity.score>=.52).sort((a,b)=>b.similarity.score-a.similarity.score).slice(0,12).map(item=>({...item.row,similarityScore:item.similarity.score,similarityReasons:item.similarity.reasons}));
+    return json({ok:true,coverage:matches.length?'retained':'empty',subject,matches,method:'deterministic historical similarity over retained matched rounds: status, observed hold duration, observed buy size, same token, same wallet',disclosure:matches.length?'Ghost shows historical echoes in retained evidence. Similarity is descriptive, not predictive, and is not a trader score.':'No sufficiently similar retained rounds met the deterministic threshold. No prediction was generated.'});
+  }catch(error){return json({ok:false,coverage:'unavailable',matches:[],error:String(error?.message||error),disclosure:'Ghost similarity is temporarily unavailable. No historical match was invented.'},503);}
+}
