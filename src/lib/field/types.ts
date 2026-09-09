@@ -1,6 +1,7 @@
 export type FieldMode =
   | "explore"
   | "intelligence"
+  | "index"
   | "query"
   | "trickster"
   | "games"
@@ -52,5 +53,5 @@ export const ANALYSIS_MODES: { id: FieldMode; label: string }[] = [
 ];
 export const MODE_HINT: Record<FieldMode, string> = {
   explore: "INTELLIGENCE IS VISIBLE. THE FUTURE IS PARTICLE.",
-  intelligence: "Inspect verified activity. Facts only.", query: "Paste a public identifier. ASK wakes the Field.", trickster: "Compose a data story. Every claim keeps its receipt.", games: "Learn from narrated, indexed events. No scores. No missions.", compare: "Compare evidence side by side.", "what-if": "Simulate from observed evidence. Estimates stay labeled.", sequences: "Discover bounded market sequences.", evidence: "Verify sources, coverage, and original chain time.", replay: "Play, pause, and step through chain time.", ghost: "See the indexed counterfactual portfolio. Estimates stay labeled.", social: "Follow evidence, creators, wallets, tokens, and galaxies without connecting a wallet.", observatory: "Open the Fomo Galaxy and study its cached all-time trader stars. No copy trading.", watchlist: "Your saved token planets and wallet stars. Local-first and read-only.",
+  intelligence: "Inspect verified activity. Facts only.", index: "Search the permanent research archive and jump between indexed evidence and the Field.", query: "Paste a public identifier. ASK wakes the Field.", trickster: "Compose a data story. Every claim keeps its receipt.", games: "Learn from narrated, indexed events. No scores. No missions.", compare: "Compare evidence side by side.", "what-if": "Simulate from observed evidence. Estimates stay labeled.", sequences: "Discover bounded market sequences.", evidence: "Verify sources, coverage, and original chain time.", replay: "Play, pause, and step through chain time.", ghost: "See the indexed counterfactual portfolio. Estimates stay labeled.", social: "Follow evidence, creators, wallets, tokens, and galaxies without connecting a wallet.", observatory: "Open the Fomo Galaxy and study its cached all-time trader stars. No copy trading.", watchlist: "Your saved token planets and wallet stars. Local-first and read-only.",
 };
