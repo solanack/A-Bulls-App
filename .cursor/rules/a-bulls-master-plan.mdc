@@ -1,0 +1,14 @@
+---
+description: A Bulls App master product and release direction
+alwaysApply: true
+---
+
+# A Bulls App — mandatory context
+
+Read `MASTER_PLAN.md` before proposing or changing code. It is the highest-level product/architecture contract and supersedes older conflicting direction. Then read `AGENTS.md` and the relevant compact contract (`UNIVERSE_VISION.md`, `SOCIALFI_ARCHITECTURE.md`).
+
+Advance the canonical research path instead of creating side products:
+
+`Universe → Galaxy → Planet → Holder Sky → Star → Holdings → Matched Rounds → Chosen Trade → Tools → Trickster Cut → Index → My Sky`
+
+Reuse existing systems. Preserve source separation, missing-data honesty, cache-first navigation, Seeker WebGL stability, and the non-execution boundary. Never fabricate blockchain facts or claim production changed without successful deployment and live verification.
