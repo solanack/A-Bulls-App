@@ -1,6 +1,4 @@
-/* Integration hooks for the next Worker release.
- * Compose these from the existing production worker without changing unrelated routes.
- */
+/* Integration hooks for the next Worker release. */
 import { handleIntelligenceVNext } from './intelligence-router-vnext.mjs';
 import { runIntelligenceMeshScheduler } from './intelligence-mesh-scheduler.mjs';
 import { handleIntelligenceMeshIngestRequest } from './intelligence-mesh-ingest.mjs';
@@ -34,27 +32,8 @@ import { handlePonsFamilyLiveRequest, refreshPonsFamilyLive } from './intelligen
 import { handleResearchIndexRequest } from './intelligence-research-index.mjs';
 import { handleGhostSimilarityRequest } from './intelligence-ghost-similarity.mjs';
 import { handleBehaviorFingerprintRequest } from './intelligence-behavior-fingerprint.mjs';
+import { handleResearchRelationshipsRequest } from './intelligence-research-relationships.mjs';
 import { materializeResearchIndex } from './intelligence-research-materializer.mjs';
 
-export async function handleIntelligenceFetch(request,env={},ctx=null){
-  if(ctx)env.__EXECUTION_CTX=ctx;
-  for(const handler of [handleFullChainStreamRequest,handleGhostSimilarityRequest,handleBehaviorFingerprintRequest,handleResearchIndexRequest,handleFomoLiveRequest,handlePonsFamilyLiveRequest,handleFomoGalaxyRequest,handlePonsFamilyRequest,handlePonsGalaxyRequest,handleTokenSystemRequest,handleTraderObservatoryRequest,handleThesisRequest,handleSocialFiRequest,handleFieldV0Request,handleFieldCompatibilityRequest,handleHeliusUniverseWebhook,handlePumpTop10Request,handleExternalRetrievalTaskRequest,handleIntelligenceMeshIngestRequest,handleIntelligenceAdapterRequest,handleUniverseRequest,handleWalletTokenIndexRequest,handleEventMarketContextRequest,handleMarketReplayRequest,handleMarketBackfillPlanRequest,handleMarketBackfillRequest,handleIndexJobStatusRequest,handleReplayBundleRequest,handleTricksterRequest]){
-    const response=await handler(request,env);if(response)return response;
-  }
-  return handleIntelligenceVNext(request,env);
-}
-
-export async function handleIntelligenceScheduled(env={}){
-  const configured=Number(env.INTELLIGENCE_SCHEDULER_BATCH_SIZE||3),limit=Math.max(1,Math.min(5,Number.isFinite(configured)?Math.trunc(configured):3));
-  const mesh=await runIntelligenceMeshScheduler(env,{limit}),maintenance=[];
-  if(String(env.ECOSYSTEM_UNIVERSES_ENABLED||'').toLowerCase()==='true')maintenance.push(runUniverseScheduledMaintenance(env));
-  if(String(env.UNIVERSE_ENABLED||'').toLowerCase()==='true')maintenance.push(pruneUniverseObservations(env));
-  if(String(env.TRICKSTER_SHARE_ENABLED||'').toLowerCase()==='true')maintenance.push(pruneTricksterShareManifests(env));
-  if(String(env.PUMP_INDEX_ENABLED||'').toLowerCase()==='true')maintenance.push(maintainPumpIndex(env));
-  maintenance.push(resolveDueTheses(env));
-  maintenance.push(refreshFomoLive(env));
-  maintenance.push((async()=>{try{await maintainPonsIndex(env);}catch(error){console.error('[pons-index]',String(error?.message||error));}return refreshPonsFamilyLive(env);})());
-  maintenance.push(materializeResearchIndex(env));
-  if(maintenance.length){const settled=await Promise.allSettled(maintenance);for(const [index,result] of settled.entries())if(result.status==='rejected')console.error('[scheduled-maintenance-error]',index,String(result.reason?.stack||result.reason?.message||result.reason));}
-  return mesh;
-}
+export async function handleIntelligenceFetch(request,env={},ctx=null){if(ctx)env.__EXECUTION_CTX=ctx;for(const handler of [handleFullChainStreamRequest,handleGhostSimilarityRequest,handleBehaviorFingerprintRequest,handleResearchRelationshipsRequest,handleResearchIndexRequest,handleFomoLiveRequest,handlePonsFamilyLiveRequest,handleFomoGalaxyRequest,handlePonsFamilyRequest,handlePonsGalaxyRequest,handleTokenSystemRequest,handleTraderObservatoryRequest,handleThesisRequest,handleSocialFiRequest,handleFieldV0Request,handleFieldCompatibilityRequest,handleHeliusUniverseWebhook,handlePumpTop10Request,handleExternalRetrievalTaskRequest,handleIntelligenceMeshIngestRequest,handleIntelligenceAdapterRequest,handleUniverseRequest,handleWalletTokenIndexRequest,handleEventMarketContextRequest,handleMarketReplayRequest,handleMarketBackfillPlanRequest,handleMarketBackfillRequest,handleIndexJobStatusRequest,handleReplayBundleRequest,handleTricksterRequest]){const response=await handler(request,env);if(response)return response;}return handleIntelligenceVNext(request,env);}
+export async function handleIntelligenceScheduled(env={}){const configured=Number(env.INTELLIGENCE_SCHEDULER_BATCH_SIZE||3),limit=Math.max(1,Math.min(5,Number.isFinite(configured)?Math.trunc(configured):3));const mesh=await runIntelligenceMeshScheduler(env,{limit}),maintenance=[];if(String(env.ECOSYSTEM_UNIVERSES_ENABLED||'').toLowerCase()==='true')maintenance.push(runUniverseScheduledMaintenance(env));if(String(env.UNIVERSE_ENABLED||'').toLowerCase()==='true')maintenance.push(pruneUniverseObservations(env));if(String(env.TRICKSTER_SHARE_ENABLED||'').toLowerCase()==='true')maintenance.push(pruneTricksterShareManifests(env));if(String(env.PUMP_INDEX_ENABLED||'').toLowerCase()==='true')maintenance.push(maintainPumpIndex(env));maintenance.push(resolveDueTheses(env));maintenance.push(refreshFomoLive(env));maintenance.push((async()=>{try{await maintainPonsIndex(env);}catch(error){console.error('[pons-index]',String(error?.message||error));}return refreshPonsFamilyLive(env);})());maintenance.push(materializeResearchIndex(env));if(maintenance.length){const settled=await Promise.allSettled(maintenance);for(const [index,result] of settled.entries())if(result.status==='rejected')console.error('[scheduled-maintenance-error]',index,String(result.reason?.stack||result.reason?.message||result.reason));}return mesh;}
