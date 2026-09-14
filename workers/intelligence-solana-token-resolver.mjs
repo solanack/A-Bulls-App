@@ -47,6 +47,10 @@ function dexRows(payload){
   return [];
 }
 
+function logDexFailure(kind,details={}){
+  try{console.warn('[dexscreener-market]',JSON.stringify({kind,...details}));}catch{}
+}
+
 export function normalizeGeckoTerminalToken(mint,payload={}){
   const target=s(mint),attributes=payload?.data?.attributes&&typeof payload.data.attributes==='object'?payload.data.attributes:{};
   const address=s(attributes.address||payload?.data?.id).replace(/^solana_/,''),priceUsd=n(attributes.price_usd);
@@ -70,12 +74,20 @@ export async function fetchSolanaDexMarket(address,fetchImpl=providerFetch){
     {url:`${DEXSCREENER_LOOKUP_ENDPOINT}/${encodeURIComponent(target)}`,source:'dexscreener-token-lookup'}
   ];
   for(const attempt of dexAttempts){
+    const startedAt=Date.now();
     try{
       const response=await fetchImpl(attempt.url,{headers:dexHeaders,signal:AbortSignal.timeout(3500)});
-      if(!response.ok)continue;
-      const market=normalizeSolanaDexPairs(target,dexRows(await response.json()));
+      const elapsedMs=Date.now()-startedAt;
+      if(!response.ok){
+        logDexFailure('http',{source:attempt.source,status:response.status,elapsedMs,retryAfter:response.headers.get('retry-after'),cfRay:response.headers.get('cf-ray'),contentType:response.headers.get('content-type')});
+        continue;
+      }
+      const payload=await response.json(),rows=dexRows(payload),market=normalizeSolanaDexPairs(target,rows);
       if(market)return Object.freeze({...market,source:attempt.source});
-    }catch{}
+      logDexFailure('no-matching-pair',{source:attempt.source,status:response.status,elapsedMs,rowCount:rows.length,cfRay:response.headers.get('cf-ray')});
+    }catch(error){
+      logDexFailure('exception',{source:attempt.source,elapsedMs:Date.now()-startedAt,name:s(error?.name),message:s(error?.message).slice(0,180)});
+    }
   }
   try{
     const response=await fetchImpl(`${GECKOTERMINAL_TOKEN_ENDPOINT}/${encodeURIComponent(target)}`,{headers:{accept:'application/json;version=20230203','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'},signal:AbortSignal.timeout(3500)});
