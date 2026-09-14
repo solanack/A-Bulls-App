@@ -52,7 +52,7 @@ try{
 }
 
 if(!discovery.length){
-  console.log('\nRESULT: pons_discovery_state is empty. Apply migration 0028 and deploy the Intelligence Worker before expecting historical discovery.');
+  console.log('\nRESULT: pons_discovery_state exists but has no factory rows yet. After migration 0028 and the new Worker are deployed, allow the next scheduled run to initialize V1/V2 discovery, then rerun this check.');
 }else if(discovery.some(row=>row.last_error)){
   console.log('\nRESULT: historical discovery is running but at least one factory has an error. Inspect last_error above before changing ranking or rendering.');
 }else if(Number(counts.launch_count||0)===0){
