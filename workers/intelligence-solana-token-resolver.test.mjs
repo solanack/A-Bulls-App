@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeLargestAccounts,normalizeSolanaDexPairs,resolveSolanaToken,summarizeTradingPressure} from './intelligence-solana-token-resolver.mjs';
+import {fetchSolanaDexMarket,normalizeLargestAccounts,normalizeSolanaDexPairs,resolveSolanaToken,summarizeTradingPressure} from './intelligence-solana-token-resolver.mjs';
 
 const mint='So11111111111111111111111111111111111111112';
 
@@ -10,6 +10,20 @@ test('normalizes market, valuation, momentum, and liquidity ratio',()=>{
   assert.equal(market.fdvUsd,100000000000);
   assert.equal(market.liquidityToMarketCapPct,1);
   assert.equal(market.transactions.h1.buys,30);
+});
+
+test('falls back to DexScreener token lookup when the primary market endpoint is unavailable',async()=>{
+  const calls=[];
+  const fetchImpl=async input=>{
+    const url=String(input);calls.push(url);
+    if(url.includes('/token-pairs/v1/solana/'))return new Response('upstream unavailable',{status:503});
+    if(url.includes('/latest/dex/tokens/'))return new Response(JSON.stringify({pairs:[{chainId:'solana',baseToken:{address:mint,symbol:'SOL',name:'Wrapped SOL'},dexId:'raydium',pairAddress:'pair',priceUsd:'101.39',marketCap:100000000000,liquidity:{usd:30000000},volume:{h24:300000000},txns:{h24:{buys:100,sells:90}}}]}),{headers:{'content-type':'application/json'}});
+    throw new Error('unexpected request');
+  };
+  const market=await fetchSolanaDexMarket(mint,fetchImpl);
+  assert.equal(calls.length,2);
+  assert.equal(market.priceUsd,101.39);
+  assert.equal(market.source,'dexscreener-token-lookup');
 });
 
 test('computes factual buy pressure without predicting direction',()=>{
