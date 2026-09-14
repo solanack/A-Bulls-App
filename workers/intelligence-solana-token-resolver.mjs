@@ -2,7 +2,8 @@
  * Market data is observed from DexScreener; authority and concentration data
  * come from standard Solana RPC; holder count uses Helius DAS when configured.
  */
-const DEXSCREENER_ENDPOINT='https://api.dexscreener.com/token-pairs/v1/solana';
+const DEXSCREENER_PAIRS_ENDPOINT='https://api.dexscreener.com/token-pairs/v1/solana';
+const DEXSCREENER_LOOKUP_ENDPOINT='https://api.dexscreener.com/latest/dex/tokens';
 import { providerFetch } from './intelligence-fetch.mjs';
 const ADDRESS_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const s=value=>String(value??'').trim();
@@ -36,6 +37,30 @@ export function normalizeSolanaDexPairs(mint,rows=[]){
     labels:Array.isArray(pair?.labels)?pair.labels.map(s).filter(Boolean).slice(0,12):[],
     url:s(pair?.url).slice(0,600)||null,source:'dexscreener-token-pairs'
   });
+}
+
+function dexRows(payload){
+  if(Array.isArray(payload))return payload;
+  if(Array.isArray(payload?.pairs))return payload.pairs;
+  return [];
+}
+
+export async function fetchSolanaDexMarket(address,fetchImpl=providerFetch){
+  const target=s(address);if(!ADDRESS_RE.test(target))return null;
+  const headers={accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'};
+  const attempts=[
+    {url:`${DEXSCREENER_PAIRS_ENDPOINT}/${encodeURIComponent(target)}`,source:'dexscreener-token-pairs'},
+    {url:`${DEXSCREENER_LOOKUP_ENDPOINT}/${encodeURIComponent(target)}`,source:'dexscreener-token-lookup'}
+  ];
+  for(const attempt of attempts){
+    try{
+      const response=await fetchImpl(attempt.url,{headers,signal:AbortSignal.timeout(3500)});
+      if(!response.ok)continue;
+      const market=normalizeSolanaDexPairs(target,dexRows(await response.json()));
+      if(market)return Object.freeze({...market,source:attempt.source});
+    }catch{}
+  }
+  return null;
 }
 
 export function summarizeTradingPressure(transactions={}){
@@ -77,7 +102,7 @@ export async function resolveSolanaToken(mint,{env={},source,account,fetchImpl=p
   const decimals=n(info?.decimals);
   const totalSupply=tokenAmount!=null&&decimals!=null?Number(tokenAmount)/10**decimals:null;
   const [dex,largest,pump,holderData]=await Promise.all([
-    fetchImpl(`${DEXSCREENER_ENDPOINT}/${encodeURIComponent(address)}`,{headers:{accept:'application/json'}}).then(async response=>response.ok?normalizeSolanaDexPairs(address,await response.json()):null).catch(()=>null),
+    fetchSolanaDexMarket(address,fetchImpl),
     rpc(source,'getTokenLargestAccounts',[address,{commitment:'confirmed'}],fetchImpl).then(result=>normalizeLargestAccounts(result,totalSupply)).catch(()=>({top10Pct:null,top20Pct:null,sampledAccounts:0,method:'unavailable'})),
     pumpRecord(env,address),
     source?.name==='helius-standard-rpc'?rpc(source,'getTokenAccounts',[{mint:address,limit:1,options:{showZeroBalance:false}}],fetchImpl).catch(()=>null):null
