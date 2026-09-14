@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fetchSolanaDexMarket,normalizeLargestAccounts,normalizeSolanaDexPairs,resolveSolanaToken,summarizeTradingPressure} from './intelligence-solana-token-resolver.mjs';
+import {fetchSolanaDexMarket,normalizeGeckoTerminalToken,normalizeLargestAccounts,normalizeSolanaDexPairs,resolveSolanaToken,summarizeTradingPressure} from './intelligence-solana-token-resolver.mjs';
 
 const mint='So11111111111111111111111111111111111111112';
 
@@ -26,6 +26,28 @@ test('falls back to DexScreener token lookup when the primary market endpoint is
   assert.equal(market.source,'dexscreener-token-lookup');
 });
 
+test('normalizes GeckoTerminal token data without inventing unavailable tape fields',()=>{
+  const market=normalizeGeckoTerminalToken(mint,{data:{id:`solana_${mint}`,attributes:{address:mint,name:'Wrapped SOL',symbol:'SOL',price_usd:'101.42',market_cap_usd:'100000000000',fdv_usd:'100000000000',total_reserve_in_usd:'32000000',volume_usd:{h24:'310000000'}}}});
+  assert.equal(market.priceUsd,101.42);
+  assert.equal(market.volumeUsd.h24,310000000);
+  assert.equal(market.transactions.h24.buys,null);
+  assert.equal(market.source,'geckoterminal-token');
+});
+
+test('uses GeckoTerminal when both DexScreener routes are unavailable',async()=>{
+  const calls=[];
+  const fetchImpl=async input=>{
+    const url=String(input);calls.push(url);
+    if(url.includes('dexscreener'))return new Response('blocked',{status:403});
+    if(url.includes('geckoterminal'))return new Response(JSON.stringify({data:{id:`solana_${mint}`,attributes:{address:mint,name:'Wrapped SOL',symbol:'SOL',price_usd:'101.55',market_cap_usd:'100000000000',fdv_usd:'100000000000',total_reserve_in_usd:'32000000',volume_usd:{h24:'300000000'}}}}),{headers:{'content-type':'application/json'}});
+    throw new Error('unexpected request');
+  };
+  const market=await fetchSolanaDexMarket(mint,fetchImpl);
+  assert.equal(calls.length,3);
+  assert.equal(market.priceUsd,101.55);
+  assert.equal(market.source,'geckoterminal-token');
+});
+
 test('computes factual buy pressure without predicting direction',()=>{
   const pressure=summarizeTradingPressure({h1:{buys:30,sells:20}});
   assert.equal(pressure.h1.buySharePct,60);
@@ -43,6 +65,7 @@ test('resolves an enriched read-only Solana trader snapshot',async()=>{
   const source={name:'helius-standard-rpc',url:'https://helius.test'};
   const fetchImpl=async(input,init={})=>{
     if(String(input).includes('dexscreener'))return new Response(JSON.stringify([{chainId:'solana',baseToken:{address:mint,symbol:'MEME',name:'Meme'},dexId:'pumpfun',priceUsd:'0.01',marketCap:1000000,fdv:10000000,liquidity:{usd:50000},volume:{h1:10000},priceChange:{h1:5},txns:{h1:{buys:12,sells:8}}}]));
+    if(String(input).includes('geckoterminal'))throw new Error('unexpected gecko fallback');
     const method=JSON.parse(init.body).method;
     if(method==='getTokenLargestAccounts')return new Response(JSON.stringify({jsonrpc:'2.0',id:1,result:{value:[{uiAmountString:'400'}]}}));
     if(method==='getTokenAccounts')return new Response(JSON.stringify({jsonrpc:'2.0',id:1,result:{total:321,token_accounts:[]}}));
