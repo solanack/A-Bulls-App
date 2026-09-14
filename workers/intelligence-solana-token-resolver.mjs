@@ -1,9 +1,11 @@
 /* Read-only Solana token trader snapshot.
- * Market data is observed from DexScreener; authority and concentration data
- * come from standard Solana RPC; holder count uses Helius DAS when configured.
+ * Market data is observed from DexScreener with GeckoTerminal as a bounded
+ * fallback; authority and concentration data come from standard Solana RPC;
+ * holder count uses Helius DAS when configured.
  */
 const DEXSCREENER_PAIRS_ENDPOINT='https://api.dexscreener.com/token-pairs/v1/solana';
 const DEXSCREENER_LOOKUP_ENDPOINT='https://api.dexscreener.com/latest/dex/tokens';
+const GECKOTERMINAL_TOKEN_ENDPOINT='https://api.geckoterminal.com/api/v2/networks/solana/tokens';
 import { providerFetch } from './intelligence-fetch.mjs';
 const ADDRESS_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const s=value=>String(value??'').trim();
@@ -45,21 +47,40 @@ function dexRows(payload){
   return [];
 }
 
+export function normalizeGeckoTerminalToken(mint,payload={}){
+  const target=s(mint),attributes=payload?.data?.attributes&&typeof payload.data.attributes==='object'?payload.data.attributes:{};
+  const address=s(attributes.address||payload?.data?.id).replace(/^solana_/,''),priceUsd=n(attributes.price_usd);
+  if(!ADDRESS_RE.test(target)||address!==target||priceUsd==null)return null;
+  const marketCapUsd=n(attributes.market_cap_usd),fdvUsd=n(attributes.fdv_usd),liquidityUsd=n(attributes.total_reserve_in_usd??attributes.reserve_in_usd);
+  const volumeUsd=periods(attributes.volume_usd),priceChangePct=periods(attributes.price_change_percentage),transactions=Object.fromEntries(['m5','h1','h6','h24'].map(key=>[key,{buys:null,sells:null}]));
+  return Object.freeze({
+    symbol:s(attributes.symbol).slice(0,32)||null,name:s(attributes.name).slice(0,120)||null,
+    priceUsd,marketCapUsd,fdvUsd,liquidityUsd,
+    liquidityToMarketCapPct:liquidityUsd!=null&&marketCapUsd>0?liquidityUsd/marketCapUsd*100:null,
+    volumeUsd,priceChangePct,transactions,
+    pairAddress:null,dexId:null,pairCreatedAt:null,labels:[],url:null,source:'geckoterminal-token'
+  });
+}
+
 export async function fetchSolanaDexMarket(address,fetchImpl=providerFetch){
   const target=s(address);if(!ADDRESS_RE.test(target))return null;
-  const headers={accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'};
-  const attempts=[
+  const dexHeaders={accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'};
+  const dexAttempts=[
     {url:`${DEXSCREENER_PAIRS_ENDPOINT}/${encodeURIComponent(target)}`,source:'dexscreener-token-pairs'},
     {url:`${DEXSCREENER_LOOKUP_ENDPOINT}/${encodeURIComponent(target)}`,source:'dexscreener-token-lookup'}
   ];
-  for(const attempt of attempts){
+  for(const attempt of dexAttempts){
     try{
-      const response=await fetchImpl(attempt.url,{headers,signal:AbortSignal.timeout(3500)});
+      const response=await fetchImpl(attempt.url,{headers:dexHeaders,signal:AbortSignal.timeout(3500)});
       if(!response.ok)continue;
       const market=normalizeSolanaDexPairs(target,dexRows(await response.json()));
       if(market)return Object.freeze({...market,source:attempt.source});
     }catch{}
   }
+  try{
+    const response=await fetchImpl(`${GECKOTERMINAL_TOKEN_ENDPOINT}/${encodeURIComponent(target)}`,{headers:{accept:'application/json;version=20230203','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'},signal:AbortSignal.timeout(3500)});
+    if(response.ok){const market=normalizeGeckoTerminalToken(target,await response.json());if(market)return market;}
+  }catch{}
   return null;
 }
 
@@ -118,7 +139,7 @@ export async function resolveSolanaToken(mint,{env={},source,account,fetchImpl=p
   const market={...(dex||{}),circulatingSupply:null,totalSupply};
   return Object.freeze({
     ok:true,kind:'solana-token',address,state:'resolved',label:'token-mint',owner:s(account?.owner)||null,executable:false,parsedType:'mint',lamports:Number(account?.lamports||0),network:'Solana',readOnly:true,
-    source:[dex&&'dexscreener',source?.name,holderData&&'helius-das',pump&&'pump-index'].filter(Boolean).join('+'),
+    source:[dex?.source,source?.name,holderData&&'helius-das',pump&&'pump-index'].filter(Boolean).join('+'),
     coverage:dex?'fresh':'partial',market,activity:{pressure},launchpad,
     token:{decimals,mintAuthority:s(info?.mintAuthority)||null,freezeAuthority:s(info?.freezeAuthority)||null,mintAuthorityRevoked:!info?.mintAuthority,freezeAuthorityRevoked:!info?.freezeAuthority},
     holders:{count:holderCount,top10Pct:largest?.top10Pct??null,top20Pct:largest?.top20Pct??null,method:largest?.method||'unavailable',coverage:holderCount!=null||largest?.top10Pct!=null?'partial':'unavailable'},
@@ -126,8 +147,8 @@ export async function resolveSolanaToken(mint,{env={},source,account,fetchImpl=p
     bundles:{coverage:'unavailable',statement:'Bundled and linked-wallet ownership is not inferred from balances alone.'},
     smartMoney:{coverage:'unavailable',statement:'Wallets are not labeled smart money without a verified performance methodology.'},
     risk:{level:flags.length?'observed-flags':'no-authority-flags-observed',flags,statement:'Observed facts only. This is not a safety rating or price prediction.'},
-    disclosure:'Market and transaction fields are provider observations. Holder concentration is raw and may include pools or program accounts.'
+    disclosure:'Market and transaction fields are provider observations. DexScreener is primary and GeckoTerminal is a bounded fallback. Holder concentration is raw and may include pools or program accounts.'
   });
 }
 
-export const __solanaTokenResolverContract=Object.freeze({readOnly:true,marketSource:'dexscreener',holderSource:'solana-rpc-plus-helius'});
+export const __solanaTokenResolverContract=Object.freeze({readOnly:true,marketSource:'dexscreener-primary-geckoterminal-fallback',holderSource:'solana-rpc-plus-helius'});
