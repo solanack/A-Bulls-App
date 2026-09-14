@@ -8,6 +8,7 @@ const REQUIRED_SECRET_NAMES=['FOMOAPI_API_KEY','PUMP_INGEST_SECRET','HELIUS_WEBH
 function timeout(ms=20_000){return AbortSignal.timeout(ms);}
 function n(value){const parsed=Number(value);return Number.isFinite(parsed)?parsed:0;}
 function arr(value){return Array.isArray(value)?value:[];}
+function s(value){return String(value??'').trim();}
 
 async function request(path){
   try{
@@ -15,6 +16,14 @@ async function request(path){
     const text=await response.text();let body=null;try{body=JSON.parse(text);}catch{}
     return {path,status:response.status,ok:response.ok,body,text:body?null:text.slice(0,300)};
   }catch(error){return {path,status:0,ok:false,body:null,error:String(error?.message||error)};}
+}
+
+async function directJson(url){
+  try{
+    const response=await fetch(url,{headers:{accept:'application/json','cache-control':'no-cache'},cache:'no-store',signal:timeout()});
+    const text=await response.text();let body=null;try{body=JSON.parse(text);}catch{}
+    return {url,status:response.status,ok:response.ok,body,text:body?null:text.slice(0,300)};
+  }catch(error){return {url,status:0,ok:false,body:null,error:String(error?.message||error)};}
 }
 
 function runWrangler(args){
@@ -55,7 +64,7 @@ function publicSummary(result){
   if(result.path.includes('/field/v0/tokens'))return {http:result.status,ok:b.ok,tokenSnapshots:arr(b.stars).length,coverage:b.coverage??null,disclosure:b.disclosure??null};
   if(result.path.includes('/field/v0/events'))return {http:result.status,ok:b.ok,events:arr(b.events).length,coverage:b.coverage??null};
   if(result.path.includes('/field/snapshot'))return {http:result.status,ok:b.ok,particles:arr(b.snapshot?.particles).length,activeMembers:b.snapshot?.activeMemberCount??null,status:b.status??null};
-  if(result.path.includes('/pons/galaxy'))return {http:result.status,ok:b.ok,launches:arr(b.data?.launches).length,error:b.error??null};
+  if(result.path.includes('/pons/galaxy'))return {http:result.status,ok:b.ok,launches:arr(b.data?.launches).length,error:b.error??null,selector:b.data?.selector??null,coverage:b.data?.coverage??null};
   return {http:result.status,ok:result.ok};
 }
 
@@ -67,7 +76,7 @@ const paths=[
   '/api/intelligence/field/v0/tokens?limit=50',
   '/api/intelligence/field/v0/events?types=token.trade%2Cholder.exit&limit=50',
   '/api/intelligence/field/snapshot?galaxy=pump-fun&window=300&limit=100',
-  '/api/intelligence/pons/galaxy',
+  '/api/intelligence/pons/galaxy?limit=50',
 ];
 
 console.log('A BULLS APP — LIVE GALAXY DIAGNOSTIC');
@@ -88,19 +97,38 @@ const queries={
   pump:`SELECT (SELECT COUNT(*) FROM pump_tokens) AS token_count,(SELECT COUNT(*) FROM pump_trades) AS trade_count,(SELECT COUNT(*) FROM pump_active_tokens) AS active_count,(SELECT COUNT(*) FROM pump_volume_buckets) AS volume_bucket_count;`,
   pumpHealth:`SELECT state,last_message_at,last_success_at,received_events,accepted_events,duplicate_events,rejected_events,updated_at FROM pump_ingest_health WHERE id=1;`,
   pumpUniverse:`SELECT COUNT(*) AS active_members FROM intelligence_universe_membership WHERE universe_id='pump-fun' AND active=1;`,
+  pons:`SELECT (SELECT COUNT(*) FROM pons_launches) AS launch_count,(SELECT COUNT(*) FROM pons_rank_candidates) AS candidate_count,(SELECT COUNT(*) FROM pons_rank_candidates WHERE active=1) AS active_count,(SELECT COUNT(*) FROM pons_rank_candidates WHERE current_rank IS NOT NULL) AS ranked_count,(SELECT COUNT(*) FROM pons_rank_candidates WHERE active=1 AND market_cap_usd>75000 AND holder_count>750 AND volume_h24_usd>0 AND market_observed_at>=unixepoch()-3600 AND holder_observed_at>=unixepoch()-3600) AS fresh_qualified_count;`,
+  ponsIndex:`SELECT factory,factory_version,last_scanned_block,last_success_at,last_error,updated_at FROM pons_index_state ORDER BY factory_version;`,
+  ponsCandidates:`SELECT token,symbol,market_cap_usd,volume_h24_usd,holder_count,active,current_rank,qualifying_cycles,disqualifying_cycles,market_source,unixepoch()-market_observed_at AS market_age_s,CASE WHEN holder_observed_at IS NULL THEN NULL ELSE unixepoch()-holder_observed_at END AS holder_age_s,updated_at FROM pons_rank_candidates ORDER BY active DESC,current_rank IS NULL,current_rank,volume_h24_usd DESC LIMIT 12;`,
+  ponsLatest:`SELECT token,factory,factory_version,block_number,block_time,finality,updated_at FROM pons_launches ORDER BY COALESCE(block_time,0) DESC,updated_at DESC LIMIT 5;`,
 };
 const d1={};
 for(const [key,sql] of Object.entries(queries)){d1[key]=queryD1(sql);console.log(JSON.stringify({query:key,...d1[key]}));}
+
+console.log('\n=== PONS PROVIDER PROBE FROM THIS DEVICE ===');
+const samplePons=s(d1.ponsLatest?.rows?.[0]?.token).toLowerCase();
+let ponsDexProbe=null,ponsHolderProbe=null;
+if(/^0x[0-9a-f]{40}$/.test(samplePons)){
+  ponsDexProbe=await directJson(`https://api.dexscreener.com/tokens/v1/robinhood/${encodeURIComponent(samplePons)}`);
+  ponsHolderProbe=await directJson(`https://robinhoodchain.blockscout.com/api/v2/tokens/${encodeURIComponent(samplePons)}/counters`);
+  const dexPairs=arr(ponsDexProbe.body),best=dexPairs.filter(pair=>s(pair?.baseToken?.address).toLowerCase()===samplePons).sort((a,b)=>n(b?.liquidity?.usd)-n(a?.liquidity?.usd))[0]||null;
+  const holderBody=ponsHolderProbe.body||{};
+  const holderCount=holderBody.token_holders_count??holderBody.tokenHoldersCount??holderBody.holders_count??holderBody.holdersCount??null;
+  console.log(JSON.stringify({token:samplePons,dex:{http:ponsDexProbe.status,pairs:dexPairs.length,marketCap:best?.marketCap??null,volumeH24:best?.volume?.h24??null,liquidityUsd:best?.liquidity?.usd??null,chainId:best?.chainId??null},blockscout:{http:ponsHolderProbe.status,holderCount,rawKeys:ponsHolderProbe.body?Object.keys(ponsHolderProbe.body):[]}}));
+}else console.log(JSON.stringify({skipped:true,reason:'No indexed PONS launch exists to probe.'}));
 
 const pub=Object.fromEntries(publicResults.map(r=>[r.path,r]));
 const fomoBody=pub['/api/intelligence/fomo/galaxy']?.body||{};
 const pumpStatus=pub['/api/intelligence/pump/status']?.body?.data||{};
 const pumpTokens=pub['/api/intelligence/field/v0/tokens?limit=50']?.body?.stars||[];
 const pumpSnapshot=pub['/api/intelligence/field/snapshot?galaxy=pump-fun&window=300&limit=100']?.body?.snapshot?.particles||[];
+const ponsPublic=pub['/api/intelligence/pons/galaxy?limit=50']?.body?.data||{};
+const ponsPublicLaunches=arr(ponsPublic.launches);
 const fomoCount=n(d1.fomo?.rows?.[0]?.trader_count);
 const pumpDb=d1.pump?.rows?.[0]||{};
 const pumpHealth=d1.pumpHealth?.rows?.[0]||{};
 const pumpMembers=n(d1.pumpUniverse?.rows?.[0]?.active_members);
+const ponsDb=d1.pons?.rows?.[0]||{};
 
 console.log('\n=== DIAGNOSIS ===');
 const findings=[];
@@ -120,6 +148,18 @@ else findings.push(`PUMP_FIELD_V0_OK: Field v0 returns ${pumpTokens.length} toke
 if(pumpMembers===0)findings.push('PUMP_FALLBACK_EMPTY: legacy pump-fun universe has zero active membership anchors. This matches the current config, where PUMPFUN_UNIVERSE_ENABLED/SOURCE_URL are not configured; do not enable it without a real source.');
 if(pumpTokens.length===0&&pumpSnapshot.length===0)findings.push('PUMP_BOTH_DATA_PATHS_EMPTY: both the primary Field v0 path and legacy indexed snapshot path are empty, so the renderer has no real pump PLANETS to show.');
 if(pumpStatus?.health?.state&&pumpStatus.health.state!=='receiving')findings.push(`PUMP_HEALTH: public pump health state is ${pumpStatus.health.state}.`);
+
+const ponsLaunchCount=n(ponsDb.launch_count),ponsCandidateCount=n(ponsDb.candidate_count),ponsActiveCount=n(ponsDb.active_count),ponsRankedCount=n(ponsDb.ranked_count),ponsFreshCount=n(ponsDb.fresh_qualified_count);
+if(ponsLaunchCount===0)findings.push('PONS_ROOT_CAUSE_DISCOVERY: pons_launches is empty. PONS factory discovery/indexing is not retaining verified launch events, so no PonsFamily PLANET can qualify.');
+else if(ponsCandidateCount===0)findings.push(`PONS_ROOT_CAUSE_ENRICHMENT: ${ponsLaunchCount} verified PONS launches exist but pons_rank_candidates is empty. Scheduled DexScreener/Blockscout enrichment is not producing candidates.`);
+else if(ponsFreshCount===0){
+  const sample=d1.ponsCandidates?.rows?.[0]||{};
+  findings.push(`PONS_ROOT_CAUSE_QUALIFICATION: ${ponsLaunchCount} launches and ${ponsCandidateCount} candidates exist, but zero have fresh evidence satisfying market cap > $75k, holders > 750, and positive 24h volume. Top cached candidate=${s(sample.token)||'none'} mcap=${n(sample.market_cap_usd)} holders=${n(sample.holder_count)} volume24h=${n(sample.volume_h24_usd)} marketAge=${sample.market_age_s??'null'}s holderAge=${sample.holder_age_s??'null'}s.`);
+}else if(ponsActiveCount===0||ponsRankedCount===0)findings.push(`PONS_RANKING_BUG: ${ponsFreshCount} candidates satisfy the live thresholds but active=${ponsActiveCount}, ranked=${ponsRankedCount}. Reranking/membership persistence is the failure point.`);
+else if(ponsPublicLaunches.length===0)findings.push(`PONS_PUBLIC_ROUTE_BUG: D1 has ${ponsActiveCount} active / ${ponsRankedCount} ranked PonsFamily candidates and ${ponsFreshCount} fresh qualifiers, but the public route returns zero launches.`);
+else findings.push(`PONS_DATA_OK: public route returns ${ponsPublicLaunches.length} PonsFamily PLANETS backed by ${ponsLaunchCount} verified launches and ${ponsFreshCount} fresh qualifying candidates. If the Field is empty, frontend hydration/composition is the next failure point.`);
+if(samplePons&&ponsDexProbe?.ok&&arr(ponsDexProbe.body).length===0)findings.push(`PONS_PROVIDER_DEX_EMPTY: direct DexScreener lookup for indexed launch ${samplePons} returned zero pairs from this device.`);
+if(samplePons&&ponsHolderProbe?.ok){const hb=ponsHolderProbe.body||{},hc=hb.token_holders_count??hb.tokenHoldersCount??hb.holders_count??hb.holdersCount;if(hc==null)findings.push(`PONS_PROVIDER_HOLDER_SCHEMA: Blockscout counters responded for ${samplePons} but none of the supported holder-count fields were present. Keys=${Object.keys(hb).join(',')}.`);}
 
 for(const finding of findings)console.log(`- ${finding}`);
 console.log('\nNo fake PLANETS or STARS were generated by this diagnostic.');
