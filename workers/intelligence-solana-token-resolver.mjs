@@ -4,7 +4,7 @@
  * holder count uses Helius DAS when configured.
  */
 const DEXSCREENER_PAIRS_ENDPOINT='https://api.dexscreener.com/token-pairs/v1/solana';
-const DEXSCREENER_LOOKUP_ENDPOINT='https://api.dexscreener.com/latest/dex/tokens';
+const DEXSCREENER_LOOKUP_ENDPOINT='https://api.dexscreener.com/tokens/v1/solana';
 const GECKOTERMINAL_TOKEN_ENDPOINT='https://api.geckoterminal.com/api/v2/networks/solana/tokens';
 import { providerFetch } from './intelligence-fetch.mjs';
 const ADDRESS_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
