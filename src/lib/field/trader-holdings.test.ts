@@ -4,6 +4,8 @@ import {
   cutSubjectFromHolding,
   focusedTraderWallet,
   formatIndexedPnl,
+  holdingMintLabel,
+  holdingsOverlayRows,
   holdingTokenLabel,
 } from "./trader-holdings.ts";
 import type { FieldSection, FocusedParticle } from "./types.ts";
@@ -43,6 +45,33 @@ describe("indexed holdings labels", () => {
     assert.equal(formatIndexedPnl(-1.25).text, "-1.2500 SOL");
     assert.equal(holdingTokenLabel({ name: "Pons", symbol: "PONS" }), "Pons · PONS");
     assert.equal(holdingTokenLabel({ name: MINT, symbol: MINT }), "Token name unavailable");
+  });
+
+  it("renders API rows with null PnL instead of treating them as no holdings", () => {
+    const rows = holdingsOverlayRows([
+      {
+        mint: MINT,
+        name: null,
+        symbol: null,
+        matchedRealizedSol: null,
+        observedInventory: 12,
+        closedCount: 0,
+        closedMatchedCount: 0,
+        openCount: 1,
+        lastObservedAt: 1,
+        sourceKind: "observed",
+        method: "bounded-fifo-observed-swaps-v1",
+      },
+      { mint: "not-a-mint", matchedRealizedSol: 4 },
+    ]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.mint, MINT);
+    assert.equal(rows[0]?.matchedRealizedSol, null);
+    assert.equal(rows[0]?.openCount, 1);
+    assert.deepEqual(formatIndexedPnl(rows[0]?.matchedRealizedSol), { text: "PnL unavailable", known: false });
+    assert.equal(holdingMintLabel(MINT), "97jCC4…pump");
+    assert.deepEqual(holdingsOverlayRows([]), []);
+    assert.deepEqual(holdingsOverlayRows(null), []);
   });
 
   it("opens Cut only with a full wallet×mint pair", () => {

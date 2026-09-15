@@ -46,6 +46,50 @@ export function formatIndexedPnl(value: number | null | undefined): { text: stri
   return { text: `${value >= 0 ? "+" : ""}${value.toFixed(4)} SOL`, known: true };
 }
 
+export function holdingMintLabel(mint: string): string {
+  const value = mint.trim();
+  return value.length > 16 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value;
+}
+
+function finiteOrNull(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function countOrZero(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+}
+
+/**
+ * Overlay rows from the holdings API. Null/missing PnL is still a row — never treat it as "no holdings".
+ */
+export function holdingsOverlayRows(items: unknown): TraderHolding[] {
+  if (!Array.isArray(items)) return [];
+  const rows: TraderHolding[] = [];
+  for (const raw of items) {
+    const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
+    if (!row) continue;
+    const mint = String(row.mint ?? "").trim();
+    if (!looksLikeMint(mint)) continue;
+    rows.push({
+      mint,
+      name: typeof row.name === "string" && row.name.trim() ? row.name.trim() : null,
+      symbol: typeof row.symbol === "string" && row.symbol.trim() ? row.symbol.trim() : null,
+      matchedRealizedSol: finiteOrNull(row.matchedRealizedSol),
+      observedInventory: finiteOrNull(row.observedInventory),
+      closedCount: countOrZero(row.closedCount),
+      closedMatchedCount: countOrZero(row.closedMatchedCount),
+      openCount: countOrZero(row.openCount),
+      lastObservedAt: finiteOrNull(row.lastObservedAt),
+      sourceKind: "observed",
+      method: String(row.method ?? "").trim() || "bounded-fifo-observed-swaps-v1",
+    });
+  }
+  return rows;
+}
+
 export function cutSubjectFromHolding(wallet: string, holding: Pick<TraderHolding, "mint" | "name" | "symbol">): CutSubject | null {
   const nextWallet = wallet.trim();
   const mint = holding.mint.trim();

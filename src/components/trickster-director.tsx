@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Download, Share2 } from "lucide-react";
 import { callUniverseTool } from "@/lib/universe-intelligence";
 import { loadResearchThread, saveResearchThread } from "@/lib/research-thread-store";
+import { autoSelectReceiptIds, CUT_RECEIPT_MAX, receiptEventId } from "@/lib/field/trickster-cut";
 import { cutShareCopy, cutShareHref, cutShareSize, shareCutLink } from "../../js/trickster-story-manifest.mjs";
-import { buildCutShareSvg, buildTricksterDirectorCues } from "../../js/trickster-universe-director.mjs";
+import { buildCutShareSvg } from "../../js/trickster-universe-director.mjs";
 
 type Data=Record<string,unknown>;
 type Ratio="9:16"|"16:9"|"1:1";
@@ -13,20 +14,21 @@ const text=(value:unknown)=>value==null?"":String(value);
 const num=(value:unknown)=>Number.isFinite(Number(value))?Number(value):0;
 const short=(value:unknown)=>{const valueText=text(value);return valueText.length>22?`${valueText.slice(0,9)}…${valueText.slice(-8)}`:valueText;};
 const uniq=(values:string[])=>[...new Set(values.map(value=>value.trim()).filter(Boolean))].slice(0,100);
-const eventId=(event:Data,index:number)=>text(event.id??event.signature)||`event-${index}`;
 
 export function TricksterDirector({bundle,mint,wallet,tokenLabel=""}:{bundle:Data;mint:string;wallet:string;tokenLabel?:string}){
   const events=useMemo(()=>arr(bundle.events).map(obj).filter(row=>num(row.timestamp)>0).sort((a,b)=>num(a.timestamp)-num(b.timestamp)),[bundle]),candles=useMemo(()=>arr(bundle.candles).map(obj).filter(row=>num(row.timestamp)>0).sort((a,b)=>num(a.timestamp)-num(b.timestamp)),[bundle]);
-  const[ratio,setRatio]=useState<Ratio>("9:16"),[selected,setSelected]=useState<readonly string[]>([]),[durationFrames,setDurationFrames]=useState(72),[busy,setBusy]=useState(false),[error,setError]=useState(""),[shareId,setShareId]=useState(""),[previewUrl,setPreviewUrl]=useState(""),[shareBlob,setShareBlob]=useState<Blob|null>(null),[shareFile,setShareFile]=useState(""),[shareStatus,setShareStatus]=useState("");
+  const[ratio,setRatio]=useState<Ratio>("9:16"),[selected,setSelected]=useState<readonly string[]|null>(null),[durationFrames,setDurationFrames]=useState(72),[busy,setBusy]=useState(false),[error,setError]=useState(""),[shareId,setShareId]=useState(""),[previewUrl,setPreviewUrl]=useState(""),[shareBlob,setShareBlob]=useState<Blob|null>(null),[shareFile,setShareFile]=useState(""),[shareStatus,setShareStatus]=useState("");
   const previewRef=useRef("");
   const bundleKey=`${text(obj(bundle.subject).mint)}:${num(obj(bundle.window).startTime)}:${num(obj(bundle.window).endTime)}:${events.length}`;
-  useEffect(()=>{const cues=buildTricksterDirectorCues(events,{maxCues:8});const cueIds=new Set(cues.map(cue=>String(cue.evidenceId||"")));const picked=events.map((event,index)=>eventId(event,index)).filter((id,index)=>cueIds.has(id)||cueIds.has(text(events[index]?.signature)));setSelected(picked.length?picked.slice(0,8):events.slice(0,8).map(eventId));setShareId("");setError("");setShareBlob(null);setShareFile("");setShareStatus("");if(previewRef.current)URL.revokeObjectURL(previewRef.current);previewRef.current="";setPreviewUrl("");},[bundleKey]);
+  const autoIds=useMemo(()=>autoSelectReceiptIds(events,CUT_RECEIPT_MAX),[bundleKey]);
+  const chosenIds=selected??autoIds;
+  useEffect(()=>{setSelected(null);setShareId("");setError("");setShareBlob(null);setShareFile("");setShareStatus("");if(previewRef.current)URL.revokeObjectURL(previewRef.current);previewRef.current="";setPreviewUrl("");},[bundleKey]);
   useEffect(()=>()=>{if(previewRef.current)URL.revokeObjectURL(previewRef.current);},[]);
   if(!events.length)return <p className="universe-empty">Watch this trade on the chart first. A Cut needs indexed receipts.</p>;
-  const chosen=events.filter((event,index)=>selected.includes(eventId(event,index))).slice(0,12),preview=chosen.at(-1)??events[0],coverage=obj(bundle.coverage),subject=obj(bundle.subject),subjectMint=text(subject.mint)||mint;
+  const chosen=events.filter((event,index)=>chosenIds.includes(receiptEventId(event,index))).slice(0,CUT_RECEIPT_MAX),preview=chosen.at(-1)??events[0],coverage=obj(bundle.coverage),subject=obj(bundle.subject),subjectMint=text(subject.mint)||mint;
   const origin=globalThis.location?.origin??"https://abullsapp.com";
   const shareHref=shareId?cutShareHref(origin,shareId):"";
-  function toggle(id:string){setSelected(current=>current.includes(id)?current.filter(item=>item!==id):[...current,id].slice(0,12));setShareId("");}
+  function toggle(id:string){setSelected(current=>{const base=current??autoIds;return base.includes(id)?base.filter(item=>item!==id):[...base,id].slice(0,CUT_RECEIPT_MAX);});setShareId("");}
   function renderShareArtifact(id:string,manifest:Data){
     const href=cutShareHref(origin,id);
     const svg=buildCutShareSvg({manifest,shareHref:href,candles,tokenLabel:tokenLabel||"This trade"});
@@ -41,7 +43,7 @@ export function TricksterDirector({bundle,mint,wallet,tokenLabel=""}:{bundle:Dat
     <TricksterStyles/>
     <div className="trickster-director__bar"><label>FORMAT<select value={ratio} onChange={event=>setRatio(event.target.value as Ratio)}><option value="9:16">9:16 vertical</option><option value="16:9">16:9 wide</option><option value="1:1">1:1 square</option></select></label><label>SCENE FRAMES<input type="number" min="24" max="240" step="12" value={durationFrames} onChange={event=>setDurationFrames(Math.max(24,Math.min(240,Math.trunc(Number(event.target.value)||72))))}/></label><span className="universe-disclosure">{chosen.length} receipt-bound scene{chosen.length===1?"":"s"} · {cutShareSize(ratio).w}×{cutShareSize(ratio).h}</span></div>
     <div className="trickster-stage" data-ratio={ratio}><DirectorChart candles={candles} events={chosen}/><div className="trickster-stage__caption"><span>INDEXED · {new Date(num(preview.timestamp)).toLocaleString()}</span><b>{captionFor(preview)}</b><span>{short(preview.signature??preview.id)} · {text(preview.verification)||"observed"}</span></div></div>
-    <div className="trickster-scenes" aria-label="Cut scene receipts">{events.slice(0,30).map((event,index)=>{const id=eventId(event,index),checked=selected.includes(id);return <label className="trickster-scene" key={id}><input type="checkbox" checked={checked} onChange={()=>toggle(id)}/><div><b>{captionFor(event)}</b><span>{new Date(num(event.timestamp)).toLocaleString()} · {short(event.signature??event.id)}</span></div><span>{checked?"IN CUT":"SKIP"}</span></label>})}</div>
+    <div className="trickster-scenes" aria-label="Cut scene receipts">{events.slice(0,30).map((event,index)=>{const id=receiptEventId(event,index),checked=chosenIds.includes(id);return <label className="trickster-scene" key={id}><input type="checkbox" checked={checked} onChange={()=>toggle(id)}/><div><b>{captionFor(event)}</b><span>{new Date(num(event.timestamp)).toLocaleString()} · {short(event.signature??event.id)}</span></div><span>{checked?"IN CUT":"SKIP"}</span></label>})}</div>
     <div className="trickster-director__bar"><button type="button" disabled={busy||!chosen.length} onClick={()=>void validateAndShare()}><Share2 size={12}/> {busy?"Verifying receipts…":"Make a Cut"}</button></div>
     {error?<p className="trickster-error">DEGRADED · {error}</p>:null}
     {shareId?<div className="trickster-share" aria-label="Share vertical Cut with receipts">
