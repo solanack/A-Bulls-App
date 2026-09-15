@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PONS_FACTORIES } from './intelligence-pons-galaxy.mjs';
-import { PONS_DISCOVERY_SPECS,buildFilteredPonsLogsUrl,buildPonsInstanceLogsUrl,buildPonsProLogsUrl,fetchPonsDiscoveryRange,fetchPonsInstancePage,parseBlockscoutLogsPayload,parseBlockscoutV2LogsPayload,__ponsDiscoveryContract } from './intelligence-pons-discovery.mjs';
+import { PONS_DISCOVERY_SPECS,buildFilteredPonsLogsUrl,buildPonsInstanceLogsUrl,buildPonsRestLogsUrl,buildPonsProLogsUrl,fetchPonsDiscoveryRange,fetchPonsInstancePage,parseBlockscoutLogsPayload,parseBlockscoutV2LogsPayload,__ponsDiscoveryContract } from './intelligence-pons-discovery.mjs';
 
 test('Pons legacy discovery URL remains factory and TokenLaunched topic filtered',()=>{
   const factory=PONS_FACTORIES.find(item=>item.version==='v2');
@@ -21,6 +21,16 @@ test('Pons no-key Blockscout v2 address-log URL preserves pagination cursor',()=
   assert.equal(url.searchParams.get('block_number'),'27736955');
   assert.equal(url.searchParams.get('index'),'68');
   assert.equal(url.searchParams.get('items_count'),'50');
+});
+
+test('Pons authenticated Blockscout PRO REST URL preserves address-log cursor',()=>{
+  const factory=PONS_FACTORIES.find(item=>item.version==='v2');
+  const url=new URL(buildPonsRestLogsUrl({PONS_BLOCKSCOUT_API_KEY:'proapi_test'},factory,{block_number:27_736_955,index:68,items_count:50}));
+  assert.equal(url.hostname,'api.blockscout.com');
+  assert.equal(url.pathname,`/4663/api/v2/addresses/${factory.address}/logs`);
+  assert.equal(url.searchParams.get('apikey'),'proapi_test');
+  assert.equal(url.searchParams.get('block_number'),'27736955');
+  assert.equal(url.searchParams.get('index'),'68');
 });
 
 test('Pons authenticated Blockscout Pro URL scopes Robinhood Chain and exact event',()=>{
@@ -53,6 +63,16 @@ test('Pons no-key Blockscout v2 page fetch needs no provider secret',async()=>{
   assert.equal(result.items.length,1);
   assert.equal(result.nextPageParams.block_number,8_999_999);
   assert.match(calls[0],/blockscout\.com\/api\/v2\/addresses\//);
+});
+
+test('Pons Blockscout page fetch uses PRO REST when key is configured',async()=>{
+  const factory=PONS_FACTORIES[0],calls=[];
+  const fetchImpl=async(input)=>{calls.push(String(input));return new Response(JSON.stringify({items:[],next_page_params:null}),{headers:{'content-type':'application/json'}});};
+  await fetchPonsInstancePage(factory,null,fetchImpl,{PONS_BLOCKSCOUT_API_KEY:'proapi_test'});
+  const url=new URL(calls[0]);
+  assert.equal(url.hostname,'api.blockscout.com');
+  assert.equal(url.pathname,`/4663/api/v2/addresses/${factory.address}/logs`);
+  assert.equal(url.searchParams.get('apikey'),'proapi_test');
 });
 
 test('Pons discovery uses exact-topic legacy Blockscout before public RPC',async()=>{
@@ -109,6 +129,6 @@ test('historical discovery is resumable and starts before known active factories
   assert.ok(PONS_DISCOVERY_SPECS.v1.startBlock<=8_991_118);
   assert.ok(PONS_DISCOVERY_SPECS.v2.startBlock<26_841_846);
   assert.equal(__ponsDiscoveryContract.direction,'newest-to-oldest');
-  assert.equal(__ponsDiscoveryContract.source,'blockscout-instance-v2-with-pro-legacy-rpc-fallback');
+  assert.equal(__ponsDiscoveryContract.source,'blockscout-rest-v2-pro-preferred-with-pro-legacy-rpc-fallback');
   assert.equal(__ponsDiscoveryContract.chainId,4663);
 });

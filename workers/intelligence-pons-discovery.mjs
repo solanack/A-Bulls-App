@@ -1,18 +1,18 @@
 /* A Bulls App — verified PONS launch discovery backfill.
  *
  * Public reads remain D1-only. Historical discovery walks each allowlisted PONS
- * factory newest-to-oldest through Blockscout's per-chain v2 address-log API,
- * filtering locally to the exact TokenLaunched topic. Authenticated Blockscout
- * Pro, the explorer's exact-topic legacy API, and bounded Robinhood RPC remain
- * fallbacks. Nothing is inferred from a token address alone.
+ * factory newest-to-oldest through Blockscout REST, preferring authenticated
+ * PRO REST when configured. Authenticated Blockscout module logs, the explorer's
+ * exact-topic legacy API, and bounded Robinhood RPC remain fallbacks. Nothing is
+ * inferred from a token address alone.
  */
 import { intelligenceDb } from './intelligence-indexer.mjs';
 import { providerFetch } from './intelligence-fetch.mjs';
 import { ponsRpc } from './intelligence-pons-rpc.mjs';
 import { PONS_FACTORIES, decodePonsLaunchLog } from './intelligence-pons-galaxy.mjs';
+import { buildPonsBlockscoutAddressLogsUrl,ponsBlockscoutSource } from './intelligence-pons-blockscout.mjs';
 
 const BLOCKSCOUT_LEGACY='https://robinhoodchain.blockscout.com/api';
-const BLOCKSCOUT_INSTANCE_V2='https://robinhoodchain.blockscout.com/api/v2';
 const BLOCKSCOUT_PRO='https://api.blockscout.com/v2/api';
 const RESULT_LIMIT=1000;
 const MAX_RPC_SPLIT_DEPTH=12;
@@ -44,15 +44,13 @@ export function buildFilteredPonsLogsUrl(factory,fromBlock,toBlock){
   return url.toString();
 }
 
+// Backward-compatible no-key URL used by diagnostics/tests.
 export function buildPonsInstanceLogsUrl(factory,cursor=null){
-  const url=new URL(`${BLOCKSCOUT_INSTANCE_V2}/addresses/${encodeURIComponent(factory.address)}/logs`);
-  if(cursor&&typeof cursor==='object'){
-    for(const key of ['block_number','index','items_count']){
-      const value=cursor[key];
-      if(value!=null&&value!=='')url.searchParams.set(key,String(value));
-    }
-  }
-  return url.toString();
+  return buildPonsBlockscoutAddressLogsUrl({},factory,cursor);
+}
+
+export function buildPonsRestLogsUrl(env,factory,cursor=null){
+  return buildPonsBlockscoutAddressLogsUrl(env,factory,cursor);
 }
 
 export function buildPonsProLogsUrl(factory,fromBlock,toBlock,apiKey){
@@ -104,12 +102,12 @@ function filterVerifiedTopicRows(factory,rows,startBlock=0){
   });
 }
 
-export async function fetchPonsInstancePage(factory,cursor=null,fetchImpl=providerFetch){
-  const response=await fetchImpl(buildPonsInstanceLogsUrl(factory,cursor),{
+export async function fetchPonsInstancePage(factory,cursor=null,fetchImpl=providerFetch,env={}){
+  const response=await fetchImpl(buildPonsRestLogsUrl(env,factory,cursor),{
     headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'},
     signal:AbortSignal.timeout(10_000)
   });
-  if(!response.ok)throw new Error(`pons_blockscout_v2_http_${response.status}`);
+  if(!response.ok)throw new Error(`pons_${ponsBlockscoutSource(env)}_http_${response.status}`);
   return parseBlockscoutV2LogsPayload(await response.json());
 }
 
@@ -204,11 +202,12 @@ async function backfillFactoryFromInstance(env,db,factory,startBlock,now,options
   const pages=clamp(options.pagesPerFactory??env.PONS_DISCOVERY_PAGES_PER_RUN??env.PONS_BLOCKSCOUT_DISCOVERY_PAGES,4,1,12);
   const fetchImpl=options.fetchImpl||providerFetch;
   const stored=await cursorFor(db,factory);
+  const source=`${ponsBlockscoutSource(env)}-topic-filtered`;
   let cursor=stored.cursor,discovered=0,processed=0,nextToBlock=null,complete=false;
   for(let page=0;page<pages&&!complete;page+=1){
-    const payload=await fetchPonsInstancePage(factory,cursor,fetchImpl);
+    const payload=await fetchPonsInstancePage(factory,cursor,fetchImpl,env);
     const rows=filterVerifiedTopicRows(factory,payload.items,startBlock);
-    for(const row of rows)if(await persistLaunch(db,factory,row,now,'blockscout-instance-v2-topic-filtered'))discovered+=1;
+    for(const row of rows)if(await persistLaunch(db,factory,row,now,source))discovered+=1;
     processed+=1;
     const allBlocks=payload.items.map(row=>hexInt(row?.blockNumber??row?.block_number)).filter(Boolean);
     const oldestBlock=allBlocks.length?Math.min(...allBlocks):null;
@@ -216,12 +215,12 @@ async function backfillFactoryFromInstance(env,db,factory,startBlock,now,options
     nextToBlock=next?.block_number==null?null:Math.max(0,Math.trunc(n(next.block_number)));
     complete=!next||(oldestBlock!=null&&oldestBlock<startBlock)||(nextToBlock!=null&&nextToBlock<startBlock);
     cursor=complete?null:next;
-    await saveCursor(db,factory,cursor,'blockscout-instance-v2');
+    await saveCursor(db,factory,cursor,ponsBlockscoutSource(env));
     await patchState(db,factory,{nextToBlock:complete?null:nextToBlock,complete,discovered,lastSuccessAt:now,error:null});
     discovered=0;
   }
   const latest=await db.prepare('SELECT next_to_block,complete,discovered_launches,last_error FROM pons_discovery_state WHERE factory=?').bind(factory.address).first();
-  return {factory:factory.address,version:factory.version,processed,complete:n(latest?.complete)===1,nextToBlock:latest?.next_to_block??null,discovered:n(latest?.discovered_launches),source:'blockscout-instance-v2-topic-filtered',error:latest?.last_error||null};
+  return {factory:factory.address,version:factory.version,processed,complete:n(latest?.complete)===1,nextToBlock:latest?.next_to_block??null,discovered:n(latest?.discovered_launches),source,error:latest?.last_error||null};
 }
 
 export async function backfillPonsLaunchDiscovery(env={},options={}){
@@ -236,16 +235,17 @@ export async function backfillPonsLaunchDiscovery(env={},options={}){
     let state;
     try{state=await stateFor(db,factory,startBlock,finalHead);await cursorFor(db,factory);}
     catch(error){factories.push({factory:factory.address,version:factory.version,error:s(error?.message||error),migrationRequired:true});continue;}
-    if(n(state.complete)===1){factories.push({factory:factory.address,version:factory.version,complete:true,discovered:n(state.discovered_launches),nextToBlock:null,source:'blockscout-instance-v2-topic-filtered',error:null});continue;}
+    if(n(state.complete)===1){factories.push({factory:factory.address,version:factory.version,complete:true,discovered:n(state.discovered_launches),nextToBlock:null,source:`${ponsBlockscoutSource(env)}-topic-filtered`,error:null});continue;}
     try{
       factories.push(await backfillFactoryFromInstance(env,db,factory,startBlock,now,options));
       continue;
     }catch(instanceError){
-      console.warn('[pons-discovery-blockscout-instance]',s(instanceError?.message||instanceError));
+      console.warn('[pons-discovery-blockscout-rest]',s(instanceError?.message||instanceError));
     }
 
     // If the cursor API is unavailable, keep provenance strict while falling
-    // through Pro, the explorer's exact-topic legacy API, then a small RPC span.
+    // through Pro module logs, the explorer's exact-topic legacy API, then a
+    // small RPC span.
     const chunk=clamp(options.chunkSize??env.PONS_DISCOVERY_CHUNK_BLOCKS,20_000,2_000,100_000);
     const to=Math.min(finalHead,Math.max(startBlock,n(state.next_to_block)||finalHead));
     const from=Math.max(startBlock,to-chunk+1);
@@ -265,7 +265,7 @@ export async function backfillPonsLaunchDiscovery(env={},options={}){
     }
   }
   const total=n((await db.prepare('SELECT COUNT(*) count FROM pons_launches').first())?.count);
-  return Object.freeze({enabled:true,head,finalHead,sourceMode:'blockscout-instance-v2-with-pro-legacy-rpc-fallback',totalLaunches:total,factories});
+  return Object.freeze({enabled:true,head,finalHead,sourceMode:'blockscout-rest-v2-pro-preferred-with-pro-legacy-rpc-fallback',totalLaunches:total,factories});
 }
 
-export const __ponsDiscoveryContract=Object.freeze({readOnly:true,source:'blockscout-instance-v2-with-pro-legacy-rpc-fallback',direction:'newest-to-oldest',resultLimit:RESULT_LIMIT,chainId:4663});
+export const __ponsDiscoveryContract=Object.freeze({readOnly:true,source:'blockscout-rest-v2-pro-preferred-with-pro-legacy-rpc-fallback',direction:'newest-to-oldest',resultLimit:RESULT_LIMIT,chainId:4663});
