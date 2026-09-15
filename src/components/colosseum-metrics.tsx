@@ -56,7 +56,7 @@ export function CountUp({
     return () => cancelAnimationFrame(frame.current);
   }, [value, isNumeric, numeric, reduce]);
 
-  return <strong className={className}>{typeof shown === "number" ? shown : text(shown)}</strong>;
+  return <strong className={className}>{typeof shown === "number" ? shown : String(shown ?? "")}</strong>;
 }
 
 export function Sparkline({ values, label }: { values: number[]; label?: string }) {
