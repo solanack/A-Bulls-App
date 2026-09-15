@@ -11,6 +11,7 @@ const fomoWorker=readFileSync(new URL("../workers/intelligence-fomo-galaxy.mjs",
 const fomoLiveWorker=readFileSync(new URL("../workers/intelligence-fomo-live.mjs",import.meta.url),"utf8");
 const ponsFamilyWorker=readFileSync(new URL("../workers/intelligence-ponsfamily-ranking.mjs",import.meta.url),"utf8");
 const ponsFamilyLiveWorker=readFileSync(new URL("../workers/intelligence-ponsfamily-live.mjs",import.meta.url),"utf8");
+const ponsBlockscoutWorker=readFileSync(new URL("../workers/intelligence-pons-blockscout.mjs",import.meta.url),"utf8");
 const voiceServer=readFileSync(new URL("../src/lib/alien-voice.ts",import.meta.url),"utf8");
 
 const normalizedMaster=masterPlan.replace(/\s+/g," ");
@@ -54,8 +55,9 @@ const fomoLiveLocks=["payloadArray(payload,'traders'","FOMOAPI_API_KEY","fomo_tr
 const missingFomoLive=fomoLiveLocks.filter(marker=>!fomoLiveWorker.includes(marker));if(missingFomoLive.length){console.error("RELEASE BLOCKED: Fomo self-population/cache wiring changed.");console.error(`Missing: ${missingFomoLive.join(" | ")}`);process.exit(1);}
 const ponsLocks=["maximumMembers:50","marketCapFloorUsd:75000","minimumHolders:750","volume-h24-usd-desc","verified PONS-origin","holder count above"];
 const missingPons=ponsLocks.filter(marker=>!ponsFamilyWorker.includes(marker));if(missingPons.length){console.error("RELEASE BLOCKED: PonsFamily trend qualification changed.");console.error(`Missing: ${missingPons.join(" | ")}`);process.exit(1);}
-const ponsLiveLocks=["robinhoodchain.blockscout.com","token_holders_count","PONS_BLOCKSCOUT_DISCOVERY_PAGES","entryCycles:1","holderSource:'robinhood-blockscout'","marketCapFloorUsd:75000","minimumHolders:750"];
-const missingPonsLive=ponsLiveLocks.filter(marker=>!ponsFamilyLiveWorker.includes(marker));if(missingPonsLive.length){console.error("RELEASE BLOCKED: PonsFamily self-population wiring changed.");console.error(`Missing: ${missingPonsLive.join(" | ")}`);process.exit(1);}
+const ponsLiveLocks=["token_holders_count","PONS_BLOCKSCOUT_DISCOVERY_PAGES","entryCycles:1","holderSource:'robinhood-blockscout'","marketCapFloorUsd:75000","minimumHolders:750","buildPonsBlockscoutTokenCountersUrl","buildPonsBlockscoutAddressLogsUrl"];
+const ponsBlockscoutLocks=["robinhoodchain.blockscout.com","api.blockscout.com","PONS_BLOCKSCOUT_API_KEY","PONS_BLOCKSCOUT_CHAIN_ID=4663","proPreferredWhenConfigured:true","publicReadsD1Only:true"];
+const missingPonsLive=ponsLiveLocks.filter(marker=>!ponsFamilyLiveWorker.includes(marker));const missingPonsBlockscout=ponsBlockscoutLocks.filter(marker=>!ponsBlockscoutWorker.includes(marker));if(missingPonsLive.length||missingPonsBlockscout.length){console.error("RELEASE BLOCKED: PonsFamily self-population/Blockscout evidence routing changed.");if(missingPonsLive.length)console.error(`Missing live wiring: ${missingPonsLive.join(" | ")}`);if(missingPonsBlockscout.length)console.error(`Missing Blockscout routing: ${missingPonsBlockscout.join(" | ")}`);process.exit(1);}
 if(!voiceServer.includes("ELEVENLABS_GREY_VOICE_ID")||!voiceServer.includes("ELEVENLABS_API_KEY")||!voiceServer.includes("grey-v3-human-rachel")||!voiceServer.includes("21m00Tcm4TlvDq8ikWAM")||!voiceServer.includes("eleven_multilingual_v2")){console.error("RELEASE BLOCKED: Grey's human ElevenLabs voice profile is missing.");process.exit(1);}
 
 console.log("Release baseline verified: MASTER_PLAN + AI handoff, simplified Field, live Fomo trader research, self-populating PonsFamily filters, D1-only planet systems, human Grey voice isolation, watchlists, and execution locks are active.");
