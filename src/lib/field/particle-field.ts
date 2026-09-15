@@ -192,6 +192,12 @@ void main() {
 }
 `;
 
+function particleHasWallet(particle: FieldParticle) {
+  const wallet = typeof particle.metadata?.wallet === "string" ? particle.metadata.wallet.trim() : "";
+  const solana = typeof particle.metadata?.solanaWallet === "string" ? particle.metadata.solanaWallet.trim() : "";
+  return Boolean(wallet || solana);
+}
+
 function liveLabel(particle: FieldParticle) {
   const kind = renderCosmicKind(particle);
   if (kind === "dust") return null;
@@ -713,13 +719,15 @@ export class ParticleFieldRenderer {
     const h = rect.height;
     let bestLive = -1;
     let bestLiveD = 84;
+    let bestHolder = -1;
+    let bestHolderD = 84;
     let bestAny = -1;
     let bestAnyD = 72;
     const pos = this.basePositions;
     for (let i = 0; i < entities.length; i++) {
       const metadata = entities[i].metadata;
       const targetGalaxy = typeof metadata?.targetGalaxyId === "string";
-      const liveIdentity = Boolean(particleMint(entities[i]) || entities[i].eventId);
+      const liveIdentity = Boolean(particleMint(entities[i]) || entities[i].eventId || particleHasWallet(entities[i]));
       if (metadata?.interactive === false || renderCosmicKind(entities[i]) === "dust" || (metadata?.skyRole === "wallpaper" && !targetGalaxy && !liveIdentity)) continue;
       if (this.replayActive) {
         const duration = Math.max(1, this.snapshot.windowEnd - this.snapshot.windowStart);
@@ -747,7 +755,12 @@ export class ParticleFieldRenderer {
         bestLiveD = d;
         bestLive = i;
       }
+      if (metadata?.systemRole === "holder-star" && particleHasWallet(entities[i]) && d < bestHolderD) {
+        bestHolderD = d;
+        bestHolder = i;
+      }
     }
+    if (bestHolder >= 0 && (bestLive < 0 || entities[bestLive].metadata?.systemRole === "token-planet-core")) return entities[bestHolder];
     if (bestLive >= 0) return entities[bestLive];
     return bestAny >= 0 ? entities[bestAny] : null;
   }

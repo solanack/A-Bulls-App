@@ -5,15 +5,19 @@ import {
   focusedTraderWallet,
   formatIndexedPnl,
   holdingMintLabel,
+  holdingsHighlightMint,
   holdingsOverlayRows,
+  holdingsWalletFromContext,
   holdingTokenLabel,
+  isWalletStar,
 } from "./trader-holdings.ts";
 import type { FieldSection, FocusedParticle } from "./types.ts";
 
 const WALLET = "BWVR4KqS8eVkmKXCsb8cq76jJMN7FjWjCYxZtzGpYQnx";
+const SMOKE_WALLET = "7BY7z7wJkP9DSLuTFKsfdBwkEwLqyr1syMQn8hAgNhiy";
 const MINT = "97jCC4dL3ceKFqovn3gPKApKQ8hUYwJmCUV3m9d1pump";
 
-function star(wallet?: string): FocusedParticle {
+function star(wallet?: string, extra: Record<string, unknown> = {}): FocusedParticle {
   return {
     id: "star:1",
     kind: "wallet",
@@ -23,7 +27,7 @@ function star(wallet?: string): FocusedParticle {
     observedAt: 1,
     verificationState: "observed",
     magnitudeBand: 1,
-    metadata: wallet ? { wallet } : {},
+    metadata: wallet ? { wallet, ...extra } : { ...extra },
   };
 }
 
@@ -34,6 +38,53 @@ describe("focusedTraderWallet", () => {
     assert.equal(focusedTraderWallet(null, section), WALLET);
     assert.equal(focusedTraderWallet(star(""), { kind: "galaxy", label: "Field", count: 0 }), "");
     assert.equal(focusedTraderWallet(star("truncated"), section), WALLET);
+  });
+
+  it("reads holder STAR wallets inside a token-system (no section wallet)", () => {
+    const tokenSystem: FieldSection = { kind: "token-system", label: "PONS", mint: MINT, count: 8 };
+    const holder = star(SMOKE_WALLET, { parentMint: MINT, systemRole: "holder-star" });
+    assert.equal(isWalletStar(holder), true);
+    assert.equal(focusedTraderWallet(holder, tokenSystem), SMOKE_WALLET);
+    assert.equal(focusedTraderWallet(star("", { solanaWallet: SMOKE_WALLET }), tokenSystem), SMOKE_WALLET);
+    assert.equal(focusedTraderWallet(null, tokenSystem), "");
+    assert.equal(
+      focusedTraderWallet(
+        { ...star(SMOKE_WALLET), cosmicKind: "planet", kind: "wallet" },
+        tokenSystem,
+      ),
+      SMOKE_WALLET,
+    );
+  });
+});
+
+describe("holdings overlay entry", () => {
+  it("uses inbound ?wallet= in explore and ignores it on VERIFY", () => {
+    assert.equal(
+      holdingsWalletFromContext({ focus: null, inboundWallet: SMOKE_WALLET }),
+      SMOKE_WALLET,
+    );
+    assert.equal(
+      holdingsWalletFromContext({ focus: null, inboundWallet: SMOKE_WALLET, verifyingCut: true }),
+      "",
+    );
+    assert.equal(
+      holdingsWalletFromContext({ focus: star(WALLET), inboundWallet: SMOKE_WALLET }),
+      WALLET,
+    );
+  });
+
+  it("highlights parent/token-system mint for a holder STAR, else inbound mint", () => {
+    const tokenSystem: FieldSection = { kind: "token-system", label: "PONS", mint: MINT, count: 8 };
+    assert.equal(
+      holdingsHighlightMint({ focus: star(SMOKE_WALLET, { parentMint: MINT }), fieldSection: tokenSystem }),
+      MINT,
+    );
+    assert.equal(
+      holdingsHighlightMint({ focus: star(SMOKE_WALLET), fieldSection: tokenSystem }),
+      MINT,
+    );
+    assert.equal(holdingsHighlightMint({ focus: null, inboundMint: MINT }), MINT);
+    assert.equal(holdingsHighlightMint({ focus: null, inboundMint: "" }), "");
   });
 });
 

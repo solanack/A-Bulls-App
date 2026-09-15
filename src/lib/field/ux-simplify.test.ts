@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { ADVANCED_MODES, ANALYSIS_MODES, MODE_HINT, TOOL_TITLE } from "./types.ts";
 import {
   heroSubjectLabel,
+  inboundWorkspaceMode,
   looksLikeMint,
   needsSelectedTrade,
   primaryMenuIds,
@@ -57,7 +58,7 @@ describe("UX simplify pack — Cut-first demo menu", () => {
 
   it("opens FrozenCutViewer for /?cut= without waiting on FieldOS or a prior trade", () => {
     assert.match(shell, /if\(inboundShareId\(\)\)setMode\("trickster"\)/);
-    assert.match(shell, /setMode\(inboundShareId\(\)\?"trickster":inboundPrefill\(\)\?\.mode\?\?event\.mode\)/);
+    assert.match(shell, /setMode\(inboundShareId\(\)\?"trickster":event\.mode\)/);
     assert.match(shell, /setFieldUnavailable\(true\);if\(inboundShareId\(\)\)setMode\("trickster"\)/);
     assert.match(workspace, /verifyingCut/);
     assert.match(workspace, /trickster-read/);
@@ -71,27 +72,43 @@ const GALAXY_WALLET = "BWVR4KqS8eVkmKXCsb8cq76jJMN7FjWjCYxZtzGpYQnx";
 const GALAXY_MINT = "97jCC4dL3ceKFqovn3gPKApKQ8hUYwJmCUV3m9d1pump";
 
 describe("paste-proof wallet+mint deep-link", () => {
-  it("reads wallet/mint (or w/m) and defaults mode to trickster when both are full base58", () => {
+  it("reads wallet (mint optional) and lands in explore holdings, not Trickster", () => {
     assert.deepEqual(
       subjectPrefillFromSearch(`?mode=trickster&wallet=${GALAXY_WALLET}&mint=${GALAXY_MINT}`),
-      { wallet: GALAXY_WALLET, mint: GALAXY_MINT, mode: "trickster" },
+      { wallet: GALAXY_WALLET, mint: GALAXY_MINT, mode: "explore" },
     );
     assert.deepEqual(
       subjectPrefillFromSearch(`?w=${GALAXY_WALLET}&m=${GALAXY_MINT}`),
-      { wallet: GALAXY_WALLET, mint: GALAXY_MINT, mode: "trickster" },
+      { wallet: GALAXY_WALLET, mint: GALAXY_MINT, mode: "explore" },
     );
+    assert.deepEqual(subjectPrefillFromSearch(`?wallet=${GALAXY_WALLET}`), {
+      wallet: GALAXY_WALLET,
+      mint: "",
+      mode: "explore",
+    });
     assert.equal(subjectPrefillFromSearch(`?mode=replay&wallet=${GALAXY_WALLET}&mint=${GALAXY_MINT}`)?.mode, "replay");
     assert.equal(subjectPrefillFromSearch(`?wallet=${GALAXY_WALLET.slice(0, 20)}&mint=${GALAXY_MINT}`), null);
-    assert.equal(subjectPrefillFromSearch(`?wallet=${GALAXY_WALLET}&mint=`), null);
+    assert.deepEqual(subjectPrefillFromSearch(`?wallet=${GALAXY_WALLET}&mint=`), {
+      wallet: GALAXY_WALLET,
+      mint: "",
+      mode: "explore",
+    });
     assert.equal(subjectPrefillFromSearch("?mode=trickster"), null);
     assert.equal(looksLikeMint(GALAXY_WALLET), true);
     assert.equal(looksLikeMint(GALAXY_WALLET.slice(0, 20)), false);
+    assert.equal(inboundWorkspaceMode(`?mode=trickster&wallet=${GALAXY_WALLET}&mint=${GALAXY_MINT}`), "explore");
+    assert.equal(inboundWorkspaceMode(`?mode=replay&wallet=${GALAXY_WALLET}&mint=${GALAXY_MINT}`), "replay");
+    assert.equal(inboundWorkspaceMode(`?cut=ad2538ff000fcceb707d55d5&wallet=${GALAXY_WALLET}`, "ad2538ff000fcceb707d55d5"), "trickster");
   });
 
-  it("opens Make a Cut / Replay from search params without typing into DetailsFold", () => {
+  it("keeps Replay SHARE STATE and Cut VERIFY, without forcing Trickster from wallet+mint", () => {
     assert.match(shell, /inboundPrefill\(\)/);
     assert.match(shell, /subjectPrefillFromSearch/);
-    assert.match(shell, /if\(prefill\)setMode\(prefill\.mode\)/);
+    assert.match(shell, /inboundWorkspaceMode/);
+    assert.match(shell, /else if\(inboundMode\(\)==="replay"\)setMode\("replay"\)/);
+    assert.match(shell, /else if\(inboundPrefill\(\)\?\.mode==="replay"\)os\.setMode\("replay"\)/);
+    assert.match(shell, /setMode\(inboundShareId\(\)\?"trickster":event\.mode\)/);
+    assert.doesNotMatch(shell, /inboundPrefill\(\)\?\.mode\?\?event\.mode/);
     assert.match(shell, /askMint=\{cutSubject\?\.mint\|\|searchPrefill\?\.mint\|\|askPrefill\|\|focusedMint\|\|""\}/);
     assert.match(shell, /askWallet=\{cutSubject\?\.wallet\|\|searchPrefill\?\.wallet\|\|contextWallet\}/);
     assert.match(workspace, /subjectPrefillFromSearch/);
@@ -104,6 +121,7 @@ describe("paste-proof wallet+mint deep-link", () => {
 
   it("does not let wallet+mint prefill steal /?cut= VERIFY hydrate", () => {
     assert.equal(subjectPrefillFromSearch(`?cut=ad2538ff000fcceb707d55d5&wallet=${GALAXY_WALLET}&mint=${GALAXY_MINT}`)?.wallet, GALAXY_WALLET);
+    assert.equal(inboundWorkspaceMode(`?cut=ad2538ff000fcceb707d55d5`, "ad2538ff000fcceb707d55d5"), "trickster");
     assert.match(shell, /if\(inboundShareId\(\)\)setMode\("trickster"\)/);
     assert.match(shell, /if\(inboundShareId\(\)\)os\.setMode\("trickster"\)/);
     assert.match(workspace, /verifyingCut=mode==="trickster"&&Boolean\(inboundShareId\)/);
@@ -188,9 +206,13 @@ describe("trader-select holdings → Make a Cut climax", () => {
   const holdings = readFileSync(new URL("../universe-data/research-index-client.ts", import.meta.url), "utf8");
   it("shows indexed holdings + Make a Cut? on a focused trader star", () => {
     assert.match(shell, /TraderHoldingsCutPanel/);
-    assert.match(shell, /focusedTraderWallet/);
+    assert.match(shell, /holdingsWalletFromContext/);
+    assert.match(shell, /holdingsHighlightMint/);
     assert.match(shell, /showHoldings/);
     assert.match(shell, /selectMode\("trickster"\)/);
+    assert.match(shell, /inboundWallet:searchPrefill\?\.wallet/);
+    assert.match(shell, /verifyingCut:Boolean\(inboundShareId\(\)\)/);
+    assert.match(shell, /mode==="explore"/);
     assert.match(overlay, /Make a Cut\?/);
     assert.match(overlay, /Choose a held token/);
     assert.match(overlay, /getTraderHoldings/);
@@ -206,6 +228,11 @@ describe("trader-select holdings → Make a Cut climax", () => {
     assert.match(director, /autoSelectReceiptIds/);
     assert.match(director, /CUT_RECEIPT_MAX/);
     assert.match(director, /chosenIds/);
+    const field = readFileSync(new URL("./particle-field.ts", import.meta.url), "utf8");
+    const tokenSystem = readFileSync(new URL("./token-system.ts", import.meta.url), "utf8");
+    assert.match(field, /systemRole === "holder-star"/);
+    assert.match(field, /particleHasWallet/);
+    assert.match(tokenSystem, /systemRole:"holder-star",interactive:true/);
   });
 
   it("opens the existing Replay chart + Trickster share path, not a second video system", () => {
