@@ -55,4 +55,12 @@ jobs:
       - name: Diagnose Pons production state
         if: always()
         continue-on-error: true
-        run: node scripts/diagnose-pons-production.mjs
+        run: node scripts/diagnose-pons-production.mjs | tee pons-production-diagnostic.txt
+      - name: Upload Pons production diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pons-production-diagnostic
+          path: pons-production-diagnostic.txt
+          if-no-files-found: error
+          retention-days: 3
