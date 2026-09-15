@@ -46,7 +46,7 @@ export function UniverseWorkspace({mode,galaxy,evidence,askMint,askWallet,tokenN
   const details=<DetailsFold {...foldProps}/>;
 
   if(!tradeReady&&!verifyingCut&&needsSelectedTrade(mode)){
-    return <WorkspaceFrame eyebrow={MODE_HINT[mode]} title={TOOL_TITLE[mode]??MODE_HINT[mode]} hero="" busy={false} error="" statusChip={statusChip}><div className="universe-pick"><p className="universe-empty">Pick a trade first</p><DetailsFold {...foldProps} open/><Action onClick={()=>onBack?.()}>Back</Action></div></WorkspaceFrame>;
+    return <WorkspaceFrame eyebrow={MODE_HINT[mode]} title={TOOL_TITLE[mode]??MODE_HINT[mode]} hero="" busy={false} error="" statusChip={statusChip}><div className="universe-pick"><p className="universe-empty">Pick a trade first, or enter a public wallet and token mint.</p><DetailsFold {...foldProps} open/>{mode==="compare"?<label>Second trader<input value={walletB} onChange={event=>setWalletB(event.target.value.trim())} placeholder="Public wallet"/></label>:null}<Action onClick={()=>onBack?.()}>Back</Action></div></WorkspaceFrame>;
   }
 
   if(mode==="replay")return <WorkspaceFrame eyebrow={galaxy.name} title="Watch this trade on the chart" hero={hero} busy={busy} error={error} statusChip={statusChip}>{details}<ReplayWorkspace bundle={replayBundle} waitingMint={mint}/></WorkspaceFrame>;

@@ -71,9 +71,11 @@ describe("one-tap prefill vs Pick a trade first", () => {
     const pickStart = workspace.indexOf("if(!tradeReady&&!verifyingCut");
     assert.ok(pickStart >= 0);
     const pickBlock = workspace.slice(pickStart, workspace.indexOf("if(mode===\"replay\")"));
-    assert.match(pickBlock, /Pick a trade first/);
+    assert.match(pickBlock, /Pick a trade first, or enter a public wallet and token mint/);
     assert.match(pickBlock, /DetailsFold/);
     assert.match(pickBlock, /<DetailsFold \{\.\.\.foldProps\} open\/>/);
+    assert.match(pickBlock, /mode==="compare"\?<label>Second trader/);
+    assert.doesNotMatch(pickBlock, /FrozenCutViewer/);
     assert.match(workspace, /needsSelectedTrade\(mode\)/);
     assert.match(workspace, /label>Public wallet/);
     assert.match(workspace, /placeholder="Wallet address"/);
