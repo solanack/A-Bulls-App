@@ -1,4 +1,4 @@
-import { ADVANCED_MODES, ANALYSIS_MODES, MODE_HINT, TOOL_TITLE, type FieldMode } from "./types";
+import { ADVANCED_MODES, ANALYSIS_MODES, MODE_HINT, TOOL_TITLE, type FieldMode } from "./types.ts";
 
 const BASE58_MINT = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
@@ -41,7 +41,7 @@ export function heroSubjectLabel(input: { name?: string | null; symbol?: string 
   const symbol = String(input.symbol ?? "").trim();
   const safeName = name && !looksLikeMint(name) ? name : "";
   const safeSymbol = symbol && !looksLikeMint(symbol) ? symbol : "";
-  if (safeName && safeSymbol && safeName.toUpperCase() !== safeSymbol.toUpperCase()) return `${safeName} · ${safeSymbol}`;
+  if (safeName && safeSymbol && safeName !== safeSymbol) return `${safeName} · ${safeSymbol}`;
   return safeName || safeSymbol;
 }
 
