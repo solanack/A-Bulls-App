@@ -20,16 +20,16 @@ test('director contract makes no network calls',()=>{
 test('vertical share SVG burns INDEXED receipts and stays honest without OHLC',()=>{
   const svg=buildCutShareSvg({
     manifest:{output:{aspectRatio:'9:16'},coverage:{from:1_700_000_000,to:1_700_086_400,statement:'Currently indexed evidence only.'},evidence:[{signature:'Sig11111111111111111111111111111111111111111'}]},
-    shareHref:'https://abullsapp.com/?tour=abc',
+    shareHref:'https://abullsapp.com/?cut=abc',
     candles:[{timestamp:1,open:1,high:2,low:0.5,close:1.5},{timestamp:2,open:1.5,high:2.2,low:1.1,close:1.2}],
     tokenLabel:'Pons · PONS'
   });
   assert.match(svg, /width="1080"/);
   assert.match(svg, /height="1920"/);
   assert.match(svg,/INDEXED/);
-  assert.match(svg,/VERIFY https:\/\/abullsapp.com\/\?tour=abc/);
+  assert.match(svg,/VERIFY https:\/\/abullsapp.com\/\?cut=abc/);
   assert.match(svg,/SIG Sig11111/);
-  const empty=buildCutShareSvg({manifest:{output:{aspectRatio:'9:16'},coverage:{},evidence:[]},shareHref:'https://x/?tour=1',candles:[]});
+  const empty=buildCutShareSvg({manifest:{output:{aspectRatio:'9:16'},coverage:{},evidence:[]},shareHref:'https://x/?cut=1',candles:[]});
   assert.match(empty,/No indexed OHLC/);
   assert.match(empty,/No price path was invented/);
   assert.match(empty,/signature unavailable/);

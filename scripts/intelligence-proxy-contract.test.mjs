@@ -5,16 +5,21 @@ import test from "node:test";
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("the public domain proxies intelligence and health requests", async () => {
-  const [proxy, route, health, origins] = await Promise.all([
+  const [proxy, route, nestedRoute, health, origins] = await Promise.all([
     read("src/lib/intelligence-proxy.ts"),
     read("src/routes/api.intelligence.$.ts"),
+    read("src/routes/api.intelligence.$a.$b.ts"),
     read("src/routes/api.health.ts"),
     read("src/lib/intelligence-origin.ts"),
   ]);
   assert.match(proxy, /black-bull-run-sol\.ckdsigns1\.workers\.dev/);
   assert.match(route, /\/api\/intelligence\/\$/);
+  assert.match(nestedRoute, /\/api\/intelligence\/\$a\/\$b/);
   assert.match(health, /\/api\/health/);
-  assert.ok(origins.indexOf('"https://abullsapp.com"') < origins.indexOf('"https://black-bull-run-sol.ckdsigns1.workers.dev"'));
+  assert.ok(
+    origins.indexOf('"https://black-bull-run-sol.ckdsigns1.workers.dev"')
+      < origins.indexOf('"https://abullsapp.com"'),
+  );
 });
 
 test("the field favors crisp rendering and ignores decorative wallpaper", async () => {
