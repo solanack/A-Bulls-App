@@ -35,6 +35,23 @@ export function looksLikeMint(value: string | null | undefined): boolean {
   return BASE58_MINT.test(String(value ?? "").trim());
 }
 
+export type SubjectSearchPrefill = {
+  wallet: string;
+  mint: string;
+  mode: "trickster" | "replay";
+};
+
+/** Paste-proof Cut/Replay deep-link: `?wallet=&mint=` (aliases `w`/`m`) plus optional `mode=trickster|replay`. */
+export function subjectPrefillFromSearch(search: string): SubjectSearchPrefill | null {
+  const raw = String(search ?? "");
+  const params = new URLSearchParams(raw.startsWith("?") ? raw.slice(1) : raw);
+  const wallet = String(params.get("wallet") || params.get("w") || "").trim();
+  const mint = String(params.get("mint") || params.get("m") || "").trim();
+  if (!looksLikeMint(wallet) || !looksLikeMint(mint)) return null;
+  const requested = String(params.get("mode") || "").trim().toLowerCase();
+  return { wallet, mint, mode: requested === "replay" ? "replay" : "trickster" };
+}
+
 /** Hero shows name/symbol only — never a full mint address. */
 export function heroSubjectLabel(input: { name?: string | null; symbol?: string | null }): string {
   const name = String(input.name ?? "").trim();

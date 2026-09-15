@@ -8,6 +8,7 @@ import {
   needsSelectedTrade,
   primaryMenuIds,
   selectedTradeReady,
+  subjectPrefillFromSearch,
   toolHint,
   toolTitle,
 } from "./ux-simplify.ts";
@@ -56,13 +57,57 @@ describe("UX simplify pack — Cut-first demo menu", () => {
 
   it("opens FrozenCutViewer for /?cut= without waiting on FieldOS or a prior trade", () => {
     assert.match(shell, /if\(inboundShareId\(\)\)setMode\("trickster"\)/);
-    assert.match(shell, /setMode\(inboundShareId\(\)\?"trickster":event\.mode\)/);
+    assert.match(shell, /setMode\(inboundShareId\(\)\?"trickster":inboundPrefill\(\)\?\.mode\?\?event\.mode\)/);
     assert.match(shell, /setFieldUnavailable\(true\);if\(inboundShareId\(\)\)setMode\("trickster"\)/);
     assert.match(workspace, /verifyingCut/);
     assert.match(workspace, /trickster-read/);
     assert.match(workspace, /if\(mode==="trickster"&&verifyingCut\)/);
     assert.match(workspace, /FrozenCutViewer/);
     assert.match(workspace, /!tradeReady&&!verifyingCut/);
+  });
+});
+
+const GALAXY_WALLET = "BWVR4KqS8eVkmKXCsb8cq76jJMN7FjWjCYxZtzGpYQnx";
+const GALAXY_MINT = "97jCC4dL3ceKFqovn3gPKApKQ8hUYwJmCUV3m9d1pump";
+
+describe("paste-proof wallet+mint deep-link", () => {
+  it("reads wallet/mint (or w/m) and defaults mode to trickster when both are full base58", () => {
+    assert.deepEqual(
+      subjectPrefillFromSearch(`?mode=trickster&wallet=${GALAXY_WALLET}&mint=${GALAXY_MINT}`),
+      { wallet: GALAXY_WALLET, mint: GALAXY_MINT, mode: "trickster" },
+    );
+    assert.deepEqual(
+      subjectPrefillFromSearch(`?w=${GALAXY_WALLET}&m=${GALAXY_MINT}`),
+      { wallet: GALAXY_WALLET, mint: GALAXY_MINT, mode: "trickster" },
+    );
+    assert.equal(subjectPrefillFromSearch(`?mode=replay&wallet=${GALAXY_WALLET}&mint=${GALAXY_MINT}`)?.mode, "replay");
+    assert.equal(subjectPrefillFromSearch(`?wallet=${GALAXY_WALLET.slice(0, 20)}&mint=${GALAXY_MINT}`), null);
+    assert.equal(subjectPrefillFromSearch(`?wallet=${GALAXY_WALLET}&mint=`), null);
+    assert.equal(subjectPrefillFromSearch("?mode=trickster"), null);
+    assert.equal(looksLikeMint(GALAXY_WALLET), true);
+    assert.equal(looksLikeMint(GALAXY_WALLET.slice(0, 20)), false);
+  });
+
+  it("opens Make a Cut / Replay from search params without typing into DetailsFold", () => {
+    assert.match(shell, /inboundPrefill\(\)/);
+    assert.match(shell, /subjectPrefillFromSearch/);
+    assert.match(shell, /if\(prefill\)setMode\(prefill\.mode\)/);
+    assert.match(shell, /askMint=\{searchPrefill\?\.mint\|\|askPrefill\|\|focusedMint\|\|""\}/);
+    assert.match(shell, /askWallet=\{searchPrefill\?\.wallet\|\|contextWallet\}/);
+    assert.match(workspace, /subjectPrefillFromSearch/);
+    assert.match(workspace, /inboundPrefill\?\.wallet/);
+    assert.match(workspace, /inboundPrefill\?\.mint/);
+    assert.match(workspace, /looksLikeMint\(wallet\)&&looksLikeMint\(mint\)/);
+    assert.match(workspace, /open:Boolean\(inboundPrefill\)/);
+    assert.match(workspace, /if\(mode==="trickster"&&verifyingCut\)/);
+  });
+
+  it("does not let wallet+mint prefill steal /?cut= VERIFY hydrate", () => {
+    assert.equal(subjectPrefillFromSearch(`?cut=ad2538ff000fcceb707d55d5&wallet=${GALAXY_WALLET}&mint=${GALAXY_MINT}`)?.wallet, GALAXY_WALLET);
+    assert.match(shell, /if\(inboundShareId\(\)\)setMode\("trickster"\)/);
+    assert.match(shell, /if\(inboundShareId\(\)\)os\.setMode\("trickster"\)/);
+    assert.match(workspace, /verifyingCut=mode==="trickster"&&Boolean\(inboundShareId\)/);
+    assert.match(workspace, /FrozenCutViewer/);
   });
 });
 
