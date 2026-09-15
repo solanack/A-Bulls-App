@@ -49,3 +49,6 @@ jobs:
         run: npx wrangler deploy
       - name: Verify public application and resolver routes
         run: node scripts/check-live.mjs
+      - name: Diagnose live galaxy population
+        continue-on-error: true
+        run: node scripts/diagnose-live-galaxies.mjs
