@@ -14,7 +14,7 @@ const clamp=(value:number)=>Math.min(1,Math.max(0,Number.isFinite(value)?value:0
 const uniq=(values:string[])=>[...new Set(values.map(value=>value.trim()).filter(Boolean))].slice(0,100);
 const SPEEDS:readonly ReplaySpeed[]=[0.5,1,2,4];
 
-export function ReplayWorkspace({bundle,waitingMint=""}:{bundle:Data;waitingMint?:string}){
+export function ReplayWorkspace({bundle,waitingMint="",autoPlay=false}:{bundle:Data;waitingMint?:string;autoPlay?:boolean}){
   const events=useMemo(()=>arr(bundle.events).map(obj).filter(row=>num(row.timestamp)>0).sort((a,b)=>num(a.timestamp)-num(b.timestamp)),[bundle]);
   const candles=useMemo(()=>arr(bundle.candles).map(obj).filter(row=>num(row.timestamp)>0).sort((a,b)=>num(a.timestamp)-num(b.timestamp)),[bundle]);
   const subject=obj(bundle.subject),windowData=obj(bundle.window),wallets=arr(subject.wallets).map(text).filter(Boolean),wallet=wallets[0]??"",mint=text(subject.mint),start=num(windowData.startTime),end=num(windowData.endTime),duration=Math.max(1,end-start),replayKey=`${wallet}:${mint}:${start}:${end}:${events.length}:${candles.length}`;
@@ -22,7 +22,7 @@ export function ReplayWorkspace({bundle,waitingMint=""}:{bundle:Data;waitingMint
   const frameRef=useRef<number|undefined>(undefined),lastFrameRef=useRef<number|undefined>(undefined);
   const currentTs=start+duration*cursor,visibleEvents=events.filter(row=>num(row.timestamp)<=currentTs),currentEvent=visibleEvents.at(-1)??null,thread=loadResearchThread(),sameThread=Boolean(wallet&&mint&&thread.wallet===wallet&&thread.mint===mint),entrySignature=sameThread?thread.entrySignature:null,exitSignature=sameThread?thread.exitSignature:null;
 
-  useEffect(()=>{const initial=loadResearchThread(),matches=Boolean(wallet&&mint&&initial.wallet===wallet&&initial.mint===mint);setCursor(matches?initial.replayCursor:0);setSpeed(matches?initial.replaySpeed:1);setPlaying(false);setReceipt(null);setReceiptContext(null);setReceiptError("");},[replayKey]);
+  useEffect(()=>{const initial=loadResearchThread(),matches=Boolean(wallet&&mint&&initial.wallet===wallet&&initial.mint===mint);setCursor(matches?initial.replayCursor:0);setSpeed(matches?initial.replaySpeed:1);setPlaying(false);setReceipt(null);setReceiptContext(null);setReceiptError("");if(autoPlay){try{if(!globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches)setPlaying(true);}catch{setPlaying(true);}}},[replayKey,autoPlay]);
   useEffect(()=>{if(!playing){if(frameRef.current!==undefined)cancelAnimationFrame(frameRef.current);frameRef.current=undefined;lastFrameRef.current=undefined;return;}const tick=(now:number)=>{const previous=lastFrameRef.current??now,last=now-previous;lastFrameRef.current=now;setCursor(current=>{const next=clamp(current+last/(16_000/speed));if(next>=1)setPlaying(false);return next;});frameRef.current=requestAnimationFrame(tick);};frameRef.current=requestAnimationFrame(tick);return()=>{if(frameRef.current!==undefined)cancelAnimationFrame(frameRef.current);frameRef.current=undefined;lastFrameRef.current=undefined;};},[playing,speed,replayKey]);
   useEffect(()=>{if(!wallet||!mint)return;const timer=window.setTimeout(()=>saveResearchThread({wallet,mint,replayCursor:cursor,replaySpeed:speed}),playing?900:120);return()=>window.clearTimeout(timer);},[wallet,mint,cursor,speed,playing]);
 
