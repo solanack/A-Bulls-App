@@ -56,7 +56,8 @@
   font: 500 15px/1.3 ui-sans-serif, system-ui, sans-serif;
   letter-spacing: .01em;
 }
-.universe-pick { display: grid; gap: 12px; justify-items: start; }
+.universe-pick { display: grid; gap: 12px; justify-items: stretch; }
+.universe-pick .universe-action { justify-self: start; }
 .universe-workspace label { display: grid; gap: 6px; }
 .universe-workspace input,
 .universe-workspace select {
