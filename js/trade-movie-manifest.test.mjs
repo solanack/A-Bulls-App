@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateTradeMovieManifest,tradeMovieDisclosures,__tradeMovieContract} from './trade-movie-manifest.mjs';
+import {validateTradeMovieManifest,tradeMovieDisclosures,tradeMovieVerifyHref,__tradeMovieContract} from './trade-movie-manifest.mjs';
 
 const evidence=[{id:'e1',signature:'sig1',source:'helius',blockTime:100}];
 const coverage={from:100,to:200,verifiedPercent:80,statement:'Partial indexed coverage.'};
@@ -21,5 +21,8 @@ test('valid trade movie preserves provenance and coverage disclosure',()=>{
 
 test('contract locks creator integrity',()=>{
   assert.equal(__tradeMovieContract.evidenceRequiredForObservedSegments,true);assert.equal(__tradeMovieContract.simulationMustBeDisclosed,true);assert.equal(__tradeMovieContract.noBlockchainDataDuplication,true);
+  assert.equal(__tradeMovieContract.defaultAspectRatio,'9:16');
+  assert.deepEqual(__tradeMovieContract.verticalSize,{w:1080,h:1920});
+  assert.equal(tradeMovieVerifyHref('https://abullsapp.com','abc'),'https://abullsapp.com/?tour=abc');
 });
 

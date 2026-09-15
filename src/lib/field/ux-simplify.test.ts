@@ -47,7 +47,9 @@ describe("UX simplify pack — Cut-first demo menu", () => {
     assert.equal(MODE_HINT.compare, "Compare two traders side by side");
     assert.match(director, /Make a Cut/);
     assert.match(director, /VERIFY · Frozen Cut/);
+    assert.match(director, /Share the 9:16 receipt card/);
     assert.match(workspace, /Pick a trade first/);
+    assert.match(workspace, /verifyingCut/);
     assert.match(workspace, /<summary>Details<\/summary>/);
     assert.match(workspace, /So11111111111111111111111111111111111111112/);
   });

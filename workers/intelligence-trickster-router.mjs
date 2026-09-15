@@ -1,4 +1,4 @@
-import { manifestDisclosures, validateStoryManifest } from '../js/trickster-story-manifest.mjs';
+import { cutSharePath, manifestDisclosures, validateStoryManifest } from '../js/trickster-story-manifest.mjs';
 import { intelligenceDb } from './intelligence-indexer.mjs';
 
 const MAX_BODY_BYTES = 512 * 1024;
@@ -61,7 +61,7 @@ export async function handleTricksterRequest(request,env={}) {
   if(shareMatch){
     if(request.method!=='GET')return json({ok:false,error:'method_not_allowed'},405);
     if(!shareEnabled(env))return json({ok:false,error:'feature_disabled'},404);
-    try{const record=await readShareManifest(env,shareMatch[1]);if(!record)return json({ok:false,error:'share_not_found'},404,'public, max-age=60');return json({ok:true,persisted:true,frozen:true,...record},200,'public, max-age=300, stale-while-revalidate=3600');}
+    try{const record=await readShareManifest(env,shareMatch[1]);if(!record)return json({ok:false,error:'share_not_found'},404,'public, max-age=60');const page=cutSharePath(record.id);return json({ok:true,persisted:true,frozen:true,...record,shareUrl:page,verifyUrl:page},200,'public, max-age=300, stale-while-revalidate=3600');}
     catch(error){const code=String(error?.message||error),status=code==='intelligence_db_unavailable'?503:500;return json({ok:false,error:code},status);}
   }
   if(request.method!=='POST') return json({ok:false,error:'method_not_allowed'},405);
@@ -71,7 +71,8 @@ export async function handleTricksterRequest(request,env={}) {
     if(url.pathname===sharePath){
       if(!shareEnabled(env))return json({ok:false,error:'feature_disabled'},404);
       const record=await persistShareManifest(env,manifest);
-      return json({ok:true,persisted:true,frozen:true,shareId:record.id,expiresAt:record.expiresAt,manifest,disclosures:record.disclosures});
+      const page=cutSharePath(record.id);
+      return json({ok:true,persisted:true,frozen:true,shareId:record.id,shareUrl:page,verifyUrl:page,expiresAt:record.expiresAt,manifest,disclosures:record.disclosures});
     }
     return json({ok:true,persisted:false,publishable:true,manifest,disclosures:manifestDisclosures(manifest)});
   } catch(error) {
@@ -87,5 +88,5 @@ export async function handleTricksterRequest(request,env={}) {
   }
 }
 
-export const __tricksterShareContract=Object.freeze({maxBodyBytes:MAX_BODY_BYTES,ttlSeconds:SHARE_TTL_SECONDS,shareIdPattern:SHARE_ID_RE.source});
+export const __tricksterShareContract=Object.freeze({maxBodyBytes:MAX_BODY_BYTES,ttlSeconds:SHARE_TTL_SECONDS,shareIdPattern:SHARE_ID_RE.source,shareQueryParam:'tour'});
 
