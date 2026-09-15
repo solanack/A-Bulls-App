@@ -43,11 +43,13 @@ database_name = "<YOUR_PRODUCTION_INTELLIGENCE_D1_NAME>"
 database_id = "<YOUR_PRODUCTION_INTELLIGENCE_D1_ID>"
 migrations_dir = "migrations"
 
+# Temporarily 120/60s for Colosseum/Cut smoke headroom (Replay→Cut→Share);
+# tighten back toward 60 later if Galaxy traffic stays calm.
 [[ratelimits]]
 name = "RATE_LIMITER"
 namespace_id = "<YOUR_ACCOUNT_UNIQUE_INTEGER_NAMESPACE_ID>"
   [ratelimits.simple]
-  limit = 60
+  limit = 120
   period = 60
 
 [observability]

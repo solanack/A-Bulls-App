@@ -89,11 +89,13 @@ Z500_TOP_LIMIT = "10"
 Z500_REFRESH_SECONDS = "900"
 Z500_CONFIRMATION_CYCLES = "2"
 
+# Temporarily 120/60s for Colosseum/Cut smoke headroom (Replay→Cut→Share);
+# tighten back toward 60 later if Galaxy traffic stays calm.
 [[ratelimits]]
 name = "RATE_LIMITER"
 namespace_id = "8262026"
   [ratelimits.simple]
-  limit = 60
+  limit = 120
   period = 60
 
 [observability]
