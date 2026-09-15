@@ -12,17 +12,19 @@ export function socialCapabilities(env = {}) {
     tradingEnabled: false,
     tokenLaunchEnabled: false,
     nativeTokenEnabled: false,
-    available: Object.freeze([
-      "public-discovery",
-      "evidence-feed",
+    // Step 1 surface only — later social surfaces stay unavailable until accounts/writes.
+    available: Object.freeze(
+      socialEnabled
+        ? ["public-discovery", "evidence-feed"]
+        : [],
+    ),
+    unavailable: Object.freeze([
       "profiles",
       "follows",
       "watchlists",
       "creator-channels",
       "galaxy-communities",
       "non-transferable-reputation",
-    ]),
-    unavailable: Object.freeze([
       "wallet-connect",
       "wallet-ownership-claim",
       "wallet-signing",
@@ -32,9 +34,11 @@ export function socialCapabilities(env = {}) {
       "liquidity-actions",
       "custody",
       "native-token",
+      ...(socialEnabled ? [] : ["public-discovery", "evidence-feed"]),
     ]),
     releasePolicy:
       "Account-based SocialFi only. Public-chain observation is enabled; wallet connection, wallet signing, trading, token launch, custody, and the A Bulls App token are disabled.",
+    step: "1-evidence-discover",
   });
 }
 
