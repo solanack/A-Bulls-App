@@ -11,13 +11,13 @@ import {
   holdingTokenLabel,
   isWalletStar,
 } from "./trader-holdings.ts";
-import type { FieldSection, FocusedParticle } from "./types.ts";
+import type { FieldSection, FocusedParticle, JsonValue } from "./types.ts";
 
 const WALLET = "BWVR4KqS8eVkmKXCsb8cq76jJMN7FjWjCYxZtzGpYQnx";
 const SMOKE_WALLET = "7BY7z7wJkP9DSLuTFKsfdBwkEwLqyr1syMQn8hAgNhiy";
 const MINT = "97jCC4dL3ceKFqovn3gPKApKQ8hUYwJmCUV3m9d1pump";
 
-function star(wallet?: string, extra: Record<string, unknown> = {}): FocusedParticle {
+function star(wallet?: string, extra: Record<string, JsonValue> = {}): FocusedParticle {
   return {
     id: "star:1",
     kind: "wallet",

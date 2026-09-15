@@ -23,7 +23,7 @@ export type CutSubject = {
   symbol: string | null;
 };
 
-export function isWalletStar(focus: FocusedParticle | null | undefined): boolean {
+export function isWalletStar(focus: FocusedParticle | null | undefined): focus is FocusedParticle {
   if (!focus) return false;
   if (focus.cosmicKind === "star") return true;
   return focus.kind === "wallet" || focus.kind === "holder-exit";
