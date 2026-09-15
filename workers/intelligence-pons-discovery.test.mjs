@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PONS_FACTORIES } from './intelligence-pons-galaxy.mjs';
-import { PONS_DISCOVERY_SPECS,buildFilteredPonsLogsUrl,buildPonsInstanceLogsUrl,buildPonsRestLogsUrl,buildPonsProLogsUrl,fetchPonsDiscoveryRange,fetchPonsInstancePage,parseBlockscoutLogsPayload,parseBlockscoutV2LogsPayload,__ponsDiscoveryContract } from './intelligence-pons-discovery.mjs';
+import { PONS_DISCOVERY_SPECS,buildFilteredPonsLogsUrl,buildPonsInstanceLogsUrl,buildPonsRestLogsUrl,buildPonsProLogsUrl,fetchPonsDiscoveryRange,fetchPonsInstancePage,parseBlockscoutLogsPayload,parseBlockscoutV2LogsPayload,resolvePonsDiscoveryFallbackHead,__ponsDiscoveryContract } from './intelligence-pons-discovery.mjs';
 
 test('Pons legacy discovery URL remains factory and TokenLaunched topic filtered',()=>{
   const factory=PONS_FACTORIES.find(item=>item.version==='v2');
@@ -125,10 +125,33 @@ test('Pons RPC fallback does not recursively amplify rate limits',async()=>{
   assert.equal(calls,1);
 });
 
+test('Pons discovery reuses retained fallback cursor without querying RPC head',async()=>{
+  let calls=0;
+  const result=await resolvePonsDiscoveryFallbackHead({}, {next_to_block:63_021_705}, {
+    rpcImpl:async()=>{calls+=1;throw new Error('should_not_call_rpc');}
+  });
+  assert.equal(result.head,null);
+  assert.equal(result.finalHead,63_021_705);
+  assert.equal(result.source,'retained-discovery-state');
+  assert.equal(calls,0);
+});
+
+test('Pons discovery resolves RPC head only when retained fallback cursor is absent',async()=>{
+  const calls=[];
+  const result=await resolvePonsDiscoveryFallbackHead({PONS_CONFIRMATIONS:'64'}, {next_to_block:null}, {
+    rpcImpl:async(_env,method)=>{calls.push(method);return '63000000';}
+  });
+  assert.deepEqual(calls,['eth_blockNumber']);
+  assert.equal(result.head,63_000_000);
+  assert.equal(result.finalHead,62_999_936);
+  assert.equal(result.source,'robinhood-rpc');
+});
+
 test('historical discovery is resumable and starts before known active factories',()=>{
   assert.ok(PONS_DISCOVERY_SPECS.v1.startBlock<=8_991_118);
   assert.ok(PONS_DISCOVERY_SPECS.v2.startBlock<26_841_846);
   assert.equal(__ponsDiscoveryContract.direction,'newest-to-oldest');
   assert.equal(__ponsDiscoveryContract.source,'blockscout-rest-v2-pro-preferred-with-pro-legacy-rpc-fallback');
+  assert.equal(__ponsDiscoveryContract.headLookup,'lazy-fallback-only');
   assert.equal(__ponsDiscoveryContract.chainId,4663);
 });
