@@ -194,12 +194,18 @@ describe("trader-select holdings → Make a Cut climax", () => {
     assert.match(overlay, /Make a Cut\?/);
     assert.match(overlay, /Choose a held token/);
     assert.match(overlay, /getTraderHoldings/);
+    assert.match(overlay, /holdingsOverlayRows/);
     assert.match(overlay, /formatIndexedPnl/);
+    assert.match(overlay, /holdingMintLabel/);
     assert.match(overlay, /No PnL was invented/);
     assert.match(overlay, /Empty coverage stays empty/);
+    assert.match(overlay, /missing PnL stays unavailable/);
     assert.doesNotMatch(overlay, /reportedPnlUsd/);
     assert.doesNotMatch(overlay, /helius/i);
     assert.match(holdings, /research\/holdings/);
+    assert.match(director, /autoSelectReceiptIds/);
+    assert.match(director, /CUT_RECEIPT_MAX/);
+    assert.match(director, /chosenIds/);
   });
 
   it("opens the existing Replay chart + Trickster share path, not a second video system", () => {
