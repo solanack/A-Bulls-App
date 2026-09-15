@@ -52,3 +52,7 @@ jobs:
       - name: Diagnose live galaxy population
         continue-on-error: true
         run: node scripts/diagnose-live-galaxies.mjs
+      - name: Diagnose Pons production state
+        if: always()
+        continue-on-error: true
+        run: node scripts/diagnose-pons-production.mjs
