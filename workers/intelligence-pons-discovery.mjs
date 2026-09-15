@@ -167,6 +167,17 @@ export async function fetchPonsDiscoveryRange(env,factory,fromBlock,toBlock,opti
   return Object.freeze({rows,source:'robinhood-rpc-topic-filtered',fromBlock:rpcFrom,toBlock});
 }
 
+export async function resolvePonsDiscoveryFallbackHead(env={},state={},options={}){
+  const retained=hexInt(state?.next_to_block);
+  if(retained>0)return Object.freeze({head:null,finalHead:retained,source:'retained-discovery-state'});
+  const rpcImpl=options.rpcImpl||ponsRpc;
+  const head=hexInt(await rpcImpl(env,'eth_blockNumber'));
+  const confirmations=clamp(env.PONS_CONFIRMATIONS,64,1,500);
+  const finalHead=Math.max(0,head-confirmations);
+  if(finalHead<=0)throw new Error('pons_discovery_head_unavailable');
+  return Object.freeze({head,finalHead,source:'robinhood-rpc'});
+}
+
 async function persistLaunch(db,factory,row,now,source){
   const raw=normalizeLog(factory,row),launch=decodePonsLaunchLog(raw);
   if(!launch)return false;
@@ -175,7 +186,7 @@ async function persistLaunch(db,factory,row,now,source){
   return true;
 }
 
-async function stateFor(db,factory,startBlock,head){
+async function stateFor(db,factory,startBlock,head=null){
   const existing=await db.prepare('SELECT * FROM pons_discovery_state WHERE factory=?').bind(factory.address).first();
   if(existing)return existing;
   await db.prepare(`INSERT INTO pons_discovery_state(factory,factory_version,start_block,next_to_block,complete,discovered_launches,last_success_at,last_error,updated_at) VALUES(?,?,?,?,0,0,NULL,NULL,unixepoch())`).bind(factory.address,factory.version,startBlock,head).run();
@@ -226,14 +237,13 @@ async function backfillFactoryFromInstance(env,db,factory,startBlock,now,options
 export async function backfillPonsLaunchDiscovery(env={},options={}){
   if(s(env.PONS_GALAXY_ENABLED).toLowerCase()!=='true'||s(env.PONS_INDEX_ENABLED).toLowerCase()!=='true')return Object.freeze({enabled:false});
   const db=intelligenceDb(env);if(!db)throw new Error('intelligence_db_unavailable');
-  const head=hexInt(await ponsRpc(env,'eth_blockNumber'));
-  const confirmations=clamp(env.PONS_CONFIRMATIONS,64,1,500),finalHead=Math.max(0,head-confirmations);
   const now=Math.floor(Date.now()/1000),factories=[];
+  let head=null,finalHead=null,headSource='not-required';
 
   for(const factory of PONS_FACTORIES){
     const startBlock=PONS_DISCOVERY_SPECS[factory.version]?.startBlock??0;
     let state;
-    try{state=await stateFor(db,factory,startBlock,finalHead);await cursorFor(db,factory);}
+    try{state=await stateFor(db,factory,startBlock,null);await cursorFor(db,factory);}
     catch(error){factories.push({factory:factory.address,version:factory.version,error:s(error?.message||error),migrationRequired:true});continue;}
     if(n(state.complete)===1){factories.push({factory:factory.address,version:factory.version,complete:true,discovered:n(state.discovered_launches),nextToBlock:null,source:`${ponsBlockscoutSource(env)}-topic-filtered`,error:null});continue;}
     try{
@@ -243,11 +253,28 @@ export async function backfillPonsLaunchDiscovery(env={},options={}){
       console.warn('[pons-discovery-blockscout-rest]',s(instanceError?.message||instanceError));
     }
 
+    // Only resolve a chain head after the cursor API is unavailable. Existing
+    // discovery state is enough to continue walking backward and avoids making
+    // a rate-limited public RPC a prerequisite for authenticated Blockscout.
+    let fallbackHead;
+    try{
+      const resolved=await resolvePonsDiscoveryFallbackHead(env,state,options);
+      fallbackHead=resolved.finalHead;
+      if(resolved.head!=null)head=resolved.head;
+      finalHead=resolved.finalHead;
+      headSource=resolved.source;
+    }catch(cause){
+      const error=s(cause?.message||cause);
+      await patchState(db,factory,{nextToBlock:state.next_to_block??null,complete:false,discovered:0,lastSuccessAt:state.last_success_at??null,error});
+      factories.push({factory:factory.address,version:factory.version,processed:0,complete:false,nextToBlock:state.next_to_block??null,discovered:n(state.discovered_launches),source:null,error});
+      continue;
+    }
+
     // If the cursor API is unavailable, keep provenance strict while falling
     // through Pro module logs, the explorer's exact-topic legacy API, then a
     // small RPC span.
     const chunk=clamp(options.chunkSize??env.PONS_DISCOVERY_CHUNK_BLOCKS,20_000,2_000,100_000);
-    const to=Math.min(finalHead,Math.max(startBlock,n(state.next_to_block)||finalHead));
+    const to=Math.max(startBlock,fallbackHead);
     const from=Math.max(startBlock,to-chunk+1);
     try{
       const result=await fetchPonsDiscoveryRange(env,factory,from,to,options);
@@ -265,7 +292,7 @@ export async function backfillPonsLaunchDiscovery(env={},options={}){
     }
   }
   const total=n((await db.prepare('SELECT COUNT(*) count FROM pons_launches').first())?.count);
-  return Object.freeze({enabled:true,head,finalHead,sourceMode:'blockscout-rest-v2-pro-preferred-with-pro-legacy-rpc-fallback',totalLaunches:total,factories});
+  return Object.freeze({enabled:true,head,finalHead,headSource,sourceMode:'blockscout-rest-v2-pro-preferred-with-pro-legacy-rpc-fallback',totalLaunches:total,factories});
 }
 
-export const __ponsDiscoveryContract=Object.freeze({readOnly:true,source:'blockscout-rest-v2-pro-preferred-with-pro-legacy-rpc-fallback',direction:'newest-to-oldest',resultLimit:RESULT_LIMIT,chainId:4663});
+export const __ponsDiscoveryContract=Object.freeze({readOnly:true,source:'blockscout-rest-v2-pro-preferred-with-pro-legacy-rpc-fallback',direction:'newest-to-oldest',headLookup:'lazy-fallback-only',resultLimit:RESULT_LIMIT,chainId:4663});
