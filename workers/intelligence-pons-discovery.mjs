@@ -1,9 +1,10 @@
 /* A Bulls App — verified PONS launch discovery backfill.
  *
- * The forward RPC cursor intentionally stays narrow for cost/reorg control. This
- * companion backfill walks historical ranges newest-to-oldest using either the
- * authenticated Blockscout multichain API or bounded Robinhood RPC eth_getLogs.
- * Both paths filter by the allowlisted factory + exact TokenLaunched topic.
+ * Public reads remain D1-only. Historical discovery walks each allowlisted PONS
+ * factory newest-to-oldest through Blockscout's per-chain v2 address-log API,
+ * filtering locally to the exact TokenLaunched topic. Authenticated Blockscout
+ * Pro and bounded Robinhood RPC remain fallbacks. Nothing is inferred from a
+ * token address alone.
  */
 import { intelligenceDb } from './intelligence-indexer.mjs';
 import { providerFetch } from './intelligence-fetch.mjs';
@@ -11,6 +12,7 @@ import { ponsRpc } from './intelligence-pons-rpc.mjs';
 import { PONS_FACTORIES, decodePonsLaunchLog } from './intelligence-pons-galaxy.mjs';
 
 const BLOCKSCOUT_LEGACY='https://robinhoodchain.blockscout.com/api';
+const BLOCKSCOUT_INSTANCE_V2='https://robinhoodchain.blockscout.com/api/v2';
 const BLOCKSCOUT_PRO='https://api.blockscout.com/v2/api';
 const RESULT_LIMIT=1000;
 const MAX_RPC_SPLIT_DEPTH=12;
@@ -19,6 +21,7 @@ const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const clamp=(value,fallback,min,max)=>Math.max(min,Math.min(max,Math.trunc(n(value)||fallback)));
 const hexInt=value=>{const text=s(value);if(!text)return 0;const parsed=text.startsWith('0x')?Number.parseInt(text,16):Number(text);return Number.isFinite(parsed)?Math.max(0,Math.trunc(parsed)):0;};
 const unix=value=>{if(value==null||value==='')return null;const numeric=hexInt(value);if(numeric>0)return numeric;const ms=Date.parse(s(value));return Number.isFinite(ms)?Math.floor(ms/1000):null;};
+const isRateLimitError=error=>/\b429\b|rate.?limit|too many requests/i.test(s(error?.message||error));
 
 // Conservative lower bounds. V1's published start block is 8,991,118. V2 is
 // observed after block 26m; starting earlier is safe and preserves provenance.
@@ -38,6 +41,17 @@ export function buildFilteredPonsLogsUrl(factory,fromBlock,toBlock){
   return url.toString();
 }
 
+export function buildPonsInstanceLogsUrl(factory,cursor=null){
+  const url=new URL(`${BLOCKSCOUT_INSTANCE_V2}/addresses/${encodeURIComponent(factory.address)}/logs`);
+  if(cursor&&typeof cursor==='object'){
+    for(const key of ['block_number','index','items_count']){
+      const value=cursor[key];
+      if(value!=null&&value!=='')url.searchParams.set(key,String(value));
+    }
+  }
+  return url.toString();
+}
+
 export function buildPonsProLogsUrl(factory,fromBlock,toBlock,apiKey){
   const url=new URL(BLOCKSCOUT_PRO);
   url.searchParams.set('chain_id','4663');
@@ -53,7 +67,7 @@ export function buildPonsProLogsUrl(factory,fromBlock,toBlock,apiKey){
 
 function normalizeLog(factory,row={}){
   return {
-    address:s(row.address||factory.address).toLowerCase(),
+    address:s(row.address||row.address_hash?.hash||factory.address).toLowerCase(),
     topics:Array.isArray(row.topics)?row.topics.map(value=>s(value).toLowerCase()):[],
     data:s(row.data)||'0x',
     transactionHash:s(row.transactionHash??row.transaction_hash).toLowerCase(),
@@ -70,6 +84,30 @@ export function parseBlockscoutLogsPayload(payload){
   const result=s(payload?.result),message=s(payload?.message).toLowerCase();
   if(!result||/no records|no logs|not found/i.test(result)||message.includes('no records'))return [];
   throw new Error(`pons_blockscout_logs_${s(payload?.message)||result||'invalid_response'}`);
+}
+
+export function parseBlockscoutV2LogsPayload(payload={}){
+  if(!Array.isArray(payload?.items))throw new Error('pons_blockscout_v2_invalid_response');
+  const next=payload?.next_page_params&&typeof payload.next_page_params==='object'?payload.next_page_params:null;
+  return Object.freeze({items:payload.items,nextPageParams:next});
+}
+
+function filterVerifiedTopicRows(factory,rows,startBlock=0){
+  const address=s(factory.address).toLowerCase(),topic=s(factory.topic).toLowerCase();
+  return (Array.isArray(rows)?rows:[]).filter(row=>{
+    const rowAddress=s(row?.address??row?.address_hash?.hash??address).toLowerCase();
+    const topics=Array.isArray(row?.topics)?row.topics:[];
+    return rowAddress===address&&s(topics[0]).toLowerCase()===topic&&hexInt(row?.blockNumber??row?.block_number)>=startBlock;
+  });
+}
+
+export async function fetchPonsInstancePage(factory,cursor=null,fetchImpl=providerFetch){
+  const response=await fetchImpl(buildPonsInstanceLogsUrl(factory,cursor),{
+    headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'},
+    signal:AbortSignal.timeout(10_000)
+  });
+  if(!response.ok)throw new Error(`pons_blockscout_v2_http_${response.status}`);
+  return parseBlockscoutV2LogsPayload(await response.json());
 }
 
 async function fetchBlockscoutRange(factory,fromBlock,toBlock,apiKey,fetchImpl=providerFetch,depth=0){
@@ -92,7 +130,8 @@ async function fetchRpcRange(env,factory,fromBlock,toBlock,rpcImpl=ponsRpc,depth
     if(!Array.isArray(rows))throw new Error('pons_rpc_invalid_logs');
     return rows;
   }catch(error){
-    if(fromBlock>=toBlock||depth>=MAX_RPC_SPLIT_DEPTH)throw error;
+    // Splitting a rate-limited request multiplies traffic and makes a 429 worse.
+    if(isRateLimitError(error)||fromBlock>=toBlock||depth>=MAX_RPC_SPLIT_DEPTH)throw error;
     const middle=Math.floor((fromBlock+toBlock)/2);
     const left=await fetchRpcRange(env,factory,fromBlock,middle,rpcImpl,depth+1);
     const right=await fetchRpcRange(env,factory,middle+1,toBlock,rpcImpl,depth+1);
@@ -104,7 +143,7 @@ export async function fetchPonsDiscoveryRange(env,factory,fromBlock,toBlock,opti
   const apiKey=s(env.PONS_BLOCKSCOUT_API_KEY||env.BLOCKSCOUT_API_KEY);
   if(apiKey){
     try{return Object.freeze({rows:await fetchBlockscoutRange(factory,fromBlock,toBlock,apiKey,options.fetchImpl||providerFetch),source:'blockscout-pro-topic-filtered'});}
-    catch(error){console.warn('[pons-discovery-blockscout]',s(error?.message||error));}
+    catch(error){console.warn('[pons-discovery-blockscout-pro]',s(error?.message||error));}
   }
   const rows=await fetchRpcRange(env,factory,fromBlock,toBlock,options.rpcImpl||ponsRpc);
   return Object.freeze({rows,source:'robinhood-rpc-topic-filtered'});
@@ -125,8 +164,44 @@ async function stateFor(db,factory,startBlock,head){
   return {factory:factory.address,factory_version:factory.version,start_block:startBlock,next_to_block:head,complete:0,discovered_launches:0};
 }
 
+async function cursorFor(db,factory){
+  const row=await db.prepare('SELECT cursor_json,source FROM pons_discovery_cursor WHERE factory=?').bind(factory.address).first();
+  if(!row)return {cursor:null,source:'blockscout-instance-v2'};
+  let cursor=null;
+  try{cursor=row.cursor_json?JSON.parse(row.cursor_json):null;}catch{}
+  return {cursor,source:s(row.source)||'blockscout-instance-v2'};
+}
+
+async function saveCursor(db,factory,cursor,source='blockscout-instance-v2'){
+  await db.prepare(`INSERT INTO pons_discovery_cursor(factory,cursor_json,source,updated_at) VALUES(?,?,?,unixepoch()) ON CONFLICT(factory) DO UPDATE SET cursor_json=excluded.cursor_json,source=excluded.source,updated_at=excluded.updated_at`).bind(factory.address,cursor?JSON.stringify(cursor):null,source).run();
+}
+
 async function patchState(db,factory,patch={}){
   await db.prepare(`UPDATE pons_discovery_state SET next_to_block=?,complete=?,discovered_launches=discovered_launches+?,last_success_at=?,last_error=?,updated_at=unixepoch() WHERE factory=?`).bind(patch.nextToBlock??null,patch.complete?1:0,Math.max(0,Math.trunc(n(patch.discovered))),patch.lastSuccessAt??null,patch.error??null,factory.address).run();
+}
+
+async function backfillFactoryFromInstance(env,db,factory,startBlock,now,options={}){
+  const pages=clamp(options.pagesPerFactory??env.PONS_DISCOVERY_PAGES_PER_RUN,4,1,12);
+  const fetchImpl=options.fetchImpl||providerFetch;
+  const stored=await cursorFor(db,factory);
+  let cursor=stored.cursor,discovered=0,processed=0,nextToBlock=null,complete=false;
+  for(let page=0;page<pages&&!complete;page+=1){
+    const payload=await fetchPonsInstancePage(factory,cursor,fetchImpl);
+    const rows=filterVerifiedTopicRows(factory,payload.items,startBlock);
+    for(const row of rows)if(await persistLaunch(db,factory,row,now,'blockscout-instance-v2-topic-filtered'))discovered+=1;
+    processed+=1;
+    const allBlocks=payload.items.map(row=>hexInt(row?.blockNumber??row?.block_number)).filter(Boolean);
+    const oldestBlock=allBlocks.length?Math.min(...allBlocks):null;
+    const next=payload.nextPageParams;
+    nextToBlock=next?.block_number==null?null:Math.max(0,Math.trunc(n(next.block_number)));
+    complete=!next||(oldestBlock!=null&&oldestBlock<startBlock)||(nextToBlock!=null&&nextToBlock<startBlock);
+    cursor=complete?null:next;
+    await saveCursor(db,factory,cursor,'blockscout-instance-v2');
+    await patchState(db,factory,{nextToBlock:complete?null:nextToBlock,complete,discovered,lastSuccessAt:now,error:null});
+    discovered=0;
+  }
+  const latest=await db.prepare('SELECT next_to_block,complete,discovered_launches,last_error FROM pons_discovery_state WHERE factory=?').bind(factory.address).first();
+  return {factory:factory.address,version:factory.version,processed,complete:n(latest?.complete)===1,nextToBlock:latest?.next_to_block??null,discovered:n(latest?.discovered_launches),source:'blockscout-instance-v2-topic-filtered',error:latest?.last_error||null};
 }
 
 export async function backfillPonsLaunchDiscovery(env={},options={}){
@@ -134,36 +209,42 @@ export async function backfillPonsLaunchDiscovery(env={},options={}){
   const db=intelligenceDb(env);if(!db)throw new Error('intelligence_db_unavailable');
   const head=hexInt(await ponsRpc(env,'eth_blockNumber'));
   const confirmations=clamp(env.PONS_CONFIRMATIONS,64,1,500),finalHead=Math.max(0,head-confirmations);
-  const hasBlockscoutKey=Boolean(s(env.PONS_BLOCKSCOUT_API_KEY||env.BLOCKSCOUT_API_KEY));
-  const chunkDefault=hasBlockscoutKey?2_000_000:100_000;
-  const chunksDefault=hasBlockscoutKey?4:2;
-  const chunkSize=clamp(options.chunkSize??env.PONS_DISCOVERY_CHUNK_BLOCKS,chunkDefault,2_000,5_000_000);
-  const chunksPerFactory=clamp(options.chunksPerFactory??env.PONS_DISCOVERY_CHUNKS_PER_RUN,chunksDefault,1,8);
   const now=Math.floor(Date.now()/1000),factories=[];
 
   for(const factory of PONS_FACTORIES){
     const startBlock=PONS_DISCOVERY_SPECS[factory.version]?.startBlock??0;
     let state;
-    try{state=await stateFor(db,factory,startBlock,finalHead);}catch(error){factories.push({factory:factory.address,version:factory.version,error:s(error?.message||error),migrationRequired:true});continue;}
-    if(n(state.complete)===1){factories.push({factory:factory.address,version:factory.version,complete:true,discovered:0,nextToBlock:null});continue;}
-    let to=Math.min(finalHead,Math.max(startBlock,n(state.next_to_block)||finalHead)),discovered=0,processed=0,error=null,lastSource=null;
-    for(let pass=0;pass<chunksPerFactory&&to>=startBlock;pass+=1){
-      const from=Math.max(startBlock,to-chunkSize+1);
-      try{
-        const result=await fetchPonsDiscoveryRange(env,factory,from,to,options);
-        lastSource=result.source;
-        for(const row of result.rows)if(await persistLaunch(db,factory,row,now,result.source))discovered+=1;
-        processed+=1;
-        to=from-1;
-        await patchState(db,factory,{nextToBlock:to>=startBlock?to:null,complete:to<startBlock,discovered,lastSuccessAt:now,error:null});
-        discovered=0;
-      }catch(cause){error=s(cause?.message||cause);await patchState(db,factory,{nextToBlock:to,complete:false,discovered:0,lastSuccessAt:state.last_success_at??null,error});break;}
+    try{state=await stateFor(db,factory,startBlock,finalHead);await cursorFor(db,factory);}
+    catch(error){factories.push({factory:factory.address,version:factory.version,error:s(error?.message||error),migrationRequired:true});continue;}
+    if(n(state.complete)===1){factories.push({factory:factory.address,version:factory.version,complete:true,discovered:n(state.discovered_launches),nextToBlock:null,source:'blockscout-instance-v2-topic-filtered',error:null});continue;}
+    try{
+      factories.push(await backfillFactoryFromInstance(env,db,factory,startBlock,now,options));
+      continue;
+    }catch(instanceError){
+      console.warn('[pons-discovery-blockscout-instance]',s(instanceError?.message||instanceError));
     }
-    const latest=await db.prepare('SELECT next_to_block,complete,discovered_launches,last_error FROM pons_discovery_state WHERE factory=?').bind(factory.address).first();
-    factories.push({factory:factory.address,version:factory.version,processed,complete:n(latest?.complete)===1,nextToBlock:latest?.next_to_block??null,discovered:n(latest?.discovered_launches),source:lastSource,error:error||latest?.last_error||null});
+
+    // If the no-key instance API is unavailable, retain the previous verified
+    // fallbacks. The range is deliberately small and rate-limits are not split.
+    const chunk=clamp(options.chunkSize??env.PONS_DISCOVERY_CHUNK_BLOCKS,20_000,2_000,100_000);
+    const to=Math.min(finalHead,Math.max(startBlock,n(state.next_to_block)||finalHead));
+    const from=Math.max(startBlock,to-chunk+1);
+    try{
+      const result=await fetchPonsDiscoveryRange(env,factory,from,to,options);
+      let discovered=0;
+      for(const row of filterVerifiedTopicRows(factory,result.rows,startBlock))if(await persistLaunch(db,factory,row,now,result.source))discovered+=1;
+      const next=from-1,complete=next<startBlock;
+      await patchState(db,factory,{nextToBlock:complete?null:next,complete,discovered,lastSuccessAt:now,error:null});
+      const latest=await db.prepare('SELECT next_to_block,complete,discovered_launches,last_error FROM pons_discovery_state WHERE factory=?').bind(factory.address).first();
+      factories.push({factory:factory.address,version:factory.version,processed:1,complete:n(latest?.complete)===1,nextToBlock:latest?.next_to_block??null,discovered:n(latest?.discovered_launches),source:result.source,error:null});
+    }catch(cause){
+      const error=s(cause?.message||cause);
+      await patchState(db,factory,{nextToBlock:to,complete:false,discovered:0,lastSuccessAt:state.last_success_at??null,error});
+      factories.push({factory:factory.address,version:factory.version,processed:0,complete:false,nextToBlock:to,discovered:n(state.discovered_launches),source:null,error});
+    }
   }
   const total=n((await db.prepare('SELECT COUNT(*) count FROM pons_launches').first())?.count);
-  return Object.freeze({enabled:true,head,finalHead,chunkSize,chunksPerFactory,sourceMode:hasBlockscoutKey?'blockscout-pro-with-rpc-fallback':'bounded-rpc',totalLaunches:total,factories});
+  return Object.freeze({enabled:true,head,finalHead,sourceMode:'blockscout-instance-v2-with-pro-rpc-fallback',totalLaunches:total,factories});
 }
 
-export const __ponsDiscoveryContract=Object.freeze({readOnly:true,source:'blockscout-pro-or-bounded-rpc',direction:'newest-to-oldest',resultLimit:RESULT_LIMIT,chainId:4663});
+export const __ponsDiscoveryContract=Object.freeze({readOnly:true,source:'blockscout-instance-v2-with-pro-rpc-fallback',direction:'newest-to-oldest',resultLimit:RESULT_LIMIT,chainId:4663});
