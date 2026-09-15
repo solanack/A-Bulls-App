@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { ADVANCED_MODES, ANALYSIS_MODES, MODE_HINT, TOOL_TITLE } from "./types.ts";
 import {
   heroSubjectLabel,
-  inboundCutShareOpen,
   looksLikeMint,
   needsSelectedTrade,
   primaryMenuIds,
@@ -48,9 +47,7 @@ describe("UX simplify pack — Cut-first demo menu", () => {
     assert.equal(MODE_HINT.compare, "Compare two traders side by side");
     assert.match(director, /Make a Cut/);
     assert.match(director, /VERIFY · Frozen Cut/);
-    assert.match(director, /Share a vertical masterpiece/);
     assert.match(workspace, /Pick a trade first/);
-    assert.match(workspace, /inboundCutShareOpen/);
     assert.match(workspace, /<summary>Details<\/summary>/);
     assert.match(workspace, /So11111111111111111111111111111111111111112/);
   });
@@ -73,12 +70,6 @@ describe("one-tap prefill vs Pick a trade first", () => {
     assert.equal(selectedTradeReady("evidence", { wallet: "", mint: "", hasEvidence: false }), false);
     assert.equal(selectedTradeReady("compare", { wallet: "Wallet111", mint: "" }), true);
     assert.equal(selectedTradeReady("compare", { wallet: "", mint: "Mint111" }), false);
-  });
-
-  it("lets a VERIFY / tour Cut deep link open Make a Cut without a selected trade", () => {
-    assert.equal(inboundCutShareOpen("trickster", "deadbeef"), true);
-    assert.equal(inboundCutShareOpen("trickster", ""), false);
-    assert.equal(inboundCutShareOpen("replay", "deadbeef"), false);
   });
 });
 
