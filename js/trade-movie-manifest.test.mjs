@@ -23,6 +23,6 @@ test('contract locks creator integrity',()=>{
   assert.equal(__tradeMovieContract.evidenceRequiredForObservedSegments,true);assert.equal(__tradeMovieContract.simulationMustBeDisclosed,true);assert.equal(__tradeMovieContract.noBlockchainDataDuplication,true);
   assert.equal(__tradeMovieContract.defaultAspectRatio,'9:16');
   assert.deepEqual(__tradeMovieContract.verticalSize,{w:1080,h:1920});
-  assert.equal(tradeMovieVerifyHref('https://abullsapp.com','abc'),'https://abullsapp.com/?tour=abc');
+  assert.equal(tradeMovieVerifyHref('https://abullsapp.com','abc'),'https://abullsapp.com/?cut=abc');
 });
 

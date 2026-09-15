@@ -31,4 +31,14 @@ export async function proxyIntelligenceRequest(request: Request): Promise<Respon
   }
 }
 
-export const __intelligenceProxyContract = Object.freeze({ upstream: INTELLIGENCE_WORKER, readOnlyByDefault: true });
+export const intelligenceProxyHandlers = {
+  GET: ({ request }: { request: Request }) => proxyIntelligenceRequest(request),
+  POST: ({ request }: { request: Request }) => proxyIntelligenceRequest(request),
+  PUT: ({ request }: { request: Request }) => proxyIntelligenceRequest(request),
+};
+
+export const __intelligenceProxyContract = Object.freeze({
+  upstream: INTELLIGENCE_WORKER,
+  readOnlyByDefault: true,
+  catchAllSegments: [1, 2, 3, 4],
+});

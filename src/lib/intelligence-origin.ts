@@ -1,7 +1,17 @@
+export const INTELLIGENCE_WORKER_ORIGIN = "https://black-bull-run-sol.ckdsigns1.workers.dev";
+export const INTELLIGENCE_PUBLIC_ORIGIN = "https://abullsapp.com";
+
+/** ServerFn fetches prefer workers.dev first. Browser Field hydrate stays origin-only (#23). */
 export const INTELLIGENCE_ORIGINS = Object.freeze([
-  "https://abullsapp.com",
-  "https://black-bull-run-sol.ckdsigns1.workers.dev",
+  INTELLIGENCE_WORKER_ORIGIN,
+  INTELLIGENCE_PUBLIC_ORIGIN,
 ]);
+
+export function shouldRetryIntelligenceOrigin(response: Response): boolean {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) return true;
+  return response.status >= 500;
+}
 
 export async function fetchIntelligence(path: string, init: RequestInit = {}) {
   let lastError: unknown = null;
@@ -9,9 +19,11 @@ export async function fetchIntelligence(path: string, init: RequestInit = {}) {
     try {
       if (init.signal?.aborted) throw init.signal.reason;
       const timeout = AbortSignal.timeout(15_000);
-      const response = await fetch(`${origin}${path}`, { ...init, signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
-      const contentType = response.headers.get("content-type") ?? "";
-      if (contentType.includes("application/json") && response.status !== 404 && response.status < 500) return response;
+      const response = await fetch(`${origin}${path}`, {
+        ...init,
+        signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
+      });
+      if (!shouldRetryIntelligenceOrigin(response)) return response;
       lastError = new Error(`intelligence_origin_${response.status}`);
     } catch (error) {
       if (init.signal?.aborted) throw error;

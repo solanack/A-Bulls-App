@@ -8,115 +8,242 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as ApiHealthRouteImport } from './routes/api.health'
-import { Route as ApiIntelligenceSplatRouteImport } from './routes/api.intelligence.$'
-import { Route as ApiSocialAuthVerifyRouteImport } from './routes/api.social-auth.verify'
+import { Route as rootRouteImport } from "./routes/__root";
+import { Route as IndexRouteImport } from "./routes/index";
+import { Route as ApiHealthRouteImport } from "./routes/api.health";
+import { Route as ApiIntelligenceRouteImport } from "./routes/api.intelligence";
+import { Route as ApiIntelligenceSplatRouteImport } from "./routes/api.intelligence.$";
+import { Route as ApiSocialAuthVerifyRouteImport } from "./routes/api.social-auth.verify";
+import { Route as ApiIntelligenceABRouteImport } from "./routes/api.intelligence.$a.$b";
+import { Route as ApiIntelligenceABCRouteImport } from "./routes/api.intelligence.$a.$b.$c";
+import { Route as ApiIntelligenceABCDRouteImport } from "./routes/api.intelligence.$a.$b.$c.$d";
 
 const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ApiHealthRoute = ApiHealthRouteImport.update({
-  id: '/api/health',
-  path: '/api/health',
+  id: "/api/health",
+  path: "/api/health",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
+const ApiIntelligenceRoute = ApiIntelligenceRouteImport.update({
+  id: "/api/intelligence",
+  path: "/api/intelligence",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const ApiIntelligenceSplatRoute = ApiIntelligenceSplatRouteImport.update({
-  id: '/api/intelligence/$',
-  path: '/api/intelligence/$',
-  getParentRoute: () => rootRouteImport,
-} as any)
+  id: "/$",
+  path: "/$",
+  getParentRoute: () => ApiIntelligenceRoute,
+} as any);
 const ApiSocialAuthVerifyRoute = ApiSocialAuthVerifyRouteImport.update({
-  id: '/api/social-auth/verify',
-  path: '/api/social-auth/verify',
+  id: "/api/social-auth/verify",
+  path: "/api/social-auth/verify",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
+const ApiIntelligenceABRoute = ApiIntelligenceABRouteImport.update({
+  id: "/$a/$b",
+  path: "/$a/$b",
+  getParentRoute: () => ApiIntelligenceRoute,
+} as any);
+const ApiIntelligenceABCRoute = ApiIntelligenceABCRouteImport.update({
+  id: "/$c",
+  path: "/$c",
+  getParentRoute: () => ApiIntelligenceABRoute,
+} as any);
+const ApiIntelligenceABCDRoute = ApiIntelligenceABCDRouteImport.update({
+  id: "/$d",
+  path: "/$d",
+  getParentRoute: () => ApiIntelligenceABCRoute,
+} as any);
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/api/health': typeof ApiHealthRoute
-  '/api/intelligence/$': typeof ApiIntelligenceSplatRoute
-  '/api/social-auth/verify': typeof ApiSocialAuthVerifyRoute
+  "/": typeof IndexRoute;
+  "/api/health": typeof ApiHealthRoute;
+  "/api/intelligence": typeof ApiIntelligenceRouteWithChildren;
+  "/api/intelligence/$": typeof ApiIntelligenceSplatRoute;
+  "/api/social-auth/verify": typeof ApiSocialAuthVerifyRoute;
+  "/api/intelligence/$a/$b": typeof ApiIntelligenceABRouteWithChildren;
+  "/api/intelligence/$a/$b/$c": typeof ApiIntelligenceABCRouteWithChildren;
+  "/api/intelligence/$a/$b/$c/$d": typeof ApiIntelligenceABCDRoute;
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/api/health': typeof ApiHealthRoute
-  '/api/intelligence/$': typeof ApiIntelligenceSplatRoute
-  '/api/social-auth/verify': typeof ApiSocialAuthVerifyRoute
+  "/": typeof IndexRoute;
+  "/api/health": typeof ApiHealthRoute;
+  "/api/intelligence": typeof ApiIntelligenceRouteWithChildren;
+  "/api/intelligence/$": typeof ApiIntelligenceSplatRoute;
+  "/api/social-auth/verify": typeof ApiSocialAuthVerifyRoute;
+  "/api/intelligence/$a/$b": typeof ApiIntelligenceABRouteWithChildren;
+  "/api/intelligence/$a/$b/$c": typeof ApiIntelligenceABCRouteWithChildren;
+  "/api/intelligence/$a/$b/$c/$d": typeof ApiIntelligenceABCDRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/api/health': typeof ApiHealthRoute
-  '/api/intelligence/$': typeof ApiIntelligenceSplatRoute
-  '/api/social-auth/verify': typeof ApiSocialAuthVerifyRoute
+  __root__: typeof rootRouteImport;
+  "/": typeof IndexRoute;
+  "/api/health": typeof ApiHealthRoute;
+  "/api/intelligence": typeof ApiIntelligenceRouteWithChildren;
+  "/api/intelligence/$": typeof ApiIntelligenceSplatRoute;
+  "/api/social-auth/verify": typeof ApiSocialAuthVerifyRoute;
+  "/api/intelligence/$a/$b": typeof ApiIntelligenceABRouteWithChildren;
+  "/api/intelligence/$a/$b/$c": typeof ApiIntelligenceABCRouteWithChildren;
+  "/api/intelligence/$a/$b/$c/$d": typeof ApiIntelligenceABCDRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/health' | '/api/intelligence/$' | '/api/social-auth/verify'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/health' | '/api/intelligence/$' | '/api/social-auth/verify'
-  id: '__root__' | '/' | '/api/health' | '/api/intelligence/$' | '/api/social-auth/verify'
-  fileRoutesById: FileRoutesById
+  fileRoutesByFullPath: FileRoutesByFullPath;
+  fullPaths:
+    | "/"
+    | "/api/health"
+    | "/api/intelligence"
+    | "/api/intelligence/$"
+    | "/api/social-auth/verify"
+    | "/api/intelligence/$a/$b"
+    | "/api/intelligence/$a/$b/$c"
+    | "/api/intelligence/$a/$b/$c/$d";
+  fileRoutesByTo: FileRoutesByTo;
+  to:
+    | "/"
+    | "/api/health"
+    | "/api/intelligence"
+    | "/api/intelligence/$"
+    | "/api/social-auth/verify"
+    | "/api/intelligence/$a/$b"
+    | "/api/intelligence/$a/$b/$c"
+    | "/api/intelligence/$a/$b/$c/$d";
+  id:
+    | "__root__"
+    | "/"
+    | "/api/health"
+    | "/api/intelligence"
+    | "/api/intelligence/$"
+    | "/api/social-auth/verify"
+    | "/api/intelligence/$a/$b"
+    | "/api/intelligence/$a/$b/$c"
+    | "/api/intelligence/$a/$b/$c/$d";
+  fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  ApiHealthRoute: typeof ApiHealthRoute
-  ApiIntelligenceSplatRoute: typeof ApiIntelligenceSplatRoute
-  ApiSocialAuthVerifyRoute: typeof ApiSocialAuthVerifyRoute
+  IndexRoute: typeof IndexRoute;
+  ApiHealthRoute: typeof ApiHealthRoute;
+  ApiIntelligenceRoute: typeof ApiIntelligenceRouteWithChildren;
+  ApiSocialAuthVerifyRoute: typeof ApiSocialAuthVerifyRoute;
 }
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/health': {
-      id: '/api/health'
-      path: '/api/health'
-      fullPath: '/api/health'
-      preLoaderRoute: typeof ApiHealthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/intelligence/$': {
-      id: '/api/intelligence/$'
-      path: '/api/intelligence/$'
-      fullPath: '/api/intelligence/$'
-      preLoaderRoute: typeof ApiIntelligenceSplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/social-auth/verify': {
-      id: '/api/social-auth/verify'
-      path: '/api/social-auth/verify'
-      fullPath: '/api/social-auth/verify'
-      preLoaderRoute: typeof ApiSocialAuthVerifyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+    "/": {
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/health": {
+      id: "/api/health";
+      path: "/api/health";
+      fullPath: "/api/health";
+      preLoaderRoute: typeof ApiHealthRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/intelligence": {
+      id: "/api/intelligence";
+      path: "/api/intelligence";
+      fullPath: "/api/intelligence";
+      preLoaderRoute: typeof ApiIntelligenceRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/intelligence/$": {
+      id: "/api/intelligence/$";
+      path: "/$";
+      fullPath: "/api/intelligence/$";
+      preLoaderRoute: typeof ApiIntelligenceSplatRouteImport;
+      parentRoute: typeof ApiIntelligenceRoute;
+    };
+    "/api/social-auth/verify": {
+      id: "/api/social-auth/verify";
+      path: "/api/social-auth/verify";
+      fullPath: "/api/social-auth/verify";
+      preLoaderRoute: typeof ApiSocialAuthVerifyRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/intelligence/$a/$b": {
+      id: "/api/intelligence/$a/$b";
+      path: "/$a/$b";
+      fullPath: "/api/intelligence/$a/$b";
+      preLoaderRoute: typeof ApiIntelligenceABRouteImport;
+      parentRoute: typeof ApiIntelligenceRoute;
+    };
+    "/api/intelligence/$a/$b/$c": {
+      id: "/api/intelligence/$a/$b/$c";
+      path: "/$c";
+      fullPath: "/api/intelligence/$a/$b/$c";
+      preLoaderRoute: typeof ApiIntelligenceABCRouteImport;
+      parentRoute: typeof ApiIntelligenceABRoute;
+    };
+    "/api/intelligence/$a/$b/$c/$d": {
+      id: "/api/intelligence/$a/$b/$c/$d";
+      path: "/$d";
+      fullPath: "/api/intelligence/$a/$b/$c/$d";
+      preLoaderRoute: typeof ApiIntelligenceABCDRouteImport;
+      parentRoute: typeof ApiIntelligenceABCRoute;
+    };
   }
 }
+
+interface ApiIntelligenceABCRouteChildren {
+  ApiIntelligenceABCDRoute: typeof ApiIntelligenceABCDRoute;
+}
+
+const ApiIntelligenceABCRouteChildren: ApiIntelligenceABCRouteChildren = {
+  ApiIntelligenceABCDRoute: ApiIntelligenceABCDRoute,
+};
+
+const ApiIntelligenceABCRouteWithChildren =
+  ApiIntelligenceABCRoute._addFileChildren(ApiIntelligenceABCRouteChildren);
+
+interface ApiIntelligenceABRouteChildren {
+  ApiIntelligenceABCRoute: typeof ApiIntelligenceABCRouteWithChildren;
+}
+
+const ApiIntelligenceABRouteChildren: ApiIntelligenceABRouteChildren = {
+  ApiIntelligenceABCRoute: ApiIntelligenceABCRouteWithChildren,
+};
+
+const ApiIntelligenceABRouteWithChildren =
+  ApiIntelligenceABRoute._addFileChildren(ApiIntelligenceABRouteChildren);
+
+interface ApiIntelligenceRouteChildren {
+  ApiIntelligenceSplatRoute: typeof ApiIntelligenceSplatRoute;
+  ApiIntelligenceABRoute: typeof ApiIntelligenceABRouteWithChildren;
+}
+
+const ApiIntelligenceRouteChildren: ApiIntelligenceRouteChildren = {
+  ApiIntelligenceSplatRoute: ApiIntelligenceSplatRoute,
+  ApiIntelligenceABRoute: ApiIntelligenceABRouteWithChildren,
+};
+
+const ApiIntelligenceRouteWithChildren = ApiIntelligenceRoute._addFileChildren(
+  ApiIntelligenceRouteChildren,
+);
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiHealthRoute: ApiHealthRoute,
-  ApiIntelligenceSplatRoute: ApiIntelligenceSplatRoute,
+  ApiIntelligenceRoute: ApiIntelligenceRouteWithChildren,
   ApiSocialAuthVerifyRoute: ApiSocialAuthVerifyRoute,
-}
+};
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();
 
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
+import type { getRouter } from "./router.tsx";
+
+import type { createStart } from "@tanstack/react-start";
+
+declare module "@tanstack/react-start" {
   interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
+    ssr: true;
+    router: Awaited<ReturnType<typeof getRouter>>;
   }
 }

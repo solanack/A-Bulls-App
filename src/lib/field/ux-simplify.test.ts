@@ -53,6 +53,17 @@ describe("UX simplify pack — Cut-first demo menu", () => {
     assert.match(workspace, /<summary>Details<\/summary>/);
     assert.match(workspace, /So11111111111111111111111111111111111111112/);
   });
+
+  it("opens FrozenCutViewer for /?cut= without waiting on FieldOS or a prior trade", () => {
+    assert.match(shell, /if\(inboundShareId\(\)\)setMode\("trickster"\)/);
+    assert.match(shell, /setMode\(inboundShareId\(\)\?"trickster":event\.mode\)/);
+    assert.match(shell, /setFieldUnavailable\(true\);if\(inboundShareId\(\)\)setMode\("trickster"\)/);
+    assert.match(workspace, /verifyingCut/);
+    assert.match(workspace, /trickster-read/);
+    assert.match(workspace, /if\(mode==="trickster"&&verifyingCut\)/);
+    assert.match(workspace, /FrozenCutViewer/);
+    assert.match(workspace, /!tradeReady&&!verifyingCut/);
+  });
 });
 
 describe("one-tap prefill vs Pick a trade first", () => {

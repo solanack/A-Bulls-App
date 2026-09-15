@@ -115,7 +115,7 @@ export function manifestDisclosures(manifest) {
   return Object.freeze([...disclosures]);
 }
 
-/** Existing public VERIFY page. Worker share ids resolve as `/?tour=<id>`. */
+/** Public VERIFY page. Canonical share ids resolve as `/?cut=<id>`; `verify` and `tour` remain inbound aliases. */
 export const CUT_SHARE_SIZE = Object.freeze({
   '9:16': Object.freeze({ w: 1080, h: 1920 }),
   '16:9': Object.freeze({ w: 1920, h: 1080 }),
@@ -128,7 +128,7 @@ export function cutShareSize(aspectRatio = '9:16') {
 
 export function cutSharePath(shareId) {
   const id = String(shareId ?? '').trim();
-  return id ? `/?tour=${encodeURIComponent(id)}` : '';
+  return id ? `/?cut=${encodeURIComponent(id)}` : '';
 }
 
 export function cutShareHref(origin, shareId) {
@@ -140,7 +140,7 @@ export function cutShareHref(origin, shareId) {
 export function shareIdFromSearch(search) {
   const raw = String(search ?? '');
   const params = new URLSearchParams(raw.startsWith('?') ? raw.slice(1) : raw);
-  return String(params.get('tour') || params.get('verify') || '').trim();
+  return String(params.get('cut') || params.get('verify') || params.get('tour') || '').trim();
 }
 
 function shortSig(value) {
@@ -212,8 +212,9 @@ export async function shareCutLink({ title, text, url, file, nav } = {}) {
 }
 
 export const __tricksterSharePageContract = Object.freeze({
-  queryParam: 'tour',
+  queryParam: 'cut',
   verifyAlias: 'verify',
+  legacyAlias: 'tour',
   defaultAspectRatio: '9:16',
   verticalSize: CUT_SHARE_SIZE['9:16']
 });
