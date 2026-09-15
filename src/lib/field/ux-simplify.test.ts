@@ -67,6 +67,23 @@ describe("UX simplify pack — Cut-first demo menu", () => {
 });
 
 describe("one-tap prefill vs Pick a trade first", () => {
+  it("empty Replay/Cut gate still mounts visible wallet and mint inputs", () => {
+    const pickStart = workspace.indexOf("if(!tradeReady&&!verifyingCut");
+    assert.ok(pickStart >= 0);
+    const pickBlock = workspace.slice(pickStart, workspace.indexOf("if(mode===\"replay\")"));
+    assert.match(pickBlock, /Pick a trade first/);
+    assert.match(pickBlock, /DetailsFold/);
+    assert.match(pickBlock, /<DetailsFold \{\.\.\.foldProps\} open\/>/);
+    assert.match(workspace, /needsSelectedTrade\(mode\)/);
+    assert.match(workspace, /label>Public wallet/);
+    assert.match(workspace, /placeholder="Wallet address"/);
+    assert.match(workspace, /label>Token mint/);
+    assert.match(workspace, /placeholder="Token mint"/);
+    assert.match(workspace, /open\?<div className="universe-details">/);
+    assert.match(workspace, /if\(mode==="trickster"&&verifyingCut\)/);
+    assert.match(workspace, /FrozenCutViewer/);
+  });
+
   it("requires a wallet×mint trade for Replay, Cut, and What-If", () => {
     for (const mode of ["replay", "trickster", "what-if"] as const) {
       assert.equal(needsSelectedTrade(mode), true);
