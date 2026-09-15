@@ -38,18 +38,31 @@ export function looksLikeMint(value: string | null | undefined): boolean {
 export type SubjectSearchPrefill = {
   wallet: string;
   mint: string;
-  mode: "trickster" | "replay";
+  mode: "explore" | "replay";
 };
 
-/** Paste-proof Cut/Replay deep-link: `?wallet=&mint=` (aliases `w`/`m`) plus optional `mode=trickster|replay`. */
+/**
+ * Paste-proof holdings/Replay deep-link: `?wallet=` (alias `w`) plus optional `mint`/`m`.
+ * Wallet+mint including `mode=trickster` lands in Field explore with holdings first.
+ * `mode=replay` still opens Replay. `/?cut=` VERIFY is handled separately and must win.
+ */
 export function subjectPrefillFromSearch(search: string): SubjectSearchPrefill | null {
   const raw = String(search ?? "");
   const params = new URLSearchParams(raw.startsWith("?") ? raw.slice(1) : raw);
   const wallet = String(params.get("wallet") || params.get("w") || "").trim();
-  const mint = String(params.get("mint") || params.get("m") || "").trim();
-  if (!looksLikeMint(wallet) || !looksLikeMint(mint)) return null;
+  if (!looksLikeMint(wallet)) return null;
+  const mintRaw = String(params.get("mint") || params.get("m") || "").trim();
+  const mint = looksLikeMint(mintRaw) ? mintRaw : "";
   const requested = String(params.get("mode") || "").trim().toLowerCase();
-  return { wallet, mint, mode: requested === "replay" ? "replay" : "trickster" };
+  return { wallet, mint, mode: requested === "replay" ? "replay" : "explore" };
+}
+
+/** Workspace mode from the URL. Cut VERIFY is the only inbound jump straight to Trickster. */
+export function inboundWorkspaceMode(search: string, shareId = ""): "trickster" | "replay" | "explore" {
+  if (String(shareId || "").trim()) return "trickster";
+  const prefill = subjectPrefillFromSearch(search);
+  if (prefill?.mode === "replay") return "replay";
+  return "explore";
 }
 
 /** Hero shows name/symbol only — never a full mint address. */
