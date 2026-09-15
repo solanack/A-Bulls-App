@@ -29,6 +29,7 @@ test('public VERIFY page is /?cut= and still accepts verify/tour aliases', () =>
   assert.equal(cutSharePath('deadbeef'), '/?cut=deadbeef');
   assert.equal(cutShareHref('https://abullsapp.com/', 'abc'), 'https://abullsapp.com/?cut=abc');
   assert.equal(shareIdFromSearch('?cut=ad2538ff000fcceb707d55d5'), 'ad2538ff000fcceb707d55d5');
+  assert.equal(shareIdFromSearch('?cut=ad2538ff000fcceb707d55d5&wallet=BWVR4KqS8eVkmKXCsb8cq76jJMN7FjWjCYxZtzGpYQnx&mint=97jCC4dL3ceKFqovn3gPKApKQ8hUYwJmCUV3m9d1pump'), 'ad2538ff000fcceb707d55d5');
   assert.equal(shareIdFromSearch('?verify=cafef00d'), 'cafef00d');
   assert.equal(shareIdFromSearch('?tour=deadbeef'), 'deadbeef');
   assert.equal(shareIdFromSearch('?cut=kept&verify=ignored&tour=legacy'), 'kept');
