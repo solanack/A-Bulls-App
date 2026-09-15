@@ -92,8 +92,8 @@ describe("paste-proof wallet+mint deep-link", () => {
     assert.match(shell, /inboundPrefill\(\)/);
     assert.match(shell, /subjectPrefillFromSearch/);
     assert.match(shell, /if\(prefill\)setMode\(prefill\.mode\)/);
-    assert.match(shell, /askMint=\{searchPrefill\?\.mint\|\|askPrefill\|\|focusedMint\|\|""\}/);
-    assert.match(shell, /askWallet=\{searchPrefill\?\.wallet\|\|contextWallet\}/);
+    assert.match(shell, /askMint=\{cutSubject\?\.mint\|\|searchPrefill\?\.mint\|\|askPrefill\|\|focusedMint\|\|""\}/);
+    assert.match(shell, /askWallet=\{cutSubject\?\.wallet\|\|searchPrefill\?\.wallet\|\|contextWallet\}/);
     assert.match(workspace, /subjectPrefillFromSearch/);
     assert.match(workspace, /inboundPrefill\?\.wallet/);
     assert.match(workspace, /inboundPrefill\?\.mint/);
@@ -180,5 +180,35 @@ describe("no regress — INDEXED vs DEMO, missing≠zero, What-If colors", () =>
     assert.match(styles, /\.colosseum-diverge__hold \{ stroke: #4da6ff;/);
     assert.doesNotMatch(styles, /helius\.xyz/i);
     assert.doesNotMatch(workspace, /helius/i);
+  });
+});
+
+describe("trader-select holdings → Make a Cut climax", () => {
+  const overlay = readFileSync(new URL("../../components/trader-holdings-cut.tsx", import.meta.url), "utf8");
+  const holdings = readFileSync(new URL("../universe-data/research-index-client.ts", import.meta.url), "utf8");
+  it("shows indexed holdings + Make a Cut? on a focused trader star", () => {
+    assert.match(shell, /TraderHoldingsCutPanel/);
+    assert.match(shell, /focusedTraderWallet/);
+    assert.match(shell, /showHoldings/);
+    assert.match(shell, /selectMode\("trickster"\)/);
+    assert.match(overlay, /Make a Cut\?/);
+    assert.match(overlay, /Choose a held token/);
+    assert.match(overlay, /getTraderHoldings/);
+    assert.match(overlay, /formatIndexedPnl/);
+    assert.match(overlay, /No PnL was invented/);
+    assert.match(overlay, /Empty coverage stays empty/);
+    assert.doesNotMatch(overlay, /reportedPnlUsd/);
+    assert.doesNotMatch(overlay, /helius/i);
+    assert.match(holdings, /research\/holdings/);
+  });
+
+  it("opens the existing Replay chart + Trickster share path, not a second video system", () => {
+    assert.match(workspace, /ReplayWorkspace bundle=\{replayBundle\} waitingMint=\{mint\} autoPlay/);
+    assert.match(workspace, /TricksterDirector bundle=\{replayBundle\}/);
+    assert.match(workspace, /FrozenCutViewer/);
+    assert.match(director, /Share the 9:16 receipt card/);
+    assert.match(director, /setVisible/);
+    assert.doesNotMatch(workspace, /mediabunny/i);
+    assert.doesNotMatch(director, /WebCodecs/);
   });
 });
