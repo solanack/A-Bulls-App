@@ -55,32 +55,53 @@ test('Pons no-key Blockscout v2 page fetch needs no provider secret',async()=>{
   assert.match(calls[0],/blockscout\.com\/api\/v2\/addresses\//);
 });
 
-test('Pons range fallback uses bounded chain RPC when no Pro key is configured',async()=>{
+test('Pons discovery uses exact-topic legacy Blockscout before public RPC',async()=>{
+  const factory=PONS_FACTORIES[0],fetchCalls=[];let rpcCalls=0;
+  const row={address:factory.address,topics:[factory.topic],blockNumber:'0x895440'};
+  const fetchImpl=async(input)=>{fetchCalls.push(String(input));return new Response(JSON.stringify({status:'1',message:'OK',result:[row]}),{headers:{'content-type':'application/json'}});};
+  const rpcImpl=async()=>{rpcCalls+=1;return[];};
+  const result=await fetchPonsDiscoveryRange({},factory,8_900_000,8_901_000,{fetchImpl,rpcImpl});
+  assert.equal(result.source,'blockscout-legacy-topic-filtered');
+  assert.equal(result.rows.length,1);
+  assert.equal(result.fromBlock,8_900_000);
+  assert.equal(rpcCalls,0);
+  const url=new URL(fetchCalls[0]);
+  assert.equal(url.pathname,'/api');
+  assert.equal(url.searchParams.get('address'),factory.address);
+  assert.equal(url.searchParams.get('topic0'),factory.topic);
+});
+
+test('Pons range fallback uses bounded chain RPC when explorer paths reject the Worker',async()=>{
   const factory=PONS_FACTORIES[0],calls=[];
+  const fetchImpl=async()=>new Response('forbidden',{status:403});
   const rpcImpl=async(_env,method,params)=>{calls.push({method,params});return[{address:factory.address,topics:[factory.topic],blockNumber:'0x1'}];};
-  const result=await fetchPonsDiscoveryRange({},factory,100,200,{rpcImpl});
+  const result=await fetchPonsDiscoveryRange({},factory,100,5_000,{fetchImpl,rpcImpl,rpcChunkSize:2_000});
   assert.equal(result.source,'robinhood-rpc-topic-filtered');
   assert.equal(result.rows.length,1);
+  assert.equal(result.fromBlock,3_001);
   assert.equal(calls.length,1);
   assert.equal(calls[0].method,'eth_getLogs');
   assert.equal(calls[0].params[0].address,factory.address);
+  assert.equal(calls[0].params[0].fromBlock,'0xbb9');
   assert.deepEqual(calls[0].params[0].topics,[factory.topic]);
 });
 
-test('Pons range fallback uses RPC when Blockscout Pro rejects the Worker',async()=>{
-  const factory=PONS_FACTORIES[0];let rpcCalls=0;
-  const fetchImpl=async()=>new Response('forbidden',{status:403});
+test('Pons range fallback uses RPC when Blockscout Pro and legacy both reject the Worker',async()=>{
+  const factory=PONS_FACTORIES[0];let rpcCalls=0,fetchCalls=0;
+  const fetchImpl=async()=>{fetchCalls+=1;return new Response('forbidden',{status:403});};
   const rpcImpl=async()=>{rpcCalls+=1;return[];};
   const result=await fetchPonsDiscoveryRange({BLOCKSCOUT_API_KEY:'proapi_test'},factory,100,200,{fetchImpl,rpcImpl});
   assert.equal(result.source,'robinhood-rpc-topic-filtered');
   assert.equal(result.rows.length,0);
+  assert.equal(fetchCalls,2);
   assert.equal(rpcCalls,1);
 });
 
 test('Pons RPC fallback does not recursively amplify rate limits',async()=>{
   const factory=PONS_FACTORIES[0];let calls=0;
+  const fetchImpl=async()=>new Response('forbidden',{status:403});
   const rpcImpl=async()=>{calls+=1;throw new Error('pons_rpc_unavailable:eth_getLogs:http_429');};
-  await assert.rejects(()=>fetchPonsDiscoveryRange({},factory,100,100_000,{rpcImpl}),/429/);
+  await assert.rejects(()=>fetchPonsDiscoveryRange({},factory,100,100_000,{fetchImpl,rpcImpl}),/429/);
   assert.equal(calls,1);
 });
 
@@ -88,6 +109,6 @@ test('historical discovery is resumable and starts before known active factories
   assert.ok(PONS_DISCOVERY_SPECS.v1.startBlock<=8_991_118);
   assert.ok(PONS_DISCOVERY_SPECS.v2.startBlock<26_841_846);
   assert.equal(__ponsDiscoveryContract.direction,'newest-to-oldest');
-  assert.equal(__ponsDiscoveryContract.source,'blockscout-instance-v2-with-pro-rpc-fallback');
+  assert.equal(__ponsDiscoveryContract.source,'blockscout-instance-v2-with-pro-legacy-rpc-fallback');
   assert.equal(__ponsDiscoveryContract.chainId,4663);
 });
