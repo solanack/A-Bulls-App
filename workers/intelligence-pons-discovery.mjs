@@ -21,7 +21,10 @@ const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const clamp=(value,fallback,min,max)=>Math.max(min,Math.min(max,Math.trunc(n(value)||fallback)));
 const hexInt=value=>{const text=s(value);if(!text)return 0;const parsed=text.startsWith('0x')?Number.parseInt(text,16):Number(text);return Number.isFinite(parsed)?Math.max(0,Math.trunc(parsed)):0;};
 const unix=value=>{if(value==null||value==='')return null;const numeric=hexInt(value);if(numeric>0)return numeric;const ms=Date.parse(s(value));return Number.isFinite(ms)?Math.floor(ms/1000):null;};
-const isRateLimitError=error=>/\b429\b|rate.?limit|too many requests/i.test(s(error?.message||error));
+const isRateLimitError=error=>{
+  const message=s(error?.message||error).toLowerCase();
+  return message.includes('429')||message.includes('rate_limit')||message.includes('rate limit')||message.includes('too many requests');
+};
 
 // Conservative lower bounds. V1's published start block is 8,991,118. V2 is
 // observed after block 26m; starting earlier is safe and preserves provenance.
