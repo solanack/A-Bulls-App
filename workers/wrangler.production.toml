@@ -36,6 +36,7 @@ PONS_BLOCKSCOUT_DISCOVERY_PAGES = "8"
 PONS_RANK_REFRESH_MINUTES = "15"
 PONS_CONFIRMATIONS = "64"
 PONS_BLOCK_CHUNK = "2000"
+PONS_DISCOVERY_RPC_CHUNK_BLOCKS = "20000"
 PONS_REORG_REWIND = "32"
 PONS_MARKET_ENRICH_ENABLED = "true"
 PONS_MARKET_ENRICH_LIMIT = "8"
@@ -75,7 +76,7 @@ PUMP_HELIUS_WEBHOOK_ID = "06af243a-c7a6-445f-8966-31d3d46b9ddc"
 
 PONS_BOOTSTRAP_LOOKBACK_BLOCKS = "16000"
 PONS_SCAN_CHUNKS_PER_RUN = "8"
-# Preferred production discovery: npx wrangler secret put PONS_BLOCKSCOUT_API_KEY --config workers/wrangler.production.toml
+# Preferred production discovery/holder source: npx wrangler secret put PONS_BLOCKSCOUT_API_KEY --config workers/wrangler.production.toml
 # Optional private RPC override: npx wrangler secret put PONS_RPC_URL --config workers/wrangler.production.toml
 # Optional legacy Bitquery holder fallback is no longer required for PonsFamily self-population.
 # Protected manual ranking route only: npx wrangler secret put PONS_INDEX_SECRET --config workers/wrangler.production.toml

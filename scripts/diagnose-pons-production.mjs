@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 const ORIGIN=process.env.A_BULLS_ORIGIN||'https://abullsapp.com';
 const CONFIG='workers/wrangler.production.toml';
 const DB='a-bulls-app-intelligence';
-const SECRET_NAMES=['PONS_BLOCKSCOUT_API_KEY','BLOCKSCOUT_API_KEY'];
+const SECRET_NAMES=['PONS_BLOCKSCOUT_API_KEY','BLOCKSCOUT_API_KEY','PONS_RPC_URL','PONS_BITQUERY_TOKEN','BITQUERY_API_TOKEN','PONS_INDEX_SECRET'];
 
 const arr=value=>Array.isArray(value)?value:[];
 const n=value=>Number.isFinite(Number(value))?Number(value):0;
@@ -57,7 +57,7 @@ console.log('A BULLS APP — PONS PRODUCTION DIAGNOSTIC');
 console.log(`origin=${ORIGIN}`);
 
 const secrets=secretPresence();
-console.log('\n=== BLOCKSCOUT AUTH CONFIGURATION (NAMES ONLY) ===');
+console.log('\n=== PROVIDER AUTH CONFIGURATION (NAMES ONLY) ===');
 console.log(JSON.stringify(secrets,null,2));
 
 const queries={
@@ -79,6 +79,8 @@ const publicState=await publicPons();
 console.log(JSON.stringify(publicState));
 
 const authConfigured=Boolean(secrets.presence?.PONS_BLOCKSCOUT_API_KEY||secrets.presence?.BLOCKSCOUT_API_KEY);
+const privateRpcConfigured=Boolean(secrets.presence?.PONS_RPC_URL);
+const legacyHolderConfigured=Boolean(secrets.presence?.PONS_BITQUERY_TOKEN||secrets.presence?.BITQUERY_API_TOKEN);
 const counts=d1.counts?.rows?.[0]||{};
 const launchCount=n(counts.launch_count);
 const discoveryRows=arr(d1.discovery?.rows);
@@ -88,10 +90,12 @@ const sources=[...new Set(cursorRows.map(row=>String(row?.source||'')).filter(Bo
 
 console.log('\n=== PONS DIAGNOSIS ===');
 if(!authConfigured){
-  console.log('- PONS_BLOCKSCOUT_AUTH_MISSING: neither PONS_BLOCKSCOUT_API_KEY nor BLOCKSCOUT_API_KEY is installed as an Intelligence Worker secret. Production therefore uses unauthenticated Blockscout first; that source has returned HTTP 403 in live probes.');
+  console.log('- PONS_BLOCKSCOUT_AUTH_MISSING: neither PONS_BLOCKSCOUT_API_KEY nor BLOCKSCOUT_API_KEY is installed as an Intelligence Worker secret. Production therefore cannot use authenticated Blockscout discovery or fresh Blockscout holder counters.');
 }else{
   console.log('- PONS_BLOCKSCOUT_AUTH_PRESENT: an authenticated Blockscout secret name is installed on the Intelligence Worker. Secret values were not read or printed.');
 }
+console.log(`- PONS_PRIVATE_RPC_${privateRpcConfigured?'PRESENT':'MISSING'}: ${privateRpcConfigured?'a private PONS_RPC_URL secret is configured ahead of bounded public fallbacks.':'no private PONS_RPC_URL secret is installed; configured public/archive fallbacks are used for RPC discovery.'}`);
+console.log(`- PONS_LEGACY_HOLDER_${legacyHolderConfigured?'PRESENT':'MISSING'}: ${legacyHolderConfigured?'a legacy Bitquery holder credential exists and can be considered only as a bounded fallback if Blockscout holder counters remain unavailable.':'no legacy Bitquery holder credential name is installed.'}`);
 if(launchCount>0){
   console.log(`- PONS_DISCOVERY_POPULATED: ${launchCount} verified launches are retained. Continue with enrichment/qualification if the public route is still empty.`);
 }else if(errors.length){
