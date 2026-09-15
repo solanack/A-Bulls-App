@@ -3,8 +3,8 @@
  * Public reads remain D1-only. Historical discovery walks each allowlisted PONS
  * factory newest-to-oldest through Blockscout's per-chain v2 address-log API,
  * filtering locally to the exact TokenLaunched topic. Authenticated Blockscout
- * Pro and bounded Robinhood RPC remain fallbacks. Nothing is inferred from a
- * token address alone.
+ * Pro, the explorer's exact-topic legacy API, and bounded Robinhood RPC remain
+ * fallbacks. Nothing is inferred from a token address alone.
  */
 import { intelligenceDb } from './intelligence-indexer.mjs';
 import { providerFetch } from './intelligence-fetch.mjs';
@@ -113,17 +113,29 @@ export async function fetchPonsInstancePage(factory,cursor=null,fetchImpl=provid
   return parseBlockscoutV2LogsPayload(await response.json());
 }
 
-async function fetchBlockscoutRange(factory,fromBlock,toBlock,apiKey,fetchImpl=providerFetch,depth=0){
+async function fetchBlockscoutProRange(factory,fromBlock,toBlock,apiKey,fetchImpl=providerFetch,depth=0){
   const response=await fetchImpl(buildPonsProLogsUrl(factory,fromBlock,toBlock,apiKey),{headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'},signal:AbortSignal.timeout(10_000)});
-  if(!response.ok)throw new Error(`pons_blockscout_http_${response.status}`);
+  if(!response.ok)throw new Error(`pons_blockscout_pro_http_${response.status}`);
   const rows=parseBlockscoutLogsPayload(await response.json());
   if(rows.length<RESULT_LIMIT)return rows;
-  if(fromBlock>=toBlock||depth>=10)throw new Error('pons_blockscout_range_truncated');
+  if(fromBlock>=toBlock||depth>=10)throw new Error('pons_blockscout_pro_range_truncated');
   const middle=Math.floor((fromBlock+toBlock)/2);
   const [left,right]=await Promise.all([
-    fetchBlockscoutRange(factory,fromBlock,middle,apiKey,fetchImpl,depth+1),
-    fetchBlockscoutRange(factory,middle+1,toBlock,apiKey,fetchImpl,depth+1)
+    fetchBlockscoutProRange(factory,fromBlock,middle,apiKey,fetchImpl,depth+1),
+    fetchBlockscoutProRange(factory,middle+1,toBlock,apiKey,fetchImpl,depth+1)
   ]);
+  return [...left,...right];
+}
+
+async function fetchBlockscoutLegacyRange(factory,fromBlock,toBlock,fetchImpl=providerFetch,depth=0){
+  const response=await fetchImpl(buildFilteredPonsLogsUrl(factory,fromBlock,toBlock),{headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'},signal:AbortSignal.timeout(10_000)});
+  if(!response.ok)throw new Error(`pons_blockscout_legacy_http_${response.status}`);
+  const rows=parseBlockscoutLogsPayload(await response.json());
+  if(rows.length<RESULT_LIMIT)return rows;
+  if(fromBlock>=toBlock||depth>=10)throw new Error('pons_blockscout_legacy_range_truncated');
+  const middle=Math.floor((fromBlock+toBlock)/2);
+  const left=await fetchBlockscoutLegacyRange(factory,fromBlock,middle,fetchImpl,depth+1);
+  const right=await fetchBlockscoutLegacyRange(factory,middle+1,toBlock,fetchImpl,depth+1);
   return [...left,...right];
 }
 
@@ -143,13 +155,18 @@ async function fetchRpcRange(env,factory,fromBlock,toBlock,rpcImpl=ponsRpc,depth
 }
 
 export async function fetchPonsDiscoveryRange(env,factory,fromBlock,toBlock,options={}){
+  const fetchImpl=options.fetchImpl||providerFetch;
   const apiKey=s(env.PONS_BLOCKSCOUT_API_KEY||env.BLOCKSCOUT_API_KEY);
   if(apiKey){
-    try{return Object.freeze({rows:await fetchBlockscoutRange(factory,fromBlock,toBlock,apiKey,options.fetchImpl||providerFetch),source:'blockscout-pro-topic-filtered'});}
+    try{return Object.freeze({rows:await fetchBlockscoutProRange(factory,fromBlock,toBlock,apiKey,fetchImpl),source:'blockscout-pro-topic-filtered',fromBlock,toBlock});}
     catch(error){console.warn('[pons-discovery-blockscout-pro]',s(error?.message||error));}
   }
-  const rows=await fetchRpcRange(env,factory,fromBlock,toBlock,options.rpcImpl||ponsRpc);
-  return Object.freeze({rows,source:'robinhood-rpc-topic-filtered'});
+  try{return Object.freeze({rows:await fetchBlockscoutLegacyRange(factory,fromBlock,toBlock,fetchImpl),source:'blockscout-legacy-topic-filtered',fromBlock,toBlock});}
+  catch(error){console.warn('[pons-discovery-blockscout-legacy]',s(error?.message||error));}
+  const rpcSpan=clamp(options.rpcChunkSize??env.PONS_DISCOVERY_RPC_CHUNK_BLOCKS,2_000,100,20_000);
+  const rpcFrom=Math.max(fromBlock,toBlock-rpcSpan+1);
+  const rows=await fetchRpcRange(env,factory,rpcFrom,toBlock,options.rpcImpl||ponsRpc);
+  return Object.freeze({rows,source:'robinhood-rpc-topic-filtered',fromBlock:rpcFrom,toBlock});
 }
 
 async function persistLaunch(db,factory,row,now,source){
@@ -184,7 +201,7 @@ async function patchState(db,factory,patch={}){
 }
 
 async function backfillFactoryFromInstance(env,db,factory,startBlock,now,options={}){
-  const pages=clamp(options.pagesPerFactory??env.PONS_DISCOVERY_PAGES_PER_RUN,4,1,12);
+  const pages=clamp(options.pagesPerFactory??env.PONS_DISCOVERY_PAGES_PER_RUN??env.PONS_BLOCKSCOUT_DISCOVERY_PAGES,4,1,12);
   const fetchImpl=options.fetchImpl||providerFetch;
   const stored=await cursorFor(db,factory);
   let cursor=stored.cursor,discovered=0,processed=0,nextToBlock=null,complete=false;
@@ -227,8 +244,8 @@ export async function backfillPonsLaunchDiscovery(env={},options={}){
       console.warn('[pons-discovery-blockscout-instance]',s(instanceError?.message||instanceError));
     }
 
-    // If the no-key instance API is unavailable, retain the previous verified
-    // fallbacks. The range is deliberately small and rate-limits are not split.
+    // If the cursor API is unavailable, keep provenance strict while falling
+    // through Pro, the explorer's exact-topic legacy API, then a small RPC span.
     const chunk=clamp(options.chunkSize??env.PONS_DISCOVERY_CHUNK_BLOCKS,20_000,2_000,100_000);
     const to=Math.min(finalHead,Math.max(startBlock,n(state.next_to_block)||finalHead));
     const from=Math.max(startBlock,to-chunk+1);
@@ -236,7 +253,8 @@ export async function backfillPonsLaunchDiscovery(env={},options={}){
       const result=await fetchPonsDiscoveryRange(env,factory,from,to,options);
       let discovered=0;
       for(const row of filterVerifiedTopicRows(factory,result.rows,startBlock))if(await persistLaunch(db,factory,row,now,result.source))discovered+=1;
-      const next=from-1,complete=next<startBlock;
+      const effectiveFrom=Math.max(startBlock,n(result.fromBlock)||from);
+      const next=effectiveFrom-1,complete=next<startBlock;
       await patchState(db,factory,{nextToBlock:complete?null:next,complete,discovered,lastSuccessAt:now,error:null});
       const latest=await db.prepare('SELECT next_to_block,complete,discovered_launches,last_error FROM pons_discovery_state WHERE factory=?').bind(factory.address).first();
       factories.push({factory:factory.address,version:factory.version,processed:1,complete:n(latest?.complete)===1,nextToBlock:latest?.next_to_block??null,discovered:n(latest?.discovered_launches),source:result.source,error:null});
@@ -247,7 +265,7 @@ export async function backfillPonsLaunchDiscovery(env={},options={}){
     }
   }
   const total=n((await db.prepare('SELECT COUNT(*) count FROM pons_launches').first())?.count);
-  return Object.freeze({enabled:true,head,finalHead,sourceMode:'blockscout-instance-v2-with-pro-rpc-fallback',totalLaunches:total,factories});
+  return Object.freeze({enabled:true,head,finalHead,sourceMode:'blockscout-instance-v2-with-pro-legacy-rpc-fallback',totalLaunches:total,factories});
 }
 
-export const __ponsDiscoveryContract=Object.freeze({readOnly:true,source:'blockscout-instance-v2-with-pro-rpc-fallback',direction:'newest-to-oldest',resultLimit:RESULT_LIMIT,chainId:4663});
+export const __ponsDiscoveryContract=Object.freeze({readOnly:true,source:'blockscout-instance-v2-with-pro-legacy-rpc-fallback',direction:'newest-to-oldest',resultLimit:RESULT_LIMIT,chainId:4663});
