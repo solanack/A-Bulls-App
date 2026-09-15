@@ -1,3 +1,5 @@
+import { CUT_SHARE_SIZE, cutShareHref } from './trickster-story-manifest.mjs';
+
 const s=v=>String(v??'').trim();
 const n=(v,name)=>{const x=Number(v);if(!Number.isFinite(x))throw new TypeError(`${name} must be finite`);return x;};
 const STORY_TYPES=new Set(['massive-win','painful-loss','token-discovery','wallet-origin','nft-journey','investigation','market-event','custom']);
@@ -26,5 +28,9 @@ export function buildTradeMovieDraft({id,storyType='custom',subject,evidence=[],
   return validateTradeMovieManifest({id,storyType,subject,evidence,segments,coverage,createdAt:Date.now(),output:{aspectRatio:'9:16',theme:'universe-flight',rendererVersion:'universe-flight-v1'}});
 }
 
-export const __tradeMovieContract=Object.freeze({evidenceRequiredForObservedSegments:true,simulationMustBeDisclosed:true,lightweightManifest:true,noBlockchainDataDuplication:true});
+export function tradeMovieVerifyHref(origin,shareId){
+  return cutShareHref(origin,shareId);
+}
+
+export const __tradeMovieContract=Object.freeze({evidenceRequiredForObservedSegments:true,simulationMustBeDisclosed:true,lightweightManifest:true,noBlockchainDataDuplication:true,defaultAspectRatio:'9:16',verticalSize:CUT_SHARE_SIZE['9:16']});
 

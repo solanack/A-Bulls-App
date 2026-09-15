@@ -1,5 +1,7 @@
 -- A Bulls App — immutable public Trickster verification manifests.
 -- Additive only. Stores validated public-chain story manifests for read-only share pages.
+-- Public VERIFY pages resolve as /?tour=<id> via GET /api/intelligence/trickster/share/:id.
+-- This table is not an NFT registry and does not store marketplace listings.
 
 CREATE TABLE IF NOT EXISTS trickster_share_manifests (
   id TEXT PRIMARY KEY,

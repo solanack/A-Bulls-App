@@ -111,14 +111,14 @@ export function DivergeChart({ simulation }: { simulation: Data }) {
 
   return (
     <div className="colosseum-diverge">
-      <span>ACTUAL VS HOLD · OBSERVED ENTRY CUMULATIVE · FIXED-HOLD COUNTERFACTUAL</span>
+      <span>actual vs hold</span>
       <svg viewBox="0 0 640 160" role="img" aria-label="Actual versus hold diverge chart from retained simulation outcomes">
         <path className="colosseum-diverge__actual" d={line(series.actual)} fill="none" strokeWidth="2" />
         <path className="colosseum-diverge__hold" d={line(series.hold)} fill="none" strokeWidth="2" />
       </svg>
       <div className="colosseum-diverge__legend">
-        <span className="is-actual">observed entry value (cumulative)</span>
-        <span className="is-hold">fixed-hold counterfactual (cumulative)</span>
+        <span className="is-actual">actual</span>
+        <span className="is-hold">hold</span>
       </div>
       <p className="colosseum-diverge__meta">
         {series.sourceLabel} · {series.timeLabel} · {new Date(t0).toLocaleString()} → {new Date(t1).toLocaleString()}

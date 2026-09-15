@@ -1,3 +1,4 @@
+// @ts-nocheck
 const STORY_TYPES = new Set([
   'wallet-timeline','transaction-replay','trade-route','token-sequence',
   'nft-memory','wallet-rivalry','wallet-comparison','network-recap','anomaly-explainer'
@@ -113,4 +114,108 @@ export function manifestDisclosures(manifest) {
   for (const claim of manifest.claims) if (claim.disclosure) disclosures.add(claim.disclosure);
   return Object.freeze([...disclosures]);
 }
+
+/** Existing public VERIFY page. Worker share ids resolve as `/?tour=<id>`. */
+export const CUT_SHARE_SIZE = Object.freeze({
+  '9:16': Object.freeze({ w: 1080, h: 1920 }),
+  '16:9': Object.freeze({ w: 1920, h: 1080 }),
+  '1:1': Object.freeze({ w: 1080, h: 1080 })
+});
+
+export function cutShareSize(aspectRatio = '9:16') {
+  return CUT_SHARE_SIZE[aspectRatio] ?? CUT_SHARE_SIZE['9:16'];
+}
+
+export function cutSharePath(shareId) {
+  const id = String(shareId ?? '').trim();
+  return id ? `/?tour=${encodeURIComponent(id)}` : '';
+}
+
+export function cutShareHref(origin, shareId) {
+  const base = String(origin ?? '').replace(/\/$/, '') || 'https://abullsapp.com';
+  const path = cutSharePath(shareId);
+  return path ? `${base}${path}` : '';
+}
+
+export function shareIdFromSearch(search) {
+  const raw = String(search ?? '');
+  const params = new URLSearchParams(raw.startsWith('?') ? raw.slice(1) : raw);
+  return String(params.get('tour') || params.get('verify') || '').trim();
+}
+
+function shortSig(value) {
+  const text = String(value ?? '').trim();
+  return text.length > 18 ? `${text.slice(0, 8)}…${text.slice(-6)}` : text;
+}
+
+export function formatCoverageWindow(from, to) {
+  const start = formatCoverageTime(from);
+  const end = formatCoverageTime(to);
+  if (start === 'time unavailable' && end === 'time unavailable') return 'time window unavailable';
+  return `${start} → ${end}`;
+}
+
+export function formatCoverageTime(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || !n) return 'time unavailable';
+  const ms = n < 10_000_000_000 ? n * 1000 : n;
+  try { return new Date(ms).toLocaleString(); }
+  catch { return 'time unavailable'; }
+}
+
+/** Burn-in lines from the frozen manifest. Missing signatures stay missing. */
+export function cutShareReceiptLines(manifest, verifyHref = '') {
+  const evidence = Array.isArray(manifest?.evidence) ? manifest.evidence : [];
+  const sigs = evidence.map((row) => String(row?.signature ?? '').trim()).filter(Boolean).slice(0, 4).map((sig) => `SIG ${shortSig(sig)}`);
+  const coverage = manifest?.coverage ?? {};
+  const lines = [
+    'INDEXED',
+    formatCoverageWindow(coverage.from, coverage.to),
+    ...sigs,
+    verifyHref ? `VERIFY ${verifyHref}` : 'VERIFY link unavailable'
+  ];
+  if (!sigs.length) lines.splice(2, 0, 'signature unavailable');
+  return Object.freeze(lines);
+}
+
+export function cutShareCopy(verifyHref) {
+  return Object.freeze({
+    title: 'VERIFY this Cut',
+    text: `Indexed receipts for this trade. VERIFY: ${verifyHref}`
+  });
+}
+
+export async function shareCutLink({ title, text, url, file, nav } = {}) {
+  const shareNav = nav ?? (typeof navigator === 'undefined' ? undefined : navigator);
+  try {
+    if (shareNav && typeof shareNav.share === 'function') {
+      if (file && typeof shareNav.canShare === 'function') {
+        try {
+          const payload = { files: [file], title, text };
+          if (shareNav.canShare(payload)) {
+            await shareNav.share(payload);
+            return 'shared';
+          }
+        } catch { /* files unsupported */ }
+      }
+      await shareNav.share({ title, text, url });
+      return 'shared';
+    }
+    if (shareNav?.clipboard && typeof shareNav.clipboard.writeText === 'function') {
+      await shareNav.clipboard.writeText(String(url ?? ''));
+      return 'copied';
+    }
+  } catch (error) {
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') return 'cancelled';
+  }
+  return 'downloaded';
+}
+
+export const __tricksterSharePageContract = Object.freeze({
+  queryParam: 'tour',
+  verifyAlias: 'verify',
+  defaultAspectRatio: '9:16',
+  verticalSize: CUT_SHARE_SIZE['9:16']
+});
+
 
