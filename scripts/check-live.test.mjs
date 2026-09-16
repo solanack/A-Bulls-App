@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LIVE_FIXTURE, fixtureFromFrozenCut, fomoSolanaTopTokens, validateCutPage, validateEvidenceFixture, validateFomoGalaxy, validateFomoTrader, validateReplay } from "./check-live.mjs";
+import { LIVE_FIXTURE, fixtureFromFrozenCut, fomoSolanaTopTokens, validateCutPage, validateEvidenceFixture, validateFomoAudit, validateFomoGalaxy, validateFomoTrader, validateReplay } from "./check-live.mjs";
 
 const fixture = Object.freeze({
   wallet: LIVE_FIXTURE.wallet,
@@ -40,11 +40,14 @@ test("canonical /?cut= page must render the hydratable A Bulls app shell", () =>
   assert.throws(() => validateCutPage("Cut unavailable"), /application shell/);
 });
 
-test("Fomo live checks reject an empty galaxy and protect mapped trader token context",()=>{
-  const mint=LIVE_FIXTURE.mint,trader={handle:'TraderOne',topTokens:[{mint}]};
+test("Fomo live checks require real PnL coverage and protect mapped trader token context",()=>{
+  const mint=LIVE_FIXTURE.mint,trader={handle:'TraderOne',reportedPnlUsd:12345,solanaWallet:LIVE_FIXTURE.wallet,topTokens:[{mint}]};
   assert.deepEqual(fomoSolanaTopTokens(trader),[mint]);
   assert.throws(()=>validateFomoGalaxy({ok:true,items:[],disclosure:'empty'}),/no trader stars/);
+  assert.throws(()=>validateFomoGalaxy({ok:true,items:[{...trader,reportedPnlUsd:null}]}),/no provider-reported PnL/);
   assert.equal(validateFomoGalaxy({ok:true,items:[trader]})[0].handle,'TraderOne');
+  assert.throws(()=>validateFomoAudit({ok:true,counts:{traders:10,withPnl:4,withSolanaWallet:8}}),/unexpectedly low/);
+  assert.doesNotThrow(()=>validateFomoAudit({ok:true,counts:{traders:10,withPnl:8,withSolanaWallet:8}}));
   assert.throws(()=>validateFomoTrader({ok:true,positions:[],latestTrades:[]},trader),/lost a mapped provider-reported token position/);
   assert.doesNotThrow(()=>validateFomoTrader({ok:true,positions:[{mint}],latestTrades:[]},trader));
 });
