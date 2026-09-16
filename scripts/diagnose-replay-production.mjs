@@ -10,7 +10,46 @@ async function getJson(path,init={}){
   return {http:response.status,body};
 }
 
-function snapshot(trade,attempt,response){
+function replayJobIds(response){
+  const jobs=response?.body?.bundle?.indexing?.jobs;
+  if(!Array.isArray(jobs))return[];
+  return [...new Set(jobs.map(job=>Number(job?.jobId)).filter(id=>Number.isInteger(id)&&id>0))].slice(0,10);
+}
+
+async function readJobStatus(response){
+  const jobIds=replayJobIds(response);
+  if(!jobIds.length)return null;
+  const status=await getJson('/api/intelligence/index-job-status',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jobIds})});
+  const body=status.body||{};
+  return {
+    http:status.http,
+    ok:body.ok===true,
+    schedulerEnabled:Boolean(body.schedulerEnabled),
+    complete:Number(body.complete||0),
+    running:Number(body.running||0),
+    queued:Number(body.queued||0),
+    waitingExternal:Number(body.waitingExternal||0),
+    retrying:Number(body.retrying||0),
+    nextRetryAt:Number(body.nextRetryAt)||null,
+    pagesCompleted:Number(body.pagesCompleted||0),
+    signaturesSeen:Number(body.signaturesSeen||0),
+    transactionsIngested:Number(body.transactionsIngested||0),
+    sources:Array.isArray(body.sources)?body.sources.slice(0,8):[],
+    jobs:Array.isArray(body.jobs)?body.jobs.map(job=>({
+      jobId:Number(job?.jobId)||null,
+      state:safeText(job?.state)||null,
+      source:safeText(job?.source)||null,
+      lastError:safeText(job?.lastError)||null,
+      nextAttemptAt:Number(job?.nextAttemptAt)||null,
+      pagesCompleted:Number(job?.pagesCompleted||0),
+      signaturesSeen:Number(job?.signaturesSeen||0),
+      transactionsIngested:Number(job?.transactionsIngested||0)
+    })):[],
+    error:safeText(body.error)||null
+  };
+}
+
+function snapshot(trade,attempt,response,jobStatus=null){
   const bundle=response?.body?.bundle||{},indexing=bundle.indexing||{},market=bundle.marketHydration||{};
   return {
     attempt,
@@ -21,7 +60,9 @@ function snapshot(trade,attempt,response){
     indexingState:safeText(indexing.state)||null,
     indexingRequested:Boolean(indexing.requested),
     windowComplete:Boolean(indexing.windowComplete),
+    jobIds:replayJobIds(response),
     jobStates:Array.isArray(indexing.jobs)?indexing.jobs.map(job=>safeText(job?.state)).filter(Boolean):[],
+    jobStatus,
     marketState:safeText(market.state)||null,
     marketPending:Boolean(market.pending),
     marketReason:safeText(market.reason)||null,
@@ -47,7 +88,8 @@ async function main(){
   const attempts=[];
   for(let attempt=0;attempt<7;attempt+=1){
     const response=await getJson('/api/intelligence/replay-bundle',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(request)});
-    const state=snapshot(trade,attempt,response);attempts.push(state);
+    let jobStatus=null;try{jobStatus=await readJobStatus(response)}catch(error){jobStatus={ok:false,error:safeText(error?.message||error)}}
+    const state=snapshot(trade,attempt,response,jobStatus);attempts.push(state);
     if(state.eventCount>0&&state.candleCount>0)break;
     if(attempt<6)await sleep(attempt===0?3000:5000);
   }
