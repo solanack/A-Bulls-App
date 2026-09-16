@@ -29,20 +29,31 @@ FOMOAPI_BREAKER_RATIO = "0.80"
 HELIUS_BREAKER_RATIO = "0.75"
 HELIUS_MONTHLY_CREDITS = "1000000"
 
-# Conservative test mode: populate Universe sparingly while broad/history paths stay off.
+# Production wallet-history mesh. Each claimed wallet advances through two bounded
+# 25-signature pages per execution, and up to three wallets can advance per cron.
+# Replay requests also reuse this same bounded path in waitUntil, so older trade
+# windows hydrate materially faster without enabling an unconfigured archive bridge.
 ECOSYSTEM_UNIVERSES_ENABLED = "true"
 INTELLIGENCE_MESH_ENABLED = "true"
-INTELLIGENCE_SCHEDULER_BATCH_SIZE = "1"
-# Authenticated normalized Yellowstone/Richat/Carbon bridge is production-ready but stays
-# disabled until an upstream stream and INTELLIGENCE_MESH_INGEST_TOKEN are intentionally configured.
-FULL_CHAIN_STREAM_ENABLED = "false"
-BULL_INDEXER_ENABLED = "false"
-BULL_NFT_INDEXER_ENABLED = "false"
-BULL_ARCHIVAL_ENABLED = "false"
+INTELLIGENCE_SCHEDULER_BATCH_SIZE = "3"
+INTELLIGENCE_HISTORY_PAGE_SIZE = "25"
+INTELLIGENCE_HISTORY_PAGES_PER_RUN = "2"
+INTELLIGENCE_HISTORY_RETRY_SECONDS = "5"
 MARKET_BACKFILL_QUEUE_ENABLED = "true"
+
+# These stay disabled intentionally until their upstream executors are actually
+# configured. Turning them on without a live authenticated bridge would move jobs
+# into waiting-external instead of improving Replay coverage.
+FULL_CHAIN_STREAM_ENABLED = "false"
 INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED = "false"
 INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED = "false"
 INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
+
+# Legacy Bull capability toggles do not power the current Intelligence Mesh and
+# remain off rather than claiming archival/index coverage that has not been measured.
+BULL_INDEXER_ENABLED = "false"
+BULL_NFT_INDEXER_ENABLED = "false"
+BULL_ARCHIVAL_ENABLED = "false"
 
 # Required for Fomo Galaxy source data: npx wrangler secret put FOMOAPI_API_KEY --config workers/wrangler.production.toml
 # Future full-chain stream bridge: npx wrangler secret put INTELLIGENCE_MESH_INGEST_TOKEN --config workers/wrangler.production.toml
