@@ -82,10 +82,7 @@ export function validateHoldings(body, fixture) {
   assert.equal(body?.ok, true, `Holdings failed: ${body?.error || "not ok"}`);
   assert.equal(body.wallet, fixture.wallet, "Holdings returned a different wallet");
   assert.ok(Array.isArray(body.items) && body.items.length > 0, "Known active wallet returned no holdings");
-  assert.ok(
-    body.items.some((item) => item?.mint === fixture.mint),
-    "Known active wallet holdings do not include the retained fixture token",
-  );
+  assert.ok(body.items.some((item) => item?.mint === fixture.mint), "Known active wallet holdings do not include the retained fixture token");
 }
 
 export function validateCandles(bundle) {
@@ -110,9 +107,28 @@ export function validateResolvedEntity(body) {
   assert.ok(typeof body?.kind === "string" && body.kind.length > 0, "Resolved entity is missing its kind");
   assert.ok(typeof body?.address === "string" && body.address.length > 0, "Resolved entity is missing its address");
   assert.ok(["fresh", "partial", "stale"].includes(body?.coverage), `Resolved entity has invalid coverage: ${body?.coverage}`);
-  if (body?.market?.priceUsd != null) {
-    assert.ok(Number.isFinite(body.market.priceUsd) && body.market.priceUsd > 0, "Reported live token price is invalid");
-  }
+  if (body?.market?.priceUsd != null) assert.ok(Number.isFinite(body.market.priceUsd) && body.market.priceUsd > 0, "Reported live token price is invalid");
+}
+
+export function fomoSolanaTopTokens(trader) {
+  return [...new Set((Array.isArray(trader?.topTokens) ? trader.topTokens : []).map((item) => String(item?.mint || item?.address || "").trim()).filter((mint) => SOLANA_ADDRESS_RE.test(mint)))];
+}
+
+export function validateFomoGalaxy(body) {
+  assert.equal(body?.ok, true, `Fomo Galaxy failed: ${body?.error || "not ok"}`);
+  assert.ok(Array.isArray(body?.items), "Fomo Galaxy response is missing trader items");
+  assert.ok(body.items.length > 0, `Fomo Galaxy returned no trader stars: ${body?.disclosure || body?.error || "empty"}`);
+  assert.ok(body.items.some((item) => typeof item?.handle === "string" && item.handle.trim()), "Fomo Galaxy has no addressable trader handle");
+  return body.items;
+}
+
+export function validateFomoTrader(body, trader) {
+  assert.equal(body?.ok, true, `Fomo trader failed: ${body?.error || "not ok"}`);
+  assert.ok(Array.isArray(body?.positions), "Fomo trader response is missing positions");
+  assert.ok(Array.isArray(body?.latestTrades), "Fomo trader response is missing latest trades");
+  const mapped = fomoSolanaTopTokens(trader);
+  if (mapped.length) assert.ok(body.positions.some((item) => mapped.includes(String(item?.mint || "").trim())), "Fomo trader lost a mapped provider-reported token position during partial enrichment");
+  return body;
 }
 
 export async function runLiveChecks({
@@ -125,11 +141,7 @@ export async function runLiveChecks({
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 } = {}) {
   const get = async (path, init = {}) => {
-    const response = await fetchImpl(`${origin}${path}`, {
-      ...init,
-      headers: { "cache-control": "no-cache", ...(init.headers || {}) },
-      signal: AbortSignal.timeout(30_000),
-    });
+    const response = await fetchImpl(`${origin}${path}`, {...init,headers: { "cache-control": "no-cache", ...(init.headers || {}) },signal: AbortSignal.timeout(30_000)});
     assert.equal(response.status, 200, `${path}: HTTP ${response.status}`);
     return response;
   };
@@ -139,44 +151,22 @@ export async function runLiveChecks({
   validateCutPage(await (await get(`/?cut=${cutFixture.cutId}`)).text());
 
   const retainedFixture = evidenceFixture ? validateEvidenceFixture(evidenceFixture) : loadEvidenceFixture();
-  const replayResponse = await get("/api/intelligence/replay-bundle", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      wallet: retainedFixture.wallet,
-      mint: retainedFixture.mint,
-      quoteMint: retainedFixture.quoteMint,
-      from: retainedFixture.from,
-      to: retainedFixture.to,
-      bucketSeconds: 60,
-      limit: 500,
-    }),
-  });
+  const replayResponse = await get("/api/intelligence/replay-bundle", {method: "POST",headers: { "content-type": "application/json" },body: JSON.stringify({wallet: retainedFixture.wallet,mint: retainedFixture.mint,quoteMint: retainedFixture.quoteMint,from: retainedFixture.from,to: retainedFixture.to,bucketSeconds: 60,limit: 500})});
   const replay = validateReplay(await replayResponse.json(), retainedFixture);
   validateCandles(replay);
   const holdingsPath = `/api/intelligence/research/holdings?wallet=${encodeURIComponent(retainedFixture.wallet)}&limit=10`;
   validateHoldings(await (await get(holdingsPath)).json(), retainedFixture);
-  if (fixtureOnly) {
-    console.log(JSON.stringify({ cutId: cutFixture.cutId, ...retainedFixture }));
-    return retainedFixture;
-  }
+  if (fixtureOnly) {console.log(JSON.stringify({ cutId: cutFixture.cutId, ...retainedFixture }));return retainedFixture;}
 
   let release = null;
-  for (let attempt = 0; attempt < 12; attempt++) {
-    release = await (await get(`/release.json?commit=${expected}&attempt=${attempt}`)).json();
-    if (release?.commit === expected) break;
-    if (attempt < 11) await sleep(5000);
-  }
+  for (let attempt = 0; attempt < 12; attempt++) {release = await (await get(`/release.json?commit=${expected}&attempt=${attempt}`)).json();if (release?.commit === expected) break;if (attempt < 11) await sleep(5000);}
   assert.equal(release?.commit, expected, "The public domain is serving a different frontend release");
 
   const document = await (await get("/")).text();
   assert.match(document, /Galaxy Zero|A Bulls/i, "Application HTML is missing");
   const assets = [...new Set([...document.matchAll(/(?:src|href)="(\/assets\/[^"?]+\.js)(?:\?[^" ]*)?"/g)].map((match) => match[1]))];
   assert.ok(assets.length, "Application JavaScript references are missing");
-  for (const path of assets) {
-    const asset = await get(path);
-    assert.match(asset.headers.get("content-type") || "", /javascript/, "JavaScript has incorrect MIME type");
-  }
+  for (const path of assets) {const asset = await get(path);assert.match(asset.headers.get("content-type") || "", /javascript/, "JavaScript has incorrect MIME type");}
 
   for (const path of [
     "/api/health",
@@ -184,16 +174,15 @@ export async function runLiveChecks({
     "/api/intelligence/field/resolve?query=0x39dbed3a2bd333467115de45665cc57f813c4571",
     "/api/intelligence/field/snapshot?galaxy=solana-core&window=300",
     "/api/intelligence/field/v0/tokens?limit=10",
-    "/api/intelligence/fomo/galaxy",
   ]) {
-    const response = await get(path);
-    assert.match(response.headers.get("content-type") || "", /application\/json/);
-    const body = await response.json();
-    assert.equal(body.ok, true, `${path}: ${body.error || "not ok"}`);
-    if (path.includes("/resolve")) validateResolvedEntity(body);
+    const response = await get(path);assert.match(response.headers.get("content-type") || "", /application\/json/);const body = await response.json();assert.equal(body.ok, true, `${path}: ${body.error || "not ok"}`);if (path.includes("/resolve")) validateResolvedEntity(body);
   }
 
-  console.log("Live release, frozen Cut route, retained Replay receipts, OHLC, holdings, and resolver coverage checks passed.");
+  const fomoItems=validateFomoGalaxy(await (await get("/api/intelligence/fomo/galaxy")).json());
+  const fomoCandidate=fomoItems.find((item)=>fomoSolanaTopTokens(item).length>0)??fomoItems[0];
+  validateFomoTrader(await (await get(`/api/intelligence/fomo/trader?handle=${encodeURIComponent(fomoCandidate.handle)}`)).json(),fomoCandidate);
+
+  console.log("Live release, Fomo trader data, frozen Cut route, retained Replay receipts, OHLC, holdings, and resolver coverage checks passed.");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
