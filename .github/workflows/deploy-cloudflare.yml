@@ -164,6 +164,33 @@ jobs:
         run: npx wrangler deploy
       - name: Verify public application and resolver routes
         run: node scripts/check-live.mjs
+      - name: Verify multichain evidence spine
+        run: node scripts/check-multichain-live.mjs | tee multichain-live-status.json
+      - name: Capture multichain D1 population
+        if: always()
+        run: |
+          SQL=$(cat <<'SQL'
+          SELECT 'fomo_positions' AS dataset,
+                 COALESCE(NULLIF(LOWER(TRIM(chain)),''),NULLIF(LOWER(TRIM(network_id)),''),'unknown') AS chain_key,
+                 COUNT(*) AS count
+          FROM fomo_trader_positions
+          GROUP BY 1,2
+          UNION ALL
+          SELECT 'fomo_trades' AS dataset,
+                 COALESCE(NULLIF(LOWER(TRIM(chain)),''),'unknown') AS chain_key,
+                 COUNT(*) AS count
+          FROM fomo_trader_trades
+          GROUP BY 1,2
+          UNION ALL
+          SELECT 'assets_v2',chain_key,COUNT(*) FROM intelligence_chain_assets_v2 GROUP BY 1,2
+          UNION ALL
+          SELECT 'markets_v2',chain_key,COUNT(*) FROM intelligence_market_snapshots_v2 GROUP BY 1,2
+          UNION ALL
+          SELECT 'events_v2',chain_key,COUNT(*) FROM intelligence_chain_events_v2 GROUP BY 1,2
+          ORDER BY dataset,chain_key;
+          SQL
+          )
+          npx wrangler d1 execute INTELLIGENCE_DB --remote --config workers/wrangler.production.toml --json --command "$SQL" | tee multichain-d1-diagnostic.json
       - name: Diagnose sparse Replay hydration
         continue-on-error: true
         run: node scripts/diagnose-replay-production.mjs | tee replay-hydration-diagnostic.json
@@ -190,6 +217,8 @@ jobs:
             retained-live-evidence-query.json
             retained-live-evidence.json
             retained-live-fixture.json
+            multichain-live-status.json
+            multichain-d1-diagnostic.json
             replay-hydration-diagnostic.json
             replay-history-source-health.json
           if-no-files-found: warn
