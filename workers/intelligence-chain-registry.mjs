@@ -9,19 +9,19 @@ const TRUTHY=new Set(['1','true','yes','on']);
 const s=value=>String(value??'').trim();
 const truthy=value=>TRUTHY.has(s(value).toLowerCase());
 const uniq=values=>[...new Set(values.map(s).filter(Boolean))];
-const slug=value=>s(value).toLowerCase().replace(/[_\s]+/g,'-').replace(/[^a-z0-9-]/g,'').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,48);
+const slug=value=>s(value).toLowerCase().replace(/[_\s:]+/g,'-').replace(/[^a-z0-9-]/g,'').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,48);
 
 const DEFINITIONS=Object.freeze([
-  Object.freeze({key:'solana',kind:'svm',chainId:null,fomo:true,aliases:Object.freeze(['solana','sol','svm']),dexScreenerId:'solana',geckoNetworks:Object.freeze(['solana']),rpcEnv:Object.freeze([]),publicRpc:Object.freeze([])}),
-  Object.freeze({key:'base',kind:'evm',chainId:8453,fomo:true,aliases:Object.freeze(['base','base-mainnet','coinbase-base']),dexScreenerId:'base',geckoNetworks:Object.freeze(['base']),rpcEnv:Object.freeze(['BASE_RPC_URL','EVM_RPC_BASE_URL']),publicRpc:Object.freeze(['https://base-rpc.publicnode.com'])}),
-  Object.freeze({key:'bsc',kind:'evm',chainId:56,fomo:true,aliases:Object.freeze(['bsc','bnb','bnb-chain','bnbchain','binance-smart-chain']),dexScreenerId:'bsc',geckoNetworks:Object.freeze(['bsc','binance-smart-chain']),rpcEnv:Object.freeze(['BSC_RPC_URL','BNB_RPC_URL','EVM_RPC_BSC_URL']),publicRpc:Object.freeze(['https://bsc-rpc.publicnode.com'])}),
-  Object.freeze({key:'monad',kind:'evm',chainId:143,fomo:true,aliases:Object.freeze(['monad','monad-mainnet']),dexScreenerId:'monad',geckoNetworks:Object.freeze(['monad']),rpcEnv:Object.freeze(['MONAD_RPC_URL','EVM_RPC_MONAD_URL']),publicRpc:Object.freeze(['https://rpc.monad.xyz'])}),
-  Object.freeze({key:'robinhood',kind:'evm',chainId:4663,fomo:true,aliases:Object.freeze(['robinhood','robinhood-chain','robinhoodchain','hood']),dexScreenerId:'robinhood',geckoNetworks:Object.freeze(['robinhood','robinhood-chain']),rpcEnv:Object.freeze(['ROBINHOOD_RPC_URL','EVM_RPC_ROBINHOOD_URL','PONS_RPC_URL']),publicRpc:Object.freeze([])}),
-  Object.freeze({key:'arc',kind:'evm',chainId:null,fomo:true,aliases:Object.freeze(['arc','arc-chain','circle-arc','circlearc']),dexScreenerId:'arc',geckoNetworks:Object.freeze(['arc']),rpcEnv:Object.freeze(['ARC_RPC_URL','EVM_RPC_ARC_URL']),publicRpc:Object.freeze([])}),
-  // Ethereum remains a supported research network even when it is not surfaced by
-  // the current Fomo feed. Keeping it in the same identity model avoids another
-  // schema migration when a provider begins reporting it.
-  Object.freeze({key:'ethereum',kind:'evm',chainId:1,fomo:false,aliases:Object.freeze(['ethereum','eth','ethereum-mainnet','mainnet']),dexScreenerId:'ethereum',geckoNetworks:Object.freeze(['eth','ethereum']),rpcEnv:Object.freeze(['ETHEREUM_RPC_URL','ETH_RPC_URL','EVM_RPC_ETHEREUM_URL']),publicRpc:Object.freeze(['https://ethereum-rpc.publicnode.com'])})
+  Object.freeze({key:'solana',kind:'svm',chainId:null,fomo:true,aliases:Object.freeze(['solana','sol','svm','solana-mainnet']),dexScreenerId:'solana',geckoNetworks:Object.freeze(['solana']),rpcEnv:Object.freeze([]),publicRpc:Object.freeze([])}),
+  Object.freeze({key:'base',kind:'evm',chainId:8453,fomo:true,aliases:Object.freeze(['base','base-mainnet','coinbase-base','8453','eip155-8453']),dexScreenerId:'base',geckoNetworks:Object.freeze(['base']),rpcEnv:Object.freeze(['BASE_RPC_URL','EVM_RPC_BASE_URL']),publicRpc:Object.freeze(['https://base-rpc.publicnode.com'])}),
+  Object.freeze({key:'bsc',kind:'evm',chainId:56,fomo:true,aliases:Object.freeze(['bsc','bnb','bnb-chain','bnbchain','binance-smart-chain','56','eip155-56']),dexScreenerId:'bsc',geckoNetworks:Object.freeze(['bsc','binance-smart-chain']),rpcEnv:Object.freeze(['BSC_RPC_URL','BNB_RPC_URL','EVM_RPC_BSC_URL']),publicRpc:Object.freeze(['https://bsc-rpc.publicnode.com'])}),
+  Object.freeze({key:'monad',kind:'evm',chainId:143,fomo:true,aliases:Object.freeze(['monad','monad-mainnet','143','eip155-143']),dexScreenerId:'monad',geckoNetworks:Object.freeze(['monad']),rpcEnv:Object.freeze(['MONAD_RPC_URL','EVM_RPC_MONAD_URL']),publicRpc:Object.freeze(['https://rpc.monad.xyz'])}),
+  Object.freeze({key:'robinhood',kind:'evm',chainId:4663,fomo:true,aliases:Object.freeze(['robinhood','robinhood-chain','robinhoodchain','hood','4663','eip155-4663']),dexScreenerId:'robinhood',geckoNetworks:Object.freeze(['robinhood','robinhood-chain']),rpcEnv:Object.freeze(['ROBINHOOD_RPC_URL','EVM_RPC_ROBINHOOD_URL','PONS_RPC_URL']),publicRpc:Object.freeze([])}),
+  Object.freeze({key:'ethereum',kind:'evm',chainId:1,fomo:true,aliases:Object.freeze(['ethereum','eth','ethereum-mainnet','mainnet','1','eip155-1']),dexScreenerId:'ethereum',geckoNetworks:Object.freeze(['eth','ethereum']),rpcEnv:Object.freeze(['ETHEREUM_RPC_URL','ETH_RPC_URL','EVM_RPC_ETHEREUM_URL']),publicRpc:Object.freeze(['https://ethereum-rpc.publicnode.com'])}),
+  // Kept as a research-capable known EVM namespace, but not claimed as a current
+  // Fomo coverage target. Unknown/new provider chains are still supported through
+  // the dynamic chain-qualified path below.
+  Object.freeze({key:'arc',kind:'evm',chainId:null,fomo:false,aliases:Object.freeze(['arc','arc-chain','circle-arc','circlearc']),dexScreenerId:'arc',geckoNetworks:Object.freeze(['arc']),rpcEnv:Object.freeze(['ARC_RPC_URL','EVM_RPC_ARC_URL']),publicRpc:Object.freeze([])})
 ]);
 
 const BY_KEY=new Map(DEFINITIONS.map(item=>[item.key,item]));
