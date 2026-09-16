@@ -164,6 +164,9 @@ jobs:
         run: npx wrangler deploy
       - name: Verify public application and resolver routes
         run: node scripts/check-live.mjs
+      - name: Diagnose sparse Replay hydration
+        continue-on-error: true
+        run: node scripts/diagnose-replay-production.mjs | tee replay-hydration-diagnostic.json
       - name: Upload pre-mutation release evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -174,5 +177,6 @@ jobs:
             retained-live-evidence-query.json
             retained-live-evidence.json
             retained-live-fixture.json
+            replay-hydration-diagnostic.json
           if-no-files-found: warn
           retention-days: 14
