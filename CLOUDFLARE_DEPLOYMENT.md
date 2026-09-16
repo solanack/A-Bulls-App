@@ -29,10 +29,35 @@ The token-planet local system and weekly trader observatory reuse existing retai
 
 In this repository's GitHub Settings → Secrets and variables → Actions, configure:
 
-- `CLOUDFLARE_API_TOKEN`: an existing scoped Cloudflare token authorized to publish these Workers and apply migrations to their D1 database.
+- `CLOUDFLARE_API_TOKEN`: a scoped Cloudflare token with **Account → Workers Scripts → Edit**, **Account → D1 → Edit**, and **Zone → Workers Routes → Edit**. Scope Account Resources to the production account and Zone Resources to `abullsapp.com`; do not use an all-resources Global API key.
 - `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account containing both Workers and the existing database.
 
+The fixture is not supplied through mutable repository variables. The live gate
+loads frozen Cut `ad2538ff000fcceb707d55d5`, verifies its canonical `/?cut=` page,
+and uses its retained coverage timestamps and receipt signatures as the evidence
+for wallet `7BY7z7wJkP9DSLuTFKsfdBwkEwLqyr1syMQn8hAgNhiy`, token
+`97jCC4dL3ceKFqovn3gPKApKQ8hUYwJmCUV3m9d1pump`, and WSOL quote mint
+`So11111111111111111111111111111111111111112`. The preflight records the actual
+timestamps and signatures returned by that immutable manifest before any migration
+or Worker publication. Empty/mismatched Replay, receipts, OHLC, or holdings fail.
+
 Do not paste either into chat or commit credentials. Pushes to main trigger the deployment workflow, or run **Deploy Cloudflare** from Actions. Missing credentials fail the workflow explicitly before any migration or publication step; they do not change production. The separate release workflow can run its tests and builds without production credentials.
+
+The publication job is additionally guarded to `refs/heads/main` and uses the
+GitHub `production` environment. Dispatching the workflow from another branch may
+run release checks, but it cannot enter the deploy job.
+
+## D1 migration gate
+
+Before applying D1 migrations, Actions checks every migration for the expand-first
+rule, prints Wrangler's remote pending-migration list, and uploads that inspection.
+Production migrations may add tables, columns, and indexes while old and new Worker
+versions coexist. They must not drop or rename tables/columns/indexes, truncate data,
+or make a new field mandatory in the same release. Contract/cleanup migrations are
+a later release only after deployed readers and writers no longer need the old shape.
+Migration `0025_fomo_ponsfamily.sql` is a frozen pre-policy legacy table rebuild;
+the gate explicitly grandfathers that already-applied file but grants no exception
+to subsequent migrations.
 
 ## Verify the actual release
 
@@ -56,5 +81,16 @@ HTTP success and a successful build do not prove the 3D renderer works. On the S
 8. Replay/Evidence/Compare/Create still show their actual indexed coverage and cited evidence. Missing history is not fabricated, and Create/thesis publication remains account-authenticated rather than wallet-authenticated.
 
 The automated release gate certifies tests, TypeScript, production frontend build, and Intelligence Worker bundling, but it cannot certify the physical Seeker GPU/browser lifecycle. Keep the previous Cloudflare deployment versions available until the phone check passes.
+
+## Rollback order
+
+For an application/API incompatibility, normally restore the previous frontend
+deployment first so browser traffic stops depending on the newer API contract;
+then roll back the Intelligence Worker. Before either action, check the D1 schema
+and both versions' read/write compatibility. D1 migrations are not assumed to be
+reversible, and an older Worker must not be restored if it cannot safely operate
+against the current schema. If the incident is isolated to the API and the current
+frontend is confirmed compatible with the prior API, document that exception and
+its schema evidence before reversing the order.
 
 Existing provider and voice secrets remain in their respective Workers. This release does not change the alien voice provider or require re-entering those secrets.

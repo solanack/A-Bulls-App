@@ -13,14 +13,61 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Test and publish both workers
+  release-checks:
+    name: Test and build release artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install dependencies
+        run: npm install --ignore-scripts --no-fund --no-audit
+      - name: Verify release baseline
+        run: npm run verify:release
+      - name: All repository tests
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build production frontend
+        env:
+          CF_DEPLOY: "1"
+        run: npm run build
+      - name: Intelligence Worker dry-run
+        run: npx wrangler deploy --dry-run --config workers/wrangler.production.toml
+      - name: Frontend Worker dry-run using generated configuration
+        run: |
+          test -f .wrangler/deploy/config.json
+          npx wrangler deploy --dry-run
+      - name: Inventory every generated frontend file
+        run: |
+          find .output .wrangler public/release.json -type f -print0 | sort -z | xargs -0 sha256sum > release-artifact.sha256
+          test -s release-artifact.sha256
+      - name: Upload exact tested frontend release
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-frontend-${{ github.sha }}
+          path: |
+            .output
+            .wrangler
+            public/release.json
+            release-artifact.sha256
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: Publish tested release artifacts
+    needs: release-checks
+    if: github.ref == 'refs/heads/main' && github.event.repository.default_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CF_DEPLOY: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,16 +78,28 @@ jobs:
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Add CLOUDFLARE_API_TOKEN to repository Actions secrets. Nothing was deployed."; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Add CLOUDFLARE_ACCOUNT_ID to repository Actions secrets. Nothing was deployed."; exit 1; }
-      - name: Install dependencies
+      - name: Install deployment tooling
         run: npm install --ignore-scripts --no-fund --no-audit
-      - name: Verify release baseline
-        run: npm run verify:release
-      - name: All repository tests
-        run: npm test
-      - name: Build production frontend
-        run: npm run build
-      - name: Bundle intelligence worker before touching production
-        run: npx wrangler deploy --dry-run --config workers/wrangler.production.toml
+      - name: Download exact tested frontend release
+        uses: actions/download-artifact@v4
+        with:
+          name: tested-frontend-${{ github.sha }}
+          path: .
+      - name: Verify downloaded frontend configuration and release identity
+        run: |
+          test -f .wrangler/deploy/config.json
+          test -f public/release.json
+          test -f release-artifact.sha256
+          sha256sum --check --strict release-artifact.sha256
+          node -e 'const r=require("./public/release.json"); if(r.commit!==process.env.GITHUB_SHA) throw new Error(`artifact commit ${r.commit} != ${process.env.GITHUB_SHA}`)'
+      - name: Frontend dry-run from downloaded tested artifact
+        run: npx wrangler deploy --dry-run
+      - name: Inspect pending Intelligence D1 migrations
+        run: |
+          node scripts/check-worker-migrations.mjs
+          npx wrangler d1 migrations list INTELLIGENCE_DB --remote --config workers/wrangler.production.toml | tee pending-intelligence-migrations.txt
+      - name: Validate retained production evidence before mutation
+        run: node scripts/check-live.mjs --fixture-only | tee retained-live-fixture.json
       - name: Apply intelligence migrations
         run: npx wrangler d1 migrations apply INTELLIGENCE_DB --remote --config workers/wrangler.production.toml
       - name: Publish intelligence worker
@@ -64,3 +123,13 @@ jobs:
           path: pons-production-diagnostic.txt
           if-no-files-found: error
           retention-days: 3
+      - name: Upload pre-mutation release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-preflight-${{ github.sha }}
+          path: |
+            pending-intelligence-migrations.txt
+            retained-live-fixture.json
+          if-no-files-found: warn
+          retention-days: 14

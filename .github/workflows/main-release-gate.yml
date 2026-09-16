@@ -48,3 +48,30 @@ jobs:
 
       - name: Intelligence worker bundle
         run: npx wrangler deploy --dry-run --config workers/wrangler.production.toml
+
+      - name: Enforce expand-first Intelligence migrations
+        run: node scripts/check-worker-migrations.mjs
+
+      - name: Frontend worker bundle from production build
+        run: |
+          test -f .wrangler/deploy/config.json
+          npx wrangler deploy --dry-run
+
+      - name: Preserve tested frontend release
+        id: frontend-artifact
+        run: |
+          find .output .wrangler public/release.json -type f -print0 | sort -z | xargs -0 sha256sum > release-artifact.sha256
+          test -s release-artifact.sha256
+
+      - name: Upload tested frontend release
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-frontend-${{ github.sha }}
+          path: |
+            .output
+            .wrangler
+            public/release.json
+            release-artifact.sha256
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
