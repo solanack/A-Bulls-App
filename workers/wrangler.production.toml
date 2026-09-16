@@ -40,6 +40,7 @@ INTELLIGENCE_HISTORY_PAGE_SIZE = "25"
 INTELLIGENCE_HISTORY_PAGES_PER_RUN = "2"
 INTELLIGENCE_HISTORY_RETRY_SECONDS = "5"
 MARKET_BACKFILL_QUEUE_ENABLED = "true"
+REPLAY_MARKET_POOL_PAGES = "3"
 
 # These stay disabled intentionally until their upstream executors are actually
 # configured. Turning them on without a live authenticated bridge would move jobs
