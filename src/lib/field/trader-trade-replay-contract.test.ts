@@ -25,3 +25,12 @@ test("selected trade exposes the downstream research tools",()=>{
   assert.match(replay,/TRADE_RESEARCH_ACTIONS/);
   assert.match(replay,/requestTradeResearchMode/);
 });
+
+test("Replay automatically re-reads a queued tape until receipts and candles arrive",()=>{
+  assert.match(replay,/MAX_HYDRATION_ATTEMPTS=18/);
+  assert.match(replay,/marketPending/);
+  assert.match(replay,/historyPending/);
+  assert.match(replay,/tool:"replay"/);
+  assert.match(replay,/BUILDING REPLAY/);
+  assert.match(replay,/chart will start automatically/i);
+});

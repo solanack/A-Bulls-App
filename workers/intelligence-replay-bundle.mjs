@@ -5,6 +5,7 @@
 import { intelligenceDb } from './intelligence-indexer.mjs';
 import { coverageForWallet, recordDemand } from './intelligence-mesh-runtime.mjs';
 import { queueHistoryJob, runIntelligenceMeshScheduler } from './intelligence-mesh-scheduler.mjs';
+import { hydrateReplayMarketCandles, replayMarketHydrationState } from './intelligence-replay-market-hydration.mjs';
 
 const WALLET_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const MINT_RE=WALLET_RE;
@@ -186,7 +187,7 @@ export async function buildReplayBundle(env={},input={}){
     caveats:Object.freeze([
       'Public-chain observations only; wallet relationships do not prove identity or common ownership.',
       quoteMint?'Execution price is shown only when indexed route evidence directly supports the selected base/quote pair.':'No quote mint was supplied, so execution prices are not inferred.',
-      candles.length?'Candles are indexed market observations with their own confidence/source metadata.':'No indexed OHLC series is available for this selection; no price series was invented.',
+      candles.length?'Candles are indexed market observations with their own confidence/source metadata.':'No indexed OHLC series is available for this selection yet; no price series was invented.',
       'What-if overlays are historical counterfactuals, not predictions or claims of achievable execution.'
     ])
   });
@@ -221,9 +222,13 @@ export async function handleReplayBundleRequest(request,env={}){
         ? 'Missing or partial public-wallet coverage was queued automatically. Duplicate searches reuse the same active job.'
         : 'No additional wallet-history job was required for this request.'
     });
-    const responseBundle=Object.freeze({...bundle,indexing});
+    const marketHydration=await replayMarketHydrationState(env,{mint:bundle.subject.mint,quoteMint:bundle.subject.quoteMint,from:bundle.window.from,to:bundle.window.to,bucketSeconds:bundle.window.bucketSeconds,candleCount:bundle.candles.length});
+    const responseBundle=Object.freeze({...bundle,indexing,marketHydration});
     if(indexingJobs.length&&env.__EXECUTION_CTX?.waitUntil){
       env.__EXECUTION_CTX.waitUntil(runIntelligenceMeshScheduler(env,{limit:1}).catch(()=>null));
+    }
+    if(marketHydration.requested&&env.__EXECUTION_CTX?.waitUntil){
+      env.__EXECUTION_CTX.waitUntil(hydrateReplayMarketCandles(env,{mint:bundle.subject.mint,quoteMint:bundle.subject.quoteMint,from:bundle.window.from,to:bundle.window.to,bucketSeconds:bundle.window.bucketSeconds}).catch(()=>null));
     }
     await recordDemand(env,'replay-bundle',bundle.subject.kind,bundle.subject.mint,Date.now()-started);
     return json({ok:true,bundle:responseBundle});
@@ -233,4 +238,3 @@ export async function handleReplayBundleRequest(request,env={}){
     return json({ok:false,error:code},status);
   }
 }
-
