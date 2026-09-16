@@ -21,4 +21,8 @@ test("the live release check waits for Cloudflare propagation", async () => {
   assert.match(check, /waitForRelease/);
   assert.match(check, /setTimeout/);
   assert.match(check, /release\?\.commit===expected/);
+  assert.match(check, /kind=matched_round/);
+  assert.match(check, /replay-bundle/);
+  assert.match(check, /kind=cut/);
+  assert.match(check, /trickster\/share/);
 });
