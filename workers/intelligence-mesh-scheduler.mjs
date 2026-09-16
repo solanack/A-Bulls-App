@@ -19,6 +19,16 @@ export function marketBackfillQueueEnabled(env = {}) {
   return schedulerEnabled(env) && String(env.MARKET_BACKFILL_QUEUE_ENABLED || '').toLowerCase() === 'true';
 }
 
+export function historyPagesPerRun(env = {}, options = {}) {
+  const configured = n(options.pagesPerJob ?? env.INTELLIGENCE_HISTORY_PAGES_PER_RUN ?? 1);
+  return Math.max(1, Math.min(4, Math.trunc(configured) || 1));
+}
+
+export function historyRetrySeconds(env = {}, options = {}) {
+  const configured = n(options.retrySeconds ?? env.INTELLIGENCE_HISTORY_RETRY_SECONDS ?? 15);
+  return Math.max(3, Math.min(120, Math.trunc(configured) || 15));
+}
+
 export async function queueHistoryJob(env = {}, wallet = '', options = {}) {
   const db = intelligenceDb(env);
   if (!db) throw new Error('Intelligence database binding is unavailable.');
@@ -44,7 +54,7 @@ export async function queueHistoryJob(env = {}, wallet = '', options = {}) {
     `).bind(s(wallet),requestedFrom,requestedTo).first();
     if(completed?.id)return{jobId:completed.id,state:'complete',reused:true,requestedFrom:finite(completed.requested_from),requestedTo:finite(completed.requested_to)};
   }
-  const pageSize = Math.max(1, Math.min(50, Math.round(n(options.pageSize || 25))));
+  const pageSize = Math.max(1, Math.min(50, Math.round(n(options.pageSize || env.INTELLIGENCE_HISTORY_PAGE_SIZE || 25))));
   const result = await db.prepare(`
     INSERT INTO intelligence_index_jobs(wallet,job_type,state,cursor_before,page_size,requested_from,requested_to,next_attempt_at,created_at,updated_at)
     VALUES(?,'wallet-backfill','queued',?,?,?,?,unixepoch(),unixepoch(),unixepoch())
@@ -56,7 +66,7 @@ export async function queueMarketBackfillCandidates(env = {}, plan = {}, options
   if (!marketBackfillQueueEnabled(env)) return { ok: true, enabled: false, queued: 0, jobs: [] };
   const candidates = Array.isArray(plan?.candidates) ? plan.candidates : [];
   const limit = Math.max(0, Math.min(10, Math.trunc(n(options.limit == null ? 2 : options.limit))));
-  const pageSize = Math.max(1, Math.min(50, Math.round(n(options.pageSize || 25))));
+  const pageSize = Math.max(1, Math.min(50, Math.round(n(options.pageSize || env.INTELLIGENCE_HISTORY_PAGE_SIZE || 25))));
   const jobs = [];
   for (const candidate of candidates.slice(0, limit)) {
     const wallet = s(candidate?.wallet);
@@ -113,43 +123,78 @@ export async function runIntelligenceMeshScheduler(env = {}, options = {}) {
   if (!db) return { ok: false, enabled: true, error: 'database_unavailable', processed: 0 };
   const jobs = await claimJobs(db, options.limit || 2);
   const results = [];
+  const pagesPerJob=historyPagesPerRun(env,options);
+  const retrySeconds=historyRetrySeconds(env,options);
 
   for (const job of jobs) {
-    await patchJob(db, job.id, { state: 'running', error:null });
-    try {
-      const result = await runSourceAwareHistoryPass(env, job.wallet, {
-        indexJobId: job.id,
-        before: job.cursor_before || '',
-        pageSize: job.page_size || 25,
-        from: finite(job.requested_from),
-        to: finite(job.requested_to)
-      });
-      if(result.deferred){
-        await patchJob(db, job.id, { state:'waiting-external', source:result.source, nextAttemptAt:null });
-        results.push({ jobId:job.id,wallet:job.wallet,requestedFrom:finite(job.requested_from),requestedTo:finite(job.requested_to),...result });
-        continue;
+    await patchJob(db, job.id, { state: 'running', error:null, nextAttemptAt:null });
+    let cursor=job.cursor_before||'';
+    const passes=[];
+    let terminal=null;
+
+    for(let page=0;page<pagesPerJob;page+=1){
+      try {
+        const result = await runSourceAwareHistoryPass(env, job.wallet, {
+          indexJobId: job.id,
+          before: cursor,
+          pageSize: job.page_size || 25,
+          from: finite(job.requested_from),
+          to: finite(job.requested_to)
+        });
+        if(result.deferred){
+          await patchJob(db, job.id, { state:'waiting-external', source:result.source, nextAttemptAt:null });
+          terminal={...result,deferred:true};
+          break;
+        }
+        cursor=result.nextCursor||'';
+        passes.push(result);
+        await patchJob(db, job.id, {
+          state: result.complete ? 'complete' : 'running',
+          cursorBefore: cursor,
+          pages: 1,
+          signatures: result.signatures,
+          transactions: result.transactionsFetched,
+          source: result.source,
+          error:null,
+          nextAttemptAt:null
+        });
+        terminal=result;
+        if(result.complete||!cursor)break;
+      } catch (error) {
+        await patchJob(db, job.id, {
+          state: 'queued',
+          error: s(error?.message || error),
+          nextAttemptAt: now() + 120
+        });
+        terminal={ok:false,error:s(error?.message||error),attempts:Array.isArray(error?.attempts)?error.attempts:[]};
+        break;
       }
-      await patchJob(db, job.id, {
-        state: result.complete ? 'complete' : 'queued',
-        cursorBefore: result.nextCursor || '',
-        pages: 1,
-        signatures: result.signatures,
-        transactions: result.transactionsFetched,
-        source: result.source,
-        error:null,
-        nextAttemptAt: result.complete ? null : now() + 15
-      });
-      results.push({ jobId: job.id, wallet: job.wallet, requestedFrom:finite(job.requested_from), requestedTo:finite(job.requested_to), ...result });
-    } catch (error) {
-      await patchJob(db, job.id, {
-        state: 'queued',
-        error: s(error?.message || error),
-        nextAttemptAt: now() + 120
-      });
-      results.push({ jobId: job.id, wallet: job.wallet, requestedFrom:finite(job.requested_from), requestedTo:finite(job.requested_to), ok: false, error: s(error?.message || error), attempts: Array.isArray(error?.attempts) ? error.attempts : [] });
     }
+
+    if(terminal?.deferred){
+      results.push({ jobId:job.id,wallet:job.wallet,requestedFrom:finite(job.requested_from),requestedTo:finite(job.requested_to),...terminal,pagesProcessed:passes.length });
+      continue;
+    }
+    if(terminal?.ok===false){
+      results.push({ jobId:job.id,wallet:job.wallet,requestedFrom:finite(job.requested_from),requestedTo:finite(job.requested_to),...terminal,pagesProcessed:passes.length });
+      continue;
+    }
+    const last=passes.at(-1)||terminal||{};
+    if(!last.complete){
+      await patchJob(db,job.id,{state:'queued',cursorBefore:cursor,error:null,nextAttemptAt:now()+retrySeconds});
+    }
+    results.push({
+      jobId:job.id,
+      wallet:job.wallet,
+      requestedFrom:finite(job.requested_from),
+      requestedTo:finite(job.requested_to),
+      ...last,
+      nextCursor:cursor||last.nextCursor||null,
+      signatures:passes.reduce((sum,item)=>sum+n(item.signatures),0),
+      transactionsFetched:passes.reduce((sum,item)=>sum+n(item.transactionsFetched),0),
+      pagesProcessed:passes.length
+    });
   }
 
-  return { ok: true, enabled: true, processed: results.length, results };
+  return { ok: true, enabled: true, processed: results.length, pagesPerJob, retrySeconds, results };
 }
-
