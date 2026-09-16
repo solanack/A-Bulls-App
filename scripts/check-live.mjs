@@ -72,9 +72,7 @@ export function validateReplay(body, fixture) {
   assert.ok(Array.isArray(bundle.events) && bundle.events.length > 0, "Known retained Replay returned no events");
   assert.equal(bundle.eventCount, bundle.events.length, "Replay eventCount does not match returned events");
   const receipts = new Set(bundle.events.map((event) => event?.signature).filter(Boolean));
-  for (const signature of fixture.signatures) {
-    assert.ok(receipts.has(signature), `Replay is missing expected receipt ${signature}`);
-  }
+  for (const signature of fixture.signatures) assert.ok(receipts.has(signature), `Replay is missing expected receipt ${signature}`);
   return bundle;
 }
 
@@ -119,7 +117,19 @@ export function validateFomoGalaxy(body) {
   assert.ok(Array.isArray(body?.items), "Fomo Galaxy response is missing trader items");
   assert.ok(body.items.length > 0, `Fomo Galaxy returned no trader stars: ${body?.disclosure || body?.error || "empty"}`);
   assert.ok(body.items.some((item) => typeof item?.handle === "string" && item.handle.trim()), "Fomo Galaxy has no addressable trader handle");
+  assert.ok(body.items.some((item) => Number.isFinite(item?.reportedPnlUsd)), "Fomo Galaxy has trader stars but no provider-reported PnL values");
   return body.items;
+}
+
+export function validateFomoAudit(body) {
+  assert.equal(body?.ok, true, `Fomo audit failed: ${body?.error || "not ok"}`);
+  const counts = asObject(body?.counts, "Fomo audit is missing coverage counts");
+  const traders = Number(counts.traders || 0), withPnl = Number(counts.withPnl || 0);
+  assert.ok(traders > 0, "Fomo audit found no cached traders");
+  assert.ok(withPnl > 0, "Fomo audit found zero traders with provider-reported PnL");
+  assert.ok(withPnl / traders >= 0.5, `Fomo PnL coverage is unexpectedly low (${withPnl}/${traders})`);
+  assert.ok(Number(counts.withSolanaWallet || 0) > 0, "Fomo audit found no Solana wallet mappings");
+  return body;
 }
 
 export function validateFomoTrader(body, trader) {
@@ -154,8 +164,7 @@ export async function runLiveChecks({
   const replayResponse = await get("/api/intelligence/replay-bundle", {method: "POST",headers: { "content-type": "application/json" },body: JSON.stringify({wallet: retainedFixture.wallet,mint: retainedFixture.mint,quoteMint: retainedFixture.quoteMint,from: retainedFixture.from,to: retainedFixture.to,bucketSeconds: 60,limit: 500})});
   const replay = validateReplay(await replayResponse.json(), retainedFixture);
   validateCandles(replay);
-  const holdingsPath = `/api/intelligence/research/holdings?wallet=${encodeURIComponent(retainedFixture.wallet)}&limit=10`;
-  validateHoldings(await (await get(holdingsPath)).json(), retainedFixture);
+  validateHoldings(await (await get(`/api/intelligence/research/holdings?wallet=${encodeURIComponent(retainedFixture.wallet)}&limit=10`)).json(), retainedFixture);
   if (fixtureOnly) {console.log(JSON.stringify({ cutId: cutFixture.cutId, ...retainedFixture }));return retainedFixture;}
 
   let release = null;
@@ -179,10 +188,11 @@ export async function runLiveChecks({
   }
 
   const fomoItems=validateFomoGalaxy(await (await get("/api/intelligence/fomo/galaxy")).json());
-  const fomoCandidate=fomoItems.find((item)=>fomoSolanaTopTokens(item).length>0)??fomoItems[0];
+  validateFomoAudit(await (await get("/api/intelligence/fomo/audit")).json());
+  const fomoCandidate=fomoItems.find((item)=>item?.solanaWallet&&fomoSolanaTopTokens(item).length>0)??fomoItems.find((item)=>item?.solanaWallet)??fomoItems[0];
   validateFomoTrader(await (await get(`/api/intelligence/fomo/trader?handle=${encodeURIComponent(fomoCandidate.handle)}`)).json(),fomoCandidate);
 
-  console.log("Live release, Fomo trader data, frozen Cut route, retained Replay receipts, OHLC, holdings, and resolver coverage checks passed.");
+  console.log("Live release, Fomo PnL coverage, trader data, frozen Cut route, retained Replay receipts, OHLC, holdings, and resolver coverage checks passed.");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
