@@ -13,7 +13,8 @@ const GALAXY_PATH='/api/intelligence/fomo/galaxy';
 const SOLANA_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const s=value=>String(value??'').trim();
 const n=value=>Number.isFinite(Number(value))?Number(value):0;
-const finite=value=>value==null||value===''?null:Number.isFinite(Number(value))?Number(value):null;
+const finite=value=>{if(value==null||value==='')return null;if(typeof value==='number')return Number.isFinite(value)?value:null;if(typeof value==='object')return null;const cleaned=s(value).replace(/[$,%\s,]/g,'').replace(/^\+/,'');const parsed=Number(cleaned);return Number.isFinite(parsed)?parsed:null;};
+const firstFinite=(...values)=>{for(const value of values){const parsed=finite(value);if(parsed!=null)return parsed;}return null;};
 const bool=value=>s(value).toLowerCase()==='true';
 const clamp=(value,fallback,min,max)=>Math.max(min,Math.min(max,Math.trunc(n(value)||fallback)));
 const all=async stmt=>{try{return(await stmt.all())?.results||[];}catch{return[];}};
@@ -29,10 +30,12 @@ async function apiJson(env,path,credits=1){
   return response.json();
 }
 function payloadArray(payload,...keys){for(const key of keys){const value=key.split('.').reduce((obj,part)=>obj?.[part],payload);if(Array.isArray(value))return value;}return Array.isArray(payload)?payload:[];}
+export function fomoLeaderboardPnl(row={}){return firstFinite(row?.pnlUsd,row?.pnl_usd,row?.totalPnl,row?.total_pnl,row?.pnlAllTime,row?.pnl_all_time,row?.allTimePnl,row?.all_time_pnl,row?.realizedPnlUsd,row?.realized_pnl_usd,row?.realizedPnl,row?.realized_pnl,row?.profit,row?.pnl,typeof row?.pnl==='object'?row.pnl?.all:null,typeof row?.pnl==='object'?row.pnl?.allTime:null,typeof row?.pnl==='object'?row.pnl?.all_time:null,typeof row?.pnl==='object'?row.pnl?.total:null,row?.performance?.pnl,row?.performance?.all?.pnl,row?.performance?.allTime?.pnl,row?.performance?.all_time?.pnl,row?.metrics?.pnl,row?.stats?.pnl);}
 export function normalizeFomoLiveLeaderboard(payload,capturedAt=Date.now()){
   const source=payloadArray(payload,'traders','data.traders','leaderboard','data.leaderboard','items','data.items','results','data.results','data');
   const reportedAt=parseMs(payload?.capturedAt??payload?.data?.capturedAt)??capturedAt;
-  return normalizeFomoLeaderboard(source,reportedAt);
+  const prepared=source.map(row=>{const pnl=fomoLeaderboardPnl(row);return pnl==null?row:{...row,pnl};});
+  return normalizeFomoLeaderboard(prepared,reportedAt);
 }
 export function normalizeFomoHoldings(payload,capturedAt=Date.now()){
   return payloadArray(payload,'holdings','data.holdings','balances','data.balances').flatMap(item=>{
@@ -83,7 +86,7 @@ export async function refreshFomoLive(env={},nowMs=Date.now()){
   try{
     const payload=await apiJson(env,'/leaderboard/all?limit=50',1),items=normalizeFomoLiveLeaderboard(payload,nowMs);if(!items.length)throw new Error('fomoapi_empty_leaderboard');await storeLeaderboard(db,items,now);
     const positionCount=n((await db.prepare('SELECT COUNT(*) count FROM fomo_trader_positions').first().catch(()=>null))?.count),limit=positionCount===0?clamp(env.FOMO_BOOTSTRAP_ENRICH_LIMIT,10,0,10):clamp(env.FOMO_ENRICH_TRADERS_PER_REFRESH,1,0,2);
-    const targets=limit?await all(db.prepare(`SELECT t.handle FROM fomo_traders t LEFT JOIN fomo_enrichment_state e ON e.handle=t.handle WHERE t.current_rank BETWEEN 1 AND 50 ORDER BY CASE WHEN e.last_positions_at IS NULL THEN 0 ELSE 1 END,COALESCE(e.last_positions_at,0),t.current_rank LIMIT ?`).bind(limit)):[];
+    const targets=limit?await all(db.prepare(`SELECT t.handle FROM fomo_traders t LEFT JOIN fomo_enrichment_state e ON e.handle=t.handle WHERE t.current_rank BETWEEN 1 AND 10 ORDER BY CASE WHEN e.last_positions_at IS NULL THEN 0 ELSE 1 END,COALESCE(e.last_positions_at,0),t.current_rank LIMIT ?`).bind(limit)):[];
     const enriched=[];for(const row of targets){const handle=s(row.handle);if(handle)enriched.push(await enrichTrader(env,db,handle,now));}
     await db.prepare(`INSERT INTO fomo_sync_state(id,last_fetch_at,last_success_at,last_error,updated_at) VALUES(1,?,?,NULL,?) ON CONFLICT(id) DO UPDATE SET last_fetch_at=excluded.last_fetch_at,last_success_at=excluded.last_success_at,last_error=NULL,updated_at=excluded.updated_at`).bind(now,now,now).run();
     return Object.freeze({enabled:true,configured:true,items:items.length,enriched,capturedAt:now});
@@ -108,4 +111,4 @@ export async function handleFomoLiveRequest(request,env={}){
   return json({ok:true,coverage:positions.length||latestTrades.length?'partial':'empty',trader,positions,latestTrades,source:'fomoapi.io + a-bulls-indexed-public-chain',disclosure:'Top positions are cached Fomo-reported holdings when available and are kept separate from A Bulls App observed public-chain activity. Latest events may be Fomo-reported position entries/exits or independently indexed chain trades; sourceKind identifies which. This is research context, not copy trading or an execution signal.'},200,'public, max-age=60, stale-while-revalidate=180');
 }
 
-export const __fomoLiveContract=Object.freeze({leaderboardPath:'/leaderboard/all?limit=50',maximumTraders:50,maximumPositions:10,latestTrades:3,pageReadsProviderFree:true,scheduled:true,requiresApiKey:true,bootstrapEnrichmentMax:10});
+export const __fomoLiveContract=Object.freeze({leaderboardPath:'/leaderboard/all?limit=50',maximumTraders:50,maximumPositions:10,latestTrades:3,pageReadsProviderFree:true,scheduled:true,requiresApiKey:true,bootstrapEnrichmentMax:10,priorityDetailedTraders:10});

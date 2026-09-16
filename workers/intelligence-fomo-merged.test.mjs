@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeFomoTraderResponses,__fomoMergedContract } from './intelligence-fomo-merged.mjs';
+import { mergeFomoTraderResponses,mergeIndexedWalletActivity,__fomoMergedContract } from './intelligence-fomo-merged.mjs';
 
 const MINT='5AhfPStn66hRYoNNDfJHSDgCH7fBbwMQZUECRrhTo62F';
 const OTHER='So11111111111111111111111111111111111111112';
@@ -25,11 +25,25 @@ test('observed and provider position evidence merge without losing enriched valu
   assert.equal(merged.positions[0].sourceKind,'fomo-reported+a-bulls-observed');
 });
 
-test('merged Fomo trader responses stay bounded and provider-free on page reads',()=>{
+test('wallet token index evidence fills sparse trader systems without inventing balances',()=>{
+  const payload={ok:true,coverage:'empty',trader:{solanaWallet:MINT},positions:[],latestTrades:[],disclosure:'sparse'};
+  const indexed=mergeIndexedWalletActivity(payload,{ok:true,index:{tokenCount:1,tokens:[{mint:OTHER,eventCount:7,tradeCount:3,lastEvent:1_780_000_000,observedTokenFlow:22}],coverage:{complete_to_genesis:0},indexing:{requested:true}}});
+  assert.equal(indexed.positions.length,1);
+  assert.equal(indexed.positions[0].mint,OTHER);
+  assert.equal(indexed.positions[0].sourceKind,'a-bulls-observed');
+  assert.equal(indexed.positions[0].tradeCount,3);
+  assert.equal(indexed.positions[0].amount,null);
+  assert.equal(indexed.indexing.requested,true);
+  assert.equal(indexed.indexing.completeToGenesis,false);
+});
+
+test('merged Fomo trader responses stay bounded and page reads never execute transactions',()=>{
   const trades=Array.from({length:6},(_,index)=>({signature:`sig-${index}`,mint:MINT,side:'buy',observedAt:index+1,sourceKind:'a-bulls-observed'}));
   const merged=mergeFomoTraderResponses({ok:true,positions:[],latestTrades:trades,disclosure:'live'},{ok:true,positions:[],latestTrades:trades,disclosure:'fallback'});
   assert.equal(merged.latestTrades.length,3);
   assert.equal(__fomoMergedContract.maximumPositions,10);
   assert.equal(__fomoMergedContract.latestTrades,3);
   assert.equal(__fomoMergedContract.pageReadsProviderFree,true);
+  assert.equal(__fomoMergedContract.auditPath,'/api/intelligence/fomo/audit');
+  assert.equal(__fomoMergedContract.boundedWalletHistoryOnSparseSolanaTrader,true);
 });
