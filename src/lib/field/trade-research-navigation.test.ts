@@ -4,16 +4,33 @@ import { normalizeTradeResearchMode, tradeReplaySelection, TRADE_RESEARCH_ACTION
 
 const wallet="9P6Ej2CRTDYMW9628wXA8awM1t82jnfynYNNPSVx7pfU";
 const mint="5761e8gCMZFBHLU4RuFsfkWab96oJEtEr3uoF9A4pump";
+const evmWallet="0x1111111111111111111111111111111111111111";
+const evmToken="0x2222222222222222222222222222222222222222";
+const evmQuote="0x3333333333333333333333333333333333333333";
 
-test("selected Fomo trade opens a bounded wallet-token Replay context",()=>{
+test("selected Fomo trade opens an event-centered wallet-token Replay context without a 24h ceiling",()=>{
   const now=1_789_560_000_000,observed=now-60_000,selection=tradeReplaySelection({id:"trade-1",eventId:"sig-1",verificationState:"observed",observedAt:observed,metadata:{wallet,mint}},null,now);
   assert.ok(selection);
+  assert.equal(selection.chainKey,"solana");
   assert.equal(selection.wallet,wallet);
   assert.equal(selection.mint,mint);
   assert.equal(selection.replayCursor,0);
   assert.deepEqual(selection.evidenceIds,["sig-1"]);
-  assert.equal(selection.fromTs,observed-12*60*60*1000);
+  assert.equal(selection.fromTs,observed-60*60*1000);
   assert.equal(selection.toTs,now);
+});
+
+test("closed EVM trades preserve their real chain and entry-to-exit span with bounded chart context",()=>{
+  const now=1_789_560_000_000,entry=now-20*24*60*60*1000,exit=now-5*24*60*60*1000;
+  const selection=tradeReplaySelection({id:"base-trade",observedAt:exit,metadata:{chain:"base",wallet:evmWallet,tokenAddress:evmToken,quoteAddress:evmQuote,createdAt:entry,closedAt:exit}},null,now);
+  assert.ok(selection);
+  assert.equal(selection.chainKey,"base");
+  assert.equal(selection.wallet,evmWallet);
+  assert.equal(selection.mint,evmToken);
+  assert.equal(selection.quoteMint,evmQuote);
+  assert.ok(selection.fromTs<entry);
+  assert.ok(selection.toTs>exit);
+  assert.ok(selection.toTs-selection.fromTs>15*24*60*60*1000);
 });
 
 test("selected trade or trader token planet can inherit the focused trader wallet but never invents a subject",()=>{
