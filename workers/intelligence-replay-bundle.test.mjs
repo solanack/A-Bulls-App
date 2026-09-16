@@ -7,7 +7,7 @@ const walletB='22222222222222222222222222222222';
 const mint='33333333333333333333333333333333';
 const quote='44444444444444444444444444444444';
 
-function mockDb(){
+function mockDb({coverageComplete=true,completedWindowJob=false}={}){
   return {
     prepare(sql){
       const state={sql,args:[]};
@@ -38,17 +38,20 @@ function mockDb(){
           return {results:[]};
         },
         async first(){
-          if(state.sql.includes('FROM intelligence_index_coverage'))return {wallet:state.args[0],complete_to_genesis:1,status:'complete',indexed_events:100,indexed_transactions:80,source_set_json:'["rpc-a"]'};
+          if(state.sql.includes('FROM intelligence_index_coverage'))return {wallet:state.args[0],complete_to_genesis:coverageComplete?1:0,status:coverageComplete?'complete':'bounded-window-complete',indexed_events:100,indexed_transactions:80,source_set_json:'["rpc-a"]'};
+          if(state.sql.includes("state IN ('queued','running','waiting-external')"))return null;
+          if(state.sql.includes("state='complete'")&&state.sql.includes('FROM intelligence_index_jobs')&&completedWindowJob)return {id:9,state:'complete',requested_from:100,requested_to:200};
           if(state.sql.includes('SELECT request_count'))return null;
+          if(state.sql.includes('FROM intelligence_scheduler_leases'))return null;
           return null;
         },
-        async run(){return {success:true};}
+        async run(){return {success:true,meta:{changes:1,last_row_id:10}};}
       };
     }
   };
 }
 
-const env=()=>({INTELLIGENCE_DB:mockDb(),PLAYABLE_DATA_ENABLED:'true'});
+const env=(options={})=>({INTELLIGENCE_DB:mockDb(options),PLAYABLE_DATA_ENABLED:'true'});
 
 test('builds a synchronized two-wallet replay with route-backed prices',async()=>{
   const bundle=await buildReplayBundle(env(),{wallets:[walletA,walletB],mint,quoteMint:quote,from:100,to:200,bucketSeconds:60});
@@ -70,6 +73,18 @@ test('does not invent execution prices without a quote mint',async()=>{
   assert.equal(bundle.events[0].price,null);
   assert.equal(bundle.candles.length,0);
   assert.match(bundle.caveats.join(' '),/not inferred/i);
+});
+
+test('marks a completed bounded Replay window ready without pretending genesis coverage',async()=>{
+  const endpoint='https://example.test/api/intelligence/replay-bundle';
+  const response=await handleReplayBundleRequest(new Request(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({wallet:walletA,mint,quoteMint:quote,from:100,to:200,bucketSeconds:60})}),env({coverageComplete:false,completedWindowJob:true}));
+  const body=await response.json();
+  assert.equal(response.status,200);
+  assert.equal(body.bundle.coverage.complete,false);
+  assert.equal(body.bundle.indexing.requested,false);
+  assert.equal(body.bundle.indexing.windowComplete,true);
+  assert.equal(body.bundle.indexing.state,'window-ready');
+  assert.match(body.bundle.indexing.disclosure,/selected Replay time window has completed/i);
 });
 
 test('HTTP route is fail-closed and validates input',async()=>{
