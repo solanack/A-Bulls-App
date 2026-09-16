@@ -43,5 +43,45 @@ test('full Helius archival transactions decode through the existing evidence dec
   assert.equal(rows[0].signature,'sig-1');
   assert.equal(rows[0].mint,mint);
   assert.equal(rows[0].tokenDelta,2);
+  assert.equal(rows[0].eventClass,'swap-like');
   assert.equal(rows[0].source,'helius-getTransactionsForAddress');
+});
+
+test('classifies a token sale for native SOL as swap-like after removing the fee component',()=>{
+  const tx={
+    slot:43,
+    blockTime:160,
+    transaction:{signatures:['sig-2'],message:{accountKeys:[wallet,'22222222222222222222222222222222']}},
+    meta:{
+      err:null,
+      fee:5000,
+      preBalances:[1_000_000_000,0],
+      postBalances:[1_249_995_000,0],
+      preTokenBalances:[{accountIndex:1,mint,owner:wallet,uiTokenAmount:{uiAmountString:'5'}}],
+      postTokenBalances:[{accountIndex:1,mint,owner:wallet,uiTokenAmount:{uiAmountString:'2'}}]
+    }
+  };
+  const rows=decodeRpcWalletTx({signature:'sig-2',slot:43,blockTime:160},tx,wallet,'helius-getTransactionsForAddress');
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].tokenDelta,-3);
+  assert.equal(rows[0].eventClass,'swap-like');
+});
+
+test('does not treat a token transfer plus only a transaction fee as a swap',()=>{
+  const tx={
+    slot:44,
+    blockTime:170,
+    transaction:{signatures:['sig-3'],message:{accountKeys:[wallet,'22222222222222222222222222222222']}},
+    meta:{
+      err:null,
+      fee:5000,
+      preBalances:[1_000_000_000,0],
+      postBalances:[999_995_000,0],
+      preTokenBalances:[{accountIndex:1,mint,owner:wallet,uiTokenAmount:{uiAmountString:'1'}}],
+      postTokenBalances:[{accountIndex:1,mint,owner:wallet,uiTokenAmount:{uiAmountString:'2'}}]
+    }
+  };
+  const rows=decodeRpcWalletTx({signature:'sig-3',slot:44,blockTime:170},tx,wallet,'helius-getTransactionsForAddress');
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].eventClass,'transfer');
 });
