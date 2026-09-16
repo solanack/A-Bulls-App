@@ -5,10 +5,13 @@ import { canonicalChainAddress,chainQualifiedId,fomoChainTargets,isValidChainAdd
 const EVM='0xAbCdEfabcdefABCDEFabcdefabcdefABCDEFabcd';
 const SOL='5AhfPStn66hRYoNNDfJHSDgCH7fBbwMQZUECRrhTo62F';
 
-test('normalizes Fomo chain aliases without collapsing chain identity',()=>{
+test('normalizes Fomo chain aliases and numeric network ids without collapsing chain identity',()=>{
   assert.equal(normalizeChainKey('BNB Chain'),'bsc');
   assert.equal(normalizeChainKey('Robinhood Chain'),'robinhood');
   assert.equal(normalizeChainKey('SOL'),'solana');
+  assert.equal(normalizeChainKey('eip155:8453'),'base');
+  assert.equal(normalizeChainKey('56'),'bsc');
+  assert.equal(normalizeChainKey('1'),'ethereum');
   assert.equal(resolveChain('Base').chainId,8453);
   assert.equal(resolveChain('Monad').chainId,143);
 });
@@ -29,7 +32,7 @@ test('future EVM chains can route market data without pretending RPC coverage',(
   assert.deepEqual(rpcCandidatesForChain({},'future-chain',EVM),[]);
 });
 
-test('RPC candidates prefer configured endpoints and bound public fallbacks',()=>{
+test('RPC candidates prefer configured endpoints and bounded public fallbacks',()=>{
   const configured=rpcCandidatesForChain({BASE_RPC_URL:'https://private.example',MULTICHAIN_PUBLIC_RPC_FALLBACKS:'true'},'base',EVM);
   assert.equal(configured[0].url,'https://private.example');
   assert.ok(configured.some(item=>item.url.includes('publicnode.com')));
@@ -38,8 +41,9 @@ test('RPC candidates prefer configured endpoints and bound public fallbacks',()=
   assert.equal(robinhood[0].url,'https://robinhood.example');
 });
 
-test('registry includes current Fomo coverage targets and remains read only',()=>{
-  for(const chain of ['solana','base','bsc','monad','robinhood','arc'])assert.ok(fomoChainTargets().includes(chain));
+test('registry matches current Fomo token-chain coverage and remains read only',()=>{
+  assert.deepEqual(new Set(fomoChainTargets()),new Set(['solana','base','bsc','monad','robinhood','ethereum']));
+  assert.equal(fomoChainTargets().includes('arc'),false);
   assert.equal(__chainRegistryContract.readOnly,true);
   assert.equal(__chainRegistryContract.noCrossChainIdentityInference,true);
 });
