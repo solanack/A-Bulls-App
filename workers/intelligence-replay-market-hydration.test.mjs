@@ -1,37 +1,52 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseExactReplayPool, discoverExactReplayPool, normalizeGeckoOhlcvRows, replayMarketProviders } from './intelligence-replay-market-hydration.mjs';
+import { chooseExactReplayPool, discoverExactReplayPool, discoverExactReplayPools, normalizeGeckoOhlcvRows, replayMarketProviders } from './intelligence-replay-market-hydration.mjs';
 
 const mint='33333333333333333333333333333333';
 const quote='44444444444444444444444444444444';
 const pool='55555555555555555555555555555555';
+const pool2='66666666666666666666666666666666';
 
-const exactPoolPayload=()=>({data:[{id:`solana_${pool}`,attributes:{address:pool},relationships:{base_token:{data:{id:`solana_${mint}`}},quote_token:{data:{id:`solana_${quote}`}}}}]});
+const exactPoolPayload=(address=pool)=>({data:[{id:`solana_${address}`,attributes:{address},relationships:{base_token:{data:{id:`solana_${mint}`}},quote_token:{data:{id:`solana_${quote}`}}}}]});
 
 test('selects only an exact Solana base/quote pool for Replay',()=>{
   const payload={data:[
-    {id:'solana_66666666666666666666666666666666',attributes:{address:'66666666666666666666666666666666'},relationships:{base_token:{data:{id:`solana_${mint}`}},quote_token:{data:{id:'77777777777777777777777777777777'}}}},
+    {id:'solana_77777777777777777777777777777777',attributes:{address:'77777777777777777777777777777777'},relationships:{base_token:{data:{id:`solana_${mint}`}},quote_token:{data:{id:'88888888888888888888888888888888'}}}},
     {id:`solana_${pool}`,attributes:{address:pool},relationships:{base_token:{data:{id:`solana_${quote}`}},quote_token:{data:{id:`solana_${mint}`}}}}
   ]};
   assert.deepEqual(chooseExactReplayPool(payload,mint,quote),{address:pool,base:quote,quote:mint});
-  assert.equal(chooseExactReplayPool(payload,mint,'88888888888888888888888888888888'),null);
+  assert.equal(chooseExactReplayPool(payload,mint,'99999999999999999999999999999999'),null);
 });
 
-test('paginates bounded GeckoTerminal pool discovery until the exact quote market is found',async()=>{
+test('paginates bounded GeckoTerminal discovery and keeps exact quote candidates',async()=>{
   const calls=[];
   const fetchImpl=async input=>{
     const url=new URL(String(input));calls.push(url.toString());
     const page=Number(url.searchParams.get('page')||1);
     const data=page===1
-      ?[{id:'solana_66666666666666666666666666666666',attributes:{address:'66666666666666666666666666666666'},relationships:{base_token:{data:{id:`solana_${mint}`}},quote_token:{data:{id:'77777777777777777777777777777777'}}}}]
-      :exactPoolPayload().data;
+      ?[{id:'solana_77777777777777777777777777777777',attributes:{address:'77777777777777777777777777777777'},relationships:{base_token:{data:{id:`solana_${mint}`}},quote_token:{data:{id:'88888888888888888888888888888888'}}}}]
+      :page===2?exactPoolPayload().data:[];
     return new Response(JSON.stringify({data}),{headers:{'content-type':'application/json'}});
   };
   const selected=await discoverExactReplayPool({REPLAY_MARKET_POOL_PAGES:'3'},mint,quote,{fetchImpl});
   assert.equal(selected.address,pool);
   assert.equal(selected.provider,'geckoterminal-public');
-  assert.equal(calls.length,2);
+  assert.equal(calls.length,3);
   assert.match(calls[1],/page=2/);
+  assert.match(calls[2],/page=3/);
+});
+
+test('collects multiple unique exact pools so historical Replay can try a later market',async()=>{
+  const calls=[];
+  const fetchImpl=async input=>{
+    const url=new URL(String(input));calls.push(url.toString());
+    const page=Number(url.searchParams.get('page')||1);
+    const data=page===1?exactPoolPayload(pool).data:exactPoolPayload(pool2).data;
+    return new Response(JSON.stringify({data}),{headers:{'content-type':'application/json'}});
+  };
+  const pools=await discoverExactReplayPools({REPLAY_MARKET_POOL_PAGES:'5',REPLAY_MARKET_POOL_CANDIDATES:'2'},mint,quote,{fetchImpl});
+  assert.deepEqual(pools.map(item=>item.address),[pool,pool2]);
+  assert.equal(calls.length,2);
 });
 
 test('retries one transient GeckoTerminal rate limit while preserving bounded discovery',async()=>{
@@ -39,25 +54,30 @@ test('retries one transient GeckoTerminal rate limit while preserving bounded di
   const fetchImpl=async()=>{
     calls+=1;
     if(calls===1)return new Response('rate limited',{status:429,headers:{'retry-after':'0.001'}});
-    return new Response(JSON.stringify(exactPoolPayload()),{headers:{'content-type':'application/json'}});
+    const data=calls===2?exactPoolPayload().data:[];
+    return new Response(JSON.stringify({data}),{headers:{'content-type':'application/json'}});
   };
   const selected=await discoverExactReplayPool({},mint,quote,{fetchImpl});
   assert.equal(selected.address,pool);
-  assert.equal(calls,2);
+  assert.equal(calls,3);
 });
 
 test('uses configured CoinGecko Demo onchain authentication before public GeckoTerminal',async()=>{
   const calls=[];
   const fetchImpl=async(input,init={})=>{
-    calls.push({url:String(input),headers:init.headers||{}});
-    return new Response(JSON.stringify(exactPoolPayload()),{headers:{'content-type':'application/json'}});
+    const url=new URL(String(input));
+    calls.push({url:url.toString(),headers:init.headers||{}});
+    const page=Number(url.searchParams.get('page')||1);
+    return new Response(JSON.stringify({data:page===1?exactPoolPayload().data:[]}),{headers:{'content-type':'application/json'}});
   };
   const selected=await discoverExactReplayPool({COINGECKO_API_KEY:'secret-key',COINGECKO_API_MODE:'demo'},mint,quote,{fetchImpl});
   assert.equal(selected.provider,'coingecko-demo-onchain');
-  assert.equal(calls.length,1);
-  assert.match(calls[0].url,/api\.coingecko\.com\/api\/v3\/onchain\/networks\/solana/);
-  assert.equal(calls[0].headers['x-cg-demo-api-key'],'secret-key');
-  assert.equal(Object.hasOwn(calls[0].headers,'x-cg-pro-api-key'),false);
+  assert.equal(calls.length,2);
+  for(const call of calls){
+    assert.match(call.url,/api\.coingecko\.com\/api\/v3\/onchain\/networks\/solana/);
+    assert.equal(call.headers['x-cg-demo-api-key'],'secret-key');
+    assert.equal(Object.hasOwn(call.headers,'x-cg-pro-api-key'),false);
+  }
 });
 
 test('falls through an invalid Demo key to Pro before keyless public market data',async()=>{
@@ -66,13 +86,17 @@ test('falls through an invalid Demo key to Pro before keyless public market data
     const url=new URL(String(input));
     calls.push({url:url.toString(),headers:init.headers||{}});
     if(url.hostname==='api.coingecko.com')return new Response('unauthorized',{status:401});
-    return new Response(JSON.stringify(exactPoolPayload()),{headers:{'content-type':'application/json'}});
+    const page=Number(url.searchParams.get('page')||1);
+    return new Response(JSON.stringify({data:page===1?exactPoolPayload().data:[]}),{headers:{'content-type':'application/json'}});
   };
   const selected=await discoverExactReplayPool({COINGECKO_API_KEY:'secret-key'},mint,quote,{fetchImpl});
   assert.equal(selected.provider,'coingecko-pro-onchain');
-  assert.equal(calls.length,2);
+  assert.equal(calls.length,3);
+  assert.match(calls[0].url,/api\.coingecko\.com/);
   assert.match(calls[1].url,/pro-api\.coingecko\.com/);
+  assert.match(calls[2].url,/pro-api\.coingecko\.com/);
   assert.equal(calls[1].headers['x-cg-pro-api-key'],'secret-key');
+  assert.equal(calls.some(call=>call.url.includes('api.geckoterminal.com')),false);
 });
 
 test('provider plan never exposes a configured CoinGecko key in provider metadata',()=>{
