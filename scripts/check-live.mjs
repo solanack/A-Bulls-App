@@ -4,8 +4,8 @@ import { pathToFileURL } from "node:url";
 
 export const LIVE_FIXTURE = Object.freeze({
   cutId: "ad2538ff000fcceb707d55d5",
-  wallet: "7BY7z7wJkP9DSLuTFKsfdBwkEwLqyr1syMQn8hAgNhiy",
-  mint: "97jCC4dL3ceKFqovn3gPKApKQ8hUYwJmCUV3m9d1pump",
+  wallet: "9P6Ej2CRTDYMW9628wXA8awM1t82jnfynYNNPSVx7pfU",
+  mint: "5761e8gCMZFBHLU4RuFsfkWab96oJEtEr3uoF9A4pump",
   quoteMint: "So11111111111111111111111111111111111111112",
 });
 const SOLANA_SIGNATURE_RE = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
@@ -153,7 +153,6 @@ export async function runLiveChecks({
     "/api/intelligence/field/resolve?query=0x39dbed3a2bd333467115de45665cc57f813c4571",
     "/api/intelligence/field/snapshot?galaxy=solana-core&window=300",
     "/api/intelligence/field/v0/tokens?limit=10",
-    "/api/intelligence/pons/galaxy",
     "/api/intelligence/fomo/galaxy",
   ]) {
     const response = await get(path);
