@@ -43,14 +43,15 @@ jobs:
           npx wrangler deploy --dry-run
       - name: Inventory every generated frontend file
         run: |
-          find .output .wrangler public/release.json -type f -print0 | sort -z | xargs -0 sha256sum > release-artifact.sha256
+          test -f dist/server/wrangler.json
+          find dist .wrangler public/release.json -type f -print0 | sort -z | xargs -0 sha256sum > release-artifact.sha256
           test -s release-artifact.sha256
       - name: Upload exact tested frontend release
         uses: actions/upload-artifact@v4
         with:
           name: tested-frontend-${{ github.sha }}
           path: |
-            .output
+            dist
             .wrangler
             public/release.json
             release-artifact.sha256

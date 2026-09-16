@@ -60,7 +60,8 @@ jobs:
       - name: Preserve tested frontend release
         id: frontend-artifact
         run: |
-          find .output .wrangler public/release.json -type f -print0 | sort -z | xargs -0 sha256sum > release-artifact.sha256
+          test -f dist/server/wrangler.json
+          find dist .wrangler public/release.json -type f -print0 | sort -z | xargs -0 sha256sum > release-artifact.sha256
           test -s release-artifact.sha256
 
       - name: Upload tested frontend release
@@ -68,7 +69,7 @@ jobs:
         with:
           name: tested-frontend-${{ github.sha }}
           path: |
-            .output
+            dist
             .wrangler
             public/release.json
             release-artifact.sha256
