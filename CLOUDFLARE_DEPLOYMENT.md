@@ -27,12 +27,46 @@ The token-planet local system and weekly trader observatory reuse existing retai
 
 ## Automatic deployment
 
-In this repository's GitHub Settings → Secrets and variables → Actions, configure:
+The existing `.github/workflows/deploy-cloudflare.yml` is the only production publisher. A push to `main` first runs the locked-interface baseline, the full repository test suite, an explicit TypeScript check, the production frontend build, and the Intelligence Worker dry-run. The deploy job cannot start unless that job succeeds. The deploy job then dry-runs both real Wrangler configurations, lists and applies pending migrations to the existing Intelligence D1 database, publishes the Intelligence Worker, publishes the frontend Worker, and runs the live acceptance checks against `abullsapp.com`.
+
+This release automation advances the `MASTER_PLAN.md` P0 release hardening needed by every roadmap item; it does not change the product, renderer, providers, or data-source boundaries.
+
+In GitHub **Settings → Environments**, create an environment named `production`. An environment approval rule is optional but recommended while automated releases are first being observed. If enabled, approval happens only after all no-secret release checks have passed and before D1 or either Worker is changed. Do not add a branch other than `main` to the environment deployment branches.
+
+In GitHub **Settings → Secrets and variables → Actions**, configure exactly these Actions secrets (repository secrets or `production` environment secrets are both supported):
 
 - `CLOUDFLARE_API_TOKEN`: an existing scoped Cloudflare token authorized to publish these Workers and apply migrations to their D1 database.
 - `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account containing both Workers and the existing database.
 
-Do not paste either into chat or commit credentials. Pushes to main trigger the deployment workflow, or run **Deploy Cloudflare** from Actions. Missing credentials fail the workflow explicitly before any migration or publication step; they do not change production. The separate release workflow can run its tests and builds without production credentials.
+No provider key belongs in GitHub Actions. `FOMOAPI_API_KEY`, `HELIUS_API_KEY`, `PONS_BLOCKSCOUT_API_KEY`, optional `PONS_RPC_URL`, `ELEVENLABS_API_KEY`, and other runtime credentials remain encrypted Cloudflare Worker secrets on the existing Worker. A Wrangler deployment preserves those secrets; do not recreate, copy, or paste them into GitHub or chat.
+
+Create a custom Cloudflare API token, restricted to the one A Bulls App account and the `abullsapp.com` zone, with:
+
+- **Account / Workers Scripts / Edit** — publish and roll back `a-bulls-app-frontend` and `black-bull-run-sol`.
+- **Account / D1 / Edit** — list and apply migrations to `a-bulls-app-intelligence`.
+- **Account / Account Settings / Read** — allow Wrangler to resolve and validate the configured account.
+- **Zone / Workers Routes / Edit** for `abullsapp.com` — preserve/update the existing `abullsapp.com/*` Worker route.
+- **Zone / Zone / Read** for `abullsapp.com` — allow Wrangler to resolve the configured zone.
+
+Do not grant DNS edit, Workers KV, R2, Pages, Access, SSL, billing, or global-account permissions. The workflow does not create another Worker, database, route, or application. Pushes to `main` trigger it, or **Deploy Cloudflare → Run workflow** can run it from `main`. Missing credentials fail before migration or publication. Pull requests run the separate no-secret release gate and never deploy.
+
+### Migration order and safety
+
+Migrations are the one-way, numbered SQL files in `workers/migrations/` and target the existing `INTELLIGENCE_DB` binding declared by `workers/wrangler.production.toml`. The workflow lists pending remote migrations before applying them. Migrations run only after every release check and both bundle dry-runs, and before the new Intelligence Worker, so its schema exists before new code receives traffic. The Intelligence Worker is published before the frontend so the frontend never points at a not-yet-published API contract.
+
+Only backward-compatible expand-first migrations may be automated: add tables, columns, or indexes first; deploy code that tolerates old and new rows; remove/rename data only in a later separately reviewed release. A destructive or long-running migration requires temporarily enabling the `production` environment approval gate, taking a D1 Time Travel bookmark/backup in Cloudflare, and a documented restore rehearsal. Never edit or renumber an already-applied migration.
+
+### Rollback
+
+Keep Cloudflare version history for both existing Workers. If live verification or the physical Seeker check fails:
+
+1. Stop further workflow runs; do not re-run migrations.
+2. In Cloudflare **Workers & Pages → black-bull-run-sol → Deployments**, roll back to the prior healthy Intelligence Worker version.
+3. In **Workers & Pages → a-bulls-app-frontend → Deployments**, roll back to its prior healthy version.
+4. Re-run `node scripts/check-live.mjs` from the matching prior Git commit and repeat physical Seeker acceptance.
+5. For an additive migration, leave the extra schema in place; old code must tolerate it. If and only if a reviewed migration damaged data, restore D1 to the pre-release Time Travel bookmark, then re-run the live checks. Never attempt an ad-hoc reverse SQL migration from a phone.
+
+Worker rollback does not undo a D1 migration, which is why expand-first compatibility is mandatory. The workflow's `production` environment and `https://abullsapp.com` URL also leave a GitHub deployment record for each attempt.
 
 ## Verify the actual release
 
