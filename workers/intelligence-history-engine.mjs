@@ -10,7 +10,7 @@ import { reserveProviderCredits } from './intelligence-provider-budget.mjs';
 const WALLET_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const PUBLIC_RPC='https://api.mainnet-beta.solana.com';
 const MAX_PAGE=50,MAX_TX=25,TX_CONCURRENCY=5;
-const HELIUS_WINDOW_CREDITS=50;
+const HELIUS_WINDOW_CREDITS=100;
 const HELIUS_CURSOR_PREFIX='gtfa:';
 const s=v=>String(v==null?'':v).trim();
 const n=v=>Number.isFinite(Number(v))?Number(v):0;
@@ -45,10 +45,10 @@ function tokenDeltas(meta={},wallet=''){
 }
 export function decodeRpcWalletTx(sigRow,tx,wallet,source='rpc'){
   if(!tx)return[];const keys=accountKeys(tx),idx=keys.indexOf(wallet),meta=tx.meta||{};
-  const solDelta=idx>=0?(n(meta.postBalances?.[idx])-n(meta.preBalances?.[idx]))/1e9:0,deltas=tokenDeltas(meta,wallet),signature=s(sigRow?.signature||tx.transaction?.signatures?.[0]),slot=n(tx.slot||sigRow?.slot),blockTime=n(tx.blockTime||sigRow?.blockTime),failed=Boolean(meta.err||sigRow?.err);
-  if(!deltas.length)return[{signature,slot,blockTime,wallet,eventClass:'transfer',solDelta,tokenDelta:0,feeLamports:n(meta.fee),source,confidence:failed?0:0.7,decoderVersion:'intelligence-history-rpc-v2'}];
-  const hasIn=deltas.some(x=>x.delta>0),hasOut=deltas.some(x=>x.delta<0);
-  return deltas.map(x=>({signature,slot,blockTime,wallet,mint:x.mint,eventClass:hasIn&&hasOut?'swap-like':'transfer',solDelta,tokenDelta:x.delta,feeLamports:n(meta.fee),source,confidence:failed?0:0.8,decoderVersion:'intelligence-history-rpc-v2'}));
+  const feeLamports=n(meta.fee),solDelta=idx>=0?(n(meta.postBalances?.[idx])-n(meta.preBalances?.[idx]))/1e9:0,deltas=tokenDeltas(meta,wallet),signature=s(sigRow?.signature||tx.transaction?.signatures?.[0]),slot=n(tx.slot||sigRow?.slot),blockTime=n(tx.blockTime||sigRow?.blockTime),failed=Boolean(meta.err||sigRow?.err);
+  if(!deltas.length)return[{signature,slot,blockTime,wallet,eventClass:'transfer',solDelta,tokenDelta:0,feeLamports,source,confidence:failed?0:0.7,decoderVersion:'intelligence-history-rpc-v3'}];
+  const hasIn=deltas.some(x=>x.delta>0),hasOut=deltas.some(x=>x.delta<0),feeAdjustedSol=solDelta+(idx===0?feeLamports/1e9:0),singleTokenNativeSwap=deltas.length===1&&Math.abs(feeAdjustedSol)>1e-7&&((deltas[0].delta>0&&feeAdjustedSol<0)||(deltas[0].delta<0&&feeAdjustedSol>0)),swapLike=(hasIn&&hasOut)||singleTokenNativeSwap;
+  return deltas.map(x=>({signature,slot,blockTime,wallet,mint:x.mint,eventClass:swapLike?'swap-like':'transfer',solDelta,tokenDelta:x.delta,feeLamports,source,confidence:failed?0:(swapLike?0.82:0.8),decoderVersion:'intelligence-history-rpc-v3'}));
 }
 async function sourceHealth(db,source,state,latencyMs=null,error=''){
   await db.prepare(`INSERT INTO intelligence_source_health(source,source_kind,state,last_ok_at,last_error_at,latency_ms,details_json,updated_at) VALUES(?,?,?,?,?,?,?,unixepoch()) ON CONFLICT(source) DO UPDATE SET source_kind=excluded.source_kind,state=excluded.state,last_ok_at=CASE WHEN excluded.state='ok' THEN excluded.last_ok_at ELSE last_ok_at END,last_error_at=CASE WHEN excluded.state='error' THEN excluded.last_error_at ELSE last_error_at END,latency_ms=excluded.latency_ms,details_json=excluded.details_json,updated_at=unixepoch()`)
@@ -77,7 +77,7 @@ function normalizeHeliusFullRows(result={}){
 async function backfillHeliusWindowPass(env,wallet,source,options,db){
   const config=buildHeliusWindowConfig({from:options.from,to:options.to,paginationToken:heliusWindowCursor(options.before),limit:env.HELIUS_HISTORY_WINDOW_LIMIT||100});
   if(!config)throw new Error('helius_window_unbounded');
-  const reservation=await reserveProviderCredits(env,HELIUS_WINDOW_CREDITS,'helius');
+  const reservation=await reserveProviderCredits(env,Math.max(1,Math.trunc(n(env.HELIUS_HISTORY_WINDOW_CREDITS)||HELIUS_WINDOW_CREDITS)),'helius');
   if(reservation.blocked)throw new Error('provider_budget_blocked');
   const response=await rpc(source,'getTransactionsForAddress',[s(wallet),config],options.fetchImpl),result=response.result||{},txRows=normalizeHeliusFullRows(result),sigs=txRows.map(row=>row.sig);
   const decoded=txRows.flatMap(row=>decodeRpcWalletTx(row.sig,row.tx,s(wallet),'helius-getTransactionsForAddress')),
