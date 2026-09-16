@@ -29,16 +29,35 @@ The token-planet local system and weekly trader observatory reuse existing retai
 
 In this repository's GitHub Settings → Secrets and variables → Actions, configure:
 
-- `CLOUDFLARE_API_TOKEN`: an existing scoped Cloudflare token authorized to publish these Workers and apply migrations to their D1 database.
+- `CLOUDFLARE_API_TOKEN`: a scoped Cloudflare token with **Account → Workers Scripts → Edit**, **Account → D1 → Edit**, and **Zone → Workers Routes → Edit**. Scope Account Resources to the production account and Zone Resources to `abullsapp.com`; do not use an all-resources Global API key.
 - `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account containing both Workers and the existing database.
 
-Also configure the repository variables `LIVE_REPLAY_FROM`, `LIVE_REPLAY_TO`, and
-`LIVE_REPLAY_EXPECTED_SIGNATURES` (a comma-separated list). They pin the retained
-window and receipts for the known active wallet/token fixture. The live gate fails
-when that exact subject has no Replay events, lacks its expected receipts or WSOL
-OHLC, or no longer appears in the wallet's aggregated holdings.
+The fixture is not supplied through mutable repository variables. The live gate
+loads frozen Cut `ad2538ff000fcceb707d55d5`, verifies its canonical `/?cut=` page,
+and uses its retained coverage timestamps and receipt signatures as the evidence
+for wallet `7BY7z7wJkP9DSLuTFKsfdBwkEwLqyr1syMQn8hAgNhiy`, token
+`97jCC4dL3ceKFqovn3gPKApKQ8hUYwJmCUV3m9d1pump`, and WSOL quote mint
+`So11111111111111111111111111111111111111112`. The preflight records the actual
+timestamps and signatures returned by that immutable manifest before any migration
+or Worker publication. Empty/mismatched Replay, receipts, OHLC, or holdings fail.
 
 Do not paste either into chat or commit credentials. Pushes to main trigger the deployment workflow, or run **Deploy Cloudflare** from Actions. Missing credentials fail the workflow explicitly before any migration or publication step; they do not change production. The separate release workflow can run its tests and builds without production credentials.
+
+The publication job is additionally guarded to `refs/heads/main` and uses the
+GitHub `production` environment. Dispatching the workflow from another branch may
+run release checks, but it cannot enter the deploy job.
+
+## D1 migration gate
+
+Before applying D1 migrations, Actions checks every migration for the expand-first
+rule, prints Wrangler's remote pending-migration list, and uploads that inspection.
+Production migrations may add tables, columns, and indexes while old and new Worker
+versions coexist. They must not drop or rename tables/columns/indexes, truncate data,
+or make a new field mandatory in the same release. Contract/cleanup migrations are
+a later release only after deployed readers and writers no longer need the old shape.
+Migration `0025_fomo_ponsfamily.sql` is a frozen pre-policy legacy table rebuild;
+the gate explicitly grandfathers that already-applied file but grants no exception
+to subsequent migrations.
 
 ## Verify the actual release
 

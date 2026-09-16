@@ -3,10 +3,12 @@ import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 export const LIVE_FIXTURE = Object.freeze({
+  cutId: "ad2538ff000fcceb707d55d5",
   wallet: "7BY7z7wJkP9DSLuTFKsfdBwkEwLqyr1syMQn8hAgNhiy",
   mint: "97jCC4dL3ceKFqovn3gPKApKQ8hUYwJmCUV3m9d1pump",
   quoteMint: "So11111111111111111111111111111111111111112",
 });
+const SOLANA_SIGNATURE_RE = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 
 const requiredInteger = (name, value) => {
   const parsed = Number(value);
@@ -14,16 +16,27 @@ const requiredInteger = (name, value) => {
   return parsed;
 };
 
-export function fixtureFromEnv(env = process.env) {
-  const signatures = String(env.LIVE_REPLAY_EXPECTED_SIGNATURES || "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  assert.ok(signatures.length > 0, "LIVE_REPLAY_EXPECTED_SIGNATURES must pin retained receipt signatures");
-  const from = requiredInteger("LIVE_REPLAY_FROM", env.LIVE_REPLAY_FROM);
-  const to = requiredInteger("LIVE_REPLAY_TO", env.LIVE_REPLAY_TO);
+export function fixtureFromFrozenCut(body, expected = LIVE_FIXTURE) {
+  assert.equal(body?.ok, true, `Frozen Cut failed: ${body?.error || "not ok"}`);
+  assert.equal(body?.frozen, true, "Saved Cut is not frozen");
+  assert.equal(body?.id, expected.cutId, "Saved Cut returned a different id");
+  assert.equal(body?.shareUrl, `/?cut=${expected.cutId}`, "Saved Cut has a non-canonical share URL");
+  assert.equal(body?.verifyUrl, body.shareUrl, "Saved Cut VERIFY URL diverges from its share URL");
+  const manifest = asObject(body.manifest, "Saved Cut response is missing its manifest");
+  assert.equal(manifest.subject?.kind, "wallet-token", "Saved Cut has a different subject kind");
+  assert.equal(manifest.subject?.id, `${expected.wallet}:${expected.mint}`, "Saved Cut has a different subject");
+  const signatures = (manifest.evidence || []).map((receipt) => String(receipt?.signature || "").trim()).filter(Boolean);
+  assert.ok(signatures.length > 0, "Saved Cut has no retained receipt signatures");
+  assert.ok(signatures.every((signature) => SOLANA_SIGNATURE_RE.test(signature)), "Saved Cut contains an invalid Solana receipt signature");
+  const from = requiredInteger("manifest.coverage.from", manifest.coverage?.from);
+  const to = requiredInteger("manifest.coverage.to", manifest.coverage?.to);
   assert.ok(to >= from, "LIVE_REPLAY_TO must not precede LIVE_REPLAY_FROM");
-  return Object.freeze({ ...LIVE_FIXTURE, from, to, signatures: Object.freeze(signatures) });
+  for (const receipt of manifest.evidence || []) {
+    if (!receipt?.signature) continue;
+    const blockTime = requiredInteger(`receipt ${receipt.id || receipt.signature} blockTime`, receipt.blockTime);
+    assert.ok(blockTime >= from && blockTime <= to, "Saved Cut receipt falls outside its coverage window");
+  }
+  return Object.freeze({ ...expected, from, to, signatures: Object.freeze([...new Set(signatures)]) });
 }
 
 const asObject = (value, message) => {
@@ -68,10 +81,17 @@ export function validateCandles(bundle, fixture) {
   }
 }
 
+export function validateCutPage(document, fixture) {
+  assert.match(document, /VERIFY\s*(?:·|-)?\s*Frozen Cut/i, "Canonical /?cut= page did not render the frozen VERIFY viewer");
+  assert.match(document, /This viewer renders the frozen manifest only/i, "VERIFY page does not preserve the frozen-manifest disclosure");
+  assert.ok(!/share_not_found|Cut unavailable/i.test(document), "Canonical /?cut= page reports that the retained Cut is unavailable");
+}
+
 export async function runLiveChecks({
   origin = "https://abullsapp.com",
   expected,
-  fixture,
+  fixture = LIVE_FIXTURE,
+  fixtureOnly = false,
   fetchImpl = fetch,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 } = {}) {
@@ -84,6 +104,32 @@ export async function runLiveChecks({
     assert.equal(response.status, 200, `${path}: HTTP ${response.status}`);
     return response;
   };
+  const frozenCut = await (await get(`/api/intelligence/trickster/share/${fixture.cutId}`)).json();
+  const retainedFixture = fixtureFromFrozenCut(frozenCut, fixture);
+  validateCutPage(await (await get(`/?cut=${fixture.cutId}`)).text(), retainedFixture);
+
+  const replayResponse = await get("/api/intelligence/replay-bundle", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      wallet: retainedFixture.wallet,
+      mint: retainedFixture.mint,
+      quoteMint: retainedFixture.quoteMint,
+      from: retainedFixture.from,
+      to: retainedFixture.to,
+      bucketSeconds: 60,
+      limit: 500,
+    }),
+  });
+  const replay = validateReplay(await replayResponse.json(), retainedFixture);
+  validateCandles(replay, retainedFixture);
+  const holdingsPath = `/api/intelligence/research/holdings?wallet=${encodeURIComponent(retainedFixture.wallet)}&limit=10`;
+  validateHoldings(await (await get(holdingsPath)).json(), retainedFixture);
+  if (fixtureOnly) {
+    console.log(JSON.stringify({ cutId: retainedFixture.cutId, wallet: retainedFixture.wallet, mint: retainedFixture.mint, quoteMint: retainedFixture.quoteMint, from: retainedFixture.from, to: retainedFixture.to, signatures: retainedFixture.signatures }));
+    return retainedFixture;
+  }
+
   let release = null;
   for (let attempt = 0; attempt < 12; attempt++) {
     release = await (await get(`/release.json?commit=${expected}&attempt=${attempt}`)).json();
@@ -120,28 +166,10 @@ export async function runLiveChecks({
     }
   }
 
-  const replayResponse = await get("/api/intelligence/replay-bundle", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      wallet: fixture.wallet,
-      mint: fixture.mint,
-      quoteMint: fixture.quoteMint,
-      from: fixture.from,
-      to: fixture.to,
-      bucketSeconds: 60,
-      limit: 500,
-    }),
-  });
-  const replay = validateReplay(await replayResponse.json(), fixture);
-  validateCandles(replay, fixture);
-
-  const holdingsPath = `/api/intelligence/research/holdings?wallet=${encodeURIComponent(fixture.wallet)}&limit=10`;
-  validateHoldings(await (await get(holdingsPath)).json(), fixture);
   console.log("Live release, API, retained Replay receipts, OHLC, and active-subject holdings checks passed.");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const expected = process.env.GITHUB_SHA || execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  await runLiveChecks({ expected, fixture: fixtureFromEnv() });
+  await runLiveChecks({ expected, fixtureOnly: process.argv.includes("--fixture-only") });
 }
