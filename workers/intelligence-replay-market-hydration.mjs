@@ -64,7 +64,7 @@ async function fetchJson(url,fetchImpl,maxAttempts=2){
 }
 
 export async function discoverExactReplayPool(env={},mint='',quoteMint='',{fetchImpl=providerFetch}={}){
-  const pages=Math.max(1,Math.min(5,Math.trunc(n(env.REPLAY_MARKET_POOL_PAGES)||3));
+  const pages=Math.max(1,Math.min(5,Math.trunc(n(env.REPLAY_MARKET_POOL_PAGES)||3)));
   for(let page=1;page<=pages;page+=1){
     const poolsUrl=`https://api.geckoterminal.com/api/v2/networks/solana/tokens/${encodeURIComponent(mint)}/pools?include=base_token,quote_token&page=${page}`;
     const payload=await fetchJson(poolsUrl,fetchImpl);
