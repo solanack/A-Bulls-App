@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildReplayBundle, handleReplayBundleRequest } from './intelligence-replay-bundle.mjs';
+import { adaptiveReplayBucketSeconds, buildReplayBundle, handleReplayBundleRequest } from './intelligence-replay-bundle.mjs';
 
 const walletA='11111111111111111111111111111111';
 const walletB='22222222222222222222222222222222';
@@ -53,9 +53,10 @@ function mockDb({coverageComplete=true,completedWindowJob=false}={}){
 
 const env=(options={})=>({INTELLIGENCE_DB:mockDb(options),PLAYABLE_DATA_ENABLED:'true'});
 
-test('builds a synchronized two-wallet replay with route-backed prices',async()=>{
+test('builds a synchronized two-wallet chain-qualified Solana replay with route-backed prices',async()=>{
   const bundle=await buildReplayBundle(env(),{wallets:[walletA,walletB],mint,quoteMint:quote,from:100,to:200,bucketSeconds:60});
-  assert.equal(bundle.schemaVersion,'replay-bundle-v1');
+  assert.equal(bundle.schemaVersion,'replay-bundle-v2');
+  assert.equal(bundle.subject.chain,'solana');
   assert.equal(bundle.subject.kind,'wallet-comparison');
   assert.equal(bundle.events.length,2);
   assert.equal(bundle.events[0].side,'buy');
@@ -75,6 +76,13 @@ test('does not invent execution prices without a quote mint',async()=>{
   assert.match(bundle.caveats.join(' '),/not inferred/i);
 });
 
+test('adaptive Replay buckets preserve detail for short windows and bound long histories',()=>{
+  assert.equal(adaptiveReplayBucketSeconds(0,2*86400,0),60);
+  assert.equal(adaptiveReplayBucketSeconds(0,10*86400,60),300);
+  assert.equal(adaptiveReplayBucketSeconds(0,90*86400,60),3600);
+  assert.equal(adaptiveReplayBucketSeconds(0,5*365*86400,60),86400);
+});
+
 test('marks a completed bounded Replay window ready without pretending genesis coverage',async()=>{
   const endpoint='https://example.test/api/intelligence/replay-bundle';
   const response=await handleReplayBundleRequest(new Request(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({wallet:walletA,mint,quoteMint:quote,from:100,to:200,bucketSeconds:60})}),env({coverageComplete:false,completedWindowJob:true}));
@@ -84,7 +92,7 @@ test('marks a completed bounded Replay window ready without pretending genesis c
   assert.equal(body.bundle.indexing.requested,false);
   assert.equal(body.bundle.indexing.windowComplete,true);
   assert.equal(body.bundle.indexing.state,'window-ready');
-  assert.match(body.bundle.indexing.disclosure,/selected Replay time window has completed/i);
+  assert.match(body.bundle.indexing.disclosure,/selected Replay window has completed/i);
 });
 
 test('HTTP route is fail-closed and validates input',async()=>{
