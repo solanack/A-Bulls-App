@@ -15,13 +15,13 @@ const s=value=>String(value==null?'':value).trim();
 const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const finitePositive=value=>{const out=Number(value);return Number.isFinite(out)&&out>0?out:null;};
 const nowSec=()=>Math.floor(Date.now()/1000);
-const jsonHeaders={accept:'application/json;version=20230203'};
+const jsonHeaders={accept:'application/json;version=20230203','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'};
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
 function relationAddress(value){const id=s(value);return id.startsWith('solana_')?id.slice('solana_'.length):id;}
 function leaseKey({mint,quoteMint,bucketSeconds,from,to}){return `replay-market:v1:${s(mint)}:${s(quoteMint)}:${Math.trunc(n(bucketSeconds)||60)}:${Math.trunc(n(from))}:${Math.trunc(n(to))}`;}
 function candleSpec(bucketSeconds){const seconds=Math.max(60,Math.trunc(n(bucketSeconds)||60));if(seconds===60)return{timeframe:'minute',aggregate:1,bucketSeconds:60};if(seconds===300)return{timeframe:'minute',aggregate:5,bucketSeconds:300};if(seconds===900)return{timeframe:'minute',aggregate:15,bucketSeconds:900};if(seconds===3600)return{timeframe:'hour',aggregate:1,bucketSeconds:3600};if(seconds===14400)return{timeframe:'hour',aggregate:4,bucketSeconds:14400};if(seconds===43200)return{timeframe:'hour',aggregate:12,bucketSeconds:43200};if(seconds===86400)return{timeframe:'day',aggregate:1,bucketSeconds:86400};return null;}
 async function first(stmt){try{return await stmt.first();}catch{return null;}}
-async function all(stmt){try{return (await stmt.all())?.results||[];}catch{return[];}}
 
 export function chooseExactReplayPool(payload={},mint='',quoteMint=''){
   const wantedMint=s(mint),wantedQuote=s(quoteMint),rows=Array.isArray(payload?.data)?payload.data:[];
@@ -50,7 +50,30 @@ export async function replayMarketHydrationState(env={},input={}){
   return Object.freeze({provider:PROVIDER,needed:true,requested:true,pending:true,state:'queued',disclosure:'Historical market candles were queued automatically for this Replay.'});
 }
 
-async function fetchJson(url,fetchImpl){const response=await fetchImpl(url,{headers:jsonHeaders});if(!response?.ok)throw new Error(`geckoterminal_http_${response?.status||0}`);const payload=await response.json();if(!payload||typeof payload!=='object')throw new Error('geckoterminal_invalid_response');return payload;}
+async function fetchJson(url,fetchImpl,maxAttempts=2){
+  let lastStatus=0;
+  for(let attempt=0;attempt<Math.max(1,maxAttempts);attempt+=1){
+    const response=await fetchImpl(url,{headers:jsonHeaders});
+    lastStatus=response?.status||0;
+    if(response?.ok){const payload=await response.json();if(!payload||typeof payload!=='object')throw new Error('geckoterminal_invalid_response');return payload;}
+    const retryable=lastStatus===429||lastStatus>=500;
+    if(!retryable||attempt+1>=maxAttempts)throw new Error(`geckoterminal_http_${lastStatus}`);
+    await sleep(200*(attempt+1));
+  }
+  throw new Error(`geckoterminal_http_${lastStatus}`);
+}
+
+export async function discoverExactReplayPool(env={},mint='',quoteMint='',{fetchImpl=providerFetch}={}){
+  const pages=Math.max(1,Math.min(5,Math.trunc(n(env.REPLAY_MARKET_POOL_PAGES)||3));
+  for(let page=1;page<=pages;page+=1){
+    const poolsUrl=`https://api.geckoterminal.com/api/v2/networks/solana/tokens/${encodeURIComponent(mint)}/pools?include=base_token,quote_token&page=${page}`;
+    const payload=await fetchJson(poolsUrl,fetchImpl);
+    const pool=chooseExactReplayPool(payload,mint,quoteMint);
+    if(pool)return pool;
+    if(!Array.isArray(payload?.data)||payload.data.length===0)break;
+  }
+  return null;
+}
 
 export async function hydrateReplayMarketCandles(env={},input={}, {fetchImpl=providerFetch}={}){
   const db=intelligenceDb(env);if(!db)return{ok:false,state:'unavailable',error:'intelligence_db_unavailable'};
@@ -60,9 +83,9 @@ export async function hydrateReplayMarketCandles(env={},input={}, {fetchImpl=pro
   await markLease(db,key,'running',null,{leaseUntil:now+LEASE_SECONDS,startedAt:now});
   try{
     const indexed=await first(db.prepare(`SELECT COUNT(*) count FROM intelligence_price_candles WHERE mint=? AND quote_mint=? AND bucket_seconds=? AND bucket_start BETWEEN ? AND ?`).bind(mint,quoteMint,spec.bucketSeconds,from,to));if(n(indexed?.count)>0){await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',candles:Math.trunc(n(indexed.count)),source:'indexed'};}
-    const poolsUrl=`https://api.geckoterminal.com/api/v2/networks/solana/tokens/${encodeURIComponent(mint)}/pools?include=base_token,quote_token&page=1`,pools=await fetchJson(poolsUrl,fetchImpl),pool=chooseExactReplayPool(pools,mint,quoteMint);
+    const pool=await discoverExactReplayPool(env,mint,quoteMint,{fetchImpl});
     if(!pool){await markLease(db,key,'empty','no_exact_quote_pool',{completedAt:nowSec()});return{ok:true,state:'unavailable',candles:0,reason:'no_exact_quote_pool'};}
-    const wanted=Math.max(1,Math.ceil((to-from)/spec.bucketSeconds)+2),maxPages=Math.min(2,Math.max(1,Math.ceil(wanted/1000)));let cursor=to+spec.bucketSeconds,rows=[];
+    const wanted=Math.max(1,Math.ceil((to-from)/spec.bucketSeconds)+2),maxPages=Math.min(3,Math.max(1,Math.ceil(wanted/1000)));let cursor=to+spec.bucketSeconds,rows=[];
     for(let page=0;page<maxPages;page++){
       const url=`https://api.geckoterminal.com/api/v2/networks/solana/pools/${encodeURIComponent(pool.address)}/ohlcv/${spec.timeframe}?aggregate=${spec.aggregate}&before_timestamp=${Math.trunc(cursor)}&limit=1000&currency=token&token=${encodeURIComponent(mint)}`,payload=await fetchJson(url,fetchImpl),list=payload?.data?.attributes?.ohlcv_list,normalized=normalizeGeckoOhlcvRows(list,spec.bucketSeconds,from,to);rows.push(...normalized);const raw=Array.isArray(list)?list:[],timestamps=raw.map(item=>Array.isArray(item)?Math.trunc(n(item[0])):0).filter(Boolean);if(!timestamps.length)break;const earliest=Math.min(...timestamps);if(earliest<=from)break;cursor=earliest-1;
     }
