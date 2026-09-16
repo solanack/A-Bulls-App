@@ -13,40 +13,90 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Test and publish both workers
+  release-checks:
+    name: Test and build release artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CF_DEPLOY: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-      - name: Require deployment credentials
-        run: |
-          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Add CLOUDFLARE_API_TOKEN to repository Actions secrets. Nothing was deployed."; exit 1; }
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Add CLOUDFLARE_ACCOUNT_ID to repository Actions secrets. Nothing was deployed."; exit 1; }
       - name: Install dependencies
         run: npm install --ignore-scripts --no-fund --no-audit
       - name: Verify release baseline
         run: npm run verify:release
       - name: All repository tests
         run: npm test
+      - name: Typecheck
+        run: npm run typecheck
       - name: Build production frontend
+        env:
+          CF_DEPLOY: "1"
         run: npm run build
-      - name: Bundle intelligence worker before touching production
+      - name: Intelligence Worker dry-run
         run: npx wrangler deploy --dry-run --config workers/wrangler.production.toml
+      - name: Frontend Worker dry-run using generated configuration
+        run: |
+          test -f .wrangler/deploy/config.json
+          npx wrangler deploy --dry-run --config .wrangler/deploy/config.json
+      - name: Upload exact tested frontend release
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-frontend-${{ github.sha }}
+          path: |
+            .output
+            .wrangler
+            public/release.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: Publish tested release artifacts
+    needs: release-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      LIVE_REPLAY_FROM: ${{ vars.LIVE_REPLAY_FROM }}
+      LIVE_REPLAY_TO: ${{ vars.LIVE_REPLAY_TO }}
+      LIVE_REPLAY_EXPECTED_SIGNATURES: ${{ vars.LIVE_REPLAY_EXPECTED_SIGNATURES }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Require deployment credentials and pinned live fixture
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Add CLOUDFLARE_API_TOKEN to repository Actions secrets. Nothing was deployed."; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Add CLOUDFLARE_ACCOUNT_ID to repository Actions secrets. Nothing was deployed."; exit 1; }
+          test -n "$LIVE_REPLAY_FROM" || { echo "::error::Set LIVE_REPLAY_FROM to the retained fixture window."; exit 1; }
+          test -n "$LIVE_REPLAY_TO" || { echo "::error::Set LIVE_REPLAY_TO to the retained fixture window."; exit 1; }
+          test -n "$LIVE_REPLAY_EXPECTED_SIGNATURES" || { echo "::error::Set LIVE_REPLAY_EXPECTED_SIGNATURES to pinned retained receipts."; exit 1; }
+      - name: Install deployment tooling
+        run: npm install --ignore-scripts --no-fund --no-audit
+      - name: Download exact tested frontend release
+        uses: actions/download-artifact@v4
+        with:
+          name: tested-frontend-${{ github.sha }}
+          path: .
+      - name: Verify downloaded frontend configuration and release identity
+        run: |
+          test -f .wrangler/deploy/config.json
+          test -f public/release.json
+          node -e 'const r=require("./public/release.json"); if(r.commit!==process.env.GITHUB_SHA) throw new Error(`artifact commit ${r.commit} != ${process.env.GITHUB_SHA}`)'
+      - name: Frontend dry-run from downloaded tested artifact
+        run: npx wrangler deploy --dry-run --config .wrangler/deploy/config.json
       - name: Apply intelligence migrations
         run: npx wrangler d1 migrations apply INTELLIGENCE_DB --remote --config workers/wrangler.production.toml
       - name: Publish intelligence worker
         run: npx wrangler deploy --config workers/wrangler.production.toml
       - name: Publish frontend worker
-        run: npx wrangler deploy
+        run: npx wrangler deploy --config .wrangler/deploy/config.json
       - name: Verify public application and resolver routes
         run: node scripts/check-live.mjs
       - name: Diagnose live galaxy population

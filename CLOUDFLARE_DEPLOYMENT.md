@@ -32,6 +32,12 @@ In this repository's GitHub Settings → Secrets and variables → Actions, conf
 - `CLOUDFLARE_API_TOKEN`: an existing scoped Cloudflare token authorized to publish these Workers and apply migrations to their D1 database.
 - `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account containing both Workers and the existing database.
 
+Also configure the repository variables `LIVE_REPLAY_FROM`, `LIVE_REPLAY_TO`, and
+`LIVE_REPLAY_EXPECTED_SIGNATURES` (a comma-separated list). They pin the retained
+window and receipts for the known active wallet/token fixture. The live gate fails
+when that exact subject has no Replay events, lacks its expected receipts or WSOL
+OHLC, or no longer appears in the wallet's aggregated holdings.
+
 Do not paste either into chat or commit credentials. Pushes to main trigger the deployment workflow, or run **Deploy Cloudflare** from Actions. Missing credentials fail the workflow explicitly before any migration or publication step; they do not change production. The separate release workflow can run its tests and builds without production credentials.
 
 ## Verify the actual release
@@ -56,5 +62,16 @@ HTTP success and a successful build do not prove the 3D renderer works. On the S
 8. Replay/Evidence/Compare/Create still show their actual indexed coverage and cited evidence. Missing history is not fabricated, and Create/thesis publication remains account-authenticated rather than wallet-authenticated.
 
 The automated release gate certifies tests, TypeScript, production frontend build, and Intelligence Worker bundling, but it cannot certify the physical Seeker GPU/browser lifecycle. Keep the previous Cloudflare deployment versions available until the phone check passes.
+
+## Rollback order
+
+For an application/API incompatibility, normally restore the previous frontend
+deployment first so browser traffic stops depending on the newer API contract;
+then roll back the Intelligence Worker. Before either action, check the D1 schema
+and both versions' read/write compatibility. D1 migrations are not assumed to be
+reversible, and an older Worker must not be restored if it cannot safely operate
+against the current schema. If the incident is isolated to the API and the current
+frontend is confirmed compatible with the prior API, document that exception and
+its schema evidence before reversing the order.
 
 Existing provider and voice secrets remain in their respective Workers. This release does not change the alien voice provider or require re-entering those secrets.

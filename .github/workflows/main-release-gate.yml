@@ -48,3 +48,20 @@ jobs:
 
       - name: Intelligence worker bundle
         run: npx wrangler deploy --dry-run --config workers/wrangler.production.toml
+
+      - name: Frontend worker bundle from production build
+        run: |
+          test -f .wrangler/deploy/config.json
+          npx wrangler deploy --dry-run --config .wrangler/deploy/config.json
+
+      - name: Preserve tested frontend release
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-frontend-${{ github.sha }}
+          path: |
+            .output
+            .wrangler
+            public/release.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7

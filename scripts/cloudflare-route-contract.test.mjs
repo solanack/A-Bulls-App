@@ -16,9 +16,10 @@ test("the production frontend owns the abullsapp.com route", async () => {
   );
 });
 
-test("the live release check waits for Cloudflare propagation", async () => {
+test("the live release check waits for propagation and validates retained evidence", async () => {
   const check = await read("scripts/check-live.mjs");
-  assert.match(check, /waitForRelease/);
-  assert.match(check, /setTimeout/);
-  assert.match(check, /release\?\.commit===expected/);
+  assert.match(check, /LIVE_REPLAY_EXPECTED_SIGNATURES/);
+  assert.match(check, /validateReplay/);
+  assert.match(check, /validateHoldings/);
+  assert.match(check, /validateCandles/);
 });
