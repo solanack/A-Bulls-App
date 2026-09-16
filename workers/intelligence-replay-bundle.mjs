@@ -223,15 +223,16 @@ export async function handleReplayBundleRequest(request,env={}){
       windowComplete,
       jobs:Object.freeze(indexingJobs),
       disclosure:pendingJobs.length
-        ? 'Missing or partial public-wallet coverage was queued automatically. Duplicate searches reuse the same active job.'
+        ? 'Missing or partial public-wallet coverage was queued automatically. Duplicate searches reuse the same active job and the requested job is prioritized immediately.'
         : windowComplete&&!bundle.coverage.complete
           ? 'The selected Replay time window has completed bounded history hydration. Older wallet history may still remain outside this window.'
           : 'No additional wallet-history job was required for this request.'
     });
     const marketHydration=await replayMarketHydrationState(env,{mint:bundle.subject.mint,quoteMint:bundle.subject.quoteMint,from:bundle.window.from,to:bundle.window.to,bucketSeconds:bundle.window.bucketSeconds,candleCount:bundle.candles.length});
     const responseBundle=Object.freeze({...bundle,indexing,marketHydration});
-    if(pendingJobs.length&&env.__EXECUTION_CTX?.waitUntil){
-      env.__EXECUTION_CTX.waitUntil(runIntelligenceMeshScheduler(env,{limit:1}).catch(()=>null));
+    const requestedJobIds=pendingJobs.map(job=>Math.trunc(n(job.jobId))).filter(id=>id>0);
+    if(requestedJobIds.length&&env.__EXECUTION_CTX?.waitUntil){
+      env.__EXECUTION_CTX.waitUntil(runIntelligenceMeshScheduler(env,{limit:Math.min(2,requestedJobIds.length),jobIds:requestedJobIds}).catch(()=>null));
     }
     if(marketHydration.requested&&env.__EXECUTION_CTX?.waitUntil){
       env.__EXECUTION_CTX.waitUntil(hydrateReplayMarketCandles(env,{mint:bundle.subject.mint,quoteMint:bundle.subject.quoteMint,from:bundle.window.from,to:bundle.window.to,bucketSeconds:bundle.window.bucketSeconds}).catch(()=>null));
