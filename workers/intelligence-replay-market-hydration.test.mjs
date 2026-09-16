@@ -63,8 +63,9 @@ test('uses configured CoinGecko Demo onchain authentication before public GeckoT
 test('falls through an invalid Demo key to Pro before keyless public market data',async()=>{
   const calls=[];
   const fetchImpl=async(input,init={})=>{
-    calls.push({url:String(input),headers:init.headers||{}});
-    if(String(input).includes('api.coingecko.com'))return new Response('unauthorized',{status:401});
+    const url=new URL(String(input));
+    calls.push({url:url.toString(),headers:init.headers||{}});
+    if(url.hostname==='api.coingecko.com')return new Response('unauthorized',{status:401});
     return new Response(JSON.stringify(exactPoolPayload()),{headers:{'content-type':'application/json'}});
   };
   const selected=await discoverExactReplayPool({COINGECKO_API_KEY:'secret-key'},mint,quote,{fetchImpl});
