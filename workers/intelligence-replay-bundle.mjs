@@ -83,7 +83,7 @@ async function resolveWindow(db,chain,wallets,mint,input){
 }
 
 async function buildSolanaReplayBundle(env,db,subject,window,input){
-  const {wallets,mint,quoteMint}=subject,{from,to,bucketSeconds}=window,limit=Math.max(1,Math.min(1000,Math.trunc(n(input.limit)||500)),events=[],coverages=[],sourceSet=new Set();
+  const {wallets,mint,quoteMint}=subject,{from,to,bucketSeconds}=window,limit=Math.max(1,Math.min(1000,Math.trunc(n(input.limit)||500))),events=[],coverages=[],sourceSet=new Set();
   for(const wallet of wallets){
     const rows=await all(db.prepare(`SELECT e.signature,e.slot,e.block_time,e.wallet,e.counterparty,e.program_id,e.mint,e.event_class,e.sol_delta,e.token_delta,e.fee_lamports,e.source,e.confidence,MAX(COALESCE(p.verified,0)) verified,GROUP_CONCAT(DISTINCT p.source) provenance_sources,GROUP_CONCAT(DISTINCT p.commitment) commitments FROM bull_wallet_events e LEFT JOIN intelligence_event_provenance p ON p.signature=e.signature AND p.wallet=e.wallet WHERE e.wallet=? AND e.mint=? AND e.block_time BETWEEN ? AND ? GROUP BY e.signature,e.slot,e.block_time,e.wallet,e.counterparty,e.program_id,e.mint,e.event_class,e.sol_delta,e.token_delta,e.fee_lamports,e.source,e.confidence ORDER BY e.block_time ASC,e.slot ASC,e.signature ASC LIMIT ?`).bind(wallet,mint,from,to,limit));
     const signatures=rows.map(row=>s(row.signature)).filter(Boolean),routes=signatures.length?await all(db.prepare(`SELECT signature,wallet,hop_index,venue,pool,input_mint,output_mint,input_amount,output_amount,block_time,source,confidence FROM intelligence_trade_routes WHERE wallet=? AND block_time BETWEEN ? AND ? AND (input_mint=? OR output_mint=?) ORDER BY block_time ASC,signature ASC,hop_index ASC LIMIT ?`).bind(wallet,from,to,mint,mint,Math.min(4000,limit*4))):[],bySignature=new Map();
@@ -96,7 +96,7 @@ async function buildSolanaReplayBundle(env,db,subject,window,input){
 }
 
 async function buildChainReplayBundle(db,subject,window,input){
-  const {chain,wallets,mint,quoteMint}=subject,{from,to,bucketSeconds}=window,limit=Math.max(1,Math.min(1000,Math.trunc(n(input.limit)||500)),events=[],sourceSet=new Set();
+  const {chain,wallets,mint,quoteMint}=subject,{from,to,bucketSeconds}=window,limit=Math.max(1,Math.min(1000,Math.trunc(n(input.limit)||500))),events=[],sourceSet=new Set();
   for(const wallet of wallets){const rows=await all(db.prepare(`SELECT event_id,chain_key,tx_id,wallet_address,asset_address,quote_asset_address,block_height,block_time,event_class,side,amount,price_usd,source,source_kind,confidence,evidence_json FROM intelligence_chain_events_v2 WHERE chain_key=? AND wallet_address=? AND asset_address=? AND block_time BETWEEN ? AND ? ORDER BY block_time ASC,COALESCE(block_height,0) ASC,event_id ASC LIMIT ?`).bind(chain,wallet,mint,from,to,limit));for(const row of rows){const event=normalizedChainReplayEvent(row);event.sources.forEach(source=>sourceSet.add(source));events.push(event);}}
   events.sort((a,b)=>a.timestamp-b.timestamp||(a.slot||0)-(b.slot||0)||String(a.id||'').localeCompare(String(b.id||'')));
   let effectiveQuote=quoteMint;if(!effectiveQuote){const pair=await first(db.prepare(`SELECT quote_asset_address,COUNT(*) count FROM intelligence_price_candles_v2 WHERE chain_key=? AND asset_address=? AND bucket_start BETWEEN ? AND ? GROUP BY quote_asset_address ORDER BY count DESC LIMIT 1`).bind(chain,mint,from,to));effectiveQuote=s(pair?.quote_asset_address)||null;}
