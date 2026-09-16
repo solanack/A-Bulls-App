@@ -99,6 +99,59 @@ jobs:
         run: |
           node scripts/check-worker-migrations.mjs
           npx wrangler d1 migrations list INTELLIGENCE_DB --remote --config workers/wrangler.production.toml | tee pending-intelligence-migrations.txt
+      - name: Discover retained replay evidence fixture
+        run: |
+          set -euo pipefail
+          SQL=$(cat <<'SQL'
+          WITH candidate_rounds AS (
+            SELECT
+              id AS round_id,
+              wallet,
+              mint,
+              status,
+              CAST(entry_ts / 1000 AS INTEGER) AS from_ts,
+              CAST(COALESCE(exit_ts, entry_ts + 3600000) / 1000 AS INTEGER) AS to_ts,
+              updated_at
+            FROM matched_trade_rounds
+            WHERE status IN ('closed','open')
+              AND entry_ts IS NOT NULL
+              AND wallet IS NOT NULL AND wallet <> ''
+              AND mint IS NOT NULL AND mint <> ''
+          ), eligible AS (
+            SELECT r.*
+            FROM candidate_rounds r
+            WHERE r.to_ts >= r.from_ts
+              AND EXISTS (
+                SELECT 1
+                FROM intelligence_price_candles c
+                WHERE c.mint = r.mint
+                  AND c.quote_mint = 'So11111111111111111111111111111111111111112'
+                  AND c.bucket_seconds = 60
+                  AND c.bucket_start BETWEEN r.from_ts AND r.to_ts
+              )
+          )
+          SELECT
+            r.round_id,
+            r.wallet,
+            r.mint,
+            r.from_ts,
+            r.to_ts,
+            r.status,
+            r.updated_at,
+            e.signature,
+            e.block_time
+          FROM eligible r
+          JOIN bull_wallet_events e
+            ON e.wallet = r.wallet
+           AND e.mint = r.mint
+           AND e.block_time BETWEEN r.from_ts AND r.to_ts
+          WHERE e.signature IS NOT NULL AND e.signature <> ''
+          ORDER BY CASE WHEN r.status='closed' THEN 0 ELSE 1 END, r.updated_at DESC, e.block_time ASC
+          LIMIT 500;
+          SQL
+          )
+          npx wrangler d1 execute INTELLIGENCE_DB --remote --config workers/wrangler.production.toml --json --command "$SQL" > retained-live-evidence-query.json
+          node scripts/select-live-evidence-fixture.mjs retained-live-evidence-query.json | tee retained-live-evidence.json
       - name: Validate retained production evidence before mutation
         run: |
           set -o pipefail
@@ -118,6 +171,8 @@ jobs:
           name: production-preflight-${{ github.sha }}
           path: |
             pending-intelligence-migrations.txt
+            retained-live-evidence-query.json
+            retained-live-evidence.json
             retained-live-fixture.json
           if-no-files-found: warn
           retention-days: 14
