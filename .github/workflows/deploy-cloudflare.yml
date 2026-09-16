@@ -40,7 +40,7 @@ jobs:
       - name: Frontend Worker dry-run using generated configuration
         run: |
           test -f .wrangler/deploy/config.json
-          npx wrangler deploy --dry-run --config .wrangler/deploy/config.json
+          npx wrangler deploy --dry-run
       - name: Inventory every generated frontend file
         run: |
           find .output .wrangler public/release.json -type f -print0 | sort -z | xargs -0 sha256sum > release-artifact.sha256
@@ -93,7 +93,7 @@ jobs:
           sha256sum --check --strict release-artifact.sha256
           node -e 'const r=require("./public/release.json"); if(r.commit!==process.env.GITHUB_SHA) throw new Error(`artifact commit ${r.commit} != ${process.env.GITHUB_SHA}`)'
       - name: Frontend dry-run from downloaded tested artifact
-        run: npx wrangler deploy --dry-run --config .wrangler/deploy/config.json
+        run: npx wrangler deploy --dry-run
       - name: Inspect pending Intelligence D1 migrations
         run: |
           node scripts/check-worker-migrations.mjs
@@ -105,7 +105,7 @@ jobs:
       - name: Publish intelligence worker
         run: npx wrangler deploy --config workers/wrangler.production.toml
       - name: Publish frontend worker
-        run: npx wrangler deploy --config .wrangler/deploy/config.json
+        run: npx wrangler deploy
       - name: Verify public application and resolver routes
         run: node scripts/check-live.mjs
       - name: Diagnose live galaxy population
