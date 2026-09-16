@@ -6,11 +6,11 @@ const wallet="9P6Ej2CRTDYMW9628wXA8awM1t82jnfynYNNPSVx7pfU";
 const mint="5761e8gCMZFBHLU4RuFsfkWab96oJEtEr3uoF9A4pump";
 
 test("selected Fomo trade opens a bounded wallet-token Replay context",()=>{
-  const now=1_789_560_000_000,observed=now-60_000,selection=tradeReplaySelection({id:"trade-1",eventId:"sig-1",observedAt:observed,metadata:{wallet,mint}},null,now);
+  const now=1_789_560_000_000,observed=now-60_000,selection=tradeReplaySelection({id:"trade-1",eventId:"sig-1",verificationState:"observed",observedAt:observed,metadata:{wallet,mint}},null,now);
   assert.ok(selection);
   assert.equal(selection.wallet,wallet);
   assert.equal(selection.mint,mint);
-  assert.equal(selection.replayCursor,1);
+  assert.equal(selection.replayCursor,0);
   assert.deepEqual(selection.evidenceIds,["sig-1"]);
   assert.equal(selection.fromTs,observed-12*60*60*1000);
   assert.equal(selection.toTs,now);
@@ -29,4 +29,16 @@ test("Replay exposes the selected trade research tool family including Index",()
   assert.equal(normalizeTradeResearchMode("what-if"),"what-if");
   assert.equal(normalizeTradeResearchMode("index"),"index");
   assert.equal(normalizeTradeResearchMode("query"),null);
+});
+
+test("provider context and planet IDs never become observed Replay receipts",()=>{
+  const now=1_789_560_000_000;
+  for(const particle of [
+    {id:"planet:solana-core:"+mint,metadata:{mint}},
+    {id:"provider-trade",eventId:"fomo:provider-event",verificationState:"provider-reported" as const,metadata:{mint}},
+  ]) {
+    const selection=tradeReplaySelection(particle,wallet,now);
+    assert.deepEqual(selection?.evidenceIds,[]);
+    assert.equal(selection?.replayCursor,0);
+  }
 });

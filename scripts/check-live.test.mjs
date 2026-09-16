@@ -48,6 +48,16 @@ test("Fomo live checks require real PnL coverage and protect mapped trader token
   assert.equal(validateFomoGalaxy({ok:true,items:[trader]})[0].handle,'TraderOne');
   assert.throws(()=>validateFomoAudit({ok:true,counts:{traders:10,withPnl:4,withSolanaWallet:8}}),/unexpectedly low/);
   assert.doesNotThrow(()=>validateFomoAudit({ok:true,counts:{traders:10,withPnl:8,withSolanaWallet:8}}));
-  assert.throws(()=>validateFomoTrader({ok:true,positions:[],latestTrades:[]},trader),/lost a mapped provider-reported token position/);
-  assert.doesNotThrow(()=>validateFomoTrader({ok:true,positions:[{mint}],latestTrades:[]},trader));
+  assert.throws(()=>validateFomoTrader({ok:true,trader,positions:[],latestTrades:[]},trader),/lost a mapped provider-reported token position/);
+  assert.doesNotThrow(()=>validateFomoTrader({ok:true,trader,positions:[{mint,sourceKind:"fomo-reported"}],latestTrades:[]},trader));
+});
+
+test("Fomo checks reject unmapped stars and lost or misattributed provider context",()=>{
+  const trader={handle:"one",solanaWallet:LIVE_FIXTURE.wallet,reportedPnlUsd:1,topTokens:[{mint:LIVE_FIXTURE.mint}]};
+  assert.throws(()=>validateFomoGalaxy({ok:true,items:[{...trader,solanaWallet:null}]}),/addressable Solana/);
+  const body={ok:true,trader,positions:[{mint:LIVE_FIXTURE.mint,sourceKind:"fomo-reported"}],latestTrades:[]};
+  assert.throws(()=>validateFomoTrader({...body,trader:{...trader,handle:"other"}},trader),/different handle/);
+  assert.throws(()=>validateFomoTrader({...body,positions:[{mint:LIVE_FIXTURE.mint}]},trader),/source provenance/);
+  assert.throws(()=>validateFomoTrader({...body,positions:[{mint:LIVE_FIXTURE.mint,sourceKind:"a-bulls-observed"}]},trader),/lost a mapped/);
+  assert.throws(()=>validateFomoTrader({...body,latestTrades:[{},{},{},{}]},trader),/bounded system/);
 });

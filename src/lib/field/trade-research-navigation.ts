@@ -15,7 +15,7 @@ export const TRADE_RESEARCH_ACTIONS=Object.freeze([
 ]);
 const TRADE_RESEARCH_MODES=new Set<FieldMode>(TRADE_RESEARCH_ACTIONS.map(item=>item.mode));
 
-type TradeLike=Pick<FieldParticle,"id"|"eventId"|"observedAt"|"metadata">;
+type TradeLike=Pick<FieldParticle,"id"|"eventId"|"observedAt"|"metadata"> & {verificationState?:FieldParticle["verificationState"]};
 
 export function normalizeTradeResearchMode(value:unknown):FieldMode|null{
   const mode=String(value??"") as FieldMode;
@@ -29,8 +29,8 @@ export function tradeReplaySelection(particle:TradeLike,fallbackWallet:string|nu
   if(!SOLANA_ADDRESS_RE.test(wallet)||!SOLANA_ADDRESS_RE.test(mint))return null;
   const rawObserved=Number(particle.observedAt),normalized=Number.isFinite(rawObserved)&&rawObserved>0?(rawObserved<10_000_000_000?rawObserved*1000:rawObserved):nowMs;
   const center=Math.max(0,Math.min(nowMs,normalized)),fromTs=Math.max(0,center-HALF_DAY_MS),toTs=Math.max(fromTs,Math.min(nowMs,center+HALF_DAY_MS));
-  const eventId=String(particle.eventId??particle.id??"").trim();
-  return Object.freeze({wallet,mint,fromTs,toTs,replayCursor:1 as const,evidenceIds:Object.freeze(eventId?[eventId]:[])});
+  const eventId=particle.verificationState==="observed"?String(particle.eventId??"").trim():"";
+  return Object.freeze({wallet,mint,fromTs,toTs,replayCursor:0 as const,evidenceIds:Object.freeze(eventId?[eventId]:[])});
 }
 
 export function researchModeFromEvent(event:Event){
