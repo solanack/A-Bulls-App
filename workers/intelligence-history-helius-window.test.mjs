@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildHeliusWindowConfig, heliusWindowCursor, decodeRpcWalletTx } from './intelligence-history-engine.mjs';
+import { buildHeliusWindowConfig, heliusWindowCursor, decodeRpcWalletTx, historyRpcRequest, historyRpcTimeoutMs } from './intelligence-history-engine.mjs';
 
 const wallet='11111111111111111111111111111111';
 const mint='33333333333333333333333333333333';
@@ -22,6 +22,27 @@ test('Helius pagination tokens are namespaced away from standard signature curso
   assert.equal(heliusWindowCursor('gtfa:123:4'),'123:4');
   assert.equal(heliusWindowCursor('5abcSignature'),'');
   assert.equal(heliusWindowCursor(''),'');
+});
+
+test('history RPC timeout is configurable but remains bounded',()=>{
+  assert.equal(historyRpcTimeoutMs({INTELLIGENCE_HISTORY_RPC_TIMEOUT_MS:'5000'}),5000);
+  assert.equal(historyRpcTimeoutMs({INTELLIGENCE_HISTORY_RPC_TIMEOUT_MS:'10'}),1000);
+  assert.equal(historyRpcTimeoutMs({INTELLIGENCE_HISTORY_RPC_TIMEOUT_MS:'99999'}),15000);
+  assert.equal(historyRpcTimeoutMs({},{}),5000);
+});
+
+test('stalled history RPC calls abort with source-labeled timeout evidence',async()=>{
+  const source={name:'test-rpc',kind:'rpc',url:'https://rpc.invalid'};
+  const fetchImpl=async(_url,init={})=>new Promise((resolve,reject)=>{
+    assert.ok(init.signal);
+    const abort=()=>{const error=new Error('aborted');error.name='AbortError';reject(error)};
+    if(init.signal.aborted)return abort();
+    init.signal.addEventListener('abort',abort,{once:true});
+  });
+  await assert.rejects(
+    historyRpcRequest(source,'getSignaturesForAddress',[wallet,{}],{fetchImpl,timeoutMs:1000}),
+    /test-rpc:getSignaturesForAddress:timeout_1000/
+  );
 });
 
 test('full Helius archival transactions decode through the existing evidence decoder',()=>{
