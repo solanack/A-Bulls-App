@@ -12,10 +12,18 @@ const PUBLIC_RPC='https://api.mainnet-beta.solana.com';
 const MAX_PAGE=50,MAX_TX=25,TX_CONCURRENCY=5;
 const HELIUS_WINDOW_CREDITS=100;
 const HELIUS_CURSOR_PREFIX='gtfa:';
+const DEFAULT_HISTORY_RPC_TIMEOUT_MS=5000;
+const MIN_HISTORY_RPC_TIMEOUT_MS=1000;
+const MAX_HISTORY_RPC_TIMEOUT_MS=15000;
 const s=v=>String(v==null?'':v).trim();
 const n=v=>Number.isFinite(Number(v))?Number(v):0;
 const finite=v=>v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const now=()=>Math.floor(Date.now()/1000);
+
+export function historyRpcTimeoutMs(env={},options={}){
+  const configured=n(options.rpcTimeoutMs??env.INTELLIGENCE_HISTORY_RPC_TIMEOUT_MS??DEFAULT_HISTORY_RPC_TIMEOUT_MS);
+  return Math.max(MIN_HISTORY_RPC_TIMEOUT_MS,Math.min(MAX_HISTORY_RPC_TIMEOUT_MS,Math.trunc(configured)||DEFAULT_HISTORY_RPC_TIMEOUT_MS));
+}
 
 export function resolveHistoryRpc(env={}){
   const explicit=s(env.INTELLIGENCE_RPC_URL||env.SOLANA_RPC_URL);
@@ -24,13 +32,23 @@ export function resolveHistoryRpc(env={}){
   if(key)return{name:'helius-standard-rpc',kind:'rpc',url:`https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(key)}`};
   return{name:'solana-public-rpc',kind:'rpc',url:PUBLIC_RPC};
 }
-async function rpc(source,method,params,fetchImpl=fetch){
-  const started=Date.now();
-  const r=await fetchImpl(source.url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
-  if(!r.ok)throw new Error(`${source.name}:${method}:http_${r.status}`);
-  const j=await r.json();if(j?.error)throw new Error(`${source.name}:${method}:${j.error.code||'rpc'}:${s(j.error.message)}`);
-  return{result:j?.result,latencyMs:Date.now()-started};
+
+export async function historyRpcRequest(source,method,params,{fetchImpl=fetch,timeoutMs=DEFAULT_HISTORY_RPC_TIMEOUT_MS}={}){
+  const bounded=Math.max(MIN_HISTORY_RPC_TIMEOUT_MS,Math.min(MAX_HISTORY_RPC_TIMEOUT_MS,Math.trunc(n(timeoutMs))||DEFAULT_HISTORY_RPC_TIMEOUT_MS)),started=Date.now(),controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),bounded);
+  try{
+    const r=await fetchImpl(source.url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:controller.signal});
+    if(!r.ok)throw new Error(`${source.name}:${method}:http_${r.status}`);
+    const j=await r.json();if(j?.error)throw new Error(`${source.name}:${method}:${j.error.code||'rpc'}:${s(j.error.message)}`);
+    return{result:j?.result,latencyMs:Date.now()-started};
+  }catch(error){
+    if(controller.signal.aborted||error?.name==='AbortError'||error?.name==='TimeoutError')throw new Error(`${source.name}:${method}:timeout_${bounded}`);
+    const message=s(error?.message||error)||'fetch_failed';
+    if(message.startsWith(`${source.name}:${method}:`))throw error;
+    throw new Error(`${source.name}:${method}:network:${message}`);
+  }finally{clearTimeout(timer)}
 }
+
 async function mapLimit(items,limit,fn){
   const out=new Array(items.length);let cursor=0;
   async function worker(){while(true){const i=cursor++;if(i>=items.length)return;out[i]=await fn(items[i],i)}}
@@ -79,7 +97,7 @@ async function backfillHeliusWindowPass(env,wallet,source,options,db){
   if(!config)throw new Error('helius_window_unbounded');
   const reservation=await reserveProviderCredits(env,Math.max(1,Math.trunc(n(env.HELIUS_HISTORY_WINDOW_CREDITS)||HELIUS_WINDOW_CREDITS)),'helius');
   if(reservation.blocked)throw new Error('provider_budget_blocked');
-  const response=await rpc(source,'getTransactionsForAddress',[s(wallet),config],options.fetchImpl),result=response.result||{},txRows=normalizeHeliusFullRows(result),sigs=txRows.map(row=>row.sig);
+  const response=await historyRpcRequest(source,'getTransactionsForAddress',[s(wallet),config],{fetchImpl:options.fetchImpl,timeoutMs:historyRpcTimeoutMs(env,options)}),result=response.result||{},txRows=normalizeHeliusFullRows(result),sigs=txRows.map(row=>row.sig);
   const decoded=txRows.flatMap(row=>decodeRpcWalletTx(row.sig,row.tx,s(wallet),'helius-getTransactionsForAddress')),
     ingested=await ingestDecodedObservations(env,s(wallet),decoded,{windowKey:`helius-window:${Math.trunc(n(options.from))}:${Math.trunc(n(options.to))}`}),
     paginationToken=s(result.paginationToken),complete=!paginationToken,nextCursor=complete?null:`${HELIUS_CURSOR_PREFIX}${paginationToken}`,
@@ -93,10 +111,10 @@ async function backfillHeliusWindowPass(env,wallet,source,options,db){
 export async function backfillHistoryPass(env,wallet,options={}){
   if(!WALLET_RE.test(s(wallet)))throw new Error('invalid_public_wallet');
   const db=intelligenceDb(env);if(!db)throw new Error('Intelligence database binding is unavailable.');
-  const source=options.source||resolveHistoryRpc(env),from=finite(options.from),to=finite(options.to);
+  const source=options.source||resolveHistoryRpc(env),from=finite(options.from),to=finite(options.to),timeoutMs=historyRpcTimeoutMs(env,options);
 
   if(heliusSource(source)&&from!=null&&to!=null){
-    try{return await backfillHeliusWindowPass(env,wallet,source,options,db)}
+    try{return await backfillHeliusWindowPass(env,wallet,source,{...options,rpcTimeoutMs:timeoutMs},db)}
     catch(error){
       await sourceHealth(db,{...source,name:'helius-getTransactionsForAddress',kind:'archive-rpc'},'error',null,s(error?.message)).catch(()=>null);
       // Keep the standard RPC adapter as a fail-closed repair path when the
@@ -111,9 +129,9 @@ export async function backfillHistoryPass(env,wallet,options={}){
       const reservation=await reserveProviderCredits(env,1+Math.min(pageSize,MAX_TX),'helius');
       if(reservation.blocked)throw new Error('provider_budget_blocked');
     }
-    const sigResult=await rpc(source,'getSignaturesForAddress',[s(wallet),cfg],options.fetchImpl),sigs=Array.isArray(sigResult.result)?sigResult.result:[];
+    const sigResult=await historyRpcRequest(source,'getSignaturesForAddress',[s(wallet),cfg],{fetchImpl:options.fetchImpl,timeoutMs}),sigs=Array.isArray(sigResult.result)?sigResult.result:[];
     let txLatency=0;
-    const txRows=await mapLimit(sigs.slice(0,MAX_TX),TX_CONCURRENCY,async sig=>{try{const tx=await rpc(source,'getTransaction',[sig.signature,{commitment:'confirmed',maxSupportedTransactionVersion:0,encoding:'jsonParsed'}],options.fetchImpl);txLatency+=tx.latencyMs;return{sig,tx:tx.result}}catch(error){return{sig,tx:null,error:s(error?.message)}}});
+    const txRows=await mapLimit(sigs.slice(0,MAX_TX),TX_CONCURRENCY,async sig=>{try{const tx=await historyRpcRequest(source,'getTransaction',[sig.signature,{commitment:'confirmed',maxSupportedTransactionVersion:0,encoding:'jsonParsed'}],{fetchImpl:options.fetchImpl,timeoutMs});txLatency+=tx.latencyMs;return{sig,tx:tx.result}}catch(error){return{sig,tx:null,error:s(error?.message)}}});
     const decoded=txRows.flatMap(x=>decodeRpcWalletTx(x.sig,x.tx,s(wallet),source.name)),ingested=await ingestDecodedObservations(env,s(wallet),decoded,{windowKey:'progressive-history'}),nextCursor=s(sigs[sigs.length-1]?.signature),complete=sigs.length<pageSize||!nextCursor;
     await provenance(db,s(wallet),source,txRows);await upsertCoverage(db,s(wallet),source,sigs,ingested.accepted,complete);await sourceHealth(db,source,'ok',Math.round((sigResult.latencyMs+txLatency)/Math.max(1,1+txRows.length)));
     return{ok:true,wallet:s(wallet),source:source.name,signatures:sigs.length,transactionsFetched:txRows.filter(x=>x.tx).length,acceptedEvents:ingested.accepted,complete,nextCursor:complete?null:nextCursor,state:complete?'complete-history':'partial-history'};
