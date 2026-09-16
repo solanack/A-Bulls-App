@@ -1,25 +1,24 @@
 /* Demand-driven Replay market hydration.
- * Public Replay reads stay cache-first: this module runs only from waitUntil after an
- * empty indexed OHLC read, fetches one exact Solana base/quote pool from GeckoTerminal,
- * and persists source-labeled candles for the next Replay poll. No price path is inferred.
+ * Public Replay reads stay cache-first. Empty OHLC requests use authenticated
+ * CoinGecko Onchain when configured, then the public GeckoTerminal endpoint, and
+ * persist only exact source-labeled base/quote candles. No price path is inferred.
  */
 import { intelligenceDb } from './intelligence-indexer.mjs';
 import { providerFetch } from './intelligence-fetch.mjs';
 
 const ADDRESS_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-const PROVIDER='geckoterminal';
-const LEASE_SECONDS=45;
+const PROVIDER='onchain-market';
+const LEASE_SECONDS=60;
 const EMPTY_COOLDOWN_SECONDS=300;
-const ERROR_COOLDOWN_SECONDS=60;
+const ERROR_COOLDOWN_SECONDS=20;
 const s=value=>String(value==null?'':value).trim();
 const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const finitePositive=value=>{const out=Number(value);return Number.isFinite(out)&&out>0?out:null;};
 const nowSec=()=>Math.floor(Date.now()/1000);
-const jsonHeaders={accept:'application/json;version=20230203','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
 function relationAddress(value){const id=s(value);return id.startsWith('solana_')?id.slice('solana_'.length):id;}
-function leaseKey({mint,quoteMint,bucketSeconds,from,to}){return `replay-market:v1:${s(mint)}:${s(quoteMint)}:${Math.trunc(n(bucketSeconds)||60)}:${Math.trunc(n(from))}:${Math.trunc(n(to))}`;}
+function leaseKey({mint,quoteMint,bucketSeconds,from,to}){return `replay-market:v2:${s(mint)}:${s(quoteMint)}:${Math.trunc(n(bucketSeconds)||60)}:${Math.trunc(n(from))}:${Math.trunc(n(to))}`;}
 function candleSpec(bucketSeconds){const seconds=Math.max(60,Math.trunc(n(bucketSeconds)||60));if(seconds===60)return{timeframe:'minute',aggregate:1,bucketSeconds:60};if(seconds===300)return{timeframe:'minute',aggregate:5,bucketSeconds:300};if(seconds===900)return{timeframe:'minute',aggregate:15,bucketSeconds:900};if(seconds===3600)return{timeframe:'hour',aggregate:1,bucketSeconds:3600};if(seconds===14400)return{timeframe:'hour',aggregate:4,bucketSeconds:14400};if(seconds===43200)return{timeframe:'hour',aggregate:12,bucketSeconds:43200};if(seconds===86400)return{timeframe:'day',aggregate:1,bucketSeconds:86400};return null;}
 async function first(stmt){try{return await stmt.first();}catch{return null;}}
 
@@ -50,27 +49,49 @@ export async function replayMarketHydrationState(env={},input={}){
   return Object.freeze({provider:PROVIDER,needed:true,requested:true,pending:true,state:'queued',disclosure:'Historical market candles were queued automatically for this Replay.'});
 }
 
-async function fetchJson(url,fetchImpl,maxAttempts=2){
-  let lastStatus=0;
-  for(let attempt=0;attempt<Math.max(1,maxAttempts);attempt+=1){
-    const response=await fetchImpl(url,{headers:jsonHeaders});
-    lastStatus=response?.status||0;
-    if(response?.ok){const payload=await response.json();if(!payload||typeof payload!=='object')throw new Error('geckoterminal_invalid_response');return payload;}
-    const retryable=lastStatus===429||lastStatus>=500;
-    if(!retryable||attempt+1>=maxAttempts)throw new Error(`geckoterminal_http_${lastStatus}`);
-    await sleep(200*(attempt+1));
+export function replayMarketProviders(env={}){
+  const key=s(env.COINGECKO_API_KEY),mode=s(env.COINGECKO_API_MODE).toLowerCase(),providers=[];
+  if(key&&mode!=='pro')providers.push(Object.freeze({name:'coingecko-demo-onchain',base:'https://api.coingecko.com/api/v3/onchain',headers:{'x-cg-demo-api-key':key}}));
+  if(key&&mode!=='demo')providers.push(Object.freeze({name:'coingecko-pro-onchain',base:'https://pro-api.coingecko.com/api/v3/onchain',headers:{'x-cg-pro-api-key':key}}));
+  providers.push(Object.freeze({name:'geckoterminal-public',base:'https://api.geckoterminal.com/api/v2',headers:{}}));
+  return Object.freeze(providers);
+}
+
+function retryDelay(response,attempt){
+  const raw=s(response?.headers?.get?.('retry-after')),seconds=Number(raw);
+  if(Number.isFinite(seconds)&&seconds>0)return Math.min(4000,Math.max(500,seconds*1000));
+  return Math.min(2500,700*(attempt+1));
+}
+
+async function fetchMarketPath(env,path,fetchImpl=providerFetch,{preferredProvider=''}={}){
+  const configured=[...replayMarketProviders(env)],preferred=s(preferredProvider),providers=preferred?[...configured.filter(item=>item.name===preferred),...configured.filter(item=>item.name!==preferred)]:configured,errors=[];
+  for(const provider of providers){
+    let lastStatus=0;
+    for(let attempt=0;attempt<2;attempt+=1){
+      const response=await fetchImpl(`${provider.base}${path}`,{headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)',...provider.headers}});
+      lastStatus=response?.status||0;
+      if(response?.ok){
+        const payload=await response.json();
+        if(!payload||typeof payload!=='object'){errors.push(`${provider.name}:invalid_response`);break;}
+        return Object.freeze({payload,provider:provider.name});
+      }
+      const retryable=lastStatus===429||lastStatus>=500;
+      if(retryable&&attempt===0){await sleep(retryDelay(response,attempt));continue;}
+      errors.push(`${provider.name}:http_${lastStatus}`);break;
+    }
   }
-  throw new Error(`geckoterminal_http_${lastStatus}`);
+  throw new Error(`market_sources_exhausted:${errors.join(',')||'unknown'}`);
 }
 
 export async function discoverExactReplayPool(env={},mint='',quoteMint='',{fetchImpl=providerFetch}={}){
   const pages=Math.max(1,Math.min(5,Math.trunc(n(env.REPLAY_MARKET_POOL_PAGES)||3)));
+  let preferredProvider='';
   for(let page=1;page<=pages;page+=1){
-    const poolsUrl=`https://api.geckoterminal.com/api/v2/networks/solana/tokens/${encodeURIComponent(mint)}/pools?include=base_token,quote_token&page=${page}`;
-    const payload=await fetchJson(poolsUrl,fetchImpl);
-    const pool=chooseExactReplayPool(payload,mint,quoteMint);
-    if(pool)return pool;
-    if(!Array.isArray(payload?.data)||payload.data.length===0)break;
+    const path=`/networks/solana/tokens/${encodeURIComponent(mint)}/pools?include=base_token,quote_token&page=${page}`;
+    const response=await fetchMarketPath(env,path,fetchImpl,{preferredProvider});preferredProvider=response.provider;
+    const pool=chooseExactReplayPool(response.payload,mint,quoteMint);
+    if(pool)return Object.freeze({...pool,provider:response.provider});
+    if(!Array.isArray(response.payload?.data)||response.payload.data.length===0)break;
   }
   return null;
 }
@@ -85,14 +106,16 @@ export async function hydrateReplayMarketCandles(env={},input={}, {fetchImpl=pro
     const indexed=await first(db.prepare(`SELECT COUNT(*) count FROM intelligence_price_candles WHERE mint=? AND quote_mint=? AND bucket_seconds=? AND bucket_start BETWEEN ? AND ?`).bind(mint,quoteMint,spec.bucketSeconds,from,to));if(n(indexed?.count)>0){await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',candles:Math.trunc(n(indexed.count)),source:'indexed'};}
     const pool=await discoverExactReplayPool(env,mint,quoteMint,{fetchImpl});
     if(!pool){await markLease(db,key,'empty','no_exact_quote_pool',{completedAt:nowSec()});return{ok:true,state:'unavailable',candles:0,reason:'no_exact_quote_pool'};}
-    const wanted=Math.max(1,Math.ceil((to-from)/spec.bucketSeconds)+2),maxPages=Math.min(3,Math.max(1,Math.ceil(wanted/1000)));let cursor=to+spec.bucketSeconds,rows=[];
+    const wanted=Math.max(1,Math.ceil((to-from)/spec.bucketSeconds)+2),maxPages=Math.min(3,Math.max(1,Math.ceil(wanted/1000)));let cursor=to+spec.bucketSeconds,rows=[],provider=pool.provider;
     for(let page=0;page<maxPages;page++){
-      const url=`https://api.geckoterminal.com/api/v2/networks/solana/pools/${encodeURIComponent(pool.address)}/ohlcv/${spec.timeframe}?aggregate=${spec.aggregate}&before_timestamp=${Math.trunc(cursor)}&limit=1000&currency=token&token=${encodeURIComponent(mint)}`,payload=await fetchJson(url,fetchImpl),list=payload?.data?.attributes?.ohlcv_list,normalized=normalizeGeckoOhlcvRows(list,spec.bucketSeconds,from,to);rows.push(...normalized);const raw=Array.isArray(list)?list:[],timestamps=raw.map(item=>Array.isArray(item)?Math.trunc(n(item[0])):0).filter(Boolean);if(!timestamps.length)break;const earliest=Math.min(...timestamps);if(earliest<=from)break;cursor=earliest-1;
+      const path=`/networks/solana/pools/${encodeURIComponent(pool.address)}/ohlcv/${spec.timeframe}?aggregate=${spec.aggregate}&before_timestamp=${Math.trunc(cursor)}&limit=1000&currency=token&token=${encodeURIComponent(mint)}`;
+      const response=await fetchMarketPath(env,path,fetchImpl,{preferredProvider:provider});provider=response.provider;
+      const list=response.payload?.data?.attributes?.ohlcv_list,normalized=normalizeGeckoOhlcvRows(list,spec.bucketSeconds,from,to);rows.push(...normalized);const raw=Array.isArray(list)?list:[],timestamps=raw.map(item=>Array.isArray(item)?Math.trunc(n(item[0])):0).filter(Boolean);if(!timestamps.length)break;const earliest=Math.min(...timestamps);if(earliest<=from)break;cursor=earliest-1;
     }
     const byBucket=new Map();for(const row of rows)byBucket.set(row.bucket_start,row);rows=[...byBucket.values()].sort((a,b)=>a.bucket_start-b.bucket_start);
     if(!rows.length){await markLease(db,key,'empty','no_ohlcv_rows_in_window',{completedAt:nowSec()});return{ok:true,state:'unavailable',candles:0,reason:'no_ohlcv_rows_in_window'};}
-    const source=JSON.stringify([`${PROVIDER}:${pool.address}`]),statements=rows.map(row=>db.prepare(`INSERT INTO intelligence_price_candles(mint,quote_mint,bucket_start,bucket_seconds,open,high,low,close,volume_base,volume_quote,swap_count,wallet_count,confidence,source_set_json,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0,0,0,0.85,?,unixepoch()) ON CONFLICT(mint,quote_mint,bucket_start,bucket_seconds) DO UPDATE SET open=excluded.open,high=excluded.high,low=excluded.low,close=excluded.close,confidence=MAX(confidence,excluded.confidence),source_set_json=excluded.source_set_json,updated_at=unixepoch()`).bind(mint,quoteMint,row.bucket_start,row.bucket_seconds,row.open,row.high,row.low,row.close,source));
+    const source=JSON.stringify([`${provider}:${pool.address}`]),statements=rows.map(row=>db.prepare(`INSERT INTO intelligence_price_candles(mint,quote_mint,bucket_start,bucket_seconds,open,high,low,close,volume_base,volume_quote,swap_count,wallet_count,confidence,source_set_json,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0,0,0,0.85,?,unixepoch()) ON CONFLICT(mint,quote_mint,bucket_start,bucket_seconds) DO UPDATE SET open=excluded.open,high=excluded.high,low=excluded.low,close=excluded.close,confidence=MAX(confidence,excluded.confidence),source_set_json=excluded.source_set_json,updated_at=unixepoch()`).bind(mint,quoteMint,row.bucket_start,row.bucket_seconds,row.open,row.high,row.low,row.close,source));
     for(let index=0;index<statements.length;index+=50)await db.batch(statements.slice(index,index+50));
-    await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',candles:rows.length,source:PROVIDER,pool:pool.address};
+    await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',candles:rows.length,source:provider,pool:pool.address};
   }catch(error){const code=s(error?.message||error)||'market_hydration_failed';await markLease(db,key,'error',code,{completedAt:nowSec()}).catch(()=>null);return{ok:false,state:'unavailable',error:code};}
 }
