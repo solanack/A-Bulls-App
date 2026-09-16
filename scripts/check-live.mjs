@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 
 export const LIVE_FIXTURE = Object.freeze({
@@ -8,12 +9,18 @@ export const LIVE_FIXTURE = Object.freeze({
   mint: "5761e8gCMZFBHLU4RuFsfkWab96oJEtEr3uoF9A4pump",
   quoteMint: "So11111111111111111111111111111111111111112",
 });
+const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const SOLANA_SIGNATURE_RE = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 
 const requiredInteger = (name, value) => {
   const parsed = Number(value);
   assert.ok(Number.isSafeInteger(parsed) && parsed > 0, `${name} must be a positive Unix timestamp`);
   return parsed;
+};
+
+const asObject = (value, message) => {
+  assert.ok(value && typeof value === "object" && !Array.isArray(value), message);
+  return value;
 };
 
 export function fixtureFromFrozenCut(body, expected = LIVE_FIXTURE) {
@@ -25,25 +32,33 @@ export function fixtureFromFrozenCut(body, expected = LIVE_FIXTURE) {
   const manifest = asObject(body.manifest, "Saved Cut response is missing its manifest");
   assert.equal(manifest.subject?.kind, "wallet-token", "Saved Cut has a different subject kind");
   assert.equal(manifest.subject?.id, `${expected.wallet}:${expected.mint}`, "Saved Cut has a different subject");
-  const solanaReceipts = (manifest.evidence || []).filter((receipt) =>
-    SOLANA_SIGNATURE_RE.test(String(receipt?.signature || "").trim()),
-  );
-  const signatures = solanaReceipts.map((receipt) => String(receipt.signature).trim());
-  assert.ok(signatures.length > 0, "Saved Cut has no retained Solana receipt signatures");
-  const from = requiredInteger("manifest.coverage.from", manifest.coverage?.from);
-  const to = requiredInteger("manifest.coverage.to", manifest.coverage?.to);
-  assert.ok(to >= from, "LIVE_REPLAY_TO must not precede LIVE_REPLAY_FROM");
-  for (const receipt of solanaReceipts) {
-    const blockTime = requiredInteger(`receipt ${receipt.id || receipt.signature} blockTime`, receipt.blockTime);
-    assert.ok(blockTime >= from && blockTime <= to, "Saved Cut receipt falls outside its coverage window");
-  }
-  return Object.freeze({ ...expected, from, to, signatures: Object.freeze([...new Set(signatures)]) });
+  assert.ok(Array.isArray(manifest.evidence), "Saved Cut manifest is missing its evidence list");
+  return Object.freeze({ ...expected, manifest });
 }
 
-const asObject = (value, message) => {
-  assert.ok(value && typeof value === "object" && !Array.isArray(value), message);
-  return value;
-};
+export function validateEvidenceFixture(value) {
+  const fixture = asObject(value, "Retained evidence fixture is missing");
+  const wallet = String(fixture.wallet || "").trim();
+  const mint = String(fixture.mint || "").trim();
+  const quoteMint = String(fixture.quoteMint || "").trim();
+  const from = requiredInteger("evidence.from", fixture.from);
+  const to = requiredInteger("evidence.to", fixture.to);
+  assert.ok(SOLANA_ADDRESS_RE.test(wallet), "Retained evidence fixture has an invalid wallet");
+  assert.ok(SOLANA_ADDRESS_RE.test(mint), "Retained evidence fixture has an invalid mint");
+  assert.ok(SOLANA_ADDRESS_RE.test(quoteMint), "Retained evidence fixture has an invalid quote mint");
+  assert.ok(to >= from, "Retained evidence fixture end precedes its start");
+  assert.ok(to - from <= 60 * 60 * 24 * 365 * 5, "Retained evidence fixture window is too large");
+  const signatures = [...new Set((Array.isArray(fixture.signatures) ? fixture.signatures : [])
+    .map((signature) => String(signature || "").trim())
+    .filter((signature) => SOLANA_SIGNATURE_RE.test(signature)))];
+  assert.ok(signatures.length > 0, "Retained evidence fixture has no replayable Solana receipts");
+  return Object.freeze({ wallet, mint, quoteMint, from, to, signatures: Object.freeze(signatures) });
+}
+
+export function loadEvidenceFixture(path = process.env.LIVE_EVIDENCE_FIXTURE_FILE || "retained-live-evidence.json") {
+  assert.ok(fs.existsSync(path), `Retained evidence fixture file is missing: ${path}`);
+  return validateEvidenceFixture(JSON.parse(fs.readFileSync(path, "utf8")));
+}
 
 export function validateReplay(body, fixture) {
   assert.equal(body?.ok, true, `Replay failed: ${body?.error || "not ok"}`);
@@ -73,7 +88,7 @@ export function validateHoldings(body, fixture) {
   );
 }
 
-export function validateCandles(bundle, fixture) {
+export function validateCandles(bundle) {
   assert.ok(Array.isArray(bundle.candles) && bundle.candles.length > 0, "Known OHLC fixture returned no candles");
   for (const candle of bundle.candles) {
     assert.ok(Number.isFinite(candle?.timestamp), "Fixture candle is missing its timestamp");
@@ -82,7 +97,7 @@ export function validateCandles(bundle, fixture) {
   }
 }
 
-export function validateCutPage(document, fixture) {
+export function validateCutPage(document) {
   assert.match(document, /VERIFY\s*(?:·|-)?\s*Frozen Cut/i, "Canonical /?cut= page did not render the frozen VERIFY viewer");
   assert.match(document, /This viewer renders the frozen manifest only/i, "VERIFY page does not preserve the frozen-manifest disclosure");
   assert.ok(!/share_not_found|Cut unavailable/i.test(document), "Canonical /?cut= page reports that the retained Cut is unavailable");
@@ -91,7 +106,8 @@ export function validateCutPage(document, fixture) {
 export async function runLiveChecks({
   origin = "https://abullsapp.com",
   expected,
-  fixture = LIVE_FIXTURE,
+  cutFixture = LIVE_FIXTURE,
+  evidenceFixture = null,
   fixtureOnly = false,
   fetchImpl = fetch,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -105,10 +121,12 @@ export async function runLiveChecks({
     assert.equal(response.status, 200, `${path}: HTTP ${response.status}`);
     return response;
   };
-  const frozenCut = await (await get(`/api/intelligence/trickster/share/${fixture.cutId}`)).json();
-  const retainedFixture = fixtureFromFrozenCut(frozenCut, fixture);
-  validateCutPage(await (await get(`/?cut=${fixture.cutId}`)).text(), retainedFixture);
 
+  const frozenCut = await (await get(`/api/intelligence/trickster/share/${cutFixture.cutId}`)).json();
+  fixtureFromFrozenCut(frozenCut, cutFixture);
+  validateCutPage(await (await get(`/?cut=${cutFixture.cutId}`)).text());
+
+  const retainedFixture = evidenceFixture ? validateEvidenceFixture(evidenceFixture) : loadEvidenceFixture();
   const replayResponse = await get("/api/intelligence/replay-bundle", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -123,11 +141,11 @@ export async function runLiveChecks({
     }),
   });
   const replay = validateReplay(await replayResponse.json(), retainedFixture);
-  validateCandles(replay, retainedFixture);
+  validateCandles(replay);
   const holdingsPath = `/api/intelligence/research/holdings?wallet=${encodeURIComponent(retainedFixture.wallet)}&limit=10`;
   validateHoldings(await (await get(holdingsPath)).json(), retainedFixture);
   if (fixtureOnly) {
-    console.log(JSON.stringify({ cutId: retainedFixture.cutId, wallet: retainedFixture.wallet, mint: retainedFixture.mint, quoteMint: retainedFixture.quoteMint, from: retainedFixture.from, to: retainedFixture.to, signatures: retainedFixture.signatures }));
+    console.log(JSON.stringify({ cutId: cutFixture.cutId, ...retainedFixture }));
     return retainedFixture;
   }
 
@@ -166,7 +184,7 @@ export async function runLiveChecks({
     }
   }
 
-  console.log("Live release, API, retained Replay receipts, OHLC, and active-subject holdings checks passed.");
+  console.log("Live release, frozen Cut viewer, retained Replay receipts, OHLC, and holdings checks passed.");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
