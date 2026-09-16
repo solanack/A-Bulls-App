@@ -66,7 +66,7 @@ export function heliusWindowCursor(value=''){const cursor=s(value);return cursor
 export function buildHeliusWindowConfig({from,to,paginationToken='',limit=100}={}){
   const fromSec=finite(from),toSec=finite(to);if(fromSec==null||toSec==null)return null;
   const low=Math.max(0,Math.trunc(Math.min(fromSec,toSec))),high=Math.max(low,Math.trunc(Math.max(fromSec,toSec)));
-  const config={transactionDetails:'full',encoding:'jsonParsed',maxSupportedTransactionVersion:0,sortOrder:'asc',commitment:'confirmed',limit:Math.max(1,Math.min(100,Math.trunc(n(limit)||100)),filters:{blockTime:{gte:low,lte:high},status:'succeeded',tokenAccounts:'balanceChanged'}};
+  const config={transactionDetails:'full',encoding:'jsonParsed',maxSupportedTransactionVersion:0,sortOrder:'asc',commitment:'confirmed',limit:Math.max(1,Math.min(100,Math.trunc(n(limit)||100))),filters:{blockTime:{gte:low,lte:high},status:'succeeded',tokenAccounts:'balanceChanged'}};
   if(s(paginationToken))config.paginationToken=s(paginationToken);
   return config;
 }
