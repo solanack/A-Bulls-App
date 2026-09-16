@@ -34,8 +34,8 @@ test("Replay exposes the selected trade research tool family including Index",()
 test("provider context and planet IDs never become observed Replay receipts",()=>{
   const now=1_789_560_000_000;
   for(const particle of [
-    {id:"planet:solana-core:"+mint,metadata:{mint}},
-    {id:"provider-trade",eventId:"fomo:provider-event",verificationState:"provider-reported" as const,metadata:{mint}},
+    {id:"planet:solana-core:"+mint,observedAt:now,metadata:{mint}},
+    {id:"provider-trade",observedAt:now,eventId:"fomo:provider-event",verificationState:"provider-reported" as const,metadata:{mint}},
   ]) {
     const selection=tradeReplaySelection(particle,wallet,now);
     assert.deepEqual(selection?.evidenceIds,[]);
