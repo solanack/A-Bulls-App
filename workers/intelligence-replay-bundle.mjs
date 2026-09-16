@@ -214,17 +214,23 @@ export async function handleReplayBundleRequest(request,env={}){
         indexingJobs.push(Object.freeze({wallet,...job}));
       }
     }
+    const pendingJobs=indexingJobs.filter(job=>['queued','running','waiting-external'].includes(s(job.state)));
+    const windowComplete=bundle.coverage.complete||(indexingJobs.length>0&&pendingJobs.length===0&&indexingJobs.every(job=>s(job.state)==='complete'));
+    const indexingState=bundle.coverage.complete?'not-required':pendingJobs.length?'queued-or-running':windowComplete?'window-ready':'not-required';
     const indexing=Object.freeze({
-      requested:indexingJobs.length>0,
-      state:indexingJobs.length?'queued-or-running':'not-required',
+      requested:pendingJobs.length>0,
+      state:indexingState,
+      windowComplete,
       jobs:Object.freeze(indexingJobs),
-      disclosure:indexingJobs.length
+      disclosure:pendingJobs.length
         ? 'Missing or partial public-wallet coverage was queued automatically. Duplicate searches reuse the same active job.'
-        : 'No additional wallet-history job was required for this request.'
+        : windowComplete&&!bundle.coverage.complete
+          ? 'The selected Replay time window has completed bounded history hydration. Older wallet history may still remain outside this window.'
+          : 'No additional wallet-history job was required for this request.'
     });
     const marketHydration=await replayMarketHydrationState(env,{mint:bundle.subject.mint,quoteMint:bundle.subject.quoteMint,from:bundle.window.from,to:bundle.window.to,bucketSeconds:bundle.window.bucketSeconds,candleCount:bundle.candles.length});
     const responseBundle=Object.freeze({...bundle,indexing,marketHydration});
-    if(indexingJobs.length&&env.__EXECUTION_CTX?.waitUntil){
+    if(pendingJobs.length&&env.__EXECUTION_CTX?.waitUntil){
       env.__EXECUTION_CTX.waitUntil(runIntelligenceMeshScheduler(env,{limit:1}).catch(()=>null));
     }
     if(marketHydration.requested&&env.__EXECUTION_CTX?.waitUntil){
