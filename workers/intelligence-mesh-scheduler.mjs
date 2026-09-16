@@ -10,6 +10,7 @@ const finite = v => v===null||v===undefined||v===''?null:Number.isFinite(Number(
 const s = v => String(v == null ? '' : v).trim();
 const now = () => Math.floor(Date.now() / 1000);
 const has = (obj,key) => Object.prototype.hasOwnProperty.call(obj,key);
+const requestedIds = values => [...new Set((Array.isArray(values)?values:[]).map(value=>Math.trunc(n(value))).filter(value=>value>0))].slice(0,5);
 
 export function schedulerEnabled(env = {}) {
   return String(env.INTELLIGENCE_MESH_ENABLED || '').toLowerCase() === 'true';
@@ -77,13 +78,24 @@ export async function queueMarketBackfillCandidates(env = {}, plan = {}, options
   return { ok: true, enabled: true, queued: jobs.filter(job => !job.reused).length, reused: jobs.filter(job => job.reused).length, jobs };
 }
 
-async function claimJobs(db, limit = 2) {
-  const rows = await db.prepare(`
-    SELECT id,wallet,cursor_before,page_size,requested_from,requested_to FROM intelligence_index_jobs
-    WHERE state='queued' AND (next_attempt_at IS NULL OR next_attempt_at<=?)
-    ORDER BY updated_at ASC LIMIT ?
-  `).bind(now(), Math.max(1, Math.min(5, n(limit) || 2))).all();
-  const claimed=[];
+export async function claimQueuedHistoryJobs(db, limit = 2, jobIds = []) {
+  const cap=Math.max(1,Math.min(5,n(limit)||2)),ids=requestedIds(jobIds);
+  let statement;
+  if(ids.length){
+    const placeholders=ids.map(()=>'?').join(',');
+    statement=db.prepare(`
+      SELECT id,wallet,cursor_before,page_size,requested_from,requested_to FROM intelligence_index_jobs
+      WHERE state='queued' AND (next_attempt_at IS NULL OR next_attempt_at<=?) AND id IN (${placeholders})
+      ORDER BY updated_at ASC LIMIT ?
+    `).bind(now(),...ids,cap);
+  }else{
+    statement=db.prepare(`
+      SELECT id,wallet,cursor_before,page_size,requested_from,requested_to FROM intelligence_index_jobs
+      WHERE state='queued' AND (next_attempt_at IS NULL OR next_attempt_at<=?)
+      ORDER BY updated_at ASC LIMIT ?
+    `).bind(now(),cap);
+  }
+  const rows=await statement.all(),claimed=[];
   for(const row of rows?.results||[]){
     const result=await db.prepare(`UPDATE intelligence_index_jobs SET state='running',updated_at=unixepoch() WHERE id=? AND state='queued'`).bind(row.id).run();
     if(Number(result?.meta?.changes)>0)claimed.push(row);
@@ -121,7 +133,7 @@ export async function runIntelligenceMeshScheduler(env = {}, options = {}) {
   if (!schedulerEnabled(env)) return { ok: true, enabled: false, processed: 0 };
   const db = intelligenceDb(env);
   if (!db) return { ok: false, enabled: true, error: 'database_unavailable', processed: 0 };
-  const jobs = await claimJobs(db, options.limit || 2);
+  const jobs = await claimQueuedHistoryJobs(db, options.limit || 2, options.jobIds);
   const results = [];
   const pagesPerJob=historyPagesPerRun(env,options);
   const retrySeconds=historyRetrySeconds(env,options);
@@ -196,5 +208,5 @@ export async function runIntelligenceMeshScheduler(env = {}, options = {}) {
     });
   }
 
-  return { ok: true, enabled: true, processed: results.length, pagesPerJob, retrySeconds, results };
+  return { ok: true, enabled: true, processed: results.length, pagesPerJob, retrySeconds, targetedJobIds:requestedIds(options.jobIds), results };
 }
