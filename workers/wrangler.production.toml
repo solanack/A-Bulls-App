@@ -23,6 +23,17 @@ FOMO_ENRICH_TRADERS_PER_REFRESH = "1"
 FOMOAPI_MONTHLY_CREDITS = "1000"
 FOMOAPI_BREAKER_RATIO = "0.80"
 
+# Chain-qualified market/evidence spine. Scheduled materialization reuses cached
+# Fomo research objects, performs bounded market enrichment, and may verify a few
+# structurally valid EVM transaction hashes through read-only RPC. Provider reports
+# remain distinct from independently observed chain facts.
+MULTICHAIN_MARKET_ENABLED = "true"
+MULTICHAIN_EVIDENCE_ENABLED = "true"
+MULTICHAIN_PUBLIC_RPC_FALLBACKS = "true"
+MULTICHAIN_MARKET_ASSETS_PER_RUN = "60"
+MULTICHAIN_FOMO_EVENTS_PER_RUN = "100"
+MULTICHAIN_TX_VERIFY_LIMIT = "4"
+
 # pump.fun and PonsFamily are retired as public galaxies. Historical launch-origin
 # and research evidence remains in D1, but no galaxy-specific ranking/index refresh
 # is enabled from production configuration.
