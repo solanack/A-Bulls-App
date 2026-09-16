@@ -116,7 +116,7 @@ export function validateFomoGalaxy(body) {
   assert.equal(body?.ok, true, `Fomo Galaxy failed: ${body?.error || "not ok"}`);
   assert.ok(Array.isArray(body?.items), "Fomo Galaxy response is missing trader items");
   assert.ok(body.items.length > 0, `Fomo Galaxy returned no trader stars: ${body?.disclosure || body?.error || "empty"}`);
-  assert.ok(body.items.some((item) => typeof item?.handle === "string" && item.handle.trim()), "Fomo Galaxy has no addressable trader handle");
+  assert.ok(body.items.some((item) => typeof item?.handle === "string" && item.handle.trim() && SOLANA_ADDRESS_RE.test(String(item.solanaWallet || ""))), "Fomo Galaxy has no addressable Solana trader STAR");
   assert.ok(body.items.some((item) => Number.isFinite(item?.reportedPnlUsd)), "Fomo Galaxy has trader stars but no provider-reported PnL values");
   return body.items;
 }
@@ -136,8 +136,12 @@ export function validateFomoTrader(body, trader) {
   assert.equal(body?.ok, true, `Fomo trader failed: ${body?.error || "not ok"}`);
   assert.ok(Array.isArray(body?.positions), "Fomo trader response is missing positions");
   assert.ok(Array.isArray(body?.latestTrades), "Fomo trader response is missing latest trades");
+  assert.equal(body.trader?.handle, trader.handle, "Fomo trader returned a different handle");
+  assert.equal(body.trader?.solanaWallet, trader.solanaWallet, "Fomo trader returned a different Solana wallet");
+  assert.ok(body.positions.length <= 10 && body.latestTrades.length <= 3, "Fomo trader exceeded its bounded system");
+  for (const position of body.positions) assert.ok(["fomo-reported", "a-bulls-observed", "fomo-reported+a-bulls-observed"].includes(position?.sourceKind), "Fomo position is missing source provenance");
   const mapped = fomoSolanaTopTokens(trader);
-  if (mapped.length) assert.ok(body.positions.some((item) => mapped.includes(String(item?.mint || "").trim())), "Fomo trader lost a mapped provider-reported token position during partial enrichment");
+  if (mapped.length) assert.ok(body.positions.some((item) => mapped.includes(String(item?.mint || "").trim()) && String(item?.sourceKind || "").includes("fomo-reported")), "Fomo trader lost a mapped provider-reported token position during partial enrichment");
   return body;
 }
 
@@ -173,6 +177,8 @@ export async function runLiveChecks({
 
   const document = await (await get("/")).text();
   assert.match(document, /Galaxy Zero|A Bulls/i, "Application HTML is missing");
+  const publicOrigins = [...document.matchAll(/aria-label="Open ([^"]+) galaxy"/g)].map(match => match[1]);
+  assert.deepEqual(publicOrigins, ["ZERO", "FOMO"], "Public galaxy origins must remain ZERO + FOMO");
   const assets = [...new Set([...document.matchAll(/(?:src|href)="(\/assets\/[^"?]+\.js)(?:\?[^" ]*)?"/g)].map((match) => match[1]))];
   assert.ok(assets.length, "Application JavaScript references are missing");
   for (const path of assets) {const asset = await get(path);assert.match(asset.headers.get("content-type") || "", /javascript/, "JavaScript has incorrect MIME type");}
@@ -183,13 +189,14 @@ export async function runLiveChecks({
     "/api/intelligence/field/resolve?query=0x39dbed3a2bd333467115de45665cc57f813c4571",
     "/api/intelligence/field/snapshot?galaxy=solana-core&window=300",
     "/api/intelligence/field/v0/tokens?limit=10",
+    "/api/intelligence/field/v0/events?limit=10",
   ]) {
     const response = await get(path);assert.match(response.headers.get("content-type") || "", /application\/json/);const body = await response.json();assert.equal(body.ok, true, `${path}: ${body.error || "not ok"}`);if (path.includes("/resolve")) validateResolvedEntity(body);
   }
 
   const fomoItems=validateFomoGalaxy(await (await get("/api/intelligence/fomo/galaxy")).json());
   validateFomoAudit(await (await get("/api/intelligence/fomo/audit")).json());
-  const fomoCandidate=fomoItems.find((item)=>item?.solanaWallet&&fomoSolanaTopTokens(item).length>0)??fomoItems.find((item)=>item?.solanaWallet)??fomoItems[0];
+  const fomoCandidate=fomoItems.find((item)=>item?.solanaWallet&&fomoSolanaTopTokens(item).length>0)??fomoItems.find((item)=>SOLANA_ADDRESS_RE.test(String(item?.solanaWallet || "")));
   validateFomoTrader(await (await get(`/api/intelligence/fomo/trader?handle=${encodeURIComponent(fomoCandidate.handle)}`)).json(),fomoCandidate);
 
   console.log("Live release, Fomo PnL coverage, trader data, frozen Cut route, retained Replay receipts, OHLC, holdings, and resolver coverage checks passed.");

@@ -1,5 +1,7 @@
 # A Bulls App
 
+> **Owner override — 2026-09-16:** The only active public origins are **ZERO + FOMO**. PonsFamily (`pons`) and `pump-fun` are retired public galaxies. Older topology, qualification, and demo sections below are historical context only; they do not authorize public navigation or scheduled galaxy refreshes. Retain applied migrations, generic resolvers, and archival Replay/Evidence provenance.
+
 **Study the trader. Replay the trade. Verify the story.**
 
 A Bulls App is an evidence-native Solana research operating system rendered as an explorable universe.

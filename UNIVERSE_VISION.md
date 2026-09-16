@@ -1,5 +1,7 @@
 # A Bulls App — Living Universe Direction
 
+> **Owner override — 2026-09-16:** The only active public origins are **ZERO + FOMO**. PonsFamily (`pons`) and `pump-fun` are retired public galaxies. Older topology, qualification, and demo sections below are historical context only; they do not authorize public navigation or scheduled galaxy refreshes. Retain applied migrations, generic resolvers, and archival Replay/Evidence provenance.
+
 > `MASTER_PLAN.md` is the highest-level product contract. This file is the compact universe/Field engineering contract and must be interpreted in that context.
 
 ## Product definition

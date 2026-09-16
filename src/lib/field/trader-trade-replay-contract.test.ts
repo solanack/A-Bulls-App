@@ -5,10 +5,10 @@ import { readFileSync } from "node:fs";
 const fieldOS=readFileSync(new URL("./field-os.ts",import.meta.url),"utf8");
 const replay=readFileSync(new URL("../../components/replay-workspace.tsx",import.meta.url),"utf8");
 
-test("Fomo trader trade comets open the selected wallet-token Replay",()=>{
-  assert.match(fieldOS,/fieldSection\.kind==="trader-system"&&particle\.cosmicKind==="comet"/);
+test("Fomo trader comets and token planets open the selected wallet-token Replay",()=>{
+  assert.match(fieldOS,/fieldSection\.kind==="trader-system"&&\(particle\.cosmicKind==="comet"\|\|particle\.cosmicKind==="planet"\)&&mint/);
   assert.match(fieldOS,/tradeReplaySelection\(particle,this\.fieldSection\.wallet\)/);
-  assert.match(fieldOS,/saveResearchThread\(/);
+  assert.match(fieldOS,/saveResearchThread\(createResearchThreadContext\(\{\.\.\.selected/);
   assert.match(fieldOS,/this\.mode="replay"/);
 });
 
@@ -21,7 +21,7 @@ test("Replay chart renders trader buys and sells without inventing execution pri
 });
 
 test("selected trade exposes the downstream research tools",()=>{
-  assert.match(replay,/RESEARCH THIS TRADE/);
+  assert.match(replay,/aria-label="Research this selected trade"/);
   assert.match(replay,/TRADE_RESEARCH_ACTIONS/);
   assert.match(replay,/requestTradeResearchMode/);
 });

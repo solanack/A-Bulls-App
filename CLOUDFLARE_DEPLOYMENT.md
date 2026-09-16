@@ -1,5 +1,7 @@
 # Deploy A Bulls App from GitHub main
 
+> **Owner override — 2026-09-16:** The only active public origins are **ZERO + FOMO**. PonsFamily (`pons`) and `pump-fun` are retired public galaxies. Older topology, qualification, and demo sections below are historical context only; they do not authorize public navigation or scheduled galaxy refreshes. Retain applied migrations, generic resolvers, and archival Replay/Evidence provenance.
+
 The repository root contains the frontend (`wrangler.jsonc`). The intelligence Worker lives under `workers/` (`workers/wrangler.production.toml`). Both must be published. Keep using the existing Intelligence D1 database.
 
 ## From your phone
