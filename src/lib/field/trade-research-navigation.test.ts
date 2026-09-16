@@ -16,15 +16,17 @@ test("selected Fomo trade opens a bounded wallet-token Replay context",()=>{
   assert.equal(selection.toTs,now);
 });
 
-test("selected trade can inherit the focused trader wallet but never invents a subject",()=>{
+test("selected trade or trader token planet can inherit the focused trader wallet but never invents a subject",()=>{
   const selected=tradeReplaySelection({id:"trade-2",eventId:"sig-2",observedAt:1_789_500_000_000,metadata:{mint}},wallet,1_789_560_000_000);
   assert.equal(selected?.wallet,wallet);
+  assert.equal(selected?.mint,mint);
   assert.equal(tradeReplaySelection({id:"trade-3",observedAt:1_789_500_000_000,metadata:{mint}},null,1_789_560_000_000),null);
 });
 
-test("Replay exposes the selected trade research tool family",()=>{
-  assert.deepEqual(TRADE_RESEARCH_ACTIONS.map(item=>item.mode),["trickster","compare","what-if","evidence","sequences","ghost"]);
+test("Replay exposes the selected trade research tool family including Index",()=>{
+  assert.deepEqual(TRADE_RESEARCH_ACTIONS.map(item=>item.mode),["trickster","compare","what-if","index","evidence","sequences","ghost"]);
   assert.equal(normalizeTradeResearchMode("trickster"),"trickster");
   assert.equal(normalizeTradeResearchMode("what-if"),"what-if");
+  assert.equal(normalizeTradeResearchMode("index"),"index");
   assert.equal(normalizeTradeResearchMode("query"),null);
 });

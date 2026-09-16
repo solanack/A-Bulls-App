@@ -8,6 +8,7 @@ export const TRADE_RESEARCH_ACTIONS=Object.freeze([
   {mode:"trickster" as const,label:"MAKE A CUT",needs:"trade" as const},
   {mode:"compare" as const,label:"COMPARE",needs:"wallet" as const},
   {mode:"what-if" as const,label:"WHAT-IF",needs:"trade" as const},
+  {mode:"index" as const,label:"INDEX",needs:"trade" as const},
   {mode:"evidence" as const,label:"EVIDENCE",needs:"mint" as const},
   {mode:"sequences" as const,label:"SEQUENCES",needs:"mint" as const},
   {mode:"ghost" as const,label:"GHOST",needs:"wallet" as const},
