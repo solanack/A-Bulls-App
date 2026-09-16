@@ -114,7 +114,7 @@ export async function buildReplayBundle(env={},input={}){
   const to=Math.max(from,Math.max(requestedFrom,requestedTo));
   if(to-from>60*60*24*365*5)throw new RangeError('replay_window_too_large');
   const limit=Math.max(1,Math.min(1000,Math.trunc(n(input.limit)||500)));
-  const bucketSeconds=Math.max(60,Math.min(86400,Math.trunc(n(input.bucketSeconds)||60));
+  const bucketSeconds=Math.max(60,Math.min(86400,Math.trunc(n(input.bucketSeconds)||60)));
 
   const events=[];
   const coverages=[];
