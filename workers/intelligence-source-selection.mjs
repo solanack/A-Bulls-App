@@ -5,6 +5,7 @@
 const s=v=>String(v==null?'':v).trim();
 const n=v=>Number.isFinite(Number(v))?Number(v):null;
 const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
+const DEFAULT_ERROR_REPROBE_SECONDS=300;
 
 export function sourceDepthClass({from,to,nowSeconds=Math.floor(Date.now()/1000)}={}){
   const start=n(from),end=n(to)??nowSeconds;
@@ -13,6 +14,12 @@ export function sourceDepthClass({from,to,nowSeconds=Math.floor(Date.now()/1000)
   if(age<=7*86400)return'recent';
   if(age<=180*86400)return'historical';
   return'archive';
+}
+
+export function sourceErrorReprobeEligible(source={},request={}){
+  if(s(source.state).toLowerCase()!=='error')return false;
+  const lastError=n(source.lastErrorAt),now=n(request.nowSeconds)??Math.floor(Date.now()/1000),configured=n(request.errorReprobeSeconds),cooldown=clamp(configured??DEFAULT_ERROR_REPROBE_SECONDS,30,3600);
+  return lastError!=null&&Math.max(0,now-lastError)>=cooldown;
 }
 
 export function scoreEvidenceSource(source={},request={}){
@@ -43,9 +50,10 @@ export async function loadObservedSourceHealth(db){
 }
 
 export function buildRetrievalPlan(sources=[],request={}){
-  const choice=chooseEvidenceSource(sources,request),ranked=choice.ranked.filter(x=>s(x.state).toLowerCase()!=='error');
-  const primary=choice.selected;
-  const fallbacks=ranked.filter(x=>!primary||x.name!==primary.name).slice(0,3);
-  return Object.freeze({depthClass:choice.depthClass,primary,fallbacks:Object.freeze(fallbacks),attemptOrder:Object.freeze([primary,...fallbacks].filter(Boolean)),coverageClaim:'unknown-until-measured',disclosure:choice.disclosure});
+  const choice=chooseEvidenceSource(sources,request),available=choice.ranked.filter(x=>s(x.state).toLowerCase()!=='error'),recoverable=choice.ranked.filter(x=>sourceErrorReprobeEligible(x,request));
+  const primary=available[0]||recoverable[0]||null;
+  const candidates=[...available,...recoverable].filter((item,index,array)=>item&&(!primary||item.name!==primary.name)&&array.findIndex(other=>other?.name===item.name)===index);
+  const fallbacks=candidates.slice(0,3),recoveryProbe=Boolean(primary&&s(primary.state).toLowerCase()==='error');
+  return Object.freeze({depthClass:choice.depthClass,primary,fallbacks:Object.freeze(fallbacks),attemptOrder:Object.freeze([primary,...fallbacks].filter(Boolean)),recoveryProbe,coverageClaim:'unknown-until-measured',disclosure:`${choice.disclosure} Providers in an observed error state are quarantined for a bounded cooldown and may then be re-probed; a recovery probe is not evidence of provider health until it succeeds.`});
 }
 
