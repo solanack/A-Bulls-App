@@ -23,26 +23,9 @@ FOMO_ENRICH_TRADERS_PER_REFRESH = "1"
 FOMOAPI_MONTHLY_CREDITS = "1000"
 FOMOAPI_BREAKER_RATIO = "0.80"
 
-PONS_GALAXY_ENABLED = "true"
-PONS_INDEX_ENABLED = "true"
-PONS_RANK_ENABLED = "true"
-PONS_MARKET_CAP_MIN_USD = "75000"
-PONS_MIN_HOLDERS = "750"
-PONS_RANK_MAX_MEMBERS = "50"
-PONS_TRENDING_ENRICH_LIMIT = "50"
-PONS_LAUNCH_HORIZON = "5000"
-PONS_TRENDING_METRIC_MAX_AGE_SECONDS = "3600"
-PONS_BLOCKSCOUT_DISCOVERY_PAGES = "8"
-PONS_RANK_REFRESH_MINUTES = "15"
-PONS_CONFIRMATIONS = "64"
-PONS_BLOCK_CHUNK = "2000"
-PONS_DISCOVERY_RPC_CHUNK_BLOCKS = "20000"
-PONS_REORG_REWIND = "32"
-PONS_MARKET_ENRICH_ENABLED = "true"
-PONS_MARKET_ENRICH_LIMIT = "8"
-# Bounded, no-key archive fallback for historical PONS log discovery. The
-# official Robinhood public RPC remains the final fallback in code.
-PONS_RPC_FALLBACK_URLS = "https://robinhood-mainnet-rpc.blockreq.com/v1/rpc/public"
+# pump.fun and PonsFamily are retired as public galaxies. Historical launch-origin
+# and research evidence remains in D1, but no galaxy-specific ranking/index refresh
+# is enabled from production configuration.
 HELIUS_BREAKER_RATIO = "0.75"
 HELIUS_MONTHLY_CREDITS = "1000000"
 
@@ -61,25 +44,6 @@ INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED = "false"
 INTELLIGENCE_SUBSTREAMS_HISTORY_ENABLED = "false"
 INTELLIGENCE_OLD_FAITHFUL_HISTORY_ENABLED = "false"
 
-PUMP_INDEX_ENABLED = "true"
-PUMP_INDEX_SOURCE = "ansem-z500"
-PUMP_STREAM_ENABLED = "true"
-PUMP_ACTIVE_TOKEN_LIMIT = "10"
-PUMP_MONTHLY_CREDIT_BUDGET = "1000000"
-PUMP_BUDGET_WARNING_PERCENT = "60"
-PUMP_BUDGET_HARD_STOP_PERCENT = "80"
-PUMP_RANK_REFRESH_MINUTES = "15"
-PUMP_RAW_RETENTION_HOURS = "72"
-PUMP_CANDLE_RETENTION_DAYS = "365"
-PUMP_INGEST_CREDIT_MODE = "webhook"
-PUMP_HELIUS_WEBHOOK_ID = "06af243a-c7a6-445f-8966-31d3d46b9ddc"
-
-PONS_BOOTSTRAP_LOOKBACK_BLOCKS = "16000"
-PONS_SCAN_CHUNKS_PER_RUN = "8"
-# Preferred production discovery/holder source: npx wrangler secret put PONS_BLOCKSCOUT_API_KEY --config workers/wrangler.production.toml
-# Optional private RPC override: npx wrangler secret put PONS_RPC_URL --config workers/wrangler.production.toml
-# Optional legacy Bitquery holder fallback is no longer required for PonsFamily self-population.
-# Protected manual ranking route only: npx wrangler secret put PONS_INDEX_SECRET --config workers/wrangler.production.toml
 # Required for Fomo Galaxy source data: npx wrangler secret put FOMOAPI_API_KEY --config workers/wrangler.production.toml
 # Future full-chain stream bridge: npx wrangler secret put INTELLIGENCE_MESH_INGEST_TOKEN --config workers/wrangler.production.toml
 

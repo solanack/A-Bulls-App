@@ -2,18 +2,18 @@ import type { CosmicObjectKind, GalaxyDefinition, GalaxyId } from "./types";
 import { mintKey } from "./watchlist.ts";
 
 const GALAXY_REGISTRY = [
-  {id:"galaxy-zero",name:"Galaxy Zero",ecosystem:"A Bulls App universe map",status:"populated",seed:861,accent:"var(--color-accent)",description:"The navigable expanse containing Fomo, pump.fun, PonsFamily, universal search, and Grey.",coverage:"Spatial directory; no raw chain events",sources:["a-bulls-galaxy-directory"]},
+  {id:"galaxy-zero",name:"Galaxy Zero",ecosystem:"A Bulls App universe map",status:"populated",seed:861,accent:"var(--color-accent)",description:"The navigable expanse containing Fomo, universal search, and Grey.",coverage:"Spatial directory; no raw chain events",sources:["a-bulls-galaxy-directory"]},
   {id:"fomo",name:"Fomo",ecosystem:"Trader research galaxy",status:"populated",seed:1299,accent:"#6f80ff",description:"The cached Fomo all-time top 50 become public-wallet stars. Enter a trader to study mapped token positions and retained trade evidence.",coverage:"fomoapi.io all-time leaderboard as reported + retained A Bulls App public-chain evidence",sources:["fomoapi.io","A Bulls App indexed public-chain evidence"]},
   {id:"solana-core",name:"Solana Core",ecosystem:"Internal Solana provenance",status:"staging",seed:861,accent:"var(--color-accent)",description:"Compatibility provenance for generic Solana evidence. It is not a public Galaxy Zero destination.",coverage:"Internal compatibility provenance",sources:["Solana RPC","Helius indexed history","DexScreener"]},
-  {id:"pump-fun",name:"pump.fun",ecosystem:"pump.fun launch origin",status:"populated",seed:2205,accent:"var(--color-live)",description:"Token planets from the indexed pump.fun lifecycle feed, with wallet-star and Replay evidence where retained.",coverage:"Indexed births, trades, graduations, migrations, and terminal states",sources:["pump.fun indexed stream","Helius indexed history"]},
-  {id:"pons",name:"PonsFamily",ecosystem:"PONS launch origin on Robinhood Chain",status:"populated",seed:4663,accent:"#c7f05f",description:"Trending verified PONS-origin token planets with fresh market cap, holder count, and 24-hour volume evidence.",coverage:"Verified PONS factory origin; market cap > $75,000; holders > 750; ranked by fresh reported 24h volume",sources:["Robinhood Chain RPC","verified PONS factories","DexScreener","Bitquery holders"]},
+  {id:"pump-fun",name:"pump.fun",ecosystem:"Legacy pump.fun launch origin",status:"staging",seed:2205,accent:"var(--color-live)",description:"Retired public galaxy. The id remains only for historical launch-origin provenance and old research objects.",coverage:"Historical provenance only",sources:["A Bulls App retained evidence"]},
+  {id:"pons",name:"PonsFamily",ecosystem:"Legacy PONS provenance",status:"staging",seed:4663,accent:"#c7f05f",description:"Retired public galaxy. The id remains only for historical compatibility and retained research objects.",coverage:"Historical provenance only",sources:["A Bulls App retained evidence"]},
 ] as const satisfies readonly GalaxyDefinition[];
 
-export const GALAXIES = GALAXY_REGISTRY.filter(item=>item.id!=="solana-core") as readonly GalaxyDefinition[];
+export const GALAXIES = GALAXY_REGISTRY.filter(item=>item.id==="galaxy-zero"||item.id==="fomo") as readonly GalaxyDefinition[];
 export const DEFAULT_GALAXY_ID: GalaxyId = "galaxy-zero";
 
 export const GALAXY_CHAIN_LABEL: Record<GalaxyId, string> = {"galaxy-zero":"UNIVERSE MAP",fomo:"TRADER RESEARCH","solana-core":"SOLANA","pump-fun":"SOLANA",pons:"ROBINHOOD CHAIN"};
-export const GALAXY_ORIGIN_CHIPS: readonly { id: GalaxyId; label: string }[] = [{id:"galaxy-zero",label:"ZERO"},{id:"fomo",label:"FOMO"},{id:"pump-fun",label:"PUMP"},{id:"pons",label:"PONSFAMILY"}];
+export const GALAXY_ORIGIN_CHIPS: readonly { id: GalaxyId; label: string }[] = [{id:"galaxy-zero",label:"ZERO"},{id:"fomo",label:"FOMO"}];
 
 export const COSMOLOGY_RULES: Record<CosmicObjectKind,{readonly onChainMeaning:string;readonly visualRule:string}> = {
   galaxy:{onChainMeaning:"Research ecosystem or launch-origin lens",visualRule:"Largest durable body; Fomo is a research lens while token planets retain their true launch origin"},

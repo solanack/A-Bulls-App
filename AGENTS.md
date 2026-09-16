@@ -2,6 +2,7 @@
 
 ## READ THIS FIRST — master direction
 - **`MASTER_PLAN.md` is the highest-level product and architecture contract for this repository. Read it before proposing, coding, refactoring, or deploying anything.**
+- **Owner override — 2026-09-16:** Fomo is the only public research galaxy in Galaxy Zero. `pump-fun` and `pons`/PonsFamily are retired as public galaxies. If older topology text in `MASTER_PLAN.md`, `UNIVERSE_VISION.md`, or another repository document still lists them as public Galaxy Zero destinations, this later owner decision controls until those documents are fully synchronized.
 - If an older document conflicts with `MASTER_PLAN.md`, the master plan wins unless the owner explicitly changes the direction.
 - After the master plan, read this file, then the most relevant source contract such as `UNIVERSE_VISION.md` or `SOCIALFI_ARCHITECTURE.md`.
 - Before changing code, inspect current `main` and the existing implementation. Reuse existing systems rather than creating parallel products.
@@ -16,7 +17,7 @@
 ## Locked interface
 - Default Field view remains the simplified mobile interface: hamburger, combined query bar, particle field, compact bottom context labels.
 - Replay, Evidence, Compare, What-If, Sequences, Ghost, Intelligence, Watchlist/My Sky, Query, Create/Trickster, Field, and the future Index/Trade Library must remain parts of one product rather than separate apps.
-- Public Galaxy Zero destinations are Fomo, pump.fun, and PonsFamily. `solana-core` remains an internal provenance namespace only; it must not return as a public galaxy without explicit user approval.
+- Public Galaxy Zero exposes Fomo as its research galaxy. `pump-fun` and `pons`/PonsFamily are retired public galaxies; their ids and retained data may remain only for historical launch-origin provenance, old research objects, and backwards-compatible evidence. `solana-core` remains an internal provenance namespace only; it must not return as a public galaxy without explicit user approval.
 - Do not restore brand/marketing chrome, expanded galaxy cards, analysis grids, example-token pills, or bottom navigation.
 - Cosmology is locked: token/mint = PLANET; observed public wallet/holder/trader = STAR. Legacy producer names remain behind adapters only.
 - A token planet may open its D1-backed local wallet-star system. Missing holder evidence produces an honest empty system, never passive provider fan-out.
@@ -39,8 +40,8 @@
 - Fomo Galaxy uses the independent `fomoapi.io` feed as a cited, cached discovery source. It must never replay or scrape a logged-in `prod-api.fomo.family` session.
 - Fomo rank/PnL/profile/top-token values are provider-reported context, not independently verified performance claims, skill scores, endorsements, recommendations, or copy-trading instructions.
 - Fomo page navigation is D1/cache-only. Provider calls happen only in bounded scheduled refreshes behind a monthly credit breaker.
-- PonsFamily retains internal galaxy id `pons`. Public membership requires verified PONS launch origin, fresh market cap above $75,000, more than 750 holders, and fresh reported 24h volume; qualifying tokens rank by 24h volume descending. Missing holder/market evidence does not qualify.
-- The old pinned PONS teaching token fallback is retired.
+- PonsFamily and pump.fun are retired as public galaxies. Do not restore their galaxy UI, ranking/discovery jobs, provider refresh loops, or galaxy diagnostics without explicit owner approval.
+- Applied D1 migration history and retained launch-origin/evidence records remain intact for verification and backwards compatibility; retirement is not permission to destructively rewrite history.
 - Missing data is not zero. Unknown coverage must remain visibly unknown/incomplete.
 
 ## Matched-round accounting

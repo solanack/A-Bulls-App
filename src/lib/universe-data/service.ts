@@ -1,8 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import type { GalaxyId, UniverseSnapshot } from "@/lib/field/types";
 import type { UniverseDataStatus } from "./contracts";
-import { loadFieldV0GalaxyDelivery } from "./field-v0-client";
-import { loadPonsGalaxyDelivery } from "./pons-client";
 import { fetchIntelligence } from "../intelligence-origin.ts";
 import { enrichFieldMarkets } from './market-enrichment.ts';
 
@@ -15,16 +13,17 @@ export const getIndexedGalaxySnapshot = createServerFn({ method: "GET" })
   .validator((input: { galaxyId: GalaxyId }) => input)
   .handler(async ({ data }): Promise<GalaxySnapshotDelivery> => {
     if (data.galaxyId === "galaxy-zero") return { snapshot: null, status: { store: "memory-fallback", coverage: "fresh", circuitBreaker: null, disclosure: "Galaxy directory; no chain fetch required." } };
-    if (data.galaxyId === "pons") {
-      return loadPonsGalaxyDelivery();
-    }
-    // pump.fun prefers Field v0 producer — never Field compat v1 as truth.
-    if (data.galaxyId === "pump-fun") {
-      const fieldV0 = await loadFieldV0GalaxyDelivery(data);
-      if (fieldV0.snapshot && fieldV0.snapshot.particles.length > 0) {
-        return { snapshot: await enrichFieldMarkets(fieldV0.snapshot), status: fieldV0.status };
-      }
-      // Fall through to legacy snapshot only when v0 is empty/unavailable.
+    if (data.galaxyId === "pons" || data.galaxyId === "pump-fun") {
+      return {
+        snapshot: null,
+        status: {
+          store: "memory-fallback",
+          coverage: "empty",
+          circuitBreaker: null,
+          disclosure:
+            "This legacy launch-origin id is retained only for historical provenance. It is not a public A Bulls App galaxy.",
+        },
+      };
     }
 
     try {
