@@ -103,6 +103,18 @@ export function validateCutPage(document) {
   assert.ok(!/share_not_found|Cut unavailable/i.test(document), "Canonical /?cut= page reports that the retained Cut is unavailable");
 }
 
+export function validateResolvedEntity(body) {
+  assert.equal(body?.ok, true, `Resolver failed: ${body?.error || "not ok"}`);
+  assert.equal(body?.state, "resolved", "Resolver did not return a resolved entity");
+  assert.equal(body?.readOnly, true, "Resolver response is not marked read-only");
+  assert.ok(typeof body?.kind === "string" && body.kind.length > 0, "Resolved entity is missing its kind");
+  assert.ok(typeof body?.address === "string" && body.address.length > 0, "Resolved entity is missing its address");
+  assert.ok(["fresh", "partial", "stale"].includes(body?.coverage), `Resolved entity has invalid coverage: ${body?.coverage}`);
+  if (body?.market?.priceUsd != null) {
+    assert.ok(Number.isFinite(body.market.priceUsd) && body.market.priceUsd > 0, "Reported live token price is invalid");
+  }
+}
+
 export async function runLiveChecks({
   origin = "https://abullsapp.com",
   expected,
@@ -178,13 +190,10 @@ export async function runLiveChecks({
     assert.match(response.headers.get("content-type") || "", /application\/json/);
     const body = await response.json();
     assert.equal(body.ok, true, `${path}: ${body.error || "not ok"}`);
-    if (path.includes("/resolve")) {
-      assert.equal(body.state, "resolved");
-      assert.ok(Number.isFinite(body.market?.priceUsd), "Live token price is unavailable");
-    }
+    if (path.includes("/resolve")) validateResolvedEntity(body);
   }
 
-  console.log("Live release, frozen Cut route, retained Replay receipts, OHLC, and holdings checks passed.");
+  console.log("Live release, frozen Cut route, retained Replay receipts, OHLC, holdings, and resolver coverage checks passed.");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
