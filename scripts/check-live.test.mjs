@@ -81,7 +81,7 @@ test("saved Cut rejects mutable or mismatched archival manifests", () => {
   }), /different subject/);
 });
 
-test("canonical /?cut= page must render frozen VERIFY disclosure", () => {
-  assert.doesNotThrow(() => validateCutPage("VERIFY · Frozen Cut This viewer renders the frozen manifest only."));
-  assert.throws(() => validateCutPage("Cut unavailable"), /did not render/);
+test("canonical /?cut= page must render the hydratable A Bulls app shell", () => {
+  assert.doesNotThrow(() => validateCutPage('<html><head><title>A Bulls App</title><script type="module" src="/assets/index.js"></script></head><body><main class="field-shell"></main></body></html>'));
+  assert.throws(() => validateCutPage("Cut unavailable"), /application shell/);
 });
