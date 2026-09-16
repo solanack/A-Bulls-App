@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { readFileSync } from "node:fs";
+
+const fieldOS=readFileSync(new URL("./field-os.ts",import.meta.url),"utf8");
+const replay=readFileSync(new URL("../../components/replay-workspace.tsx",import.meta.url),"utf8");
+
+test("Fomo trader trade comets open the selected wallet-token Replay",()=>{
+  assert.match(fieldOS,/fieldSection\.kind==="trader-system"&&particle\.cosmicKind==="comet"/);
+  assert.match(fieldOS,/tradeReplaySelection\(particle,this\.fieldSection\.wallet\)/);
+  assert.match(fieldOS,/saveResearchThread\(/);
+  assert.match(fieldOS,/this\.mode="replay"/);
+});
+
+test("Replay chart renders trader buys and sells without inventing execution price",()=>{
+  assert.match(replay,/TRADER BUY\/SELL RECEIPTS/);
+  assert.match(replay,/replay-trade-marker--buy/);
+  assert.match(replay,/replay-trade-marker--sell/);
+  assert.match(replay,/time marker only; execution price unavailable/);
+  assert.match(replay,/Marker height uses indexed execution price/);
+});
+
+test("selected trade exposes the downstream research tools",()=>{
+  assert.match(replay,/RESEARCH THIS TRADE/);
+  assert.match(replay,/TRADE_RESEARCH_ACTIONS/);
+  assert.match(replay,/requestTradeResearchMode/);
+});
