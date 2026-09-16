@@ -129,12 +129,9 @@ export async function hydrateReplayMarketCandles(env={},input={}, {fetchImpl=pro
     const pools=await discoverExactReplayPools(env,mint,quoteMint,{fetchImpl});
     if(!pools.length){await markLease(db,key,'empty','no_exact_quote_pool',{completedAt:nowSec()});return{ok:true,state:'unavailable',candles:0,reason:'no_exact_quote_pool'};}
     let selected=null;
-    for(const pool of pools){
-      const candidate=await fetchPoolWindow(env,pool,mint,from,to,spec,fetchImpl);
-      if(candidate.rows.length){selected=candidate;break;}
-    }
+    for(const pool of pools){const candidate=await fetchPoolWindow(env,pool,mint,from,to,spec,fetchImpl);if(candidate.rows.length){selected=candidate;break;}}
     if(!selected){await markLease(db,key,'empty',`no_ohlcv_rows_in_window:${pools.length}_exact_pools_checked`,{completedAt:nowSec()});return{ok:true,state:'unavailable',candles:0,reason:'no_ohlcv_rows_in_window',poolsChecked:pools.length};}
-    const source=JSON.stringify([`${selected.provider}:${selected.pool}`]),statements=selected.rows.map(row=>db.prepare(`INSERT INTO intelligence_price_candles(mint,quote_mint,bucket_start,bucket_seconds,open,high,low,close,volume_base,volume_quote,swap_count,wallet_count,confidence,source_set_json,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0,0,0,0.85,?,unixepoch()) ON CONFLICT(mint,quote_mint,bucket_start,bucket_seconds) DO UPDATE SET open=excluded.open,high=excluded.high,low=excluded.low,close=excluded.close,confidence=MAX(confidence,excluded.confidence),source_set_json=excluded.source_set_json,updated_at=unixepoch())`).bind(mint,quoteMint,row.bucket_start,row.bucket_seconds,row.open,row.high,row.low,row.close,source));
+    const source=JSON.stringify([`${selected.provider}:${selected.pool}`]),statements=selected.rows.map(row=>db.prepare(`INSERT INTO intelligence_price_candles(mint,quote_mint,bucket_start,bucket_seconds,open,high,low,close,volume_base,volume_quote,swap_count,wallet_count,confidence,source_set_json,updated_at) VALUES(?,?,?,?,?,?,?,?,0,0,0,0,0.85,?,unixepoch()) ON CONFLICT(mint,quote_mint,bucket_start,bucket_seconds) DO UPDATE SET open=excluded.open,high=excluded.high,low=excluded.low,close=excluded.close,confidence=MAX(confidence,excluded.confidence),source_set_json=excluded.source_set_json,updated_at=unixepoch()`).bind(mint,quoteMint,row.bucket_start,row.bucket_seconds,row.open,row.high,row.low,row.close,source));
     for(let index=0;index<statements.length;index+=50)await db.batch(statements.slice(index,index+50));
     await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',candles:selected.rows.length,source:selected.provider,pool:selected.pool,poolsChecked:pools.findIndex(pool=>pool.address===selected.pool)+1};
   }catch(error){const code=s(error?.message||error)||'market_hydration_failed';await markLease(db,key,'error',code,{completedAt:nowSec()}).catch(()=>null);return{ok:false,state:'unavailable',error:code};}
