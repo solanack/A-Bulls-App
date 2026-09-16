@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { claimQueuedHistoryJobs } from './intelligence-mesh-scheduler.mjs';
+import { claimQueuedHistoryJobs, historyRetrySeconds } from './intelligence-mesh-scheduler.mjs';
 
 function mockDb(rows=[]){
   const calls=[];
@@ -36,4 +36,10 @@ test('cron scheduler claim remains general when no requested ids are supplied',a
   assert.doesNotMatch(db.calls[0].sql,/id IN/);
   assert.equal(db.calls[0].args.length,2);
   assert.equal(db.calls[0].args[1],3);
+});
+
+test('Replay history retry cadence honors the bounded production configuration',()=>{
+  assert.equal(historyRetrySeconds({INTELLIGENCE_HISTORY_RETRY_SECONDS:'5'}),5);
+  assert.equal(historyRetrySeconds({INTELLIGENCE_HISTORY_RETRY_SECONDS:'1'}),3);
+  assert.equal(historyRetrySeconds({INTELLIGENCE_HISTORY_RETRY_SECONDS:'999'}),120);
 });
