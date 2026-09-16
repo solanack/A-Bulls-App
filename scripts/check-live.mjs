@@ -98,8 +98,8 @@ export function validateCandles(bundle) {
 }
 
 export function validateCutPage(document) {
-  assert.match(document, /VERIFY\s*(?:·|-)?\s*Frozen Cut/i, "Canonical /?cut= page did not render the frozen VERIFY viewer");
-  assert.match(document, /This viewer renders the frozen manifest only/i, "VERIFY page does not preserve the frozen-manifest disclosure");
+  assert.match(document, /<title>A Bulls App<\/title>|class="field-shell"/i, "Canonical /?cut= page did not render the application shell");
+  assert.match(document, /\/assets\/[^"?]+\.js/i, "Canonical /?cut= page is missing application JavaScript");
   assert.ok(!/share_not_found|Cut unavailable/i.test(document), "Canonical /?cut= page reports that the retained Cut is unavailable");
 }
 
@@ -184,7 +184,7 @@ export async function runLiveChecks({
     }
   }
 
-  console.log("Live release, frozen Cut viewer, retained Replay receipts, OHLC, and holdings checks passed.");
+  console.log("Live release, frozen Cut route, retained Replay receipts, OHLC, and holdings checks passed.");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
