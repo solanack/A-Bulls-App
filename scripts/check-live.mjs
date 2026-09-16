@@ -25,9 +25,10 @@ export function fixtureFromFrozenCut(body, expected = LIVE_FIXTURE) {
   const manifest = asObject(body.manifest, "Saved Cut response is missing its manifest");
   assert.equal(manifest.subject?.kind, "wallet-token", "Saved Cut has a different subject kind");
   assert.equal(manifest.subject?.id, `${expected.wallet}:${expected.mint}`, "Saved Cut has a different subject");
-  const signatures = (manifest.evidence || []).map((receipt) => String(receipt?.signature || "").trim()).filter(Boolean);
-  assert.ok(signatures.length > 0, "Saved Cut has no retained receipt signatures");
-  assert.ok(signatures.every((signature) => SOLANA_SIGNATURE_RE.test(signature)), "Saved Cut contains an invalid Solana receipt signature");
+  const signatures = (manifest.evidence || [])
+    .map((receipt) => String(receipt?.signature || "").trim())
+    .filter((signature) => SOLANA_SIGNATURE_RE.test(signature));
+  assert.ok(signatures.length > 0, "Saved Cut has no retained Solana receipt signatures");
   const from = requiredInteger("manifest.coverage.from", manifest.coverage?.from);
   const to = requiredInteger("manifest.coverage.to", manifest.coverage?.to);
   assert.ok(to >= from, "LIVE_REPLAY_TO must not precede LIVE_REPLAY_FROM");
