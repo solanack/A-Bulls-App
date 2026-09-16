@@ -40,7 +40,7 @@ export function looksLikeMint(value: string | null | undefined): boolean {
 export type SubjectSearchPrefill = {
   wallet: string;
   mint: string;
-  chain: string;
+  chain?: string;
   mode: "explore" | "replay";
 };
 
@@ -48,6 +48,10 @@ export type SubjectSearchPrefill = {
  * Paste-proof holdings/Replay deep-link: `?wallet=` (alias `w`) plus optional `mint`/`m` and `chain`.
  * Wallet+mint including `mode=trickster` lands in Field explore with holdings first.
  * `mode=replay` still opens Replay. `/?cut=` VERIFY is handled separately and must win.
+ *
+ * Historical Solana deep-links intentionally keep their legacy object shape when no chain is supplied.
+ * Explicit chain/network values and inferred EVM subjects retain chain context so multichain Replay never
+ * collapses an EVM address into Solana.
  */
 export function subjectPrefillFromSearch(search: string): SubjectSearchPrefill | null {
   const raw = String(search ?? "");
@@ -57,9 +61,11 @@ export function subjectPrefillFromSearch(search: string): SubjectSearchPrefill |
   const mintRaw = String(params.get("mint") || params.get("m") || "").trim();
   const mint = looksLikeMint(mintRaw) ? mintRaw : "";
   const inferred=EVM_ADDRESS.test(wallet)?"ethereum":"solana";
-  const chain=String(params.get("chain")||params.get("network")||inferred).trim().toLowerCase()||inferred;
+  const explicitChain=String(params.get("chain")||params.get("network")||"").trim().toLowerCase();
+  const chain=explicitChain||inferred;
   const requested = String(params.get("mode") || "").trim().toLowerCase();
-  return { wallet, mint, chain, mode: requested === "replay" ? "replay" : "explore" };
+  const base={wallet,mint,mode:requested === "replay" ? "replay" as const : "explore" as const};
+  return explicitChain||inferred!=="solana"?{...base,chain}:base;
 }
 
 /** Workspace mode from the URL. Cut VERIFY is the only inbound jump straight to Trickster. */
