@@ -167,6 +167,19 @@ jobs:
       - name: Diagnose sparse Replay hydration
         continue-on-error: true
         run: node scripts/diagnose-replay-production.mjs | tee replay-hydration-diagnostic.json
+      - name: Capture Replay history source health
+        if: always()
+        continue-on-error: true
+        run: |
+          SQL=$(cat <<'SQL'
+          SELECT source,source_kind,state,last_ok_at,last_error_at,latency_ms,details_json,updated_at
+          FROM intelligence_source_health
+          WHERE source IN ('helius-getTransactionsForAddress','helius-standard-rpc','solana-public-rpc')
+             OR source LIKE 'configured-rpc%'
+          ORDER BY updated_at DESC;
+          SQL
+          )
+          npx wrangler d1 execute INTELLIGENCE_DB --remote --config workers/wrangler.production.toml --json --command "$SQL" | tee replay-history-source-health.json
       - name: Upload pre-mutation release evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -178,5 +191,6 @@ jobs:
             retained-live-evidence.json
             retained-live-fixture.json
             replay-hydration-diagnostic.json
+            replay-history-source-health.json
           if-no-files-found: warn
           retention-days: 14
