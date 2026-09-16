@@ -176,7 +176,7 @@ export async function runIntelligenceMeshScheduler(env = {}, options = {}) {
         await patchJob(db, job.id, {
           state: 'queued',
           error: s(error?.message || error),
-          nextAttemptAt: now() + 120
+          nextAttemptAt: now() + retrySeconds
         });
         terminal={ok:false,error:s(error?.message||error),attempts:Array.isArray(error?.attempts)?error.attempts:[]};
         break;
