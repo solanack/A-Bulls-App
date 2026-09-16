@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LIVE_FIXTURE, fixtureFromFrozenCut, validateCutPage, validateReplay } from "./check-live.mjs";
+import { LIVE_FIXTURE, fixtureFromFrozenCut, validateCutPage, validateEvidenceFixture, validateReplay } from "./check-live.mjs";
 
 const fixture = Object.freeze({
-  ...LIVE_FIXTURE,
+  wallet: LIVE_FIXTURE.wallet,
+  mint: LIVE_FIXTURE.mint,
+  quoteMint: LIVE_FIXTURE.quoteMint,
   from: 1_780_000_000,
   to: 1_780_003_600,
   signatures: Object.freeze(["1".repeat(88), "2".repeat(88)]),
@@ -43,59 +45,43 @@ test("known retained Replay rejects missing expected receipts", () => {
   );
 });
 
-test("saved Cut supplies exact retained timestamps and signatures", () => {
+test("retained evidence fixture requires valid addresses, time window, and Solana receipts", () => {
+  assert.deepEqual(validateEvidenceFixture(fixture), fixture);
+  assert.throws(() => validateEvidenceFixture({ ...fixture, signatures: ["placeholder"] }), /no replayable Solana receipts/);
+  assert.throws(() => validateEvidenceFixture({ ...fixture, to: fixture.from - 1 }), /end precedes/);
+});
+
+test("saved Cut smoke check stays archival and does not invent blockchain receipts", () => {
   const result = fixtureFromFrozenCut({
     ok: true,
     frozen: true,
-    id: fixture.cutId,
-    shareUrl: `/?cut=${fixture.cutId}`,
-    verifyUrl: `/?cut=${fixture.cutId}`,
+    id: LIVE_FIXTURE.cutId,
+    shareUrl: `/?cut=${LIVE_FIXTURE.cutId}`,
+    verifyUrl: `/?cut=${LIVE_FIXTURE.cutId}`,
     manifest: {
-      subject: { kind: "wallet-token", id: `${fixture.wallet}:${fixture.mint}` },
+      subject: { kind: "wallet-token", id: `${LIVE_FIXTURE.wallet}:${LIVE_FIXTURE.mint}` },
       coverage: { from: fixture.from, to: fixture.to },
-      evidence: [
-        { id: "entry", signature: fixture.signatures[0], blockTime: fixture.from },
-        { id: "exit", signature: fixture.signatures[1], blockTime: fixture.to },
-      ],
+      evidence: [{ id: "provider-context", signature: "placeholder", sourceReference: "provider:context" }],
     },
-  }, fixture);
-  assert.deepEqual(result.signatures, fixture.signatures);
-  assert.equal(result.from, fixture.from);
+  });
+  assert.equal(result.cutId, LIVE_FIXTURE.cutId);
+  assert.equal(result.manifest.evidence[0].signature, "placeholder");
 });
 
-test("saved Cut accepts mixed evidence while keeping only replayable Solana receipts", () => {
-  const result = fixtureFromFrozenCut({
+test("saved Cut rejects mutable or mismatched archival manifests", () => {
+  assert.throws(() => fixtureFromFrozenCut({ ok: true, frozen: false }), /not frozen/);
+  assert.throws(() => fixtureFromFrozenCut({ ok: true, frozen: true, id: "wrong" }), /different id/);
+  assert.throws(() => fixtureFromFrozenCut({
     ok: true,
     frozen: true,
-    id: fixture.cutId,
-    shareUrl: `/?cut=${fixture.cutId}`,
-    verifyUrl: `/?cut=${fixture.cutId}`,
-    manifest: {
-      subject: { kind: "wallet-token", id: `${fixture.wallet}:${fixture.mint}` },
-      coverage: { from: fixture.from, to: fixture.to },
-      evidence: [
-        { id: "provider-context", signature: "placeholder", sourceReference: "provider:context" },
-        { id: "entry", signature: fixture.signatures[0], blockTime: fixture.from },
-      ],
-    },
-  }, fixture);
-  assert.deepEqual(result.signatures, [fixture.signatures[0]]);
-});
-
-test("saved Cut rejects a mutable, mismatched, or out-of-window manifest", () => {
-  assert.throws(() => fixtureFromFrozenCut({ ok: true, frozen: false }, fixture), /not frozen/);
-  assert.throws(() => fixtureFromFrozenCut({ ok: true, frozen: true, id: "wrong" }, fixture), /different id/);
-  assert.throws(() => fixtureFromFrozenCut({
-    ok: true, frozen: true, id: fixture.cutId, shareUrl: `/?cut=${fixture.cutId}`, verifyUrl: `/?cut=${fixture.cutId}`,
-    manifest: { subject: { kind: "wallet-token", id: `${fixture.wallet}:${fixture.mint}` }, coverage: { from: fixture.from, to: fixture.to }, evidence: [{ id: "late", signature: fixture.signatures[0], blockTime: fixture.to + 1 }] },
-  }, fixture), /outside its coverage/);
-  assert.throws(() => fixtureFromFrozenCut({
-    ok: true, frozen: true, id: fixture.cutId, shareUrl: `/?cut=${fixture.cutId}`, verifyUrl: `/?cut=${fixture.cutId}`,
-    manifest: { subject: { kind: "wallet-token", id: `${fixture.wallet}:${fixture.mint}` }, coverage: { from: fixture.from, to: fixture.to }, evidence: [{ id: "bad", signature: "placeholder", blockTime: fixture.from }] },
-  }, fixture), /no retained Solana receipt/);
+    id: LIVE_FIXTURE.cutId,
+    shareUrl: `/?cut=${LIVE_FIXTURE.cutId}`,
+    verifyUrl: `/?cut=${LIVE_FIXTURE.cutId}`,
+    manifest: { subject: { kind: "wallet-token", id: "wrong:subject" }, evidence: [] },
+  }), /different subject/);
 });
 
 test("canonical /?cut= page must render frozen VERIFY disclosure", () => {
-  assert.doesNotThrow(() => validateCutPage("VERIFY · Frozen Cut This viewer renders the frozen manifest only.", fixture));
-  assert.throws(() => validateCutPage("Cut unavailable", fixture), /did not render/);
+  assert.doesNotThrow(() => validateCutPage("VERIFY · Frozen Cut This viewer renders the frozen manifest only."));
+  assert.throws(() => validateCutPage("Cut unavailable"), /did not render/);
 });
