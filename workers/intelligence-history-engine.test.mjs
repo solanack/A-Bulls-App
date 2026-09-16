@@ -8,7 +8,7 @@ test('history engine prefers explicit neutral RPC then Helius standard RPC', () 
   assert.equal(resolveHistoryRpc({}).name, 'solana-public-rpc');
 });
 
-test('history decoder emits observed token deltas without claiming PnL', () => {
+test('history decoder recognizes observed token/native-SOL movement without claiming PnL', () => {
   const wallet='11111111111111111111111111111111';
   const tx={
     slot:10, blockTime:100,
@@ -21,8 +21,8 @@ test('history decoder emits observed token deltas without claiming PnL', () => {
   assert.equal(rows.length,1);
   assert.equal(rows[0].tokenDelta,2);
   assert.equal(rows[0].solDelta,-0.1);
-  assert.equal(rows[0].eventClass,'transfer');
+  assert.equal(rows[0].eventClass,'swap-like');
   assert.equal(rows[0].source,'test-rpc');
   assert.equal(Object.hasOwn(rows[0],'pnl'),false);
+  assert.equal(Object.hasOwn(rows[0],'price'),false);
 });
-
