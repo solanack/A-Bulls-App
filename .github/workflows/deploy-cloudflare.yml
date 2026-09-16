@@ -100,7 +100,9 @@ jobs:
           node scripts/check-worker-migrations.mjs
           npx wrangler d1 migrations list INTELLIGENCE_DB --remote --config workers/wrangler.production.toml | tee pending-intelligence-migrations.txt
       - name: Validate retained production evidence before mutation
-        run: node scripts/check-live.mjs --fixture-only | tee retained-live-fixture.json
+        run: |
+          set -o pipefail
+          node scripts/check-live.mjs --fixture-only | tee retained-live-fixture.json
       - name: Apply intelligence migrations
         run: npx wrangler d1 migrations apply INTELLIGENCE_DB --remote --config workers/wrangler.production.toml
       - name: Publish intelligence worker
