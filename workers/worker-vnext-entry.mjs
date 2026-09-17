@@ -1,6 +1,7 @@
 /* A Bulls App Living Universe Worker — read-only intelligence entry. */
 import { handleIntelligenceFetch, handleIntelligenceScheduled } from './intelligence-worker-hooks.mjs';
 import { guardIntelligenceRequest } from './intelligence-request-guard.mjs';
+import { annotateReasonCodes, configureProviderFetch } from './intelligence-fetch.mjs';
 
 function allowedOrigins(env = {}) {
   return String(env.ALLOWED_ORIGINS || 'http://localhost:8788,http://localhost:4173,http://127.0.0.1:4173')
@@ -27,6 +28,20 @@ function withCors(response, request, env) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
+async function withReasonCodes(response, request) {
+  if (!(response instanceof Response)) return response;
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith('/api/intelligence/')) return response;
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+  if (!contentType.includes('application/json')) return response;
+  let payload;
+  try { payload = await response.clone().json(); } catch { return response; }
+  const normalized = annotateReasonCodes(payload);
+  const headers = new Headers(response.headers);
+  headers.set('content-type', 'application/json; charset=utf-8');
+  return new Response(JSON.stringify(normalized), { status: response.status, statusText: response.statusText, headers });
+}
+
 function notFound(request, env) {
   return new Response(JSON.stringify({ ok: false, error: 'not_found' }), {
     status: 404,
@@ -50,6 +65,7 @@ function health(request, env) {
 
 export default {
   async fetch(request, env, ctx) {
+    configureProviderFetch(env);
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) });
@@ -57,12 +73,13 @@ export default {
     const guarded = await guardIntelligenceRequest(request, env);
     if (guarded) return withCors(guarded, request, env);
     const vnext = await handleIntelligenceFetch(request, env, ctx);
-    if (vnext) return withCors(vnext, request, env);
+    if (vnext) return withCors(await withReasonCodes(vnext, request), request, env);
     if (url.pathname === '/api/health' && request.method === 'GET') return health(request, env);
     return notFound(request, env);
   },
 
   async scheduled(event, env, ctx) {
+    configureProviderFetch(env);
     const task = (async () => {
       await handleIntelligenceScheduled(env);
     })();

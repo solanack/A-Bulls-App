@@ -15,6 +15,23 @@ FIELD_COMPAT_ENABLED = "true"
 FIELD_V0_ENABLED = "true"
 FIELD_QUERY_CACHE_TTL_SECONDS = "60"
 
+# Shared provider transport defaults. Each provider may override these with
+# <PROVIDER>_FETCH_TIMEOUT_MS / _FETCH_RETRIES / _FETCH_BACKOFF_MS without code changes.
+# One retry means two total attempts and applies only to transient network errors,
+# timeouts, HTTP 429, and HTTP 5xx responses; evidence is never synthesized on failure.
+PROVIDER_FETCH_TIMEOUT_MS = "6000"
+PROVIDER_FETCH_RETRIES = "1"
+PROVIDER_FETCH_BACKOFF_MS = "250"
+FOMOAPI_FETCH_TIMEOUT_MS = "8000"
+FOMOAPI_FETCH_RETRIES = "1"
+FOMOAPI_FETCH_BACKOFF_MS = "350"
+HELIUS_FETCH_TIMEOUT_MS = "8000"
+HELIUS_FETCH_RETRIES = "1"
+HELIUS_FETCH_BACKOFF_MS = "350"
+COINGECKO_FETCH_TIMEOUT_MS = "8000"
+COINGECKO_FETCH_RETRIES = "1"
+COINGECKO_FETCH_BACKOFF_MS = "350"
+
 FOMO_GALAXY_ENABLED = "true"
 FOMO_REFRESH_MINUTES = "180"
 FOMO_PROFILE_LOOKUPS_PER_REFRESH = "0"
