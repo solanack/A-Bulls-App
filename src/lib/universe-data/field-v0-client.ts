@@ -1,3 +1,4 @@
+import { INTELLIGENCE_PUBLIC_ORIGIN } from "../app-origins.ts";
 /**
  * Field v0 producer client — aligns with merged Indexer Field v0 (#22 on main):
  *   GET /api/intelligence/field/v0/events
@@ -22,7 +23,7 @@ import type { UniverseDataStatus } from "./contracts";
 import { fetchIntelligence } from "../intelligence-origin.ts";
 
 /** Live galaxy / frontend origin (a-bulls-app-frontend). */
-export const FIELD_V0_ORIGIN = "https://abullsapp.com";
+export const FIELD_V0_ORIGIN = INTELLIGENCE_PUBLIC_ORIGIN;
 
 export const FIELD_V0_PATH = "/api/intelligence/field/v0";
 

@@ -1,7 +1,9 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin } from "vite";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
+// @ts-expect-error JS deployment configuration shared with release scripts
+import { appOrigins } from "./scripts/deployment-origins.mjs";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -146,13 +148,18 @@ function authPopupPlugin(): Plugin {
 // `0.0.0.0:8080` is the live-preview contract — don't change host/port.
 // Cloudflare production uses `CF_DEPLOY=1` (wrangler). Grok preview/dev keeps
 // the nitro Vercel path so :8080 and `vite preview` on :8081 stay intact.
-export default defineConfig(({ command, isPreview }) => {
+export default defineConfig(({ command, isPreview, mode }) => {
+  const origins = appOrigins(mode, loadEnv(mode, process.cwd(), "VITE_"));
   const localQa = process.env.LOCAL_BROWSER_QA === "1";
   const cfDeploy = process.env.CF_DEPLOY === "1";
   const useCloudflare = cfDeploy && !localQa;
   const useNitro = !cfDeploy && (command === "build" || Boolean(isPreview));
 
   return {
+  define: {
+    "import.meta.env.VITE_INTELLIGENCE_WORKER_URL": JSON.stringify(origins.worker),
+    "import.meta.env.VITE_PUBLIC_APP_ORIGIN": JSON.stringify(origins.public),
+  },
   server: {
     host: "0.0.0.0",
     port: 8080,

@@ -1,6 +1,7 @@
+import { productionOrigins } from "./deployment-origins.mjs";
 import assert from 'node:assert/strict';
 
-const origin=process.env.LIVE_ORIGIN||'https://abullsapp.com';
+const origin=process.env.LIVE_ORIGIN||productionOrigins.public;
 const expectedTargets=['solana','base','bsc','monad','robinhood','ethereum'];
 
 const response=await fetch(`${origin}/api/intelligence/multichain/status?ts=${Date.now()}`,{

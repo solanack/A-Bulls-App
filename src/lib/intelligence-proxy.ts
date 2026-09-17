@@ -1,4 +1,4 @@
-const INTELLIGENCE_WORKER = "https://black-bull-run-sol.ckdsigns1.workers.dev";
+import { INTELLIGENCE_WORKER_ORIGIN as INTELLIGENCE_WORKER } from "./app-origins.ts";
 const FORWARDED_METHODS = new Set(["GET", "POST", "PUT"]);
 
 export async function proxyIntelligenceRequest(request: Request): Promise<Response> {

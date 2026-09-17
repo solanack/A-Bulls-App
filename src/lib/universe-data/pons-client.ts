@@ -1,8 +1,9 @@
+import { INTELLIGENCE_PUBLIC_ORIGIN } from "../app-origins.ts";
 import type { FieldParticle, UniverseSnapshot } from "@/lib/field/types";
 import type { UniverseDataStatus } from "./contracts";
 import { fetchIntelligence } from "../intelligence-origin.ts";
 export const PONS_GALAXY_PATH="/api/intelligence/pons/galaxy";
-export const PONS_GALAXY_URL=`https://abullsapp.com${PONS_GALAXY_PATH}`;
+export const PONS_GALAXY_URL=`${INTELLIGENCE_PUBLIC_ORIGIN}${PONS_GALAXY_PATH}`;
 
 export type PonsLaunch={rank:number;token:string;factory:string;factoryVersion:"v1"|"v2";curve:string|null;deployer:string;dexFactory:string|null;pairToken:string;pool:string|null;transactionHash:string;blockNumber:number;blockHash:string;blockTime:number|null;finality:string;state:string;market?:Record<string,unknown>};
 type PonsGalaxyBody={ok?:boolean;error?:string;data?:{generatedAt?:number;coverage?:{complete?:boolean;statement?:string};launches?:PonsLaunch[]}};

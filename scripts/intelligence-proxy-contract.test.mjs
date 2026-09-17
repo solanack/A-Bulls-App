@@ -12,14 +12,11 @@ test("the public domain proxies intelligence and health requests", async () => {
     read("src/routes/api.health.ts"),
     read("src/lib/intelligence-origin.ts"),
   ]);
-  assert.match(proxy, /black-bull-run-sol\.ckdsigns1\.workers\.dev/);
+  assert.match(proxy, /app-origins/);
   assert.match(route, /\/api\/intelligence\/\$/);
   assert.match(nestedRoute, /\/api\/intelligence\/\$a\/\$b/);
   assert.match(health, /\/api\/health/);
-  assert.ok(
-    origins.indexOf('"https://black-bull-run-sol.ckdsigns1.workers.dev"')
-      < origins.indexOf('"https://abullsapp.com"'),
-  );
+  assert.match(origins, /app-origins/);
 });
 
 test("the field favors crisp rendering and ignores decorative wallpaper", async () => {

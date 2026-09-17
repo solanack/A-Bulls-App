@@ -1,6 +1,7 @@
+import { productionOrigins } from "./deployment-origins.mjs";
 import { spawnSync } from 'node:child_process';
 
-const ORIGIN=process.env.A_BULLS_ORIGIN||'https://abullsapp.com';
+const ORIGIN=process.env.A_BULLS_ORIGIN||productionOrigins.public;
 const CONFIG='workers/wrangler.production.toml';
 const DB='a-bulls-app-intelligence';
 const REQUIRED_SECRET_NAMES=['FOMOAPI_API_KEY','PUMP_INGEST_SECRET','HELIUS_WEBHOOK_AUTH_SECRET','HELIUS_API_KEY'];

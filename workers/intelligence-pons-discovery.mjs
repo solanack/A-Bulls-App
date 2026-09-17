@@ -104,7 +104,7 @@ function filterVerifiedTopicRows(factory,rows,startBlock=0){
 
 export async function fetchPonsInstancePage(factory,cursor=null,fetchImpl=providerFetch,env={}){
   const response=await fetchImpl(buildPonsRestLogsUrl(env,factory,cursor),{
-    headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'},
+    headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0'},
     signal:AbortSignal.timeout(10_000)
   });
   if(!response.ok)throw new Error(`pons_${ponsBlockscoutSource(env)}_http_${response.status}`);
@@ -112,7 +112,7 @@ export async function fetchPonsInstancePage(factory,cursor=null,fetchImpl=provid
 }
 
 async function fetchBlockscoutProRange(factory,fromBlock,toBlock,apiKey,fetchImpl=providerFetch,depth=0){
-  const response=await fetchImpl(buildPonsProLogsUrl(factory,fromBlock,toBlock,apiKey),{headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'},signal:AbortSignal.timeout(10_000)});
+  const response=await fetchImpl(buildPonsProLogsUrl(factory,fromBlock,toBlock,apiKey),{headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0'},signal:AbortSignal.timeout(10_000)});
   if(!response.ok)throw new Error(`pons_blockscout_pro_http_${response.status}`);
   const rows=parseBlockscoutLogsPayload(await response.json());
   if(rows.length<RESULT_LIMIT)return rows;
@@ -126,7 +126,7 @@ async function fetchBlockscoutProRange(factory,fromBlock,toBlock,apiKey,fetchImp
 }
 
 async function fetchBlockscoutLegacyRange(factory,fromBlock,toBlock,fetchImpl=providerFetch,depth=0){
-  const response=await fetchImpl(buildFilteredPonsLogsUrl(factory,fromBlock,toBlock),{headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'},signal:AbortSignal.timeout(10_000)});
+  const response=await fetchImpl(buildFilteredPonsLogsUrl(factory,fromBlock,toBlock),{headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0'},signal:AbortSignal.timeout(10_000)});
   if(!response.ok)throw new Error(`pons_blockscout_legacy_http_${response.status}`);
   const rows=parseBlockscoutLogsPayload(await response.json());
   if(rows.length<RESULT_LIMIT)return rows;

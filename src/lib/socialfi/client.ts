@@ -1,6 +1,6 @@
 import type { SocialCapabilities, SocialFeedResponse, SocialFeedScope } from "./contracts";
 
-const WORKER = "https://black-bull-run-sol.ckdsigns1.workers.dev";
+import { INTELLIGENCE_WORKER_ORIGIN as WORKER } from "../app-origins.ts";
 
 async function readJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${WORKER}${path}`, {

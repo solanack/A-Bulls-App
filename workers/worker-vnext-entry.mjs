@@ -3,7 +3,7 @@ import { handleIntelligenceFetch, handleIntelligenceScheduled } from './intellig
 import { guardIntelligenceRequest } from './intelligence-request-guard.mjs';
 
 function allowedOrigins(env = {}) {
-  return String(env.ALLOWED_ORIGINS || 'https://abullsapp.com,https://www.abullsapp.com,http://localhost:8788,http://localhost:4173,http://127.0.0.1:4173')
+  return String(env.ALLOWED_ORIGINS || 'http://localhost:8788,http://localhost:4173,http://127.0.0.1:4173')
     .split(',').map(value => value.trim()).filter(Boolean);
 }
 

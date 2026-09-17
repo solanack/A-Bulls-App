@@ -1,5 +1,5 @@
-export const INTELLIGENCE_WORKER_ORIGIN = "https://black-bull-run-sol.ckdsigns1.workers.dev";
-export const INTELLIGENCE_PUBLIC_ORIGIN = "https://abullsapp.com";
+import { INTELLIGENCE_WORKER_ORIGIN, INTELLIGENCE_PUBLIC_ORIGIN } from "./app-origins.ts";
+export { INTELLIGENCE_WORKER_ORIGIN, INTELLIGENCE_PUBLIC_ORIGIN };
 
 /** ServerFn fetches prefer workers.dev first. Browser Field hydrate stays origin-only (#23). */
 export const INTELLIGENCE_ORIGINS = Object.freeze([

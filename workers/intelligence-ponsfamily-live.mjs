@@ -25,7 +25,7 @@ const hex=value=>{const num=n(value);return `0x${Math.max(0,Math.trunc(num)).toS
 const hexNumber=value=>Math.max(0,Number.parseInt(s(value).replace(/^0x/,''),16)||0);
 const unix=value=>{if(value==null)return null;if(Number.isFinite(Number(value)))return Math.floor(Number(value));const ms=Date.parse(s(value));return Number.isFinite(ms)?Math.floor(ms/1000):null;};
 
-async function getJson(url){const response=await providerFetch(url,{headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'}});if(!response.ok)throw new Error(`public_source_http_${response.status}`);return response.json();}
+async function getJson(url){const response=await providerFetch(url,{headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0'}});if(!response.ok)throw new Error(`public_source_http_${response.status}`);return response.json();}
 function blockscoutLogUrl(env,factory,next){return buildPonsBlockscoutAddressLogsUrl(env,factory,next);}
 function blockscoutTopics(row){return Array.isArray(row?.topics)?row.topics.map(value=>s(value).toLowerCase()):[];}
 function rawLog(factory,row){return{address:factory.address,topics:blockscoutTopics(row),data:s(row?.data)||'0x',transactionHash:s(row?.transaction_hash??row?.transactionHash).toLowerCase(),blockHash:s(row?.block_hash??row?.blockHash).toLowerCase(),blockNumber:hex(row?.block_number??row?.blockNumber),logIndex:hex(row?.index??row?.log_index??row?.logIndex)};}

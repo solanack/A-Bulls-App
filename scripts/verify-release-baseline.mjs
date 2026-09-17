@@ -1,3 +1,5 @@
+import { checkDeploymentOrigins } from "./check-deployment-origins.mjs";
+checkDeploymentOrigins();
 import { readFileSync } from "node:fs";
 
 const source=readFileSync(new URL("../src/components/app-shell.tsx",import.meta.url),"utf8");

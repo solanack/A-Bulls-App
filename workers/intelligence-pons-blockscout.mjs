@@ -46,7 +46,7 @@ export function buildPonsBlockscoutTokenCountersUrl(env={},token){
 
 export async function fetchPonsBlockscoutJson(env={},url,fetchImpl=providerFetch){
   const response=await fetchImpl(url,{
-    headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'},
+    headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0'},
     signal:AbortSignal.timeout(10_000)
   });
   if(!response.ok)throw new Error(`pons_${ponsBlockscoutSource(env)}_http_${response.status}`);

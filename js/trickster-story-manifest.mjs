@@ -132,7 +132,7 @@ export function cutSharePath(shareId) {
 }
 
 export function cutShareHref(origin, shareId) {
-  const base = String(origin ?? '').replace(/\/$/, '') || 'https://abullsapp.com';
+  const base = String(origin ?? '').replace(/\/$/, '');
   const path = cutSharePath(shareId);
   return path ? `${base}${path}` : '';
 }

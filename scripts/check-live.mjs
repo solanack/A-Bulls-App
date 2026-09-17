@@ -1,3 +1,4 @@
+import { productionOrigins } from "./deployment-origins.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -146,7 +147,7 @@ export function validateFomoTrader(body, trader) {
 }
 
 export async function runLiveChecks({
-  origin = "https://abullsapp.com",
+  origin = productionOrigins.public,
   expected,
   cutFixture = LIVE_FIXTURE,
   evidenceFixture = null,

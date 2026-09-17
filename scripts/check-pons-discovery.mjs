@@ -1,8 +1,9 @@
+import { productionOrigins } from "./deployment-origins.mjs";
 import { spawnSync } from 'node:child_process';
 
 const CONFIG='workers/wrangler.production.toml';
 const DB='a-bulls-app-intelligence';
-const ORIGIN=process.env.A_BULLS_ORIGIN||'https://abullsapp.com';
+const ORIGIN=process.env.A_BULLS_ORIGIN||productionOrigins.public;
 
 function runWrangler(args){
   const result=spawnSync('npx',['wrangler',...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']});

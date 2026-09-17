@@ -92,6 +92,6 @@ test('repeated calls inside one 15-minute window cannot advance a cycle',()=>{
 });
 
 test('protected ranking route fails closed while disabled',async()=>{
-  const response=await handlePonsRankingRequest(new Request('https://abullsapp.com/api/intelligence/pons/rank',{method:'POST'}),{});
+  const response=await handlePonsRankingRequest(new Request('https://app.example.test/api/intelligence/pons/rank',{method:'POST'}),{});
   assert.equal(response.status,404);
 });

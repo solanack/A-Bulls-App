@@ -2,7 +2,9 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "a-bulls-app-frontend",
   "compatibility_date": "2026-08-29",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "main": "@tanstack/react-start/server-entry",
   "observability": {
     "enabled": true
@@ -18,5 +20,9 @@
       "pattern": "abullsapp.com/*",
       "zone_name": "abullsapp.com"
     }
-  ]
+  ],
+  "vars": {
+    "INTELLIGENCE_WORKER_URL": "https://black-bull-run-sol.ckdsigns1.workers.dev",
+    "PUBLIC_APP_ORIGIN": "https://abullsapp.com"
+  }
 }

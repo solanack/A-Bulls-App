@@ -68,7 +68,7 @@ export function normalizeGeckoTerminalToken(mint,payload={}){
 
 export async function fetchSolanaDexMarket(address,fetchImpl=providerFetch){
   const target=s(address);if(!ADDRESS_RE.test(target))return null;
-  const dexHeaders={accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'};
+  const dexHeaders={accept:'application/json','user-agent':'A-Bulls-App/1.0'};
   const dexAttempts=[
     {url:`${DEXSCREENER_PAIRS_ENDPOINT}/${encodeURIComponent(target)}`,source:'dexscreener-token-pairs'},
     {url:`${DEXSCREENER_LOOKUP_ENDPOINT}/${encodeURIComponent(target)}`,source:'dexscreener-token-lookup'}
@@ -90,7 +90,7 @@ export async function fetchSolanaDexMarket(address,fetchImpl=providerFetch){
     }
   }
   try{
-    const response=await fetchImpl(`${GECKOTERMINAL_TOKEN_ENDPOINT}/${encodeURIComponent(target)}`,{headers:{accept:'application/json;version=20230203','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'},signal:AbortSignal.timeout(3500)});
+    const response=await fetchImpl(`${GECKOTERMINAL_TOKEN_ENDPOINT}/${encodeURIComponent(target)}`,{headers:{accept:'application/json;version=20230203','user-agent':'A-Bulls-App/1.0'},signal:AbortSignal.timeout(3500)});
     if(response.ok){const market=normalizeGeckoTerminalToken(target,await response.json());if(market)return market;}
   }catch{}
   return null;

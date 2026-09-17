@@ -1,6 +1,7 @@
+import { productionOrigins } from "./deployment-origins.mjs";
 import { spawnSync } from 'node:child_process';
 
-const ORIGIN=process.env.A_BULLS_ORIGIN||'https://abullsapp.com';
+const ORIGIN=process.env.A_BULLS_ORIGIN||productionOrigins.public;
 const CONFIG='workers/wrangler.production.toml';
 const DB='a-bulls-app-intelligence';
 const SECRET_NAMES=['PONS_BLOCKSCOUT_API_KEY','BLOCKSCOUT_API_KEY','PONS_RPC_URL','PONS_BITQUERY_TOKEN','BITQUERY_API_TOKEN','PONS_INDEX_SECRET'];

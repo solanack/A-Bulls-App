@@ -58,7 +58,7 @@ export async function loadFieldMarkets(env,input,{fetchImpl=providerFetch,now=Da
     const provider=providerChainConfig(chain,items[0]?.address);if(!provider){errors.push(`field_market_chain_unavailable:${chain}`);return;}
     const url=`https://api.dexscreener.com/tokens/v1/${encodeURIComponent(provider.dexScreenerId)}/${items.map(item=>encodeURIComponent(item.address)).join(',')}`;
     try{
-      const response=await fetchImpl(url,{headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0 (+https://abullsapp.com)'}});
+      const response=await fetchImpl(url,{headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0'}});
       if(!response?.ok)throw new Error(`field_market_http_${chain}_${response?.status||0}`);
       const rows=await response.json();if(!Array.isArray(rows))throw new Error(`field_market_invalid_response:${chain}`);
       for(const subject of items){const normalized=normalizeDexScreenerPairs(chain,subject.address,rows),market=normalized?{...normalized,observedAt:now}:null;if(market)publish(markets,subject,market);else{const fallback=stale.get(subject.assetId);if(fallback)publish(markets,subject,fallback);}if(db?.prepare){writes.push(db.prepare("INSERT INTO bull_intelligence_cache(cache_key,payload_json,source,coverage,generated_at,expires_at) VALUES(?,?,?,'fresh',?,?) ON CONFLICT(cache_key) DO UPDATE SET payload_json=excluded.payload_json,source=excluded.source,coverage=excluded.coverage,generated_at=excluded.generated_at,expires_at=excluded.expires_at").bind(cacheKey(subject),JSON.stringify(market),'dexscreener',Math.floor(now/1000),Math.floor(now/1000)+ttl));if(market)writes.push(snapshotStatement(db,subject,market,now));}}

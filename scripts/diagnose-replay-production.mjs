@@ -1,4 +1,5 @@
-const origin=String(process.env.A_BULLS_ORIGIN||'https://abullsapp.com').replace(/\/$/,'');
+import { productionOrigins } from "./deployment-origins.mjs";
+const origin=String(process.env.A_BULLS_ORIGIN||productionOrigins.public).replace(/\/$/,'');
 const SOL='So11111111111111111111111111111111111111112';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const safeText=value=>String(value==null?'':value).trim();

@@ -1,3 +1,4 @@
+import { INTELLIGENCE_PUBLIC_ORIGIN } from "../lib/app-origins.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Download, Share2 } from "lucide-react";
 import { callUniverseTool } from "@/lib/universe-intelligence";
@@ -26,7 +27,7 @@ export function TricksterDirector({bundle,mint,wallet,tokenLabel=""}:{bundle:Dat
   useEffect(()=>()=>{if(previewRef.current)URL.revokeObjectURL(previewRef.current);},[]);
   if(!events.length)return <p className="universe-empty">Watch this trade on the chart first. A Cut needs indexed receipts.</p>;
   const chosen=events.filter((event,index)=>chosenIds.includes(receiptEventId(event,index))).slice(0,CUT_RECEIPT_MAX),preview=chosen.at(-1)??events[0],coverage=obj(bundle.coverage),subject=obj(bundle.subject),subjectMint=text(subject.mint)||mint;
-  const origin=globalThis.location?.origin??"https://abullsapp.com";
+  const origin=globalThis.location?.origin??INTELLIGENCE_PUBLIC_ORIGIN;
   const shareHref=shareId?cutShareHref(origin,shareId):"";
   function toggle(id:string){setSelected(current=>{const base=current??autoIds;return base.includes(id)?base.filter(item=>item!==id):[...base,id].slice(0,CUT_RECEIPT_MAX);});setShareId("");}
   function renderShareArtifact(id:string,manifest:Data){
@@ -65,7 +66,7 @@ export function TricksterDirector({bundle,mint,wallet,tokenLabel=""}:{bundle:Dat
 
 export function FrozenCutViewer({record,verifyUrl}:{record:Data;verifyUrl?:string}){
   const manifest=obj(record.manifest),claims=arr(manifest.claims).map(obj),receipts=arr(manifest.evidence).map(obj),scenes=arr(manifest.scenes).map(obj),coverage=obj(manifest.coverage),output=obj(manifest.output),claimById=new Map(claims.map(claim=>[text(claim.id),claim])),receiptById=new Map(receipts.map(receipt=>[text(receipt.id),receipt])),disclosures=arr(record.disclosures).map(text).filter(Boolean);
-  const id=text(record.id??record.shareId),href=verifyUrl||text(record.verifyUrl||record.shareUrl)||(id?cutShareHref(globalThis.location?.origin??"https://abullsapp.com",id):"");
+  const id=text(record.id??record.shareId),href=verifyUrl||text(record.verifyUrl||record.shareUrl)||(id?cutShareHref(globalThis.location?.origin??INTELLIGENCE_PUBLIC_ORIGIN,id):"");
   if(!Object.keys(manifest).length)return null;
   return <section className="trickster-frozen" aria-label="Frozen Cut verification viewer"><TricksterStyles/><header><div><CheckCircle2 size={16}/><b>VERIFY · Frozen Cut</b></div><span>{text(manifest.storyType)||"evidence story"} · {text(output.aspectRatio)||"format unavailable"}</span></header><div className="trickster-frozen__coverage"><b>{num(coverage.verifiedPercent)}% VERIFIED RECEIPTS</b><span>{text(coverage.statement)||"Coverage statement unavailable."}</span><span>{formatEpoch(num(coverage.from))} → {formatEpoch(num(coverage.to))}</span>{href?<a className="trickster-share__verify" href={href}>VERIFY</a>:null}</div><div className="trickster-frozen__scenes">{scenes.map((scene,index)=>{const claimIds=arr(scene.claimIds).map(text),sceneClaims=claimIds.map(id=>claimById.get(id)).filter(Boolean) as Data[];return <article key={text(scene.id)||index}><span>SCENE {index+1} · {num(scene.durationFrames)} FRAMES</span>{sceneClaims.map(claim=><div key={text(claim.id)}><b>{text(claim.statement)}</b><div>{arr(claim.evidenceIds).map(text).map(id=>{const receipt=receiptById.get(id);return <p key={id}>RECEIPT · {short(receipt?.signature??receipt?.sourceReference??id)} · {text(receipt?.source)||"source unavailable"}</p>})}</div></div>)}</article>})}</div>{disclosures.length?<div className="trickster-frozen__disclosures">{disclosures.map((item,index)=><p key={`${item}-${index}`}>{item}</p>)}</div>:null}<p className="universe-disclosure">This viewer renders the frozen manifest only. It does not re-run, reinterpret, or upgrade any stored claim after publication.</p></section>;
 }
