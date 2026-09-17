@@ -1,6 +1,7 @@
 /* A Bulls App Living Universe Worker — read-only intelligence entry. */
 import { handleIntelligenceFetch, handleIntelligenceScheduled } from './intelligence-worker-hooks.mjs';
 import { guardIntelligenceRequest } from './intelligence-request-guard.mjs';
+import { configureProviderFetch } from './intelligence-fetch.mjs';
 
 function allowedOrigins(env = {}) {
   return String(env.ALLOWED_ORIGINS || 'http://localhost:8788,http://localhost:4173,http://127.0.0.1:4173')
@@ -50,6 +51,7 @@ function health(request, env) {
 
 export default {
   async fetch(request, env, ctx) {
+    configureProviderFetch(env);
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) });
@@ -63,6 +65,7 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
+    configureProviderFetch(env);
     const task = (async () => {
       await handleIntelligenceScheduled(env);
     })();
