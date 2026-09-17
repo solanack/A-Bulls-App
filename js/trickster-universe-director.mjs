@@ -2,7 +2,7 @@
 import { cutShareReceiptLines, cutShareSize } from './trickster-story-manifest.mjs';
 
 const s=v=>String(v??'').trim();
-const n=v=>Number.isFinite(Number(v))?Number(v):0;
+const n=v=>Number.isFinite(Number(v))?Number(value):0;
 const xml=v=>s(v).replace(/[&<>"']/g,ch=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;' }[ch]??ch));
 const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
 
@@ -19,16 +19,13 @@ export function tricksterEventMagnitude(event={}){
 
 function receiptId(event={},index=0){return s(event.id)||s(event.signature)||`event-${Math.max(0,Math.trunc(n(index)))}`;}
 
-/**
- * Select a compact contiguous receipt window centered on the highest-magnitude event.
- * No event is synthesized and selection never exceeds the supplied timeline.
- */
+/** Select a compact contiguous receipt window centered on the highest-magnitude event. */
 export function autoSelectTricksterMoment(timeline=[],maxEvents=5){
-  const events=Array.isArray(timeline)?timeline:[],cap=Math.max(1,Math.min(12,Math.trunc(n(maxEvents)||5));
+  const events=Array.isArray(timeline)?timeline:[],cap=Math.max(1,Math.min(12,Math.trunc(n(maxEvents)||5)));
   if(!events.length)return Object.freeze([]);
   let peak=0,peakScore=-Infinity;
   for(let index=0;index<events.length;index++){
-    const event=events[index],score=tricksterEventMagnitude(event)+(s(event.side).toLowerCase()==='buy'||s(event.side).toLowerCase()==='sell'?.02:0);
+    const event=events[index],side=s(event.side).toLowerCase(),score=tricksterEventMagnitude(event)+((side==='buy'||side==='sell')?.02:0);
     if(score>peakScore){peak=index;peakScore=score;}
   }
   const size=Math.min(cap,events.length),start=clamp(peak-Math.floor(size/2),0,events.length-size);
@@ -41,8 +38,8 @@ export function buildTricksterDirectorCues(timeline=[],options={}){
   if(!events.length)return Object.freeze([]);
   const candidates=[];
   for(let i=0;i<events.length;i++){
-    const e=events[i],mag=tricksterEventMagnitude(e);
-    if(i===0||i===events.length-1||mag>=.55||s(e.side)==='buy'||s(e.side)==='sell')candidates.push({e,i,mag});
+    const e=events[i],mag=tricksterEventMagnitude(e),side=s(e.side).toLowerCase();
+    if(i===0||i===events.length-1||mag>=.55||side==='buy'||side==='sell')candidates.push({e,i,mag});
   }
   const step=Math.max(1,Math.ceil(candidates.length/max));
   return Object.freeze(candidates.filter((_,i)=>i%step===0).slice(0,max).map(({e,i,mag},idx)=>Object.freeze({
@@ -63,12 +60,7 @@ export function buildTricksterSimulationCue({at=0,prompt='',summary=''}={}){
   return Object.freeze({id:`simulation-${Math.max(0,Math.trunc(n(at)))}`,at:n(at),kind:'simulation',statement:s(summary)||s(prompt)||'What If simulation',claimKind:'simulated',disclosure:'Simulation: this segment is not an observed blockchain event.',suggestedPresentation:'alternate-timeline'});
 }
 
-/**
- * Social SVG poster from the existing director chart + frozen receipts. This is
- * retained as a deterministic fallback when browser video capture is unavailable.
- * @param {{manifest?: object, shareHref?: string, candles?: object[], tokenLabel?: string}} [opts]
- * @returns {string}
- */
+/** Social SVG poster retained as a deterministic fallback when browser video capture is unavailable. */
 export function buildCutShareSvg(opts={}){
   const manifest=opts.manifest,shareHref=opts.shareHref||'',candles=opts.candles||[],tokenLabel=opts.tokenLabel||'This trade';
   const size=cutShareSize(manifest?.output?.aspectRatio||'9:16');
