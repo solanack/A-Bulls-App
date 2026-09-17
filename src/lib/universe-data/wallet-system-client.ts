@@ -10,7 +10,7 @@ export type WalletTokenActivity = {
   lastEvent: number | null;
   observedTokenFlow: number;
   maxConfidence: number;
-  sourceKinds?: readonly string[];
+  sourceKinds?: string[];
 };
 
 export type WalletActivityIndex = {
@@ -18,10 +18,8 @@ export type WalletActivityIndex = {
   wallet: string;
   addressKind: "solana" | "evm";
   tokenCount: number;
-  tokens: readonly WalletTokenActivity[];
-  coverage?: Record<string, unknown> | null;
+  tokens: WalletTokenActivity[];
   disclosure: string;
-  indexing?: { requested?: boolean; jobs?: readonly unknown[] };
 };
 
 export type WalletSystemResponse = {
