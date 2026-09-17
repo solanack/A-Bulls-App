@@ -5,6 +5,11 @@ on:
     branches: [feat/afterbell-top50-wallet-query]
     paths:
       - .github/workflows/qa-afterbell-wallet-flow.yml
+      - src/lib/field/wallet-system.test.ts
+      - src/lib/universe-data/wallet-system-client.ts
+      - src/lib/field/wallet-system.ts
+      - workers/intelligence-token-system.mjs
+      - workers/intelligence-wallet-token-index.mjs
 
 permissions:
   contents: write
