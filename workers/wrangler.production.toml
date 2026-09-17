@@ -20,8 +20,13 @@ FOMO_REFRESH_MINUTES = "180"
 FOMO_PROFILE_LOOKUPS_PER_REFRESH = "0"
 FOMO_BOOTSTRAP_ENRICH_LIMIT = "10"
 FOMO_ENRICH_TRADERS_PER_REFRESH = "1"
-FOMOAPI_MONTHLY_CREDITS = "1000"
+# FOMO bills ordinary leaderboard/trade/balance reads at 250 raw credits each.
+# 250,000 is the provider's published Free monthly floor (1,000 ordinary calls),
+# not the old 1,000-call placeholder. Live provider observations may raise the
+# effective tracked limit when the configured key has a larger real bucket.
+FOMOAPI_MONTHLY_CREDITS = "250000"
 FOMOAPI_BREAKER_RATIO = "0.80"
+FOMOAPI_QUOTA_SOURCE = "fomoapi-published-free-floor"
 
 # Chain-qualified market/evidence spine. Scheduled materialization reuses cached
 # Fomo research objects, performs bounded market enrichment, and may verify a few
@@ -34,11 +39,14 @@ MULTICHAIN_MARKET_ASSETS_PER_RUN = "60"
 MULTICHAIN_FOMO_EVENTS_PER_RUN = "100"
 MULTICHAIN_TX_VERIFY_LIMIT = "4"
 
-# pump.fun and PonsFamily are retired as public galaxies. Historical launch-origin
-# and research evidence remains in D1, but no galaxy-specific ranking/index refresh
-# is enabled from production configuration.
+# Helius currently publishes 1M / 10M / 100M / 200M monthly credit tiers.
+# This 1M value is the conservative configured floor and is deliberately marked
+# unverified until HELIUS_PROJECT_ID is supplied; with a project id the internal
+# diagnostics can read Helius' authenticated usage endpoint and record the real
+# plan/credit limit without exposing the API key.
 HELIUS_BREAKER_RATIO = "0.75"
 HELIUS_MONTHLY_CREDITS = "1000000"
+HELIUS_QUOTA_SOURCE = "operator-config-unverified"
 
 # Production wallet-history mesh. Each claimed wallet advances through two bounded
 # 25-signature pages per execution, and up to three wallets can advance per cron.
