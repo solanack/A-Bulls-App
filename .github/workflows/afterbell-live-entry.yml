@@ -1,0 +1,57 @@
+name: Afterbell live Field entry
+on:
+  push:
+    paths:
+      - '.github/workflows/afterbell-live-entry.yml'
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Integrate Afterbell into the live universe shell
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/components/app-shell.tsx')
+          t=p.read_text()
+          if 'data-afterbell-galaxy-entry' not in t:
+              anchor='  return <main className={`field-shell${queryActive?" field-shell--query":""}`} data-mode={queryActive?"query":mode} data-galaxy={galaxy.id} data-field-fallback={fieldUnavailable||undefined}>'
+              if anchor not in t:
+                  raise SystemExit('main Field shell anchor missing')
+              entry='''  return <main className={`field-shell${queryActive?" field-shell--query":""}`} data-mode={queryActive?"query":mode} data-galaxy={galaxy.id} data-field-fallback={fieldUnavailable||undefined}>\n    <a data-afterbell-galaxy-entry href="/afterbell/" aria-label="Enter Afterbell Galaxy" style={{position:"absolute",top:"max(68px,calc(env(safe-area-inset-top) + 56px))",right:12,zIndex:26,pointerEvents:"auto",minHeight:34,display:"inline-flex",alignItems:"center",justifyContent:"center",padding:"0 12px",border:"1px solid rgba(232,205,142,.38)",borderRadius:999,background:"rgba(8,9,14,.76)",backdropFilter:"blur(16px)",color:"#ead49a",font:"650 9px/1 var(--font-display)",letterSpacing:".14em",textDecoration:"none",boxShadow:"0 10px 30px rgba(0,0,0,.3)"}}>AFTERBELL</a>'''
+              t=t.replace(anchor,entry,1)
+          p.write_text(t)
+
+          # Keep production smoke explicit: both the deep route and main shell marker must ship.
+          p=Path('scripts/check-live.mjs'); t=p.read_text()
+          if 'Afterbell Galaxy entry must be present in the main Field shell' not in t:
+              marker='const html = await getText(baseUrl);'
+              if marker not in t: raise SystemExit('live smoke html anchor missing')
+              t=t.replace(marker,marker+'\nassert.match(html,/AFTERBELL/i,"Afterbell Galaxy entry must be present in the main Field shell");',1)
+          if 'Afterbell Galaxy deep link must be deployed' not in t:
+              marker='const html = await getText(baseUrl);'
+              t=t.replace(marker,marker+'\nconst afterbellHtml = await getText(`${baseUrl}/afterbell/`);\nassert.match(afterbellHtml,/AFTERBELL/i,"Afterbell Galaxy deep link must be deployed");',1)
+          p.write_text(t)
+          PY
+      - name: Verify repository
+        run: |
+          npm install --ignore-scripts
+          npm run typecheck
+          npm test
+          npm run build
+      - name: Commit verified integration
+        run: |
+          git config user.name "A Bulls Release Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/components/app-shell.tsx scripts/check-live.mjs
+          git commit -m "fix: expose Afterbell galaxy in live Field"
+          git push origin HEAD:main
