@@ -19,7 +19,7 @@ jobs:
       - name: Apply deterministic Replay upgrade
         run: |
           python3 scripts/apply-hackathon-replay-upgrade.py
-          python3 scripts/fix-replay-density.py
+          python3 scripts/force-replay-density.py
       - name: Verify repository
         run: |
           npm install --ignore-scripts
