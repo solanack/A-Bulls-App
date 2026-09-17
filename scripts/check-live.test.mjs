@@ -61,3 +61,28 @@ test("Fomo checks reject unmapped stars and lost or misattributed provider conte
   assert.throws(()=>validateFomoTrader({...body,positions:[{mint:LIVE_FIXTURE.mint,sourceKind:"a-bulls-observed"}]},trader),/lost a mapped/);
   assert.throws(()=>validateFomoTrader({...body,latestTrades:[{},{},{},{}]},trader),/bounded system/);
 });
+
+test("live route probes cover depths 1–4 and reject broken segments or HTML fallbacks", async () => {
+  const { checkRouteFamilies } = await import("./check-live.mjs");
+  const bodies = [
+    { ok: true, status: {} }, { ok: true, items: [] },
+    { ok: true, contractVersion: "field-v0", stars: [] },
+    { ok: true, contractVersion: "field-v0", planet: { wallet: LIVE_FIXTURE.wallet } },
+  ];
+  const makeFetch = (broken = -1, html = false) => {
+    let index = 0;
+    return async url => {
+      const depth = new URL(url).pathname.split("/").filter(Boolean).length - 2;
+      assert.equal(depth, index + 1);
+      const body = bodies[index];
+      const fail = index++ === broken;
+      return new Response(html && fail ? "<html>app</html>" : JSON.stringify(body), {
+        status: fail && !html ? 404 : 200,
+        headers: { "content-type": html && fail ? "text/html" : "application/json", "x-a-bulls-intelligence-proxy": "1" },
+      });
+    };
+  };
+  assert.deepEqual(await checkRouteFamilies({ origin: "https://frontend.example.test", fetchImpl: makeFetch() }), [1, 2, 3, 4]);
+  for (let i = 0; i < 4; i++) await assert.rejects(checkRouteFamilies({ fetchImpl: makeFetch(i) }), /HTTP 404/);
+  await assert.rejects(checkRouteFamilies({ fetchImpl: makeFetch(3, true) }), /returned HTML/);
+});

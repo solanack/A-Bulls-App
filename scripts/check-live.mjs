@@ -146,8 +146,34 @@ export function validateFomoTrader(body, trader) {
   return body;
 }
 
+export async function checkRouteFamilies({ origin = process.env.LIVE_ORIGIN || productionOrigins.public, wallet = LIVE_FIXTURE.wallet, fetchImpl = fetch, requireProxy = false } = {}) {
+  assert.ok(SOLANA_ADDRESS_RE.test(wallet), "Route-check wallet must be a public Solana address");
+  const cases = [
+    { depth: 1, path: "/api/intelligence/mesh-status", validate: body => asObject(body.status, "mesh status missing") },
+    { depth: 2, path: "/api/intelligence/fomo/galaxy", validate: body => assert.ok(Array.isArray(body.items), "Fomo items missing") },
+    { depth: 3, path: "/api/intelligence/field/v0/tokens?limit=1", validate: body => {
+      assert.equal(body.contractVersion, "field-v0"); assert.ok(Array.isArray(body.stars), "Token snapshots missing");
+    } },
+    { depth: 4, path: `/api/intelligence/field/v0/wallets/${encodeURIComponent(wallet)}`, validate: body => {
+      assert.equal(body.contractVersion, "field-v0"); assert.equal(body.planet?.wallet, wallet, "Wallet route returned a different subject");
+    } },
+  ];
+  const checked = [];
+  for (const probe of cases) {
+    const response = await fetchImpl(`${origin.replace(/\/$/, "")}${probe.path}`, { headers: { "cache-control": "no-cache" }, signal: AbortSignal.timeout(30_000) });
+    assert.equal(response.status, 200, `Route depth ${probe.depth}: HTTP ${response.status}`);
+    if (requireProxy) assert.equal(response.headers.get("x-a-bulls-intelligence-proxy"), "1", `Route depth ${probe.depth} did not reach the frontend proxy`);
+    assert.match(response.headers.get("content-type") || "", /application\/json/, `Route depth ${probe.depth} returned HTML`);
+    const body = await response.json();
+    assert.equal(body?.ok, true, `Route depth ${probe.depth}: ${body?.error || "not ok"}`);
+    probe.validate(body);
+    checked.push(probe.depth);
+  }
+  return checked;
+}
+
 export async function runLiveChecks({
-  origin = productionOrigins.public,
+  origin = process.env.LIVE_ORIGIN || productionOrigins.public,
   expected,
   cutFixture = LIVE_FIXTURE,
   evidenceFixture = null,
@@ -171,6 +197,8 @@ export async function runLiveChecks({
   validateCandles(replay);
   validateHoldings(await (await get(`/api/intelligence/research/holdings?wallet=${encodeURIComponent(retainedFixture.wallet)}&limit=10`)).json(), retainedFixture);
   if (fixtureOnly) {console.log(JSON.stringify({ cutId: cutFixture.cutId, ...retainedFixture }));return retainedFixture;}
+
+  await checkRouteFamilies({ origin, wallet: retainedFixture.wallet, fetchImpl });
 
   let release = null;
   for (let attempt = 0; attempt < 12; attempt++) {release = await (await get(`/release.json?commit=${expected}&attempt=${attempt}`)).json();if (release?.commit === expected) break;if (attempt < 11) await sleep(5000);}
@@ -204,6 +232,11 @@ export async function runLiveChecks({
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv.includes("--routes-only")) {
+    const depths = await checkRouteFamilies({ requireProxy: process.argv.includes("--require-proxy") });
+    console.log(`Frontend intelligence route depths verified: ${depths.join(", ")}`);
+  } else {
   const expected = process.env.GITHUB_SHA || execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   await runLiveChecks({ expected, fixtureOnly: process.argv.includes("--fixture-only") });
+  }
 }

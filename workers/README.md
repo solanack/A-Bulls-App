@@ -31,3 +31,27 @@ Do not use the production config for routine local development.
 Release checks reject deployment-host URLs in executable source outside
 Wrangler configuration. Historical docs and deployment metadata are not
 runtime routing configuration. Provider user-agent strings use the app name.
+
+## Frontend service binding
+
+Root `wrangler.jsonc` binds `INTELLIGENCE` to production `black-bull-run-sol`.
+The proxy uses that binding when present. Its failure is returned as 503 without
+an HTTP retry, so writes cannot be duplicated. When no binding exists (ordinary
+Vite/Nitro local development), the configured HTTP upstream is used instead.
+For staging, set the service binding to the staging worker as well as overriding
+the HTTP origin; an HTTP URL override does not retarget an existing binding.
+Other existing server-function/social callers still use the configured public
+HTTP API, so the worker's public endpoint must remain enabled.
+
+`node scripts/check-live.mjs --routes-only` verifies all four intelligence route
+depths without requiring the frozen-Cut evidence fixture. `LIVE_ORIGIN` can point
+it at a local or staging frontend. Four-level wallet reads use the retained
+fixture wallet by default and allow honest empty coverage; fixture checks still
+require real receipts, holdings, and OHLC separately.
+
+The public zone may route API paths straight to the Intelligence Worker; the
+live contract probes therefore validate JSON schema and subject identity rather
+than requiring the frontend marker. Use `--require-proxy` against a frontend
+preview to additionally prove all four TanStack route shapes reach the proxy.
+Production evidence preflight stays compatible with the previously deployed
+version; expanded route probes run after publication, or via `--routes-only`.

@@ -24,5 +24,11 @@
   "vars": {
     "INTELLIGENCE_WORKER_URL": "https://black-bull-run-sol.ckdsigns1.workers.dev",
     "PUBLIC_APP_ORIGIN": "https://abullsapp.com"
-  }
+  },
+  "services": [
+    {
+      "binding": "INTELLIGENCE",
+      "service": "black-bull-run-sol"
+    }
+  ]
 }
