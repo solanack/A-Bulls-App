@@ -68,8 +68,26 @@ BULL_INDEXER_ENABLED = "false"
 BULL_NFT_INDEXER_ENABLED = "false"
 BULL_ARCHIVAL_ENABLED = "false"
 
-# Required for Fomo Galaxy source data: npx wrangler secret put FOMOAPI_API_KEY --config workers/wrangler.production.toml
-# Future full-chain stream bridge: npx wrangler secret put INTELLIGENCE_MESH_INGEST_TOKEN --config workers/wrangler.production.toml
+# Provider/auth secret inventory. Keep values out of TOML and use Wrangler secret put.
+# Required for enabled Fomo Galaxy source data:
+#   npx wrangler secret put FOMOAPI_API_KEY --config workers/wrangler.production.toml
+# Required for enabled Solana history/enrichment:
+#   npx wrangler secret put HELIUS_API_KEY --config workers/wrangler.production.toml
+# Required for enabled multichain market enrichment:
+#   npx wrangler secret put COINGECKO_API_KEY --config workers/wrangler.production.toml
+# Required for the enabled Helius universe webhook auth; either dedicated secret OR
+# the retained PUMP_INGEST_SECRET fallback must be configured:
+#   npx wrangler secret put HELIUS_WEBHOOK_AUTH_SECRET --config workers/wrangler.production.toml
+#   npx wrangler secret put PUMP_INGEST_SECRET --config workers/wrangler.production.toml
+# Required only when FULL_CHAIN_STREAM_ENABLED or INTELLIGENCE_EXTERNAL_RETRIEVAL_ENABLED is true:
+#   npx wrangler secret put INTELLIGENCE_MESH_INGEST_TOKEN --config workers/wrangler.production.toml
+# Retained Pons compatibility (public PonsFamily galaxy is retired); either alias in each pair is sufficient:
+#   npx wrangler secret put PONS_BITQUERY_TOKEN --config workers/wrangler.production.toml
+#   npx wrangler secret put BITQUERY_API_TOKEN --config workers/wrangler.production.toml
+#   npx wrangler secret put PONS_BLOCKSCOUT_API_KEY --config workers/wrangler.production.toml
+#   npx wrangler secret put BLOCKSCOUT_API_KEY --config workers/wrangler.production.toml
+# Retained Pons maintenance endpoint auth (not required by current public path):
+#   npx wrangler secret put PONS_INDEX_SECRET --config workers/wrangler.production.toml
 
 Z500_UNIVERSE_ENABLED = "false"
 Z500_HELIUS_ROTATION_ENABLED = "false"
