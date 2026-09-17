@@ -25,4 +25,19 @@ if count!=1:raise SystemExit('Galaxy Zero directory section replacement failed')
 if 'definitions=[getGalaxy("fomo"),getGalaxy("afterbell")]' not in next_text:raise SystemExit('Afterbell directory target missing after patch')
 if 'GALAXY_ZERO_CENTERS:readonly [number,number,number][]=[[-24,0,0],[24,0,0]]' not in next_text:raise SystemExit('Afterbell directory centers missing after patch')
 path.write_text(next_text)
-print('Galaxy Zero now deterministically contains Fomo + Afterbell directory targets.')
+
+# Node's native TypeScript test runner requires explicit local extensions. Keep production
+# imports bundler-compatible while making the generated Afterbell contract directly executable.
+builder=Path('src/lib/field/afterbell-galaxy.ts')
+builder_text=builder.read_text()
+builder_text=builder_text.replace('from "./galaxies";','from "./galaxies.ts";',1)
+builder_text=builder_text.replace('from "@/lib/universe-data/afterbell-client";','from "../universe-data/afterbell-client.ts";',1)
+builder.write_text(builder_text)
+
+test_path=Path('src/lib/field/afterbell-galaxy.test.ts')
+test_text=test_path.read_text()
+test_text=test_text.replace('from "./afterbell-galaxy";','from "./afterbell-galaxy.ts";',1)
+test_text=test_text.replace('from "@/lib/universe-data/afterbell-client";','from "../universe-data/afterbell-client.ts";',1)
+test_path.write_text(test_text)
+
+print('Galaxy Zero now deterministically contains Fomo + Afterbell directory targets with executable contract imports.')
