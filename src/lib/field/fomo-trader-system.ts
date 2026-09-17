@@ -1,6 +1,6 @@
 import type { FieldParticle, GalaxyId, UniverseSnapshot } from "./types";
 import type { FomoTraderSystemResponse } from "@/lib/universe-data/fomo-client";
-import { canonicalUniverseId } from "./galaxies";
+import { canonicalUniverseId } from "./galaxies.ts";
 
 function planetPos(index:number,count:number):[number,number,number]{const angle=index/Math.max(1,count)*Math.PI*2-Math.PI/2,ring=index<5?28:48;return[Math.cos(angle)*ring,2+Math.sin(angle*2)*5,Math.sin(angle)*ring];}
 function normalizedChain(chain:string|null|undefined){const value=String(chain??"").trim().toLowerCase().replace(/[_\s:]+/g,"-");if(["sol","svm","solana-mainnet"].includes(value))return"solana";if(["bnb","bnb-chain","bnbchain","binance-smart-chain"].includes(value))return"bsc";if(["eth","ethereum-mainnet","mainnet"].includes(value))return"ethereum";if(["robinhood-chain","robinhoodchain","hood"].includes(value))return"robinhood";return value||"solana";}
