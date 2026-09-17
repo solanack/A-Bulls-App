@@ -4,6 +4,7 @@ import { cutShareReceiptLines, cutShareSize } from './trickster-story-manifest.m
 const s=v=>String(v??'').trim();
 const n=v=>Number.isFinite(Number(v))?Number(v):0;
 const xml=v=>s(v).replace(/[&<>"']/g,ch=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;' }[ch]??ch));
+const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
 
 function observedStatement(event={}){
   const side=s(event.side).toLowerCase(),token=s(event.token),wallet=s(event.wallet),sig=s(event.signature);
@@ -12,13 +13,35 @@ function observedStatement(event={}){
   return `${action.toUpperCase()} observed for ${subject}${wallet?` by ${wallet.slice(0,6)}…${wallet.slice(-4)}`:''}${sig?` · tx ${sig.slice(0,8)}…`:''}`;
 }
 
+export function tricksterEventMagnitude(event={}){
+  return clamp(n(event.magnitude)||.08,.08,1);
+}
+
+function receiptId(event={},index=0){return s(event.id)||s(event.signature)||`event-${Math.max(0,Math.trunc(n(index)))}`;}
+
+/**
+ * Select a compact contiguous receipt window centered on the highest-magnitude event.
+ * No event is synthesized and selection never exceeds the supplied timeline.
+ */
+export function autoSelectTricksterMoment(timeline=[],maxEvents=5){
+  const events=Array.isArray(timeline)?timeline:[],cap=Math.max(1,Math.min(12,Math.trunc(n(maxEvents)||5));
+  if(!events.length)return Object.freeze([]);
+  let peak=0,peakScore=-Infinity;
+  for(let index=0;index<events.length;index++){
+    const event=events[index],score=tricksterEventMagnitude(event)+(s(event.side).toLowerCase()==='buy'||s(event.side).toLowerCase()==='sell'?.02:0);
+    if(score>peakScore){peak=index;peakScore=score;}
+  }
+  const size=Math.min(cap,events.length),start=clamp(peak-Math.floor(size/2),0,events.length-size);
+  return Object.freeze(events.slice(start,start+size).map((event,offset)=>Object.freeze({index:start+offset,receiptId:receiptId(event,start+offset),timestamp:n(event.timestamp),magnitude:tricksterEventMagnitude(event)})));
+}
+
 export function buildTricksterDirectorCues(timeline=[],options={}){
   const events=Array.isArray(timeline)?timeline:[];
   const max=Math.max(1,Math.min(80,Math.trunc(n(options.maxCues)||24)));
   if(!events.length)return Object.freeze([]);
   const candidates=[];
   for(let i=0;i<events.length;i++){
-    const e=events[i],mag=Math.max(.08,Math.min(1,n(e.magnitude)||.08));
+    const e=events[i],mag=tricksterEventMagnitude(e);
     if(i===0||i===events.length-1||mag>=.55||s(e.side)==='buy'||s(e.side)==='sell')candidates.push({e,i,mag});
   }
   const step=Math.max(1,Math.ceil(candidates.length/max));
@@ -30,6 +53,7 @@ export function buildTricksterDirectorCues(timeline=[],options={}){
     statement:observedStatement(e),
     claimKind:'observed',
     disclosure:null,
+    magnitude:mag,
     suggestedPresentation:mag>=.75?'chart-and-video':'hud-callout',
     rawIndex:i
   })));
@@ -40,7 +64,8 @@ export function buildTricksterSimulationCue({at=0,prompt='',summary=''}={}){
 }
 
 /**
- * Vertical social SVG from the existing director chart + frozen receipts. Not a second renderer.
+ * Social SVG poster from the existing director chart + frozen receipts. This is
+ * retained as a deterministic fallback when browser video capture is unavailable.
  * @param {{manifest?: object, shareHref?: string, candles?: object[], tokenLabel?: string}} [opts]
  * @returns {string}
  */
@@ -91,5 +116,4 @@ export function buildCutShareSvg(opts={}){
   </svg>`;
 }
 
-export const __tricksterUniverseDirectorContract=Object.freeze({observedNarrationUsesEvidenceOnly:true,simulationAlwaysDisclosed:true,boundedDefaultCues:24,noNetworkCalls:true,shareArtifact:'svg-9:16'});
-
+export const __tricksterUniverseDirectorContract=Object.freeze({observedNarrationUsesEvidenceOnly:true,simulationAlwaysDisclosed:true,boundedDefaultCues:24,noNetworkCalls:true,autoCutUsesHighestMagnitudeWindow:true,shareArtifact:'video-with-svg-fallback'});
