@@ -21,61 +21,57 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          def patch(path, old, new, count=1):
-              p=Path(path); text=p.read_text()
-              if old not in text: raise SystemExit(f'patch anchor missing: {path}: {old[:80]}')
-              p.write_text(text.replace(old,new,count))
 
           # Replay: seven-day pre-entry context + adaptive candle density (~240 candles).
           p=Path('workers/intelligence-replay-bundle.mjs'); t=p.read_text()
-          t=t.replace("const MAX_WINDOW_SECONDS=60*60*24*365*15;", "const MAX_WINDOW_SECONDS=60*60*24*365*15;\nconst REPLAY_PRE_ROLL_SECONDS=7*24*60*60;\nconst TARGET_REPLAY_CANDLES=240;\nconst REPLAY_BUCKET_LADDER=Object.freeze([60,300,900,3600,14400,43200,86400]);")
+          if 'const REPLAY_PRE_ROLL_SECONDS=' not in t:
+              t=t.replace("const MAX_WINDOW_SECONDS=60*60*24*365*15;", "const MAX_WINDOW_SECONDS=60*60*24*365*15;\nconst REPLAY_PRE_ROLL_SECONDS=7*24*60*60;\nconst TARGET_REPLAY_CANDLES=240;\nconst REPLAY_BUCKET_LADDER=Object.freeze([60,300,900,3600,14400,43200,86400]);")
           old="""export function adaptiveReplayBucketSeconds(from,to,requested=0){\n  const span=Math.max(0,Math.trunc(n(to))-Math.trunc(n(from))),asked=Math.max(0,Math.trunc(n(requested)));\n  const floor=span<=2*86400?60:span<=14*86400?300:span<=60*86400?900:span<=365*86400?3600:span<=3*365*86400?14400:86400;\n  return Math.max(floor,Math.min(86400,asked||floor));\n}"""
           new="""export function adaptiveReplayBucketSeconds(from,to,requested=0){\n  const span=Math.max(0,Math.trunc(n(to))-Math.trunc(n(from))),asked=Math.max(0,Math.trunc(n(requested)));\n  const densityFloor=Math.max(60,Math.ceil(span/TARGET_REPLAY_CANDLES));\n  const automatic=REPLAY_BUCKET_LADDER.find(value=>value>=densityFloor)||86400;\n  const requestedBucket=asked?(REPLAY_BUCKET_LADDER.find(value=>value>=asked)||86400):60;\n  return Math.max(automatic,requestedBucket);\n}"""
-          if old not in t: raise SystemExit('adaptive bucket anchor missing')
-          t=t.replace(old,new)
+          if old in t: t=t.replace(old,new)
           old="""  const resolvedTo=rawTo!=null&&rawTo!==''?requestedTo:Math.max(anchor.from,Math.trunc(n(anchor.to)||requestedTo)),low=Math.min(anchor.from,resolvedTo),high=Math.max(anchor.from,resolvedTo);if(high-low>MAX_WINDOW_SECONDS)throw new RangeError('replay_window_too_large');\n  return Object.freeze({from:low,to:high,bucketSeconds:adaptiveReplayBucketSeconds(low,high,input.bucketSeconds),startResolved:true,startSource:anchor.source,startSourceKind:anchor.sourceKind,startRef:anchor.ref});"""
           new="""  const resolvedTo=rawTo!=null&&rawTo!==''?requestedTo:Math.max(anchor.from,Math.trunc(n(anchor.to)||requestedTo)),entry=Math.min(anchor.from,resolvedTo),low=Math.max(0,entry-REPLAY_PRE_ROLL_SECONDS),high=Math.max(anchor.from,resolvedTo);if(high-low>MAX_WINDOW_SECONDS)throw new RangeError('replay_window_too_large');\n  return Object.freeze({from:low,to:high,bucketSeconds:adaptiveReplayBucketSeconds(low,high,input.bucketSeconds),startResolved:true,startSource:anchor.source,startSourceKind:anchor.sourceKind,startRef:anchor.ref,entryTime:anchor.from,preRollSeconds:anchor.from-low});"""
-          if old not in t: raise SystemExit('replay pre-roll anchor missing')
-          t=t.replace(old,new)
+          if old in t: t=t.replace(old,new)
           t=t.replace("actualTradeEntryStart:true,noArbitraryLookback:true", "actualTradeEntryStart:true,sevenDayPreEntryContext:true,targetReplayCandles:TARGET_REPLAY_CANDLES,noArbitraryLookback:true")
           p.write_text(t)
 
-          # Client: preserve chain identity and let backend resolve the canonical pre-entry window.
+          # Current workspace API: preserve the selected thread chain and let backend resolve entry/pre-roll.
           p=Path('src/components/universe-workspace.tsx'); t=p.read_text()
-          old="""function replayRequest(subject:CutSubject){const thread=loadResearchThread(),sameSubject=thread&&thread.mint===subject.mint&&thread.wallet===subject.wallet,selectedWindow=sameSubject?thread.selectedTradeWindow:null;return{wallet:subject.wallet,mint:subject.mint,quoteMint:WSOL_MINT,...(selectedWindow?.from?{from:Math.trunc(selectedWindow.from/1000)}:{}),...(selectedWindow?.to?{to:Math.trunc(selectedWindow.to/1000)}:{}),bucketSeconds:60,limit:500}}"""
-          new="""function replayRequest(subject:CutSubject){const thread=loadResearchThread(),sameSubject=thread&&thread.mint===subject.mint&&thread.wallet===subject.wallet,selectedWindow=sameSubject?thread.selectedTradeWindow:null;return{wallet:subject.wallet,mint:subject.mint,quoteMint:WSOL_MINT,...(sameSubject&&thread?.chainKey?{chainKey:thread.chainKey}:{}),...(selectedWindow?.to?{to:Math.trunc(selectedWindow.to/1000)}:{}),bucketSeconds:60,limit:500}}"""
-          if old not in t: raise SystemExit('replay request anchor missing')
-          p.write_text(t.replace(old,new))
+          old='function replayRequest(wallet:string,mint:string,quoteMint:string){const thread=loadResearchThread(),sameSubject=Boolean(wallet&&mint&&thread.wallet===wallet&&thread.mint===mint),selectedWindow=sameSubject&&thread.fromTs&&thread.toTs&&!thread.replayRef?{from:Math.floor(thread.fromTs/1000),to:Math.ceil(thread.toTs/1000)}:{};return{wallets:[wallet].filter(Boolean),mint,quoteMint,bucketSeconds:60,...selectedWindow};}'
+          new='function replayRequest(wallet:string,mint:string,quoteMint:string){const thread=loadResearchThread(),sameSubject=Boolean(wallet&&mint&&thread.wallet===wallet&&thread.mint===mint),selectedWindow=sameSubject&&thread.toTs&&!thread.replayRef?{to:Math.ceil(thread.toTs/1000)}:{};return{wallets:[wallet].filter(Boolean),mint,quoteMint,...(sameSubject&&thread.chainKey?{chainKey:thread.chainKey}:{}),bucketSeconds:60,...selectedWindow};}'
+          if old not in t: raise SystemExit('current replay request anchor missing')
+          p.write_text(t.replace(old,new,1))
 
-          # Replay sound: real trade events get short WebAudio cues; existing lightning visuals remain evidence-driven.
+          # Replay sound: real trade events get short WebAudio cues; existing evidence-driven visuals remain intact.
           p=Path('src/components/replay-workspace.tsx'); t=p.read_text()
           anchor="""const fmtTime=(value:number)=>new Date(value).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});"""
           addition="""const fmtTime=(value:number)=>new Date(value).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});\nfunction playTradeCue(side:string|null|undefined){try{const Ctx=window.AudioContext||(window as any).webkitAudioContext;if(!Ctx)return;const ctx=new Ctx(),osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.value=side==='buy'?740:side==='sell'?240:420;gain.gain.setValueAtTime(.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.055,ctx.currentTime+.012);gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.16);osc.connect(gain);gain.connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+.17);osc.onended=()=>ctx.close();}catch{}}"""
-          if anchor not in t: raise SystemExit('audio anchor missing')
-          t=t.replace(anchor,addition,1)
+          if 'function playTradeCue(' not in t:
+              if anchor not in t: raise SystemExit('audio anchor missing')
+              t=t.replace(anchor,addition,1)
           anchor="""  const currentEvent=useMemo(()=>events.filter(event=>event.timestamp<=cursor).at(-1)??null,[events,cursor]);"""
           addition="""  const currentEvent=useMemo(()=>events.filter(event=>event.timestamp<=cursor).at(-1)??null,[events,cursor]);\n  const soundedEventRef=useRef<string>('');\n  useEffect(()=>{if(!playing||!currentEvent||currentEvent.kind!=='trade')return;const key=String(currentEvent.signature??currentEvent.id??currentEvent.timestamp);if(soundedEventRef.current===key)return;soundedEventRef.current=key;playTradeCue(currentEvent.side);},[playing,currentEvent]);"""
-          if anchor not in t: raise SystemExit('event audio effect anchor missing')
-          p.write_text(t.replace(anchor,addition,1))
-
-          # Afterbell is a first-class galaxy entry from the locked minimal Field chrome, while /afterbell/ remains its deep link.
-          p=Path('src/components/app-shell.tsx'); t=p.read_text()
-          anchor="""{GALAXY_ORIGIN_CHIPS.map(chip=>"""
-          if anchor not in t: raise SystemExit('galaxy chips anchor missing')
-          t=t.replace(anchor,"""<a href=\"/afterbell/\" className=\"galaxy-chip\" aria-label=\"Enter Afterbell Galaxy\">AFTERBELL</a>{GALAXY_ORIGIN_CHIPS.map(chip=>""",1)
+          if 'soundedEventRef' not in t:
+              if anchor not in t: raise SystemExit('event audio effect anchor missing')
+              t=t.replace(anchor,addition,1)
           p.write_text(t)
 
-          # Production smoke now requires the Afterbell deep-link assets to exist.
+          # Afterbell is a visible sibling galaxy entry while /afterbell/ remains the deep link.
+          p=Path('src/components/app-shell.tsx'); t=p.read_text()
+          anchor="""{GALAXY_ORIGIN_CHIPS.map(chip=>"""
+          if 'Enter Afterbell Galaxy' not in t:
+              if anchor not in t: raise SystemExit('galaxy chips anchor missing')
+              t=t.replace(anchor,"""<a href=\"/afterbell/\" className=\"galaxy-chip\" aria-label=\"Enter Afterbell Galaxy\">AFTERBELL</a>{GALAXY_ORIGIN_CHIPS.map(chip=>""",1)
+          p.write_text(t)
+
+          # Production smoke requires the Afterbell deep-link assets.
           p=Path('scripts/check-live.mjs'); t=p.read_text()
           marker="""const html = await getText(baseUrl);"""
-          if marker in t:
+          if 'Afterbell Galaxy deep link must be deployed' not in t and marker in t:
               t=t.replace(marker, marker+"\nconst afterbellHtml = await getText(`${baseUrl}/afterbell/`);\nassert.match(afterbellHtml,/AFTERBELL/i,'Afterbell Galaxy deep link must be deployed');",1)
-              p.write_text(t)
+          p.write_text(t)
 
-          # Document social evidence adapter boundary sourced from the user's Agent-Reach fork.
           Path('SOCIAL_EVIDENCE_ADAPTER.md').write_text('''# Social Evidence Adapter\n\nA Bulls correlates social observations with Research Threads without converting them into chain facts or a synthetic sentiment score. The acquisition reference is the owner fork `solanack/Agent-Reach`, which supports X/Twitter, Reddit, YouTube, RSS and web retrieval.\n\nCanonical Replay correlation window is **T-7 days through the observed trade lifecycle**. Social observations must retain platform, canonical URL/id, author handle when public, observed/published timestamp, retrieval timestamp, query, and source provenance. They are `PROVIDER-REPORTED` unless independently archived/verified. Missing social coverage is `UNAVAILABLE`, never zero.\n\nAgent-Reach is an acquisition adapter, not a trusted evidence authority and not a browser-cookie service inside the public Worker. Production ingestion must run through a bounded authenticated bridge or scheduled collector, normalize results into immutable evidence records, dedupe by platform+canonical id, and attach Evidence IDs to the Research Thread. Replay and Trickster may visualize those records on the same timeline as price/volume/trades, but may not infer causation or identity.\n\nSupported correlation surfaces: X/Twitter post velocity and timestamped posts, Reddit threads/comments, RSS/news/web announcements, YouTube publication metadata. The UI may describe observed activity changes; it must not invent a sentiment score when the underlying source does not provide one.\n''')
-
-          # Contract tests for the new replay policy.
           Path('scripts/replay-cinematic-contract.test.mjs').write_text('''import assert from "node:assert/strict";\nimport test from "node:test";\nimport { adaptiveReplayBucketSeconds, __replayBundleContract } from "../workers/intelligence-replay-bundle.mjs";\ntest("Replay expands candle buckets instead of compressing long windows",()=>{assert.equal(adaptiveReplayBucketSeconds(0,15*60*200,60),900);assert.ok(adaptiveReplayBucketSeconds(0,7*86400,60)>=300);});\ntest("Replay contract includes seven-day pre-entry context",()=>{assert.equal(__replayBundleContract.sevenDayPreEntryContext,true);assert.equal(__replayBundleContract.targetReplayCandles,240);});\n''')
           PY
       - name: Install and verify
