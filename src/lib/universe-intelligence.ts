@@ -19,6 +19,17 @@ type ToolRequest = { tool: UniverseTool; input?: Record<string, unknown> };
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export type UniverseToolResponse = { [key: string]: JsonValue };
 
+const ROUTES: Record<Exclude<UniverseTool, "trickster-read" | "education" | "pump-candles" | "pump-trades">, string> = {
+  replay: "/api/intelligence/replay-bundle",
+  evidence: "/api/intelligence/event-context",
+  compare: "/api/intelligence/wallet-rivalry",
+  "what-if": "/api/intelligence/parallel-universe",
+  sequences: "/api/intelligence/market-sequence",
+  ghost: "/api/intelligence/ghost-portfolio",
+  "trickster-validate": "/api/intelligence/trickster/validate",
+  "trickster-share": "/api/intelligence/trickster/share",
+};
+
 function normalizedReplayInput(value:Record<string,unknown>){
   const input={...value},from=Number(input.from??input.startTime),to=Number(input.to??input.endTime),secondScale=Math.max(from,to)<10_000_000_000;
   // An unresolved backend bundle intentionally returns a point window while
