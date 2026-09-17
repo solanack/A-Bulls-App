@@ -17,7 +17,9 @@ jobs:
         with:
           node-version: 22
       - name: Apply Afterbell sibling galaxy integration
-        run: python3 scripts/apply-afterbell-field-galaxy.py
+        run: |
+          python3 scripts/apply-afterbell-field-galaxy.py
+          python3 scripts/fix-afterbell-galaxy-zero.py
       - name: Verify complete repository and static deep-link
         run: |
           npm install --ignore-scripts
