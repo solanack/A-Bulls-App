@@ -20,7 +20,7 @@ test("selected event without an observed entry leaves Replay start for evidence 
   assert.equal(selection.toTs,null);
 });
 
-test("closed EVM trades preserve their real chain and entry-to-exit span with bounded chart context",()=>{
+test("closed EVM trades preserve their real chain and evidence-resolved entry-to-exit span",()=>{
   const now=1_789_560_000_000,entry=now-20*24*60*60*1000,exit=now-5*24*60*60*1000;
   const selection=tradeReplaySelection({id:"base-trade",observedAt:exit,metadata:{chain:"base",wallet:evmWallet,tokenAddress:evmToken,quoteAddress:evmQuote,createdAt:entry,closedAt:exit}},null,now);
   if(!selection)throw new Error("expected Base replay selection");
@@ -29,9 +29,9 @@ test("closed EVM trades preserve their real chain and entry-to-exit span with bo
   assert.equal(selection.mint,evmToken);
   assert.equal(selection.quoteMint,evmQuote);
   if(selection.fromTs==null||selection.toTs==null)throw new Error("expected bounded entry and exit context");
-  assert.ok(selection.fromTs<entry);
-  assert.ok(selection.toTs>exit);
-  assert.ok(selection.toTs-selection.fromTs>15*24*60*60*1000);
+  assert.equal(selection.fromTs,entry);
+  assert.equal(selection.toTs,exit);
+  assert.equal(selection.toTs-selection.fromTs,15*24*60*60*1000);
 });
 
 test("selected trade or trader token planet can inherit the focused trader wallet but never invents a subject",()=>{
