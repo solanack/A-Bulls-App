@@ -28,10 +28,7 @@ let configuredFetchEnv=Object.freeze({});
 
 export function configureProviderFetch(env={}){
   const clean={};
-  for(const key of CONFIG_KEYS){
-    const value=env?.[key];
-    if(value!=null&&value!=='')clean[key]=value;
-  }
+  for(const key of CONFIG_KEYS){const value=env?.[key];if(value!=null&&value!=='')clean[key]=value;}
   configuredFetchEnv=Object.freeze(clean);
   return configuredFetchEnv;
 }
@@ -61,6 +58,7 @@ export function providerFailureReason(value){
   if(value?.reasonCode&&Object.values(PROVIDER_REASON).includes(value.reasonCode))return value.reasonCode;
   if(/budget.*(blocked|exhaust)|credits.*exhaust|http_402|status.?402/.test(message))return PROVIDER_REASON.PROVIDER_BUDGET_EXHAUSTED;
   if(timeoutLike(value))return PROVIDER_REASON.PROVIDER_TIMEOUT;
+  if(/(^|[:_])(no[_-]?(evidence|exact|market|pool|candles|trades?)|empty)([:_]|$)|no observed evidence|no retained evidence/.test(message))return PROVIDER_REASON.NO_EVIDENCE;
   if(message)return PROVIDER_REASON.PROVIDER_FAILURE;
   return PROVIDER_REASON.NO_EVIDENCE;
 }
@@ -68,6 +66,27 @@ export function honestEmpty(reason=PROVIDER_REASON.NO_EVIDENCE,detail=''){
   const code=Object.values(PROVIDER_REASON).includes(reason)?reason:providerFailureReason(reason);
   const disclosure=code===PROVIDER_REASON.NO_EVIDENCE?'No observed evidence is available for this request.':code===PROVIDER_REASON.PROVIDER_BUDGET_EXHAUSTED?'This source is temporarily unavailable while its data allowance resets or is replenished.':'This source could not be reached right now; retained evidence remains available where present.';
   return Object.freeze({available:false,reason:code,disclosure,detail:s(detail)||null});
+}
+
+function reasonEligible(node){
+  const raw=s(node?.reason??node?.error??node?.lastError),coverage=s(node?.coverage).toLowerCase(),state=s(node?.state).toLowerCase();
+  if(Object.values(PROVIDER_REASON).includes(raw))return raw;
+  if(/^(invalid_|.*_required$|method_not_allowed$|feature_disabled$)/.test(raw))return null;
+  if(coverage==='empty'||node?.available===false||state==='unavailable')return providerFailureReason(raw);
+  if(raw&&/budget|credits|timeout|timed out|provider|http_429|http_5\d\d/.test(raw.toLowerCase()))return providerFailureReason(raw);
+  return null;
+}
+
+export function annotateReasonCodes(value,depth=0){
+  if(depth>8||value==null||typeof value!=='object')return value;
+  if(Array.isArray(value))return value.map(item=>annotateReasonCodes(item,depth+1));
+  const out={};for(const [key,item] of Object.entries(value))out[key]=annotateReasonCodes(item,depth+1);
+  const existing=s(out.reason),code=reasonEligible(out);
+  if(code&&!Object.values(PROVIDER_REASON).includes(existing)){
+    if(existing)out.reasonDetail=existing;
+    out.reason=code;
+  }
+  return out;
 }
 
 function retryAfterMs(response,attempt,base){
