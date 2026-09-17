@@ -6,13 +6,21 @@ const wallet='7'.repeat(32);
 const walletB='6'.repeat(32);
 const mint='8'.repeat(32);
 const mintOnlyA='9'.repeat(32);
+const evmWallet=`0x${'1'.repeat(40)}`;
+const evmToken=`0x${'2'.repeat(40)}`;
 
-function fakeDb(rowsByWallet){return{prepare(){return{bind(walletArg){return{all:async()=>({results:rowsByWallet[walletArg]||[]})}}}}};}
+function fakeDb(rowsByWallet){return{prepare(){return{bind(walletArg){return{all:async()=>({results:rowsByWallet[String(walletArg).toLowerCase()]||rowsByWallet[walletArg]||[]})}}}}};}
 
 test('builds token activity from indexed wallet events',async()=>{
   const db=fakeDb({[wallet]:[{mint,event_count:9,trade_count:4,first_event:100,last_event:500,observed_token_flow:42.5,max_confidence:.88}]});
   const index=await buildWalletTokenIndex({},wallet,{db});
-  assert.equal(index.wallet,wallet);assert.equal(index.tokenCount,1);assert.equal(index.tokens[0].mint,mint);assert.equal(index.tokens[0].tradeCount,4);assert.equal(index.tokens[0].eventCount,9);assert.equal(index.tokens[0].observedTokenFlow,42.5);assert.equal(index.tokens[0].maxConfidence,.88);assert.match(index.disclosure,/currently indexed public-chain observations/);
+  assert.equal(index.wallet,wallet);assert.equal(index.addressKind,'solana');assert.equal(index.tokenCount,1);assert.equal(index.tokens[0].chainKey,'solana');assert.equal(index.tokens[0].mint,mint);assert.equal(index.tokens[0].tradeCount,4);assert.equal(index.tokens[0].eventCount,9);assert.equal(index.tokens[0].observedTokenFlow,42.5);assert.equal(index.tokens[0].maxConfidence,.88);assert.match(index.disclosure,/currently indexed public-chain observations/);
+});
+
+test('builds chain-qualified planets for an EVM public address',async()=>{
+  const db=fakeDb({[evmWallet.toLowerCase()]:[{chain_key:'base',mint:evmToken,event_count:5,trade_count:3,first_event:200,last_event:900,observed_token_flow:12,max_confidence:.9,source_kinds:'provider-reported,observed-fact'}]});
+  const index=await buildWalletTokenIndex({},evmWallet,{db});
+  assert.equal(index.addressKind,'evm');assert.equal(index.tokenCount,1);assert.equal(index.tokens[0].chainKey,'base');assert.equal(index.tokens[0].mint,evmToken);assert.deepEqual(index.tokens[0].sourceKinds,['provider-reported','observed-fact']);assert.match(index.disclosure,/chain-qualified cached events/);
 });
 
 test('finds tokens observed in both wallets without implying coordination',async()=>{
@@ -31,4 +39,3 @@ test('rejects invalid public wallet input',async()=>{
   await assert.rejects(()=>buildWalletTokenIndex({},'not-a-wallet',{db:fakeDb({})}),/invalid_public_wallet/);
   await assert.rejects(()=>buildCommonTokenIndex({},wallet,wallet,{db:fakeDb({})}),/comparison_wallet_must_differ/);
 });
-
