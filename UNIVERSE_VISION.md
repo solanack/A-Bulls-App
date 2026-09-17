@@ -1,7 +1,5 @@
 # A Bulls App — Living Universe Direction
 
-> **Owner override — 2026-09-16:** The only active public origins are **ZERO + FOMO**. PonsFamily (`pons`) and `pump-fun` are retired public galaxies. Older topology, qualification, and demo sections below are historical context only; they do not authorize public navigation or scheduled galaxy refreshes. Retain applied migrations, generic resolvers, and archival Replay/Evidence provenance.
-
 > `MASTER_PLAN.md` is the highest-level product contract. This file is the compact universe/Field engineering contract and must be interpreted in that context.
 
 ## Product definition
@@ -16,10 +14,11 @@ A Bulls App is an evidence-native Solana research operating system rendered as a
 - Decorative fabric is DUST only and never promoted into evidence.
 
 ## Public universe topology
-Galaxy Zero exposes exactly three primary destinations:
-- **Fomo** — trader research lens. Up to 50 cached Fomo all-time trader identities become public-wallet STARS when a usable public wallet is supplied.
-- **pump.fun** — launch-origin galaxy of token PLANETS.
-- **PonsFamily** — public name for internal galaxy id `pons`; qualifying verified PONS-origin token PLANETS are self-populated and ranked by fresh reported 24h volume.
+Galaxy Zero exposes **ZERO + FOMO**: ZERO is the overview, and Fomo is
+its only active public research galaxy. Up to 50 cached Fomo all-time trader
+identities become public-wallet STARS when a usable public wallet is supplied.
+PonsFamily (`pons`) and pump.fun (`pump-fun`) are retired public galaxies;
+retain historical provenance and evidence without restoring navigation or jobs.
 
 `solana-core` remains an internal provenance/compatibility namespace. It is not a public Galaxy Zero destination. Generic Solana wallets, tokens, Replay, Evidence, and Index records remain queryable.
 
@@ -74,18 +73,10 @@ Entering a Fomo trader STAR creates a bounded research system:
 
 No copy-trade action exists.
 
-## PonsFamily
-PonsFamily keeps internal id `pons` to preserve D1 identity and factory-origin history. Membership is automatic and evidence-gated:
-- verified PONS V1/V2 launch-origin receipt required;
-- fresh market cap **above $75,000**;
-- fresh holder count **above 750**;
-- positive/fresh reported 24-hour volume required;
-- ranking primarily by **24-hour volume descending**;
-- maximum 50 qualifying planets;
-- FDV never substitutes for market cap;
-- missing holder/market evidence does not qualify.
-
-The old pinned $PONS teaching-token fallback is retired. Empty qualifying membership is preferable to fabricated planets.
+## Retired galaxy provenance
+PonsFamily (`pons`) and pump.fun (`pump-fun`) are retired public galaxies.
+Applied migrations and retained launch-origin evidence remain intact. Their
+former qualification rules do not authorize public membership or refresh jobs.
 
 ## Matched rounds
 The wallet×mint research view should surface deterministic trade rounds:

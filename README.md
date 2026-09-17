@@ -1,7 +1,5 @@
 # A Bulls App
 
-> **Owner override — 2026-09-16:** The only active public origins are **ZERO + FOMO**. PonsFamily (`pons`) and `pump-fun` are retired public galaxies. Older topology, qualification, and demo sections below are historical context only; they do not authorize public navigation or scheduled galaxy refreshes. Retain applied migrations, generic resolvers, and archival Replay/Evidence provenance.
-
 **Study the trader. Replay the trade. Verify the story.**
 
 A Bulls App is an evidence-native Solana research operating system rendered as an explorable universe.
@@ -36,11 +34,16 @@ If an older document conflicts with `MASTER_PLAN.md`, the master plan wins unles
 
 ## Public Galaxy Zero
 
-- **Fomo** — trader research galaxy/lens
-- **pump.fun** — launch-origin token galaxy
-- **PonsFamily** — self-populating PONS-origin trending token galaxy
+The public Field exposes **ZERO + FOMO**: ZERO is the overview, and **Fomo**
+is its only active public research galaxy/lens.
 
-`solana-core` is internal provenance only, not a public galaxy.
+PonsFamily (`pons`) and pump.fun (`pump-fun`) are retired public galaxies.
+Their historical launch origins, applied migrations, and retained research
+objects remain available as provenance, not as public galaxy destinations.
+`solana-core` is internal provenance only.
+
+Production configuration enables `FOMO_GALAXY_ENABLED`; retired galaxy
+ranking/discovery flags are absent from `workers/wrangler.production.toml`.
 
 ## Current execution boundary
 

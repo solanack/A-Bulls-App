@@ -1,7 +1,5 @@
 # A Bulls App — MASTER PLAN
 
-> **Owner override — 2026-09-16:** The only active public origins are **ZERO + FOMO**. PonsFamily (`pons`) and `pump-fun` are retired public galaxies. Older topology, qualification, and demo sections below are historical context only; they do not authorize public navigation or scheduled galaxy refreshes. Retain applied migrations, generic resolvers, and archival Replay/Evidence provenance.
-
 **Status:** LOCKED product and architecture direction  
 **Effective:** 2026-09-08  
 **Repository:** `solanack/A-Bulls-App`  
@@ -74,15 +72,18 @@ Different classes should be recognizable by scale, silhouette, motion, placement
 
 ## 4. Public Galaxy Zero topology
 
-Galaxy Zero exposes exactly three primary public research destinations unless the owner explicitly changes this:
+The active public Field origins are **ZERO + FOMO**. ZERO is the overview;
+**Fomo** is the only active public research galaxy/lens.
 
-1. **Fomo** — a trader research galaxy/lens.
-2. **pump.fun** — a launch-origin galaxy of token PLANETS.
-3. **PonsFamily** — public name for internal id `pons`; a self-populating launch-origin/trending galaxy of qualifying token PLANETS.
+PonsFamily (`pons`) and pump.fun (`pump-fun`) are retired public galaxies.
+Their historical launch-origin identifiers, applied migrations, and retained
+Replay/Evidence objects remain intact. No public navigation or scheduled
+ranking/discovery refresh for these retired galaxies is authorized.
 
-`solana-core` remains an internal provenance/compatibility namespace for generic Solana evidence and queries. It is not a public Galaxy Zero destination.
+`solana-core` remains an internal provenance/compatibility namespace for
+generic Solana evidence and queries, not a public destination.
 
-A research lens never rewrites launch origin. A pump.fun token shown inside a Fomo trader system remains pump.fun-origin.
+A research lens never rewrites historical launch origin.
 
 ---
 
@@ -93,7 +94,7 @@ This is the signature interaction path and should feel like one continuous resea
 **Universe → Galaxy → Planet → Holder Sky → Star → Holdings → Matched Rounds → Chosen Trade → Tools → Trickster Cut**
 
 ### Beat 1 — Galaxy Zero
-Three primary living destinations. Do not replace the Field with cards.
+ZERO overview with Fomo as the sole active research destination. Do not replace the Field with cards.
 
 ### Beat 2 — Enter galaxy
 The chosen galaxy fills the frame. Token PLANETS or trader STARS appear according to the galaxy's meaning.
@@ -187,23 +188,14 @@ The purpose is to learn how a public wallet traded, not to copy it.
 
 ---
 
-## 8. PonsFamily
+## 8. Retired galaxy provenance
 
-PonsFamily is the public name. Internal id remains `pons` to preserve D1/provenance compatibility.
-
-It must populate itself from verified PONS launch evidence and scheduled enrichment. No pinned teaching token may be used merely to avoid an empty galaxy.
-
-### Membership rules
-A token PLANET qualifies only when all required evidence exists:
-- verified PONS V1/V2 launch origin;
-- **market cap > $75,000**;
-- **holder count > 750**;
-- positive/fresh reported **24-hour volume**;
-- fresh metrics within the configured age bound.
-
-Rank qualifying PLANETS primarily by **24-hour volume descending**. Holder count and market cap may be tie-breakers. Maximum public membership: **50**. Do not fill empty slots with fabricated or stale tokens. FDV does not substitute for market cap.
-
-Population/enrichment must happen on bounded scheduled jobs; public galaxy reads are D1/cache-only.
+PonsFamily (`pons`) and pump.fun (`pump-fun`) are retired public galaxies.
+Keep applied migration history and retained launch-origin/evidence records
+for historical verification and backwards compatibility. Do not restore
+public galaxy membership, rankings, discovery jobs, or provider refresh loops.
+Generic token/wallet research remains available independently of those retired
+navigation surfaces.
 
 ---
 
@@ -634,7 +626,7 @@ The demo should show one complete descent on a phone rather than a feature check
 
 Suggested two-minute flow:
 
-1. **Galaxy Zero** — Fomo / pump.fun / PonsFamily.
+1. **Galaxy Zero** — ZERO overview / FOMO research galaxy.
 2. **Fomo Galaxy** — top trader STARS.
 3. **Touch trader STAR** — enter their system, top position PLANETS appear.
 4. **Touch PLANET** — descend into the token/trader relationship and holder/trade context.
@@ -657,7 +649,7 @@ AI agents should prefer completing the highest unfinished item that strengthens 
 
 ### P0 — make the core path undeniable
 1. Keep Seeker Field stable and release-safe.
-2. Make Fomo and PonsFamily populate reliably from their approved scheduled sources.
+2. Make Fomo populate reliably from its approved scheduled source.
 3. Finish continuous camera choreography: galaxy → planet → holder sky → star.
 4. Finish STAR holdings/top-position system with strict source labels.
 5. Build deterministic `wallet × mint` matched-round picker.
