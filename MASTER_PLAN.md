@@ -733,24 +733,8 @@ It should, where applicable:
 
 ---
 
-## 29. AI handoff rule
+## 29. Contributor process
 
-When an AI opens this repository:
-
-1. Read `MASTER_PLAN.md`.
-2. Read `AGENTS.md`.
-3. Read the most relevant source contract(s), especially `UNIVERSE_VISION.md` and `SOCIALFI_ARCHITECTURE.md`.
-4. Inspect current `main` and live state before assuming a feature is absent or deployed.
-5. State which roadmap item is being advanced.
-6. Reuse existing systems before creating new ones.
-7. Preserve source separation and the read-only execution boundary.
-8. Run the full release gate before recommending deployment.
-9. Never claim production is updated until the live deployment has actually succeeded and been checked.
-
-### North-star test for any proposed change
-
-Ask:
-
-> **Does this make it easier to discover a real subject, understand what happened, replay it, verify it, preserve it in the Index, or turn it into a truthful story?**
-
-If not, it is probably not the next thing A Bulls App needs.
+See `AGENTS.md` for canonical contributor instructions, required reading,
+implementation guardrails, and the release process. Tool-specific instruction
+files redirect there rather than maintaining separate rules.

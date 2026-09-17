@@ -1,14 +1,6 @@
 ---
-description: A Bulls App master product and release direction
+description: Canonical A Bulls App contributor instructions
 alwaysApply: true
 ---
 
-# A Bulls App — mandatory context
-
-Read `MASTER_PLAN.md` before proposing or changing code. Then read `AGENTS.md` for later owner overrides and release guardrails. **Owner override dated 2026-09-16:** Fomo is the only public research galaxy in Galaxy Zero; pump.fun and PonsFamily are retired as public galaxies. If older topology text elsewhere conflicts, the later owner override in `AGENTS.md` controls.
-
-Advance the canonical research path instead of creating side products:
-
-`Universe → Galaxy → Planet → Holder Sky → Star → Holdings → Matched Rounds → Chosen Trade → Tools → Trickster Cut → Index → My Sky`
-
-Reuse existing systems. Preserve source separation, missing-data honesty, cache-first navigation, Seeker WebGL stability, and the non-execution boundary. Never fabricate blockchain facts or claim production changed without successful deployment and live verification.
+See AGENTS.md — this file is intentionally not maintained separately.

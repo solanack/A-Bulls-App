@@ -2,10 +2,11 @@
 
 ## READ THIS FIRST — master direction
 - **`MASTER_PLAN.md` is the highest-level product and architecture contract for this repository. Read it before proposing, coding, refactoring, or deploying anything.**
-- **Owner override — 2026-09-16:** Fomo is the only public research galaxy in Galaxy Zero. `pump-fun` and `pons`/PonsFamily are retired as public galaxies. If older topology text in `MASTER_PLAN.md`, `UNIVERSE_VISION.md`, or another repository document still lists them as public Galaxy Zero destinations, this later owner decision controls until those documents are fully synchronized.
+- **Canonical contributor instructions:** This file owns detailed implementation and release process. Tool-specific instruction files redirect here. `MASTER_PLAN.md` owns product direction; its current public topology is ZERO + FOMO.
 - If an older document conflicts with `MASTER_PLAN.md`, the master plan wins unless the owner explicitly changes the direction.
 - After the master plan, read this file, then the most relevant source contract such as `UNIVERSE_VISION.md` or `SOCIALFI_ARCHITECTURE.md`.
 - Before changing code, inspect current `main` and the existing implementation. Reuse existing systems rather than creating parallel products.
+- Inspect live state before assuming a feature is absent or deployed. Never fabricate blockchain facts, wallet identities, holder counts, cost basis, price paths, or performance claims.
 - Every substantial change should identify which `MASTER_PLAN.md` roadmap item it advances.
 
 ## Source of truth
