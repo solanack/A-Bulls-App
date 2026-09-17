@@ -19,6 +19,9 @@ jobs:
     name: verify + typecheck + test
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +34,16 @@ jobs:
       # (missing nested peer lru-cache@11.5.2). Prefer npm ci once lock is regenerated.
       - name: Install dependencies
         run: npm install --ignore-scripts --no-fund --no-audit
+
+      - name: Require Cloudflare release credentials
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is unavailable to the release gate"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is unavailable to the release gate"; exit 1; }
+
+      - name: Verify production provider secret coverage
+        run: |
+          npx wrangler secret list --config workers/wrangler.production.toml --format json > configured-provider-secrets.json
+          node scripts/check-provider-secrets.mjs --configured-file configured-provider-secrets.json
 
       - name: Verify release baseline
         run: npm run verify:release
