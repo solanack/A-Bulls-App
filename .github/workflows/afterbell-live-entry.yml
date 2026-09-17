@@ -36,3 +36,4 @@ jobs:
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "feat: make Afterbell a sibling Field galaxy"
           git push origin HEAD:feat/afterbell-field-galaxy
+# trigger: node-compatible-afterbell-contract-v2
