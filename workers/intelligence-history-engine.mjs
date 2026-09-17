@@ -19,6 +19,16 @@ const s=v=>String(v==null?'':v).trim();
 const n=v=>Number.isFinite(Number(v))?Number(v):0;
 const finite=v=>v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const now=()=>Math.floor(Date.now()/1000);
+const BASE58_ALPHABET='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const BASE58_INDEX=new Map([...BASE58_ALPHABET].map((char,index)=>[char,index]));
+
+export function isValidHistorySolanaPublicKey(address=''){
+  const value=s(address);if(!WALLET_RE.test(value))return false;let decoded=0n;
+  for(const char of value){const digit=BASE58_INDEX.get(char);if(digit==null)return false;decoded=decoded*58n+BigInt(digit);}
+  let significantBytes=0;for(let cursor=decoded;cursor>0n;cursor>>=8n)significantBytes++;let leadingZeroBytes=0;while(leadingZeroBytes<value.length&&value[leadingZeroBytes]==='1')leadingZeroBytes++;
+  return leadingZeroBytes+significantBytes===32;
+}
+
 
 export function historyRpcTimeoutMs(env={},options={}){
   const configured=n(options.rpcTimeoutMs??env.INTELLIGENCE_HISTORY_RPC_TIMEOUT_MS??DEFAULT_HISTORY_RPC_TIMEOUT_MS);
@@ -30,7 +40,8 @@ export function resolveHistoryRpc(env={}){
   if(explicit)return{name:'configured-rpc',kind:'rpc',url:explicit};
   const key=s(env.HELIUS_API_KEY);
   if(key)return{name:'helius-standard-rpc',kind:'rpc',url:`https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(key)}`};
-  return{name:'solana-public-rpc',kind:'rpc',url:PUBLIC_RPC};
+  const allowPublic=['1','true','yes','on'].includes(s(env.INTELLIGENCE_ALLOW_PUBLIC_RPC_FALLBACK).toLowerCase());
+  return allowPublic?{name:'solana-public-rpc',kind:'rpc',url:PUBLIC_RPC}:{name:'history-rpc-unavailable',kind:'unavailable',url:''};
 }
 
 export async function historyRpcRequest(source,method,params,{fetchImpl=fetch,timeoutMs=DEFAULT_HISTORY_RPC_TIMEOUT_MS}={}){
@@ -109,9 +120,10 @@ async function backfillHeliusWindowPass(env,wallet,source,options,db){
 }
 
 export async function backfillHistoryPass(env,wallet,options={}){
-  if(!WALLET_RE.test(s(wallet)))throw new Error('invalid_public_wallet');
+  if(!isValidHistorySolanaPublicKey(wallet))throw new Error('invalid_public_wallet');
   const db=intelligenceDb(env);if(!db)throw new Error('Intelligence database binding is unavailable.');
   const source=options.source||resolveHistoryRpc(env),from=finite(options.from),to=finite(options.to),timeoutMs=historyRpcTimeoutMs(env,options);
+  if(!s(source?.url))throw new Error('history_rpc_unconfigured');
 
   if(heliusSource(source)&&from!=null&&to!=null){
     try{return await backfillHeliusWindowPass(env,wallet,source,{...options,rpcTimeoutMs:timeoutMs},db)}

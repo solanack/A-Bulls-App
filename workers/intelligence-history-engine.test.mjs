@@ -1,11 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeRpcWalletTx, resolveHistoryRpc } from './intelligence-history-engine.mjs';
+import { decodeRpcWalletTx, isValidHistorySolanaPublicKey, resolveHistoryRpc } from './intelligence-history-engine.mjs';
 
-test('history engine prefers explicit neutral RPC then Helius standard RPC', () => {
+test('history engine prefers configured or Helius RPC and does not silently depend on the public archival endpoint', () => {
   assert.equal(resolveHistoryRpc({ INTELLIGENCE_RPC_URL:'https://rpc.example' }).name, 'configured-rpc');
   assert.equal(resolveHistoryRpc({ HELIUS_API_KEY:'abc' }).name, 'helius-standard-rpc');
-  assert.equal(resolveHistoryRpc({}).name, 'solana-public-rpc');
+  assert.equal(resolveHistoryRpc({}).name, 'history-rpc-unavailable');
+  assert.equal(resolveHistoryRpc({ INTELLIGENCE_ALLOW_PUBLIC_RPC_FALLBACK:'true' }).name, 'solana-public-rpc');
+});
+
+test('history provider boundary requires an actual 32-byte Solana public key', () => {
+  assert.equal(isValidHistorySolanaPublicKey('11111111111111111111111111111111'),true);
+  assert.equal(isValidHistorySolanaPublicKey('11111111111111111111111111111111111111111111'),false);
+  assert.equal(isValidHistorySolanaPublicKey('not-a-wallet'),false);
 });
 
 test('history decoder recognizes observed token/native-SOL movement without claiming PnL', () => {
