@@ -24,13 +24,13 @@ test('entry-to-exit metric requires directly observed same-unit receipt prices',
 
 test('frame model maps one frozen scene to candles, exact receipt marker, captions and VERIFY watermark',()=>{
   const manifest={output:{aspectRatio:'9:16'},subject:{id:'wallet:mint'},coverage:{statement:'Currently indexed evidence only.'},evidence:[{id:'receipt-0',signature:'sig-1'}],claims:[{id:'claim-0',kind:'observed',statement:'BUY observed for selected token.',evidenceIds:['receipt-0']},{id:'metric-0',kind:'calculated',statement:'Observed entry-to-exit SOL price delta: +12.50%.',evidenceIds:['receipt-0']}],scenes:[{id:'scene-0',durationFrames:144,claimIds:['claim-0','metric-0']}]};
-  const candles=[{timestamp:1000,open:1,high:1.1,low:.9,close:1.05},{timestamp:2000,open:1.05,high:1.2,low:1,close:1.15},{timestamp:3000,open:1.15,high:1.25,low:1.1,close:1.2}];
-  const model=buildCutFrameModel({manifest,candles,events:[{timestamp:2000,side:'buy',signature:'sig-1'}],sceneIndex:0,progress:1,shareHref:'https://abullsapp.com/?cut=abc',tokenLabel:'TOKEN',walletLabel:'WALLET'});
+  const candles=[{timestamp:1000,open:1,high:1.1,low:.9,close:1.05},{timestamp:2000,open:1.05,high:1.2,low:1,close:1.15},{timestamp:3000,open:1.15,high:1.25,low:1.1,close:1.2}],shareHref='/?cut=abc';
+  const model=buildCutFrameModel({manifest,candles,events:[{timestamp:2000,side:'buy',signature:'sig-1'}],sceneIndex:0,progress:1,shareHref,tokenLabel:'TOKEN',walletLabel:'WALLET'});
   assert.deepEqual(model.size,{w:1080,h:1920});
   assert.equal(model.markerVisible,true);
   assert.equal(model.metric.display,'+12.50%');
   assert.match(model.caption.eyebrow,/BUY RECEIPT/);
-  assert.equal(model.shareHref,'https://abullsapp.com/?cut=abc');
+  assert.equal(model.shareHref,shareHref);
   assert.match(model.narration.grey,/BUY observed/);
   assert.match(model.narration.trickster,/Interpretation:/);
 });
