@@ -8,9 +8,10 @@ export const getTokenSystem = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<TokenSystemResponse> => {
     const mint = String(data.mint || "").trim();
     const limit = Math.max(1, Math.min(50, Math.trunc(data.limit ?? 50)));
+    const mode = data.galaxyId === "afterbell" ? "afterbell" : "holders";
     try {
       const response = await fetchIntelligence(
-        `/api/intelligence/token-system?mint=${encodeURIComponent(mint)}&limit=${limit}`,
+        `/api/intelligence/token-system?mint=${encodeURIComponent(mint)}&limit=${limit}&mode=${mode}`,
         { headers: { accept: "application/json" }, cache: "no-store" },
       );
       const body = (await response.json()) as TokenSystemResponse;
@@ -23,8 +24,7 @@ export const getTokenSystem = createServerFn({ method: "GET" })
         mint,
         holders: [],
         trades: [],
-        disclosure:
-          "The cached token-system record is unavailable. No live holder provider fallback was attempted.",
+        disclosure: "The cached token-system record is unavailable. No wallet activity or performance value was invented.",
         error: "token_system_unavailable",
       };
     }
