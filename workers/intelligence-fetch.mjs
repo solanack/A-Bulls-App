@@ -1,7 +1,7 @@
 // Bound provider waits so optional enrichment cannot hold a query indefinitely.
 // Every direct providerFetch call receives at least one bounded retry for 429/5xx
-// and transient network/timeout failures. Callers may pass { env, provider } as a
-// third argument to opt into provider-specific production settings.
+// and transient network/timeout failures. Production fetch policy is configured
+// once per Worker invocation from numeric env values only; no secrets are retained.
 
 const s=value=>String(value??'').trim();
 const n=value=>Number.isFinite(Number(value))?Number(value):0;
@@ -14,6 +14,27 @@ export const PROVIDER_REASON=Object.freeze({
   PROVIDER_TIMEOUT:'PROVIDER_TIMEOUT',
   PROVIDER_BUDGET_EXHAUSTED:'PROVIDER_BUDGET_EXHAUSTED'
 });
+
+const CONFIG_KEYS=Object.freeze([
+  'PROVIDER_FETCH_TIMEOUT_MS','PROVIDER_FETCH_RETRIES','PROVIDER_FETCH_BACKOFF_MS',
+  'FOMOAPI_FETCH_TIMEOUT_MS','FOMOAPI_FETCH_RETRIES','FOMOAPI_FETCH_BACKOFF_MS',
+  'HELIUS_FETCH_TIMEOUT_MS','HELIUS_FETCH_RETRIES','HELIUS_FETCH_BACKOFF_MS',
+  'COINGECKO_FETCH_TIMEOUT_MS','COINGECKO_FETCH_RETRIES','COINGECKO_FETCH_BACKOFF_MS',
+  'BITQUERY_FETCH_TIMEOUT_MS','BITQUERY_FETCH_RETRIES','BITQUERY_FETCH_BACKOFF_MS',
+  'BLOCKSCOUT_FETCH_TIMEOUT_MS','BLOCKSCOUT_FETCH_RETRIES','BLOCKSCOUT_FETCH_BACKOFF_MS',
+  'DEXSCREENER_FETCH_TIMEOUT_MS','DEXSCREENER_FETCH_RETRIES','DEXSCREENER_FETCH_BACKOFF_MS'
+]);
+let configuredFetchEnv=Object.freeze({});
+
+export function configureProviderFetch(env={}){
+  const clean={};
+  for(const key of CONFIG_KEYS){
+    const value=env?.[key];
+    if(value!=null&&value!=='')clean[key]=value;
+  }
+  configuredFetchEnv=Object.freeze(clean);
+  return configuredFetchEnv;
+}
 
 export function providerNameFor(input,explicit=''){
   if(s(explicit))return s(explicit).toLowerCase();
@@ -57,7 +78,7 @@ function retryAfterMs(response,attempt,base){
 }
 
 export async function providerFetch(input,init={},options={}){
-  const env=options?.env&&typeof options.env==='object'?options.env:{},provider=providerNameFor(input,options?.provider),policy=providerFetchPolicy(env,provider,options),attempts=policy.retries+1;
+  const env=options?.env&&typeof options.env==='object'?options.env:configuredFetchEnv,provider=providerNameFor(input,options?.provider),policy=providerFetchPolicy(env,provider,options),attempts=policy.retries+1;
   let lastError=null;
   for(let attempt=0;attempt<attempts;attempt++){
     const timeout=AbortSignal.timeout(policy.timeoutMs),signal=init.signal?AbortSignal.any([init.signal,timeout]):timeout;
@@ -71,10 +92,10 @@ export async function providerFetch(input,init={},options={}){
       await sleep(clamp(policy.backoffMs*(2**attempt),50,5000));
     }
   }
-  const error=new Error(timeoutLike(lastError)?`${provider}_provider_timeout`:`${provider}_provider_failure`,{cause:lastError});
-  error.reasonCode=timeoutLike(lastError)?PROVIDER_REASON.PROVIDER_TIMEOUT:PROVIDER_REASON.PROVIDER_FAILURE;
+  const timedOut=timeoutLike(lastError),error=new Error(timedOut?`${provider}_provider_timeout`:`${provider}_provider_failure`,{cause:lastError});
+  error.reasonCode=timedOut?PROVIDER_REASON.PROVIDER_TIMEOUT:PROVIDER_REASON.PROVIDER_FAILURE;
   error.provider=provider;
   throw error;
 }
 
-export const __providerFetchContract=Object.freeze({minimumRetries:1,retryStatuses:Object.freeze([429,'5xx']),defaultTimeoutMs:6000,reasonCodes:Object.freeze(Object.values(PROVIDER_REASON))});
+export const __providerFetchContract=Object.freeze({minimumRetries:1,retryStatuses:Object.freeze([429,'5xx']),defaultTimeoutMs:6000,reasonCodes:Object.freeze(Object.values(PROVIDER_REASON)),configuredKeys:CONFIG_KEYS});
