@@ -35,8 +35,8 @@ jobs:
           npm run typecheck
           npm test
           npm run build
-          test -f dist/afterbell/index.html
-          grep -R -q 'AFTERBELL' dist/assets
+          test -f .vercel/output/static/afterbell/index.html
+          grep -R -q 'AFTERBELL' .vercel/output/static/assets
       - name: Commit verified integration
         run: |
           git config user.name "A Bulls Release Bot"
