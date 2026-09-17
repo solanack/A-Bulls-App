@@ -1,11 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildTricksterDirectorCues,buildTricksterSimulationCue,buildCutShareSvg,__tricksterUniverseDirectorContract} from './trickster-universe-director.mjs';
+import {autoSelectTricksterMoment,buildTricksterDirectorCues,buildTricksterSimulationCue,buildCutShareSvg,__tricksterUniverseDirectorContract} from './trickster-universe-director.mjs';
 
 test('observed director cues stay bounded and evidence referenced',()=>{
   const timeline=Array.from({length:100},(_,i)=>({id:`e${i}`,signature:`sig${i}`,timestamp:1000+i,kind:'trade',side:i%2?'buy':'sell',magnitude:.6,token:'TokenAddressExample123456789',wallet:'WalletAddressExample123456789'}));
   const cues=buildTricksterDirectorCues(timeline);
   assert.ok(cues.length<=24);assert.ok(cues.every(c=>c.claimKind==='observed'&&c.evidenceId));
+});
+
+test('auto cut selects a bounded contiguous window around the strongest observed receipt',()=>{
+  const timeline=Array.from({length:9},(_,i)=>({id:`event-${i}`,timestamp:1_700_000_000_000+i*1000,side:i%2?'buy':'sell',magnitude:i===6?.98:.2+i*.01}));
+  const selected=autoSelectTricksterMoment(timeline,5);
+  assert.equal(selected.length,5);
+  assert.deepEqual(selected.map(row=>row.index),[4,5,6,7,8]);
+  assert.equal(selected[2].receiptId,'event-6');
+  assert.equal(selected[2].magnitude,.98);
+});
+
+test('auto cut never invents or pads receipts when the timeline is short',()=>{
+  const timeline=[{signature:'sig-a',timestamp:1,side:'buy',magnitude:.9},{signature:'sig-b',timestamp:2,side:'sell',magnitude:.4}];
+  const selected=autoSelectTricksterMoment(timeline,8);
+  assert.deepEqual(selected.map(row=>row.receiptId),['sig-a','sig-b']);
 });
 
 test('simulation cue is unmistakably disclosed',()=>{
@@ -34,4 +49,3 @@ test('vertical share SVG burns INDEXED receipts and stays honest without OHLC',(
   assert.match(empty,/No price path was invented/);
   assert.match(empty,/signature unavailable/);
 });
-
