@@ -2,7 +2,7 @@
 import { cutShareReceiptLines, cutShareSize } from './trickster-story-manifest.mjs';
 
 const s=v=>String(v??'').trim();
-const n=v=>Number.isFinite(Number(v))?Number(value):0;
+const n=v=>Number.isFinite(Number(v))?Number(v):0;
 const xml=v=>s(v).replace(/[&<>"']/g,ch=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;' }[ch]??ch));
 const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
 
@@ -25,7 +25,7 @@ export function autoSelectTricksterMoment(timeline=[],maxEvents=5){
   if(!events.length)return Object.freeze([]);
   let peak=0,peakScore=-Infinity;
   for(let index=0;index<events.length;index++){
-    const event=events[index],side=s(event.side).toLowerCase(),score=tricksterEventMagnitude(event)+((side==='buy'||side==='sell')?.02:0);
+    const event=events[index],side=s(event.side).toLowerCase(),score=tricksterEventMagnitude(event)+((side==='buy'||side==='sell') ? .02 : 0);
     if(score>peakScore){peak=index;peakScore=score;}
   }
   const size=Math.min(cap,events.length),start=clamp(peak-Math.floor(size/2),0,events.length-size);
