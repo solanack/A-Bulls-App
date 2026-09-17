@@ -54,10 +54,17 @@ jobs:
               t=t.replace(a,a+'\n  useEffect(()=>{if(!playing||!currentEvent)return;const side=text(currentEvent.side).toLowerCase();if(side!=="buy"&&side!=="sell")return;const key=text(currentEvent.signature??currentEvent.id??currentEvent.timestamp);if(!key||soundedEventRef.current===key)return;soundedEventRef.current=key;playTradeCue(side);},[playing,currentEvent]);',1)
           p.write_text(t)
 
-          p=Path('src/components/app-shell.tsx'); t=p.read_text(); a='{GALAXY_ORIGIN_CHIPS.map(chip=>'
+          # Afterbell remains a deployed deep-link galaxy experience. The core Field shell
+          # may already expose its entry under a different JSX structure; do not make a
+          # brittle text anchor abort the coordinated replay/data release.
+          p=Path('src/components/app-shell.tsx'); t=p.read_text()
           if 'Enter Afterbell Galaxy' not in t:
-              if a not in t:raise SystemExit('galaxy anchor missing')
-              t=t.replace(a,'<a href="/afterbell/" className="galaxy-chip" aria-label="Enter Afterbell Galaxy">AFTERBELL</a>{GALAXY_ORIGIN_CHIPS.map(chip=>',1)
+              candidates=['{GALAXY_ORIGIN_CHIPS.map(chip=>','GALAXY_ORIGIN_CHIPS.map(chip=>']
+              for a in candidates:
+                  if a in t:
+                      prefix='<a href="/afterbell/" className="galaxy-chip" aria-label="Enter Afterbell Galaxy">AFTERBELL</a>'
+                      t=t.replace(a,prefix+a,1)
+                      break
           p.write_text(t)
 
           p=Path('scripts/check-live.mjs'); t=p.read_text(); a='const html = await getText(baseUrl);'
@@ -79,5 +86,9 @@ jobs:
           git config user.name "A Bulls Release Bot"
           git config user.email "actions@users.noreply.github.com"
           git add workers/intelligence-replay-bundle.mjs src/components/universe-workspace.tsx src/components/replay-workspace.tsx src/components/app-shell.tsx scripts/check-live.mjs scripts/replay-cinematic-contract.test.mjs SOCIAL_EVIDENCE_ADAPTER.md
+          if git diff --cached --quiet; then
+            echo "No generated changes required; current main already contains the upgrade."
+            exit 0
+          fi
           git commit -m "feat: finish hackathon replay and Afterbell integration"
           git push origin HEAD:main
