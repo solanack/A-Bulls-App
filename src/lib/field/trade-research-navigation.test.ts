@@ -8,7 +8,7 @@ const evmWallet="0x1111111111111111111111111111111111111111";
 const evmToken="0x2222222222222222222222222222222222222222";
 const evmQuote="0x3333333333333333333333333333333333333333";
 
-test("selected Fomo trade opens an event-centered wallet-token Replay context without a 24h ceiling",()=>{
+test("selected event without an observed entry leaves Replay start for evidence resolution",()=>{
   const now=1_789_560_000_000,observed=now-60_000,selection=tradeReplaySelection({id:"trade-1",eventId:"sig-1",verificationState:"observed",observedAt:observed,metadata:{wallet,mint}},null,now);
   if(!selection)throw new Error("expected replay selection");
   assert.equal(selection.chainKey,"solana");
@@ -16,8 +16,8 @@ test("selected Fomo trade opens an event-centered wallet-token Replay context wi
   assert.equal(selection.mint,mint);
   assert.equal(selection.replayCursor,0);
   assert.deepEqual(selection.evidenceIds,["sig-1"]);
-  assert.equal(selection.fromTs,observed-60*60*1000);
-  assert.equal(selection.toTs,now);
+  assert.equal(selection.fromTs,null);
+  assert.equal(selection.toTs,null);
 });
 
 test("closed EVM trades preserve their real chain and entry-to-exit span with bounded chart context",()=>{
@@ -38,6 +38,8 @@ test("selected trade or trader token planet can inherit the focused trader walle
   const selected=tradeReplaySelection({id:"trade-2",eventId:"sig-2",observedAt:1_789_500_000_000,metadata:{mint}},wallet,1_789_560_000_000);
   assert.equal(selected?.wallet,wallet);
   assert.equal(selected?.mint,mint);
+  assert.equal(selected?.fromTs,null);
+  assert.equal(selected?.toTs,null);
   assert.equal(tradeReplaySelection({id:"trade-3",observedAt:1_789_500_000_000,metadata:{mint}},null,1_789_560_000_000),null);
 });
 
@@ -58,5 +60,7 @@ test("provider context and planet IDs never become observed Replay receipts",()=
     const selection=tradeReplaySelection(particle,wallet,now);
     assert.deepEqual(selection?.evidenceIds,[]);
     assert.equal(selection?.replayCursor,0);
+    assert.equal(selection?.fromTs,null);
+    assert.equal(selection?.toTs,null);
   }
 });
