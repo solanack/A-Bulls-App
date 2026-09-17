@@ -1,0 +1,99 @@
+name: Live Afterbell browser verification
+on:
+  push:
+    paths:
+      - '.github/workflows/qa-afterbell-production-browser.yml'
+permissions:
+  contents: read
+jobs:
+  browser-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --ignore-scripts --no-fund --no-audit
+      - run: npx playwright install --with-deps chromium
+      - name: Exercise production Field and Afterbell
+        env:
+          EXPECTED_SHA: d91c1165fa2aaefb68b516c98a09ae96de52c3fe
+        run: |
+          mkdir -p qa-browser
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { chromium } from 'playwright';
+          import fs from 'node:fs';
+
+          const expected=process.env.EXPECTED_SHA;
+          const browser=await chromium.launch({headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-webgl','--ignore-gpu-blocklist']});
+          const context=await browser.newContext({viewport:{width:1280,height:800},deviceScaleFactor:1,reducedMotion:'reduce'});
+          const page=await context.newPage();
+          const pageErrors=[];
+          const consoleErrors=[];
+          page.on('pageerror',error=>pageErrors.push(String(error?.stack||error)));
+          page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text());});
+
+          await page.goto(`https://abullsapp.com/?qa=${Date.now()}`,{waitUntil:'networkidle',timeout:60000});
+          await page.waitForSelector('canvas.universe-canvas',{state:'visible',timeout:30000});
+          await page.waitForFunction(()=>typeof globalThis.__ABULLS_PICK==='function',null,{timeout:30000});
+          const root=await page.evaluate(async()=>{
+            const canvas=document.querySelector('canvas.universe-canvas');
+            const gl=canvas?.getContext('webgl2')||canvas?.getContext('webgl');
+            const release=await fetch(`/release.json?qa=${Date.now()}`,{cache:'no-store'}).then(r=>r.json());
+            return {release,canvas:{width:canvas?.width||0,height:canvas?.height||0,clientWidth:canvas?.clientWidth||0,clientHeight:canvas?.clientHeight||0},webgl:Boolean(gl),text:document.body.innerText};
+          });
+          assert.equal(root.release?.commit,expected,`live release ${root.release?.commit} != ${expected}`);
+          assert.ok(root.webgl,'root Field did not obtain a WebGL context');
+          assert.ok(root.canvas.clientWidth>300&&root.canvas.clientHeight>300,'root Field canvas is not visibly sized');
+          assert.match(root.text,/Galaxy Zero/i,'root Field did not boot Galaxy Zero');
+
+          // Galaxy Zero is deliberately static under reduced-motion QA. The two core centers
+          // project near 43.8% and 56.8% of the canvas width; Afterbell is the right-hand core.
+          const box=await page.locator('canvas.universe-canvas').boundingBox();
+          assert.ok(box,'Field canvas has no bounding box');
+          const x=box.x+box.width*0.568, y=box.y+box.height*0.508;
+          await page.evaluate(({x,y})=>globalThis.__ABULLS_PICK?.(x,y),{x,y});
+          await page.waitForTimeout(250);
+          await page.evaluate(({x,y})=>globalThis.__ABULLS_PICK?.(x,y),{x,y});
+          await page.waitForTimeout(1800);
+          const afterbellFieldText=await page.locator('body').innerText();
+          assert.match(afterbellFieldText,/Afterbell/i,'Afterbell galaxy did not become visible after selecting the right Galaxy Zero core');
+          assert.match(afterbellFieldText,/tokenized equities|SOLANA TOKENIZED EQUITIES/i,'Afterbell research-galaxy context did not load');
+          await page.screenshot({path:'qa-browser/afterbell-field.png',fullPage:true});
+
+          const loadedResources=await page.evaluate(()=>performance.getEntriesByType('resource').map(entry=>entry.name));
+          const fieldBundle=loadedResources.find(url=>/\/assets\/field-os-[^/]+\.js/.test(url));
+          assert.ok(fieldBundle,'deployed Field bundle was not loaded');
+          const fieldCode=await page.request.get(fieldBundle).then(r=>r.text());
+          assert.match(fieldCode,/Afterbell/,'deployed Field bundle does not contain Afterbell galaxy code');
+
+          await page.goto(`https://abullsapp.com/afterbell/?qa=${Date.now()}`,{waitUntil:'networkidle',timeout:60000});
+          await page.waitForSelector('#floor',{state:'visible',timeout:30000});
+          const staticFloor=await page.evaluate(()=>{
+            const canvas=document.querySelector('#floor');
+            const gl=canvas?.getContext('webgl2')||canvas?.getContext('webgl');
+            return {webgl:Boolean(gl),width:canvas?.clientWidth||0,height:canvas?.clientHeight||0,text:document.body.innerText,title:document.title};
+          });
+          assert.ok(staticFloor.webgl,'/afterbell/ did not obtain a WebGL context');
+          assert.ok(staticFloor.width>300&&staticFloor.height>300,'/afterbell/ canvas is not visibly sized');
+          assert.match(`${staticFloor.title}\n${staticFloor.text}`,/AFTERBELL/i,'/afterbell/ did not render Afterbell');
+          await page.screenshot({path:'qa-browser/afterbell-deeplink.png',fullPage:true});
+
+          // Ignore browser-extension-style noise; fail on application page exceptions or same-origin console errors.
+          assert.deepEqual(pageErrors,[],`page errors: ${pageErrors.join('\n')}`);
+          const relevantConsoleErrors=consoleErrors.filter(text=>!/favicon|ERR_BLOCKED_BY_CLIENT/i.test(text));
+          assert.deepEqual(relevantConsoleErrors,[],`console errors: ${relevantConsoleErrors.join('\n')}`);
+          fs.writeFileSync('qa-browser/result.json',JSON.stringify({ok:true,release:root.release?.commit,rootWebgl:root.webgl,afterbellField:true,afterbellDeepLinkWebgl:staticFloor.webgl,fieldBundle},null,2));
+          console.log(fs.readFileSync('qa-browser/result.json','utf8'));
+          await browser.close();
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-afterbell-browser-qa
+          path: qa-browser
+          if-no-files-found: warn
