@@ -4,12 +4,11 @@ const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const s=value=>String(value==null?'':value).trim();
 const monthKey=(timestamp=Date.now())=>new Date(timestamp).toISOString().slice(0,7);
 const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
-const bool=value=>s(value).toLowerCase()==='true';
 const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 
 const PROVIDER_DEFAULTS=Object.freeze({
-  fomoapi:Object.freeze({monthlyLimit:250_000,breakerRatio:.80,quotaSource:'fomoapi-free-floor'}),
-  helius:Object.freeze({monthlyLimit:1_000_000,breakerRatio:.75,quotaSource:'operator-config-unverified'})
+  fomoapi:Object.freeze({monthlyLimit:250_000,breakerRatio:.80,quotaSource:'fomoapi-published-free-floor',creditUnit:250}),
+  helius:Object.freeze({monthlyLimit:1_000_000,breakerRatio:.75,quotaSource:'operator-config-unverified',creditUnit:1})
 });
 
 export function providerBudgetPolicy(env={},provider='helius'){
@@ -20,7 +19,7 @@ export function providerBudgetPolicy(env={},provider='helius'){
   const configuredRatio=n(fomo?env.FOMOAPI_BREAKER_RATIO:env.HELIUS_BREAKER_RATIO);
   const breakerRatio=clamp(configuredRatio||defaults.breakerRatio,.5,.95);
   const quotaSource=s(fomo?env.FOMOAPI_QUOTA_SOURCE:env.HELIUS_QUOTA_SOURCE)||defaults.quotaSource;
-  return Object.freeze({provider:name,monthlyLimit,breakerRatio,hardLimit:Math.floor(monthlyLimit*breakerRatio),quotaSource,quotaVerified:/provider|verified/i.test(quotaSource)});
+  return Object.freeze({provider:name,monthlyLimit,breakerRatio,hardLimit:Math.floor(monthlyLimit*breakerRatio),quotaSource,quotaVerified:/provider|verified/i.test(quotaSource),creditUnit:defaults.creditUnit});
 }
 
 async function ensureMonthlyRow(db,policy,month){
@@ -36,13 +35,13 @@ async function writeBlockedAlert(db,{provider,month,requestedCredits,creditsRese
 
 export async function reserveProviderCredits(env={},requestedCredits=1,provider='helius',timestamp=Date.now()){
   const db=intelligenceDb(env);if(!db)throw new Error('intelligence_db_unavailable');
-  const policy=providerBudgetPolicy(env,provider),credits=Math.max(0,Math.trunc(n(requestedCredits))),month=monthKey(timestamp);
+  const policy=providerBudgetPolicy(env,provider),requestedUnits=Math.max(0,Math.trunc(n(requestedCredits))),credits=requestedUnits*policy.creditUnit,month=monthKey(timestamp);
   const before=await ensureMonthlyRow(db,policy,month),effectiveLimit=Math.max(policy.monthlyLimit,Math.trunc(n(before?.monthly_limit))||0),effectiveRatio=clamp(n(before?.breaker_ratio)||policy.breakerRatio,.5,.95),hardLimit=Math.floor(effectiveLimit*effectiveRatio);
   const result=await db.prepare(`UPDATE intelligence_provider_budget_monthly SET call_count=call_count+1,credits_reserved=credits_reserved+?,monthly_limit=MAX(monthly_limit,?),breaker_ratio=?,updated_at=unixepoch() WHERE provider=? AND month_key=? AND credits_reserved+?<=?`).bind(credits,policy.monthlyLimit,policy.breakerRatio,policy.provider,month,credits,hardLimit).run();
   const row=await db.prepare(`SELECT call_count,credits_reserved,monthly_limit,breaker_ratio,updated_at FROM intelligence_provider_budget_monthly WHERE provider=? AND month_key=? LIMIT 1`).bind(policy.provider,month).first();
   const blocked=!n(result?.meta?.changes),monthlyLimit=Math.max(policy.monthlyLimit,Math.trunc(n(row?.monthly_limit))||0),breakerRatio=clamp(n(row?.breaker_ratio)||policy.breakerRatio,.5,.95),currentHardLimit=Math.floor(monthlyLimit*breakerRatio),creditsReserved=Math.max(0,Math.trunc(n(row?.credits_reserved)));
   if(blocked)await writeBlockedAlert(db,{provider:policy.provider,month,requestedCredits:credits,creditsReserved,hardLimit:currentHardLimit,timestamp});
-  return Object.freeze({provider:policy.provider,monthKey:month,requestedCredits:credits,callCount:Math.max(0,Math.trunc(n(row?.call_count))),creditsReserved,monthlyLimit,breakerRatio,hardLimit:currentHardLimit,blocked,quotaSource:policy.quotaSource,quotaVerified:policy.quotaVerified});
+  return Object.freeze({provider:policy.provider,monthKey:month,requestedCredits:credits,requestedUnits,creditUnit:policy.creditUnit,callCount:Math.max(0,Math.trunc(n(row?.call_count))),creditsReserved,monthlyLimit,breakerRatio,hardLimit:currentHardLimit,blocked,quotaSource:policy.quotaSource,quotaVerified:policy.quotaVerified});
 }
 
 export async function recordProviderUsageObservation(env={},observation={}){
