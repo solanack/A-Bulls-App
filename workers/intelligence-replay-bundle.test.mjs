@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { adaptiveReplayBucketSeconds, buildReplayBundle, handleReplayBundleRequest } from './intelligence-replay-bundle.mjs';
+import { adaptiveReplayBucketSeconds, aggregateReplayCandleRows, buildReplayBundle, handleReplayBundleRequest } from './intelligence-replay-bundle.mjs';
 
 const walletA='11111111111111111111111111111111';
 const walletB='22222222222222222222222222222222';
@@ -74,6 +74,23 @@ test('does not invent execution prices without a quote mint',async()=>{
   assert.equal(bundle.events[0].price,null);
   assert.equal(bundle.candles.length,0);
   assert.match(bundle.caveats.join(' '),/not inferred/i);
+});
+
+test('aggregates retained finer candles into the adaptive Replay bucket without inventing OHLC',()=>{
+  const rows=[
+    {bucket_start:0,bucket_seconds:60,open:1,high:2,low:.8,close:1.5,volume_base:10,volume_quote:20,swap_count:2,wallet_count:2,confidence:.9,source_set_json:'["rpc-a"]'},
+    {bucket_start:60,bucket_seconds:60,open:1.5,high:3,low:1.4,close:2.5,volume_base:15,volume_quote:30,swap_count:3,wallet_count:3,confidence:.8,source_set_json:'["rpc-b"]'}
+  ];
+  const candles=aggregateReplayCandleRows(rows,300);
+  assert.equal(candles.length,1);
+  assert.equal(candles[0].bucket_seconds,300);
+  assert.equal(candles[0].open,1);
+  assert.equal(candles[0].high,3);
+  assert.equal(candles[0].low,.8);
+  assert.equal(candles[0].close,2.5);
+  assert.equal(candles[0].volume_base,25);
+  assert.equal(candles[0].swap_count,5);
+  assert.deepEqual(JSON.parse(candles[0].source_set_json),['rpc-a','rpc-b']);
 });
 
 test('adaptive Replay buckets preserve detail for short windows and bound long histories',()=>{
