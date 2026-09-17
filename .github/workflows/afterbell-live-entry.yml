@@ -1,4 +1,4 @@
-name: Afterbell and Replay finalization
+name: Afterbell sibling galaxy verification
 on:
   push:
     paths:
@@ -6,20 +6,18 @@ on:
 permissions:
   contents: write
 jobs:
-  finalize:
+  verify-afterbell:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: feat/afterbell-field-galaxy
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Apply deterministic Replay upgrade
-        run: |
-          python3 scripts/apply-hackathon-replay-upgrade.py
-          python3 scripts/force-replay-density.py
+      - name: Apply Afterbell sibling galaxy integration
+        run: python3 scripts/apply-afterbell-field-galaxy.py
       - name: Verify repository
         run: |
           npm install --ignore-scripts
@@ -27,12 +25,12 @@ jobs:
           npm test
           npm run build
           test -f .vercel/output/static/afterbell/index.html
-          grep -R -q 'AFTERBELL' .vercel/output/static/assets
+          grep -R -q 'AFTERBELL' .vercel/output/static/afterbell/index.html
       - name: Commit verified source
         run: |
           git config user.name "A Bulls Release Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add workers/intelligence-replay-bundle.mjs workers/intelligence-replay-bundle.test.mjs src/components/universe-workspace.tsx src/components/replay-workspace.tsx scripts/replay-cinematic-contract.test.mjs
+          git add src/lib/field/types.ts src/lib/field/galaxies.ts src/lib/field/synthetic-universe.ts src/lib/universe-data/afterbell-client.ts src/lib/field/afterbell-galaxy.ts src/lib/field/afterbell-galaxy.test.ts src/lib/field/field-os.ts src/components/app-shell.tsx scripts/galaxy-contract.test.mjs
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m "feat: finish adaptive cinematic Replay"
-          git push origin HEAD:main
+          git commit -m "feat: make Afterbell a sibling Field galaxy"
+          git push origin HEAD:feat/afterbell-field-galaxy
