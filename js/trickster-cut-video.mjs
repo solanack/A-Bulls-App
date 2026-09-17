@@ -27,25 +27,11 @@ export function observedEntryExitPriceDelta(events=[]){
   const percent=((exit.value-entry.value)/entry.value)*100;
   if(!Number.isFinite(percent))return null;
   const sign=percent>0?'+':'';
-  return Object.freeze({
-    kind:'observed-price-delta',
-    unit:entry.unit,
-    entry:entry.value,
-    exit:exit.value,
-    percent,
-    entryIndex,
-    exitIndex,
-    statement:`Observed entry-to-exit ${entry.unit} price delta: ${sign}${percent.toFixed(2)}%.`,
-    label:`${entry.unit} PRICE DELTA`,
-    display:`${sign}${percent.toFixed(2)}%`
-  });
+  return Object.freeze({kind:'observed-price-delta',unit:entry.unit,entry:entry.value,exit:exit.value,percent,entryIndex,exitIndex,statement:`Observed entry-to-exit ${entry.unit} price delta: ${sign}${percent.toFixed(2)}%.`,label:`${entry.unit} PRICE DELTA`,display:`${sign}${percent.toFixed(2)}%`});
 }
 
 export function normalizeCutCandles(candles=[]){
-  return Object.freeze((Array.isArray(candles)?candles:[]).map(row=>({
-    timestamp:ms(row?.timestamp??row?.bucketStart??row?.time),
-    open:n(row?.open),high:n(row?.high),low:n(row?.low),close:n(row?.close),volume:n(row?.volume)
-  })).filter(row=>row.timestamp>0&&row.open>0&&row.high>0&&row.low>0&&row.close>0&&row.high>=row.low).sort((a,b)=>a.timestamp-b.timestamp));
+  return Object.freeze((Array.isArray(candles)?candles:[]).map(row=>({timestamp:ms(row?.timestamp??row?.bucketStart??row?.time),open:n(row?.open),high:n(row?.high),low:n(row?.low),close:n(row?.close),volume:n(row?.volume)})).filter(row=>row.timestamp>0&&row.open>0&&row.high>0&&row.low>0&&row.close>0&&row.high>=row.low).sort((a,b)=>a.timestamp-b.timestamp));
 }
 
 function nearestIndex(rows,timestamp){
@@ -56,7 +42,7 @@ function nearestIndex(rows,timestamp){
 }
 
 export function cutCandleWindow(candles=[],timestamp=0,maxRows=96){
-  const rows=normalizeCutCandles(candles),limit=Math.max(12,Math.min(140,Math.trunc(n(maxRows)||96));
+  const rows=normalizeCutCandles(candles),limit=Math.max(12,Math.min(140,Math.trunc(n(maxRows)||96)));
   if(rows.length<=limit)return rows;
   const nearest=nearestIndex(rows,ms(timestamp));
   if(nearest<0)return Object.freeze(rows.slice(-limit));
@@ -97,13 +83,7 @@ export function buildSceneNarration({claim,event,index=0,total=1}={}){
 export function buildCutFrameModel({manifest={},candles=[],events=[],sceneIndex=0,progress=0,shareHref='',tokenLabel='',walletLabel=''}={}){
   const scenes=Array.isArray(manifest?.scenes)?manifest.scenes:[],index=clamp(Math.trunc(n(sceneIndex)),0,Math.max(0,scenes.length-1)),scene=scenes[index]??{},claims=sceneClaims(manifest,scene),event=(Array.isArray(events)?events:[])[index]??{},ratio=s(manifest?.output?.aspectRatio)||'9:16',size=cutShareSize(ratio),p=clamp(n(progress),0,1),rows=cutCandleWindow(candles,event?.timestamp),markerIndex=nearestIndex(rows,ms(event?.timestamp)),visibleCount=rows.length?Math.max(1,Math.min(rows.length,Math.ceil(rows.length*clamp(.16+p*1.08,0,1)))):0,metric=headlineMetricFromClaims(claims),caption=formatCutSceneCaption({claim:claims.find(item=>s(item?.kind)==='observed')??claims[0],event,index,total:scenes.length}),narration=buildSceneNarration({claim:claims.find(item=>s(item?.kind)==='observed')??claims[0],event,index,total:scenes.length}),receipt=evidenceMap(manifest).get(s(claims[0]?.evidenceIds?.[0]))??null;
   const chart=Object.freeze({x:Math.round(size.w*.06),y:Math.round(size.h*(ratio==='9:16'?.24:.18)),w:Math.round(size.w*.88),h:Math.round(size.h*(ratio==='9:16'?.43:.50))});
-  return Object.freeze({
-    size:Object.freeze(size),ratio,index,sceneId:s(scene?.id)||`scene-${index}`,durationFrames:Math.max(1,Math.trunc(n(scene?.durationFrames)||72)),progress:p,
-    chart,rows:Object.freeze(rows.slice(0,visibleCount)),allRows:rows,markerIndex,markerVisible:markerIndex>=0&&markerIndex<visibleCount,pulse:.45+.55*Math.abs(Math.sin(p*Math.PI*3)),
-    side:s(event?.side).toLowerCase(),eventTimestamp:ms(event?.timestamp),signature:s(event?.signature)||s(receipt?.signature)||null,
-    tokenLabel:s(tokenLabel)||short(manifest?.subject?.id,16,8)||'Selected market',walletLabel:s(walletLabel)||'Public wallet',shareHref:s(shareHref),
-    metric,caption,narration,coverage:s(manifest?.coverage?.statement)||'Currently indexed evidence only.'
-  });
+  return Object.freeze({size:Object.freeze(size),ratio,index,sceneId:s(scene?.id)||`scene-${index}`,durationFrames:Math.max(1,Math.trunc(n(scene?.durationFrames)||72)),progress:p,chart,rows:Object.freeze(rows.slice(0,visibleCount)),allRows:rows,markerIndex,markerVisible:markerIndex>=0&&markerIndex<visibleCount,pulse:.45+.55*Math.abs(Math.sin(p*Math.PI*3)),side:s(event?.side).toLowerCase(),eventTimestamp:ms(event?.timestamp),signature:s(event?.signature)||s(receipt?.signature)||null,tokenLabel:s(tokenLabel)||short(manifest?.subject?.id,16,8)||'Selected market',walletLabel:s(walletLabel)||'Public wallet',shareHref:s(shareHref),metric,caption,narration,coverage:s(manifest?.coverage?.statement)||'Currently indexed evidence only.'});
 }
 
 export function preferredCutVideoMime(isSupported=()=>false){
@@ -112,12 +92,4 @@ export function preferredCutVideoMime(isSupported=()=>false){
   return '';
 }
 
-export const __tricksterCutVideoContract=Object.freeze({
-  receiptBoundFrames:true,
-  missingOhlcStaysMissing:true,
-  roles:Object.freeze(['grey','trickster']),
-  persistentVerifyWatermark:true,
-  preferredFps:24,
-  maxCanvasRows:140,
-  fallbackArtifact:'svg'
-});
+export const __tricksterCutVideoContract=Object.freeze({receiptBoundFrames:true,missingOhlcStaysMissing:true,roles:Object.freeze(['grey','trickster']),persistentVerifyWatermark:true,preferredFps:24,maxCanvasRows:140,fallbackArtifact:'svg'});
