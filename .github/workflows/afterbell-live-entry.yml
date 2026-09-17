@@ -1,4 +1,4 @@
-name: Afterbell live Field entry
+name: Afterbell and Replay finalization
 on:
   push:
     paths:
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: write
 jobs:
-  integrate:
+  finalize:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,19 +16,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Integrate Afterbell into the live universe shell
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('src/components/app-shell.tsx'); t=p.read_text()
-          if 'data-afterbell-galaxy-entry' not in t:
-              anchor='  return <main className={`field-shell${queryActive?" field-shell--query":""}`} data-mode={queryActive?"query":mode} data-galaxy={galaxy.id} data-field-fallback={fieldUnavailable||undefined}>'
-              if anchor not in t: raise SystemExit('main Field shell anchor missing')
-              entry=anchor+'\n    <a data-afterbell-galaxy-entry href="/afterbell/" aria-label="Enter Afterbell Galaxy" style={{position:"absolute",top:"max(68px,calc(env(safe-area-inset-top) + 56px))",right:12,zIndex:26,pointerEvents:"auto",minHeight:34,display:"inline-flex",alignItems:"center",justifyContent:"center",padding:"0 12px",border:"1px solid rgba(232,205,142,.38)",borderRadius:999,background:"rgba(8,9,14,.76)",backdropFilter:"blur(16px)",color:"#ead49a",font:"650 9px/1 var(--font-display)",letterSpacing:".14em",textDecoration:"none",boxShadow:"0 10px 30px rgba(0,0,0,.3)"}}>AFTERBELL</a>'
-              t=t.replace(anchor,entry,1)
-          p.write_text(t)
-          PY
+      - name: Apply deterministic Replay upgrade
+        run: python3 scripts/apply-hackathon-replay-upgrade.py
       - name: Verify repository
         run: |
           npm install --ignore-scripts
@@ -37,11 +26,11 @@ jobs:
           npm run build
           test -f .vercel/output/static/afterbell/index.html
           grep -R -q 'AFTERBELL' .vercel/output/static/assets
-      - name: Commit verified integration
+      - name: Commit verified source
         run: |
           git config user.name "A Bulls Release Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add src/components/app-shell.tsx
+          git add workers/intelligence-replay-bundle.mjs workers/intelligence-replay-bundle.test.mjs src/components/universe-workspace.tsx src/components/replay-workspace.tsx scripts/replay-cinematic-contract.test.mjs
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m "fix: expose Afterbell galaxy in live Field"
+          git commit -m "feat: finish adaptive cinematic Replay"
           git push origin HEAD:main
