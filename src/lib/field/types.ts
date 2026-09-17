@@ -17,7 +17,7 @@ export type FieldMode =
 
 export type OrganismState = "idle" | "listening" | "analyzing" | "speaking" | "complete" | "return";
 export type Coverage = "fresh" | "stale" | "degraded" | "empty";
-export type GalaxyId = "galaxy-zero" | "fomo" | "solana-core" | "pump-fun" | "pons";
+export type GalaxyId = "galaxy-zero" | "fomo" | "afterbell" | "solana-core" | "pump-fun" | "pons";
 export type GalaxyStatus = "populated" | "staging";
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 

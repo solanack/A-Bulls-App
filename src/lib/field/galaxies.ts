@@ -4,15 +4,16 @@ import { mintKey } from "./watchlist.ts";
 const GALAXY_REGISTRY = [
   {id:"galaxy-zero",name:"Galaxy Zero",ecosystem:"A Bulls App universe map",status:"populated",seed:861,accent:"var(--color-accent)",description:"The navigable expanse containing Fomo, universal search, and Grey.",coverage:"Spatial directory; no raw chain events",sources:["a-bulls-galaxy-directory"]},
   {id:"fomo",name:"Fomo",ecosystem:"Trader research galaxy",status:"populated",seed:1299,accent:"#6f80ff",description:"The cached Fomo all-time top 50 become public-wallet stars. Enter a trader to study mapped token positions and retained trade evidence.",coverage:"fomoapi.io all-time leaderboard as reported + retained A Bulls App public-chain evidence",sources:["fomoapi.io","A Bulls App indexed public-chain evidence"]},
+  {id:"afterbell",name:"Afterbell",ecosystem:"Tokenized equities research galaxy",status:"populated",seed:1974,accent:"#ead49a",description:"A sibling research galaxy for Solana tokenized equities. xStock PLANETS keep Solana provenance while venue-reported market context stays separately labeled.",coverage:"DexScreener venue-reported Solana xStock market context + A Bulls retained public-chain evidence when available",sources:["DexScreener venue-reported","A Bulls App indexed Solana evidence"]},
   {id:"solana-core",name:"Solana Core",ecosystem:"Internal Solana provenance",status:"staging",seed:861,accent:"var(--color-accent)",description:"Compatibility provenance for generic Solana evidence. It is not a public Galaxy Zero destination.",coverage:"Internal compatibility provenance",sources:["Solana RPC","Helius indexed history","DexScreener"]},
   {id:"pump-fun",name:"pump.fun",ecosystem:"Legacy pump.fun launch origin",status:"staging",seed:2205,accent:"var(--color-live)",description:"Retired public galaxy. The id remains only for historical launch-origin provenance and old research objects.",coverage:"Historical provenance only",sources:["A Bulls App retained evidence"]},
   {id:"pons",name:"PonsFamily",ecosystem:"Legacy PONS provenance",status:"staging",seed:4663,accent:"#c7f05f",description:"Retired public galaxy. The id remains only for historical compatibility and retained research objects.",coverage:"Historical provenance only",sources:["A Bulls App retained evidence"]},
 ] as const satisfies readonly GalaxyDefinition[];
 
-export const GALAXIES = GALAXY_REGISTRY.filter(item=>item.id==="galaxy-zero"||item.id==="fomo") as readonly GalaxyDefinition[];
+export const GALAXIES = GALAXY_REGISTRY.filter(item=>item.id==="galaxy-zero"||item.id==="fomo"||item.id==="afterbell") as readonly GalaxyDefinition[];
 export const DEFAULT_GALAXY_ID: GalaxyId = "galaxy-zero";
 
-export const GALAXY_CHAIN_LABEL: Record<GalaxyId, string> = {"galaxy-zero":"UNIVERSE MAP",fomo:"TRADER RESEARCH","solana-core":"SOLANA","pump-fun":"SOLANA",pons:"ROBINHOOD CHAIN"};
+export const GALAXY_CHAIN_LABEL: Record<GalaxyId, string> = {"galaxy-zero":"UNIVERSE MAP",fomo:"TRADER RESEARCH",afterbell:"SOLANA TOKENIZED EQUITIES","solana-core":"SOLANA","pump-fun":"SOLANA",pons:"ROBINHOOD CHAIN"};
 export const GALAXY_ORIGIN_CHIPS: readonly { id: GalaxyId; label: string }[] = [{id:"galaxy-zero",label:"ZERO"},{id:"fomo",label:"FOMO"}];
 
 export const COSMOLOGY_RULES: Record<CosmicObjectKind,{readonly onChainMeaning:string;readonly visualRule:string}> = {
@@ -34,6 +35,7 @@ export function isPopulatedGalaxy(id:GalaxyId){return getGalaxy(id).status==="po
 export const GALAXY_CONTENT=Object.freeze({
   "galaxy-zero":Object.freeze({durable:["galaxy"],transient:[],excludes:["wallet","transaction","mint","nft","program"]}),
   fomo:Object.freeze({durable:["wallet","token"],transient:["trade"],excludes:["program","nft"]}),
+  afterbell:Object.freeze({durable:["token","wallet"],transient:["trade"],excludes:["program","nft"]}),
   "solana-core":Object.freeze({durable:["token","wallet","program"],transient:["transaction"],excludes:[]}),
   "pump-fun":Object.freeze({durable:["token","wallet","liquidity-pool"],transient:["trade","launch","migration"],excludes:["nft"]}),
   pons:Object.freeze({durable:["token","wallet","liquidity-pool"],transient:["trade","launch"],excludes:["nft"]}),
