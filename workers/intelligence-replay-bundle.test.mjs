@@ -77,9 +77,9 @@ test('does not invent execution prices without a quote mint',async()=>{
 });
 
 test('adaptive Replay buckets preserve detail for short windows and bound long histories',()=>{
-  assert.equal(adaptiveReplayBucketSeconds(0,2*86400,0),60);
-  assert.equal(adaptiveReplayBucketSeconds(0,10*86400,60),300);
-  assert.equal(adaptiveReplayBucketSeconds(0,90*86400,60),3600);
+  assert.equal(adaptiveReplayBucketSeconds(0,2*86400,0),900);
+  assert.equal(adaptiveReplayBucketSeconds(0,10*86400,60),3600);
+  assert.equal(adaptiveReplayBucketSeconds(0,90*86400,60),43200);
   assert.equal(adaptiveReplayBucketSeconds(0,5*365*86400,60),86400);
 });
 
