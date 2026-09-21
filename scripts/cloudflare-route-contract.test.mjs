@@ -25,3 +25,11 @@ test("the live release check waits for propagation and validates retained eviden
   assert.match(check, /validateCandles/);
   assert.match(check, /validateCutPage/);
 });
+
+
+test("Afterbell deep link has an explicit Worker route bridge to its static index", async () => {
+  const route = await read("src/routes/afterbell.index.ts");
+  assert.match(route, /createFileRoute\("\/afterbell\/"\)/);
+  assert.match(route, /\/afterbell\/index\.html/);
+  assert.match(route, /Response\.redirect/);
+});
