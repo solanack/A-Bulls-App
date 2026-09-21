@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseExactReplayPool, discoverExactReplayPool, discoverExactReplayPools, normalizeGeckoOhlcvRows, replayMarketProviders } from './intelligence-replay-market-hydration.mjs';
+import { chooseExactReplayPool, discoverExactReplayPool, discoverExactReplayPools, normalizeGeckoOhlcvRows, replayMarketProviders, replayPoolsForToken } from './intelligence-replay-market-hydration.mjs';
 
 const mint='33333333333333333333333333333333';
 const quote='44444444444444444444444444444444';
@@ -116,4 +116,16 @@ test('normalizes only finite positive OHLC rows inside the Replay window',()=>{
   assert.equal(rows.length,2);
   assert.deepEqual(rows[0],{bucket_start:120,bucket_seconds:60,open:1.1,high:2.1,low:.8,close:1.8});
   assert.equal(rows[1].bucket_start,180);
+});
+test('auto quote discovery keeps the actual paired token and prefers the most liquid observed pool',()=>{
+  const other='77777777777777777777777777777777';
+  const payload={data:[
+    {id:`solana_${pool}`,attributes:{address:pool,reserve_in_usd:'100',volume_usd:{h24:'50'}},relationships:{base_token:{data:{id:`solana_${mint}`}},quote_token:{data:{id:`solana_${quote}`}}}},
+    {id:`solana_${pool2}`,attributes:{address:pool2,reserve_in_usd:'500',volume_usd:{h24:'10'}},relationships:{base_token:{data:{id:`solana_${other}`}},quote_token:{data:{id:`solana_${mint}`}}}}
+  ]};
+  const pools=replayPoolsForToken(payload,mint);
+  assert.equal(pools.length,2);
+  assert.equal(pools[0].address,pool2);
+  assert.equal(pools[0].quoteMint,other);
+  assert.equal(pools[1].quoteMint,quote);
 });
