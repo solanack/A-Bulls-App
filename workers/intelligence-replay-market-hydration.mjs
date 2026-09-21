@@ -44,6 +44,12 @@ export function exactReplayPools(payload={},mint='',quoteMint='',chain='solana',
 
 export function chooseExactReplayPool(payload={},mint='',quoteMint='',chain='solana',network='solana'){return exactReplayPools(payload,mint,quoteMint,chain,network)[0]||null;}
 
+export function replayPoolsForToken(payload={},mint='',chain='solana',network='solana'){
+  const chainKey=normalizeChainKey(chain),wanted=canonicalChainAddress(chainKey,mint),rows=Array.isArray(payload?.data)?payload.data:[],out=[],seen=new Set();if(!wanted)return Object.freeze([]);
+  for(const row of rows){const base=canonicalChainAddress(chainKey,relationAddress(row?.relationships?.base_token?.data?.id,network)),quote=canonicalChainAddress(chainKey,relationAddress(row?.relationships?.quote_token?.data?.id,network));if(!base||!quote)continue;const wantedIsBase=sameChainAddress(chainKey,base,wanted),wantedIsQuote=sameChainAddress(chainKey,quote,wanted);if(!wantedIsBase&&!wantedIsQuote)continue;const quoteMint=wantedIsBase?quote:base;if(!quoteMint||sameChainAddress(chainKey,quoteMint,wanted))continue;const address=canonicalChainAddress(chainKey,s(row?.attributes?.address)||relationAddress(row?.id,network));if(!address||seen.has(address))continue;seen.add(address);out.push(Object.freeze({address,base,quote,quoteMint,reserveUsd:finitePositive(row?.attributes?.reserve_in_usd)||0,volumeH24Usd:finitePositive(row?.attributes?.volume_usd?.h24)||0}));}
+  return Object.freeze(out.sort((a,b)=>b.reserveUsd-a.reserveUsd||b.volumeH24Usd-a.volumeH24Usd||a.address.localeCompare(b.address)));
+}
+
 export function normalizeGeckoOhlcvRows(list=[],bucketSeconds=60,from=0,to=Number.MAX_SAFE_INTEGER){
   const rows=Array.isArray(list)?list:[],normalized=[];
   for(const item of rows){if(!Array.isArray(item)||item.length<5)continue;const timestamp=Math.trunc(n(item[0])),open=finitePositive(item[1]),high=finitePositive(item[2]),low=finitePositive(item[3]),close=finitePositive(item[4]);if(timestamp<from||timestamp>to||open==null||high==null||low==null||close==null)continue;normalized.push(Object.freeze({bucket_start:timestamp,bucket_seconds:bucketSeconds,open,high,low,close}));}
@@ -56,13 +62,13 @@ async function markLease(db,key,state,error=null,{leaseUntil=0,startedAt=null,co
 export async function replayMarketHydrationState(env={},input={}){
   const {chain,mint,quoteMint}=normalizeReplayIdentity(input),bucketSeconds=Math.trunc(n(input.bucketSeconds)||60),from=Math.trunc(n(input.from)),to=Math.trunc(n(input.to)),candleCount=Math.max(0,Math.trunc(n(input.candleCount)));
   if(candleCount>0)return Object.freeze({provider:PROVIDER,chain,needed:false,requested:false,pending:false,state:'ready',disclosure:'Indexed OHLC is ready for Replay.'});
-  if(!mint||!quoteMint||!candleSpec(bucketSeconds))return Object.freeze({provider:PROVIDER,chain,needed:false,requested:false,pending:false,state:'not-required',disclosure:'Replay market hydration requires a supported chain-qualified base/quote pair and candle bucket.'});
+  if(!mint||!candleSpec(bucketSeconds))return Object.freeze({provider:PROVIDER,chain,needed:false,requested:false,pending:false,state:'not-required',disclosure:'Replay market hydration requires a supported chain-qualified asset and candle bucket.'});
   const db=intelligenceDb(env);if(!db)return Object.freeze({provider:PROVIDER,chain,needed:true,requested:false,pending:false,state:'unavailable',disclosure:'Market candle cache is unavailable; no price path was invented.'});
   const now=nowSec(),row=await leaseRow(db,leaseKey({chain,mint,quoteMint,bucketSeconds,from,to})),state=s(row?.last_state),updated=Math.trunc(n(row?.updated_at)),leaseUntil=Math.trunc(n(row?.lease_until));
   if(state==='running'&&leaseUntil>now)return Object.freeze({provider:PROVIDER,chain,needed:true,requested:false,pending:true,state:'running',disclosure:'Historical market candles are being indexed for this Replay and will appear automatically.'});
   if(state==='empty'&&updated&&now-updated<EMPTY_COOLDOWN_SECONDS)return Object.freeze({provider:PROVIDER,chain,needed:true,requested:false,pending:false,state:'unavailable',reason:s(row?.last_error)||'no_exact_quote_market',disclosure:'No exact source-labeled OHLC market was available for this base/quote selection. No chart path was invented.'});
   if(state==='error'&&updated&&now-updated<ERROR_COOLDOWN_SECONDS)return Object.freeze({provider:PROVIDER,chain,needed:true,requested:false,pending:false,state:'unavailable',reason:s(row?.last_error)||'market_source_error',disclosure:'Historical market hydration is temporarily unavailable. Replay receipts remain authoritative.'});
-  return Object.freeze({provider:PROVIDER,chain,needed:true,requested:true,pending:true,state:'queued',disclosure:'Historical market candles were queued automatically for this Replay.'});
+  return Object.freeze({provider:PROVIDER,chain,needed:true,requested:true,pending:true,state:'queued',disclosure:quoteMint?'Historical market candles were queued automatically for this Replay.':'Historical market pair discovery and candles were queued automatically for this Replay; only source-labeled provider markets may be retained.'});
 }
 
 export function replayMarketProviders(env={}){
@@ -89,6 +95,13 @@ export async function discoverExactReplayPools(env={},mint='',quoteMint='',{fetc
 }
 export async function discoverExactReplayPool(env={},mint='',quoteMint='',options={}){return(await discoverExactReplayPools(env,mint,quoteMint,options))[0]||null;}
 
+export async function discoverReplayQuotePools(env={},mint='',{fetchImpl=providerFetch,chain='solana'}={}){
+  const chainKey=normalizeChainKey(chain),base=canonicalChainAddress(chainKey,mint),provider=providerChainConfig(chainKey,base||mint,env);if(!base||!provider)return Object.freeze([]);
+  const pages=Math.max(1,Math.min(5,Math.trunc(n(env.REPLAY_MARKET_POOL_PAGES)||3))),candidateLimit=Math.max(1,Math.min(8,Math.trunc(n(env.REPLAY_MARKET_POOL_CANDIDATES)||4))),out=[],seen=new Set();
+  for(const network of provider.geckoNetworks){let preferredProvider='';for(let page=1;page<=pages&&out.length<candidateLimit;page+=1){try{const path=`/networks/${encodeURIComponent(network)}/tokens/${encodeURIComponent(base)}/pools?include=base_token,quote_token&page=${page}`,response=await fetchMarketPath(env,path,fetchImpl,{preferredProvider});preferredProvider=response.provider;for(const pool of replayPoolsForToken(response.payload,base,chainKey,network)){if(seen.has(pool.address))continue;seen.add(pool.address);out.push(Object.freeze({...pool,provider:response.provider,network,chain:chainKey}));if(out.length>=candidateLimit)break;}if(!Array.isArray(response.payload?.data)||response.payload.data.length===0)break;}catch{if(out.length)break;if(page===1)break;}}if(out.length>=candidateLimit)break;}
+  return Object.freeze(out.sort((a,b)=>b.reserveUsd-a.reserveUsd||b.volumeH24Usd-a.volumeH24Usd||a.address.localeCompare(b.address)).slice(0,candidateLimit));
+}
+
 async function fetchPoolWindow(env,pool,mint,from,to,spec,fetchImpl){
   const chain=normalizeChainKey(pool.chain||'solana'),base=canonicalChainAddress(chain,mint);if(!base)return Object.freeze({rows:Object.freeze([]),provider:pool.provider,pool:pool.address,network:pool.network});
   const wanted=Math.max(1,Math.ceil((to-from)/spec.bucketSeconds)+2),maxPages=Math.min(3,Math.max(1,Math.ceil(wanted/1000)));let cursor=to+spec.bucketSeconds,rows=[],provider=pool.provider;
@@ -107,18 +120,19 @@ function legacyCandleStatement(db,mint,quoteMint,row,source){return db.prepare(`
 export async function hydrateReplayMarketCandles(env={},input={}, {fetchImpl=providerFetch}={}){
   const db=intelligenceDb(env);if(!db)return{ok:false,state:'unavailable',error:'intelligence_db_unavailable'};
   const {chain,mint,quoteMint}=normalizeReplayIdentity(input),from=Math.max(0,Math.trunc(n(input.from))),to=Math.max(from,Math.trunc(n(input.to))),requestedBucket=Math.trunc(n(input.bucketSeconds)||60),spec=candleSpec(requestedBucket);
-  if(!mint||!quoteMint||!spec)return{ok:false,state:'unavailable',error:'invalid_replay_market_subject'};
+  if(!mint||!spec)return{ok:false,state:'unavailable',error:'invalid_replay_market_subject'};
   const key=leaseKey({chain,mint,quoteMint,bucketSeconds:requestedBucket,from,to}),now=nowSec(),existing=await leaseRow(db,key);if(s(existing?.last_state)==='running'&&n(existing?.lease_until)>now)return{ok:true,state:'running',deduped:true,chain};
   await markLease(db,key,'running',null,{leaseUntil:now+LEASE_SECONDS,startedAt:now});
   try{
-    const indexed=await indexedCandleCount(db,chain,mint,quoteMint,spec,from,to);if(indexed>0){await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',chain,candles:indexed,source:'indexed'};}
-    const pools=await discoverExactReplayPools(env,mint,quoteMint,{fetchImpl,chain});if(!pools.length){await markLease(db,key,'empty','no_exact_quote_pool',{completedAt:nowSec()});return{ok:true,state:'unavailable',chain,candles:0,reason:'no_exact_quote_pool'};}
-    let selected=null;for(const pool of pools){const candidate=await fetchPoolWindow(env,pool,mint,from,to,spec,fetchImpl);if(candidate.rows.length){selected=candidate;break;}}
-    if(!selected){await markLease(db,key,'empty',`no_ohlcv_rows_in_window:${pools.length}_exact_pools_checked`,{completedAt:nowSec()});return{ok:true,state:'unavailable',chain,candles:0,reason:'no_ohlcv_rows_in_window',poolsChecked:pools.length};}
-    const source=JSON.stringify([`${selected.provider}:${selected.network}:${selected.pool}`]),statements=[];for(const row of selected.rows){statements.push(v2CandleStatement(db,chain,mint,quoteMint,row,source));if(chain==='solana')statements.push(legacyCandleStatement(db,mint,quoteMint,row,source));}
+    if(quoteMint){const indexed=await indexedCandleCount(db,chain,mint,quoteMint,spec,from,to);if(indexed>0){await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',chain,quoteMint,candles:indexed,source:'indexed'};}}
+    const exactPools=quoteMint?await discoverExactReplayPools(env,mint,quoteMint,{fetchImpl,chain}):[],autoPools=!quoteMint||!exactPools.length?await discoverReplayQuotePools(env,mint,{fetchImpl,chain}):[],candidates=[...exactPools,...autoPools.filter(pool=>!exactPools.some(exact=>exact.address===pool.address))];
+    let selected=null,resolvedQuote=quoteMint||null,checked=0;
+    for(const pool of candidates){checked+=1;const candidate=await fetchPoolWindow(env,pool,mint,from,to,spec,fetchImpl);if(candidate.rows.length){selected=candidate;resolvedQuote=quoteMint&&exactPools.some(exact=>exact.address===pool.address)?quoteMint:pool.quoteMint||null;break;}}
+    if(!selected&&quoteMint){const fallbackPools=await discoverReplayQuotePools(env,mint,{fetchImpl,chain});for(const pool of fallbackPools){if(candidates.some(candidate=>candidate.address===pool.address))continue;checked+=1;const candidate=await fetchPoolWindow(env,pool,mint,from,to,spec,fetchImpl);if(candidate.rows.length){selected=candidate;resolvedQuote=pool.quoteMint||null;break;}}}
+    if(!selected||!resolvedQuote){const reason=candidates.length?'no_ohlcv_rows_in_window':'no_replay_market_pool';await markLease(db,key,'empty',reason,{completedAt:nowSec()});return{ok:true,state:'unavailable',chain,candles:0,reason,poolsChecked:checked};}
+    const source=JSON.stringify([`${selected.provider}:${selected.network}:${selected.pool}`]),statements=[];for(const row of selected.rows){statements.push(v2CandleStatement(db,chain,mint,resolvedQuote,row,source));if(chain==='solana')statements.push(legacyCandleStatement(db,mint,resolvedQuote,row,source));}
     for(let index=0;index<statements.length;index+=50)await db.batch(statements.slice(index,index+50));
-    await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',chain,candles:selected.rows.length,source:selected.provider,network:selected.network,pool:selected.pool,poolsChecked:pools.findIndex(pool=>pool.address===selected.pool)+1};
+    await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',chain,quoteMint:resolvedQuote,requestedQuoteMint:quoteMint||null,quoteFallback:Boolean(quoteMint&&resolvedQuote!==quoteMint),candles:selected.rows.length,source:selected.provider,network:selected.network,pool:selected.pool,poolsChecked:checked};
   }catch(error){const code=s(error?.message||error)||'market_hydration_failed';await markLease(db,key,'error',code,{completedAt:nowSec()}).catch(()=>null);return{ok:false,state:'unavailable',chain,error:code};}
 }
-
-export const __replayMarketHydrationContract=Object.freeze({chainQualified:true,legacySolanaDualWrite:true,providers:Object.freeze(['coingecko-onchain','geckoterminal-public']),noSyntheticCandles:true});
+export const __replayMarketHydrationContract=Object.freeze({chainQualified:true,legacySolanaDualWrite:true,providers:Object.freeze(['coingecko-onchain','geckoterminal-public']),autoDiscoversObservedQuote:true,noSyntheticCandles:true});
