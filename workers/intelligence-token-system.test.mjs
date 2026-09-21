@@ -21,3 +21,24 @@ test('token system ranks only positive-net indexed wallets and reports sample sh
 test('token system keeps empty holder evidence empty',()=>{
   assert.deepEqual(normalizeHolderRows([{wallet:A,net_token:0,trade_count:1}]),[]);
 });
+
+
+test('token system normalizes EVM wallets without inventing SOL values',()=>{
+  const wallet='0x1111111111111111111111111111111111111111';
+  const holders=normalizeHolderRows([{wallet,net_token:25,trade_count:4,buy_usd:120,sell_usd:40,priced_count:4,last_seen:1700000100,source:'chain-events',source_kind:'observed-fact'}],50,{chainKey:'base'});
+  assert.equal(holders.length,1);
+  assert.equal(holders[0].wallet,wallet);
+  assert.equal(holders[0].chainKey,'base');
+  assert.equal(holders[0].buySolObserved,null);
+  assert.equal(holders[0].sellSolObserved,null);
+  assert.equal(holders[0].buyValueUsd,120);
+  assert.equal(holders[0].sourceKind,'observed-fact');
+});
+
+test('token system keeps missing EVM valuation unavailable rather than zero',()=>{
+  const wallet='0x2222222222222222222222222222222222222222';
+  const holders=normalizeHolderRows([{wallet,net_token:10,trade_count:1,buy_usd:0,sell_usd:0,priced_count:0,last_seen:1700000100,source_kind:'provider-reported'}],50,{chainKey:'ethereum'});
+  assert.equal(holders[0].buyValueUsd,null);
+  assert.equal(holders[0].sellValueUsd,null);
+  assert.equal(holders[0].sourceKind,'provider-reported');
+});
