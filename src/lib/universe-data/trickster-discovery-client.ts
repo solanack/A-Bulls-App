@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { fetchIntelligence } from "../intelligence-origin.ts";
 
+export type DiscoveryJsonValue=null|boolean|number|string|DiscoveryJsonValue[]|{[key:string]:DiscoveryJsonValue};
+
 export type TrendingCutItem={
   shareId:string;
   viewCount:number;
@@ -9,14 +11,14 @@ export type TrendingCutItem={
   lastActivityAt:number;
   expiresAt:number;
   verifyUrl:string;
-  manifest:Record<string,unknown>;
+  manifest:{[key:string]:DiscoveryJsonValue};
 };
 
 export type TrendingCutsResponse={
   ok:boolean;
   coverage:"fresh"|"empty"|"degraded";
   windowDays?:number;
-  items:readonly TrendingCutItem[];
+  items:TrendingCutItem[];
   disclosure:string;
   error?:string;
 };
