@@ -11,7 +11,10 @@ export const LIVE_FIXTURE = Object.freeze({
   quoteMint: "So11111111111111111111111111111111111111112",
 });
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const SOLANA_SIGNATURE_RE = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
+const AFTERBELL_SMOKE_MINT = "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh";
+const FOMO_CHAIN_KEYS = new Set(["solana","base","bsc","ethereum","monad","robinhood"]);
 
 const requiredInteger = (name, value) => {
   const parsed = Number(value);
@@ -133,6 +136,54 @@ export function validateFomoAudit(body) {
   return body;
 }
 
+export function validateAfterbellTraders(body) {
+  assert.equal(body?.ok, true, `Afterbell traders failed: ${body?.error || "not ok"}`);
+  assert.ok(Array.isArray(body?.items), "Afterbell traders response is missing items");
+  assert.ok(body.items.length <= 50, "Afterbell traders exceeded the Top 50 cap");
+  const window = asObject(body?.window, "Afterbell traders response is missing its after-close window");
+  assert.equal(window.timezone, "America/New_York", "Afterbell window lost New York market time");
+  assert.ok(Number.isSafeInteger(Number(window.from)) && Number.isSafeInteger(Number(window.to)) && Number(window.to) >= Number(window.from), "Afterbell window is invalid");
+  for (let index = 0; index < body.items.length; index++) {
+    const item = body.items[index];
+    assert.equal(item?.rank, index + 1, "Afterbell trader ranks are not contiguous");
+    assert.ok(SOLANA_ADDRESS_RE.test(String(item?.wallet || "")), "Afterbell trader has an invalid Solana wallet");
+    assert.ok(Number(item?.transactionCount) >= 1, "Afterbell trader has no counted transactions");
+    assert.ok(item?.realizedPnlUsd == null || Number.isFinite(Number(item.realizedPnlUsd)), "Afterbell USD PnL must be finite or unavailable");
+    assert.ok(item?.realizedPnlSol == null || Number.isFinite(Number(item.realizedPnlSol)), "Afterbell SOL PnL must be finite or unavailable");
+    assert.ok(["observed","provider-reported"].includes(String(item?.sourceKind || "")), "Afterbell trader lost evidence provenance");
+  }
+  if (body.coverage === "fresh") assert.ok(body.items.length > 0, "Afterbell fresh coverage returned no trader stars");
+  return body.items;
+}
+
+export function validateWalletSystem(body, expectedWallet, expectedKind) {
+  assert.equal(body?.ok, true, `Wallet system failed: ${body?.error || "not ok"}`);
+  assert.equal(body?.wallet, expectedWallet, "Wallet system returned a different subject");
+  assert.equal(body?.walletKind, expectedKind, "Wallet system returned the wrong address family");
+  assert.ok(Array.isArray(body?.items) && body.items.length <= 10, "Wallet system exceeded its bounded PLANET sky");
+  for (const item of body.items) {
+    assert.ok(FOMO_CHAIN_KEYS.has(String(item?.chainKey || "")), `Wallet PLANET has unsupported chain key ${item?.chainKey}`);
+    assert.ok(typeof item?.mint === "string" && item.mint.trim(), "Wallet PLANET lost its token address");
+    assert.ok(["observed","provider-reported"].includes(String(item?.sourceKind || "")), "Wallet PLANET lost evidence provenance");
+  }
+  return body.items;
+}
+
+export function validateTokenSystem(body, expectedChain) {
+  assert.equal(body?.ok, true, `Token system failed: ${body?.error || "not ok"}`);
+  assert.equal(body?.chainKey, expectedChain, "Token system lost chain identity");
+  assert.ok(Array.isArray(body?.holders), "Token system is missing wallet STARS");
+  assert.ok(Array.isArray(body?.trades), "Token system is missing recent trades");
+  if (expectedChain !== "solana") {
+    for (const holder of body.holders) {
+      assert.equal(holder?.chainKey, expectedChain, "EVM holder STAR lost chain identity");
+      assert.equal(holder?.buySolObserved, null, "EVM holder STAR invented SOL buy value");
+      assert.equal(holder?.sellSolObserved, null, "EVM holder STAR invented SOL sell value");
+    }
+  }
+  return body;
+}
+
 export function validateFomoTrader(body, trader) {
   assert.equal(body?.ok, true, `Fomo trader failed: ${body?.error || "not ok"}`);
   assert.ok(Array.isArray(body?.positions), "Fomo trader response is missing positions");
@@ -231,9 +282,15 @@ export async function runLiveChecks({
   const fomoItems=validateFomoGalaxy(await (await get("/api/intelligence/fomo/galaxy")).json());
   validateFomoAudit(await (await get("/api/intelligence/fomo/audit")).json());
   const fomoCandidate=fomoItems.find((item)=>item?.solanaWallet&&fomoSolanaTopTokens(item).length>0)??fomoItems.find((item)=>SOLANA_ADDRESS_RE.test(String(item?.solanaWallet || "")));
-  validateFomoTrader(await (await get(`/api/intelligence/fomo/trader?handle=${encodeURIComponent(fomoCandidate.handle)}`)).json(),fomoCandidate);
+  const fomoTrader=validateFomoTrader(await (await get(`/api/intelligence/fomo/trader?handle=${encodeURIComponent(fomoCandidate.handle)}`)).json(),fomoCandidate);
 
-  console.log("Live release, Fomo PnL coverage, trader data, Afterbell deep link, frozen Cut route, retained Replay receipts, OHLC, holdings, and resolver coverage checks passed.");
+  validateAfterbellTraders(await (await get(`/api/intelligence/afterbell/traders?mint=${encodeURIComponent(AFTERBELL_SMOKE_MINT)}&limit=50`)).json());
+  validateWalletSystem(await (await get(`/api/intelligence/research/wallet-system?wallet=${encodeURIComponent(fomoCandidate.solanaWallet)}&limit=10`)).json(),fomoCandidate.solanaWallet,"solana");
+  if (EVM_ADDRESS_RE.test(String(fomoCandidate.evmWallet || ""))) validateWalletSystem(await (await get(`/api/intelligence/research/wallet-system?wallet=${encodeURIComponent(fomoCandidate.evmWallet)}&limit=10`)).json(),fomoCandidate.evmWallet.toLowerCase(),"evm");
+  const evmPosition=fomoTrader.positions.find((item)=>EVM_ADDRESS_RE.test(String(item?.mint || ""))&&FOMO_CHAIN_KEYS.has(String(item?.chain || "").toLowerCase()));
+  if (evmPosition) validateTokenSystem(await (await get(`/api/intelligence/token-system?mint=${encodeURIComponent(evmPosition.mint)}&chain=${encodeURIComponent(String(evmPosition.chain).toLowerCase())}&limit=10`)).json(),String(evmPosition.chain).toLowerCase());
+
+  console.log("Live release, Fomo PnL coverage, multichain wallet/token research, Afterbell Top 50, frozen Cut route, retained Replay receipts, OHLC, holdings, and resolver coverage checks passed.");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
