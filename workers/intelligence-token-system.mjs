@@ -73,7 +73,7 @@ export async function readTokenSystem(env={},mint,limit=50,chainInput='solana'){
   const holders=normalizeHolderRows(rows,cap,{chainKey:chain}),observedAt=Math.max(0,...holders.map(row=>row.lastObservedAt),...trades.map(row=>row.observedAt))||null;
   const disclosure=holders.length
     ? `Holder/trader STARS are positive-net wallets derived from retained ${chain} events. Observed share is a share of this retained positive-net sample, not total token supply. Provider-reported evidence remains labeled and does not become an identity, ownership, skill, or recommendation claim.`
-    : `No positive-net wallet STARS are present in retained ${chain} evidence for this token. Missing coverage is not zero activity, and no holder list was invented.`;
+    : `No positive-net wallet STARS are present in retained ${chain} evidence for this token. Missing coverage is not zero activity. No provider lookup was attempted. No wallet stars were invented.`;
   return Object.freeze({ok:true,coverage:holders.length?'fresh':'empty',mint:normalized,chainKey:chain,holders,trades,observedAt,method:'chain-qualified-indexed-positive-net-position-v2',disclosure});
 }
 export async function handleTokenSystemRequest(request,env={}){const url=new URL(request.url);if(url.pathname!==PATH||request.method!=='GET')return null;const mint=s(url.searchParams.get('mint')),chainKey=s(url.searchParams.get('chain')||url.searchParams.get('chainKey')||'solana'),limit=Math.max(1,Math.min(50,Math.trunc(n(url.searchParams.get('limit'))||50))),body=await readTokenSystem(env,mint,limit,chainKey),status=body.error==='invalid_token'?400:body.error==='database_unavailable'?503:200;return json(body,status,status===200?'public, max-age=15, stale-while-revalidate=30':'no-store');}
