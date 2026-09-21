@@ -1,0 +1,15 @@
+import type { FieldParticle, UniverseSnapshot } from "./types";
+import type { AfterbellTraderResponse } from "@/lib/universe-data/afterbell-traders-client";
+import { canonicalUniverseId } from "./galaxies";
+import { particleMint } from "./volume-sky";
+
+function hashUnit(input:string){let h=2166136261;for(let i=0;i<input.length;i++){h^=input.charCodeAt(i);h=Math.imul(h,16777619);}return(h>>>0)/4294967295;}
+function starPosition(wallet:string,rank:number):[number,number,number]{const angle=hashUnit(wallet)*Math.PI*2,ring=rank<=10?30:rank<=28?46:62,y=14+hashUnit(wallet+":y")*46+(rank<=10?7:0);return[Math.cos(angle)*ring,y,Math.sin(angle)*ring];}
+function clamp01(v:number){return Math.max(.18,Math.min(1,Number.isFinite(v)?v:0));}
+
+export function buildAfterbellTraderSystemSnapshot(tokenPlanet:FieldParticle,data:AfterbellTraderResponse):UniverseSnapshot{
+  const mint=particleMint(tokenPlanet)??data.mint,core:FieldParticle={...tokenPlanet,id:canonicalUniverseId("planet",mint,"solana-core"),originGalaxyId:"solana-core",position:[0,-18,0],magnitudeBand:Math.max(.8,tokenPlanet.magnitudeBand),metadata:{...(tokenPlanet.metadata??{}),mint,chainKey:"solana",researchGalaxyId:"afterbell",systemRole:"afterbell-xstock-core",afterbellTraderCount:data.items.length}};
+  const stars:FieldParticle[]=data.items.slice(0,50).map(item=>({id:canonicalUniverseId("star",item.wallet,"afterbell"),kind:"wallet",cosmicKind:"star",originGalaxyId:"afterbell",verificationState:item.sourceKind==="observed"?"observed":"provider-reported",observedAt:item.lastObservedAt,category:"swap",magnitudeBand:clamp01(.42+Math.log10(1+item.transactionCount)/2.8),position:starPosition(item.wallet,item.rank),source:item.sources[0]??null,metadata:{name:`AFTERBELL #${item.rank}`,wallet:item.wallet,chainKey:"solana",parentMint:mint,afterbellTrader:true,afterbellRank:item.rank,transactionCount:item.transactionCount,eventCount:item.eventCount,buyCount:item.buyCount,sellCount:item.sellCount,realizedPnlUsd:item.realizedPnlUsd,realizedPnlSol:item.realizedPnlSol,pnlAvailable:item.realizedPnlUsd!=null||item.realizedPnlSol!=null,sourceKind:item.sourceKind,sources:[...item.sources],windowFrom:data.window?.from??null,windowTo:data.window?.to??null,systemRole:"afterbell-trader-star",interactive:true}}));
+  const times=stars.map(item=>item.observedAt).filter(Number.isFinite),now=Date.now(),sources=[...new Set(stars.map(item=>item.source).filter((value):value is string=>Boolean(value)))];
+  return{galaxyId:"afterbell",windowStart:data.window?.from?data.window.from*1000:times.length?Math.min(...times):now,windowEnd:data.window?.to?data.window.to*1000:times.length?Math.max(...times):now,observedEventCount:data.items.reduce((sum,item)=>sum+item.eventCount,0),samplingPolicy:"Afterbell Top 50 · unique retained transactions after Wall Street close · PnL only from defensible FIFO receipt basis",coverageStatement:data.disclosure,sources:sources.length?sources:["a-bulls-indexed-solana-evidence"],particles:[core,...stars]};
+}
