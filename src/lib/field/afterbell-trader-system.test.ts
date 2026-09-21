@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildAfterbellTraderSystemSnapshot } from "./afterbell-trader-system.ts";
+import type { FieldParticle } from "./types.ts";
 
-const planet={id:"planet:solana-core:Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh",kind:"token",cosmicKind:"planet",originGalaxyId:"solana-core",verificationState:"provider-reported",observedAt:1,category:"swap",magnitudeBand:.8,position:[0,0,0],source:"DexScreener venue-reported",metadata:{mint:"Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh",symbol:"NVDAx",afterbellEquity:true}} as const;
+const planet:FieldParticle={id:"planet:solana-core:Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh",kind:"token",cosmicKind:"planet",originGalaxyId:"solana-core",verificationState:"provider-reported",observedAt:1,category:"swap",magnitudeBand:.8,position:[0,0,0],source:"DexScreener venue-reported",metadata:{mint:"Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh",symbol:"NVDAx",afterbellEquity:true}};
 
 test("Afterbell empty evidence keeps only the xStock planet",()=>{
   const snapshot=buildAfterbellTraderSystemSnapshot(planet,{ok:true,coverage:"empty",mint:planet.metadata.mint,items:[],disclosure:"No retained xStock wallet trades are indexed in this Afterbell window."});
