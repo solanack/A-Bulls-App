@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as IndexRouteImport } from "./routes/index";
+import { Route as AfterbellIndexRouteImport } from "./routes/afterbell.index";
 import { Route as ApiHealthRouteImport } from "./routes/api.health";
 import { Route as ApiIntelligenceRouteImport } from "./routes/api.intelligence";
 import { Route as ApiIntelligenceSplatRouteImport } from "./routes/api.intelligence.$";
@@ -21,6 +22,11 @@ import { Route as ApiIntelligenceABCDRouteImport } from "./routes/api.intelligen
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AfterbellIndexRoute = AfterbellIndexRouteImport.update({
+  id: "/afterbell/",
+  path: "/afterbell/",
   getParentRoute: () => rootRouteImport,
 } as any);
 const ApiHealthRoute = ApiHealthRouteImport.update({
@@ -61,6 +67,7 @@ const ApiIntelligenceABCDRoute = ApiIntelligenceABCDRouteImport.update({
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
+  "/afterbell/": typeof AfterbellIndexRoute;
   "/api/health": typeof ApiHealthRoute;
   "/api/intelligence": typeof ApiIntelligenceRouteWithChildren;
   "/api/intelligence/$": typeof ApiIntelligenceSplatRoute;
@@ -71,6 +78,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
+  "/afterbell/": typeof AfterbellIndexRoute;
   "/api/health": typeof ApiHealthRoute;
   "/api/intelligence": typeof ApiIntelligenceRouteWithChildren;
   "/api/intelligence/$": typeof ApiIntelligenceSplatRoute;
@@ -94,6 +102,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/afterbell/"
     | "/api/health"
     | "/api/intelligence"
     | "/api/intelligence/$"
@@ -104,6 +113,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/afterbell/"
     | "/api/health"
     | "/api/intelligence"
     | "/api/intelligence/$"
@@ -114,6 +124,7 @@ export interface FileRouteTypes {
   id:
     | "__root__"
     | "/"
+    | "/afterbell/"
     | "/api/health"
     | "/api/intelligence"
     | "/api/intelligence/$"
@@ -125,6 +136,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
+  AfterbellIndexRoute: typeof AfterbellIndexRoute;
   ApiHealthRoute: typeof ApiHealthRoute;
   ApiIntelligenceRoute: typeof ApiIntelligenceRouteWithChildren;
   ApiSocialAuthVerifyRoute: typeof ApiSocialAuthVerifyRoute;
@@ -137,6 +149,13 @@ declare module "@tanstack/react-router" {
       path: "/";
       fullPath: "/";
       preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/afterbell/": {
+      id: "/afterbell/";
+      path: "/afterbell/";
+      fullPath: "/afterbell/";
+      preLoaderRoute: typeof AfterbellIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/api/health": {
@@ -229,6 +248,7 @@ const ApiIntelligenceRouteWithChildren = ApiIntelligenceRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AfterbellIndexRoute: AfterbellIndexRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiIntelligenceRoute: ApiIntelligenceRouteWithChildren,
   ApiSocialAuthVerifyRoute: ApiSocialAuthVerifyRoute,
