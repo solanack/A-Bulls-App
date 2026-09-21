@@ -1,7 +1,7 @@
 import type { FieldParticle, UniverseSnapshot } from "./types";
 import type { AfterbellTraderResponse } from "@/lib/universe-data/afterbell-traders-client";
-import { canonicalUniverseId } from "./galaxies";
-import { particleMint } from "./volume-sky";
+import { canonicalUniverseId } from "./galaxies.ts";
+import { particleMint } from "./volume-sky.ts";
 
 function hashUnit(input:string){let h=2166136261;for(let i=0;i<input.length;i++){h^=input.charCodeAt(i);h=Math.imul(h,16777619);}return(h>>>0)/4294967295;}
 function starPosition(wallet:string,rank:number):[number,number,number]{const angle=hashUnit(wallet)*Math.PI*2,ring=rank<=10?30:rank<=28?46:62,y=14+hashUnit(wallet+":y")*46+(rank<=10?7:0);return[Math.cos(angle)*ring,y,Math.sin(angle)*ring];}
