@@ -24,30 +24,39 @@ export type UniverseDataStatus = {
 export type TokenSystemHolder = {
   rank: number;
   wallet: string;
+  chainKey: string;
   netTokenObserved: number;
   observedSharePct: number | null;
   tradeCount: number;
-  buySolObserved: number;
-  sellSolObserved: number;
+  buySolObserved: number | null;
+  sellSolObserved: number | null;
+  buyValueUsd: number | null;
+  sellValueUsd: number | null;
   lastObservedAt: number;
   source: string;
+  sourceKind: string;
 };
 
 export type TokenSystemTrade = {
   signature: string | null;
   wallet: string;
+  chainKey: string;
   side: "buy" | "sell";
-  solAmount: number;
+  solAmount: number | null;
   tokenAmount: number;
   priceSol: number | null;
+  priceUsd: number | null;
+  valueUsd: number | null;
   observedAt: number;
   source: string;
+  sourceKind: string;
 };
 
 export type TokenSystemResponse = {
   ok: boolean;
   coverage: "fresh" | "empty" | "degraded";
   mint: string;
+  chainKey?: string;
   holders: readonly TokenSystemHolder[];
   trades: readonly TokenSystemTrade[];
   observedAt?: number | null;
