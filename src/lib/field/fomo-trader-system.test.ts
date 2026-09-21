@@ -31,3 +31,10 @@ test("Fomo trade comets repair a mismatched provider wallet from the token chain
   assert.equal(comet?.metadata?.wallet,evmWallet);
   assert.notEqual(comet?.metadata?.wallet,solanaWallet);
 });
+test("Fomo trade comets preserve the provider chain even when the traded token is not in top positions",()=>{
+  const data=response();
+  data.latestTrades=[{...data.latestTrades[0],mint:"0x3333333333333333333333333333333333333333",chain:"base"}];
+  const snapshot=buildFomoTraderSystemSnapshot(data),comet=snapshot.particles.find(item=>item.cosmicKind==="comet");
+  assert.equal(comet?.metadata?.chainKey,"base");
+  assert.equal(comet?.metadata?.wallet,evmWallet);
+});
