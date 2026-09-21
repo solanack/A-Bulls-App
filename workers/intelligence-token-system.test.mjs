@@ -42,3 +42,15 @@ test('token system keeps missing EVM valuation unavailable rather than zero',()=
   assert.equal(holders[0].sellValueUsd,null);
   assert.equal(holders[0].sourceKind,'provider-reported');
 });
+
+
+test('all current Fomo EVM chains retain wallet stars instead of Solana-only empty coverage',()=>{
+  const wallet='0x3333333333333333333333333333333333333333';
+  for(const chainKey of ['base','bsc','ethereum','monad','robinhood']){
+    const holders=normalizeHolderRows([{wallet,net_token:7,trade_count:2,priced_count:0,last_seen:1700000200,source:'chain-events',source_kind:'provider-reported'}],50,{chainKey});
+    assert.equal(holders.length,1,chainKey);
+    assert.equal(holders[0].chainKey,chainKey);
+    assert.equal(holders[0].wallet,wallet);
+    assert.equal(holders[0].buySolObserved,null);
+  }
+});
