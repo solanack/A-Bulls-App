@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { adaptiveReplayBucketSeconds, aggregateReplayCandleRows, buildReplayBundle, handleReplayBundleRequest } from './intelligence-replay-bundle.mjs';
+import { adaptiveReplayBucketSeconds, aggregateReplayCandleRows, buildReplayBundle, handleReplayBundleRequest, providerReportedFomoTradeEvents } from './intelligence-replay-bundle.mjs';
 
 const walletA='11111111111111111111111111111111';
 const walletB='22222222222222222222222222222222';
@@ -123,4 +123,12 @@ test('HTTP route is fail-closed and validates input',async()=>{
   assert.equal(good.status,200);
   assert.equal(body.ok,true);
   assert.equal(body.bundle.eventCount,1);
+});
+test('provider-reported closed Fomo trades expose both entry and exit price points without pretending receipts',()=>{
+  const evmWallet='0x1111111111111111111111111111111111111111',evmMint='0x2222222222222222222222222222222222222222';
+  const events=providerReportedFomoTradeEvents({handle:'Unipcs',trade_id:'trade-1',chain:'base',status:'closed',amount:4,avg_entry_price:1.25,avg_exit_price:2.5,created_at:100,closed_at:200,realized_pnl_usd:5},'base',evmWallet,evmMint);
+  assert.equal(events.length,2);
+  assert.deepEqual(events.map(event=>event.side),['buy','sell']);
+  assert.deepEqual(events.map(event=>event.priceUsd),[1.25,2.5]);
+  assert.ok(events.every(event=>event.signature===null&&event.verification==='provider-reported'&&event.price===null));
 });
