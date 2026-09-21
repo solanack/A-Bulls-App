@@ -6,6 +6,9 @@ type Progress=(value:number,label:string)=>void;
 type CutVideoResult={blob:Blob;mimeType:string;extension:"mp4"|"webm";narrationAvailable:boolean};
 type VoiceClip={role:NarrationRole;buffer:AudioBuffer|null};
 type PreparedScene={duration:number;grey:VoiceClip;trickster:VoiceClip};
+type CutFrameInput={manifest?:Data;candles?:Data[];events?:Data[];sceneIndex?:number;progress?:number;shareHref?:string;tokenLabel?:string;walletLabel?:string};
+const buildCutFrame=buildCutFrameModel as unknown as (input:CutFrameInput)=>Data;
+const chooseVideoMime=preferredCutVideoMime as unknown as (isSupported:(mime:string)=>boolean)=>string;
 
 const text=(value:unknown)=>value==null?"":String(value);
 const num=(value:unknown)=>Number.isFinite(Number(value))?Number(value):0;
@@ -44,7 +47,7 @@ async function prepareVoice(context:AudioContext,line:string,role:NarrationRole)
 }
 
 function sceneNarration(manifest:Data,events:Data[],index:number){
-  return obj(obj(buildCutFrameModel({manifest,events,sceneIndex:index,progress:0})).narration);
+  return obj(obj(buildCutFrame({manifest,events,sceneIndex:index,progress:0})).narration);
 }
 
 async function prepareScenes(context:AudioContext,manifest:Data,events:Data[],fps:number,onProgress:Progress):Promise<PreparedScene[]>{
@@ -132,7 +135,7 @@ function scheduleBed(context:AudioContext,destination:MediaStreamAudioDestinatio
 export async function recordTricksterCut({manifest,candles,events,shareHref,tokenLabel,walletLabel,soundBed=true,onProgress=()=>{}}:{manifest:Data;candles:Data[];events:Data[];shareHref:string;tokenLabel:string;walletLabel:string;soundBed?:boolean;onProgress?:Progress}):Promise<CutVideoResult>{
   if(!tricksterCutCaptureSupported())throw Object.assign(new Error("cut_capture_unsupported"),{code:"cut_capture_unsupported"});
   const scenes=arr(manifest.scenes);if(!scenes.length)throw new Error("cut_scenes_unavailable");
-  const first=obj(buildCutFrameModel({manifest,candles,events,sceneIndex:0,progress:0,shareHref,tokenLabel,walletLabel})),size=obj(first.size),canvas=document.createElement("canvas") as HTMLCanvasElement&{captureStream:(fps?:number)=>MediaStream};
+  const first=obj(buildCutFrame({manifest,candles,events,sceneIndex:0,progress:0,shareHref,tokenLabel,walletLabel})),size=obj(first.size),canvas=document.createElement("canvas") as HTMLCanvasElement&{captureStream:(fps?:number)=>MediaStream};
   canvas.width=Math.max(1,Math.trunc(num(size.w)));canvas.height=Math.max(1,Math.trunc(num(size.h)));
   const ctx=canvas.getContext("2d",{alpha:false});if(!ctx)throw new Error("cut_canvas_unavailable");
   const root=globalThis as typeof globalThis&{webkitAudioContext?:typeof AudioContext},AudioCtor=root.AudioContext??root.webkitAudioContext;
@@ -140,7 +143,7 @@ export async function recordTricksterCut({manifest,candles,events,shareHref,toke
   const audioContext=new AudioCtor(),destination=audioContext.createMediaStreamDestination();await audioContext.resume();
   onProgress(.02,"Preparing Cut audio");
   const fps=24,prepared=await prepareScenes(audioContext,manifest,events,fps,onProgress),totalDuration=prepared.reduce((sum,item)=>sum+item.duration,0),videoStream=canvas.captureStream(fps),combined=new MediaStream([...videoStream.getVideoTracks(),...destination.stream.getAudioTracks()]);
-  const mimeType=preferredCutVideoMime(value=>typeof MediaRecorder.isTypeSupported==="function"&&MediaRecorder.isTypeSupported(value));
+  const mimeType=chooseVideoMime(value=>typeof MediaRecorder.isTypeSupported==="function"&&MediaRecorder.isTypeSupported(value));
   if(!mimeType){combined.getTracks().forEach(track=>track.stop());await audioContext.close();throw Object.assign(new Error("cut_capture_format_unsupported"),{code:"cut_capture_format_unsupported"});}
 
   const recorder=new MediaRecorder(combined,{mimeType,videoBitsPerSecond:6_000_000,audioBitsPerSecond:128_000});
@@ -168,7 +171,7 @@ export async function recordTricksterCut({manifest,candles,events,shareHref,toke
     const draw=(now:number)=>{
       const elapsed=Math.max(0,(now-wallStart)/1000);let index=prepared.length-1;
       for(let i=0;i<prepared.length;i++){if(elapsed<sceneOffsets[i]+prepared[i].duration){index=i;break;}}
-      const local=clamp((elapsed-sceneOffsets[index])/prepared[index].duration,0,1),role:NarrationRole=local<.56?"grey":"trickster",model=obj(buildCutFrameModel({manifest,candles,events,sceneIndex:index,progress:local,shareHref,tokenLabel,walletLabel}));
+      const local=clamp((elapsed-sceneOffsets[index])/prepared[index].duration,0,1),role:NarrationRole=local<.56?"grey":"trickster",model=obj(buildCutFrame({manifest,candles,events,sceneIndex:index,progress:local,shareHref,tokenLabel,walletLabel}));
       drawCinematicFrame(ctx,model,role);onProgress(.24+.72*clamp(elapsed/Math.max(.1,totalDuration),0,1),`Encoding scene ${index+1}/${prepared.length}`);
       if(elapsed>=totalDuration){resolve();return;}requestAnimationFrame(draw);
     };
