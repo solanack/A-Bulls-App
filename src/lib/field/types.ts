@@ -36,8 +36,9 @@ export type IntelligenceResult = { ok: boolean; kind: EntityKind; query: string;
 
 export type FieldSection =
   | { kind: "galaxy"; label: string; count: number }
-  | { kind: "token-system"; label: string; mint: string; count: number }
+  | { kind: "token-system"; label: string; mint: string; wallet?: string | null; chainKey?: string | null; count: number }
   | { kind: "trader-system"; label: string; handle: string; wallet: string | null; count: number }
+  | { kind: "wallet-system"; label: string; wallet: string; count: number }
   | { kind: "observatory"; label: string; count: number }
   | { kind: "watchlist"; label: string; count: number };
 

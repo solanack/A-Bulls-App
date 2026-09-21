@@ -4,6 +4,7 @@ import { aggregateTraderHoldings, HOLDINGS_LIMIT, HOLDINGS_METHOD, holdingsDiscl
 const KINDS=new Set(['planet','star','trade','matched_round','research_thread','replay','evidence','cut','thesis','resolution','ghost','sequence','comparison']);
 const ROUND_STATUS=new Set(['closed','open','unmatched']);
 const WALLET_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const EVM_WALLET_RE=/^0x[a-fA-F0-9]{40}$/;
 const s=value=>String(value??'').trim();
 const json=(body,status=200,cache='public, max-age=10, stale-while-revalidate=30')=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':cache,'x-content-type-options':'nosniff'}});
 const parse=value=>{try{return JSON.parse(String(value||'{}'));}catch{return{};}};
@@ -62,6 +63,36 @@ async function listHoldings(request,env={}){
   }
 }
 
+export function walletAddressKind(value=''){
+  const wallet=s(value);if(WALLET_RE.test(wallet))return'solana';if(EVM_WALLET_RE.test(wallet))return'evm';return null;
+}
+export function mapWalletSystemRows(rows=[],{walletKind='solana',limit=10}={}){
+  const cap=Math.max(1,Math.min(50,Math.trunc(Number(limit)||10)));
+  return Object.freeze((Array.isArray(rows)?rows:[]).map(row=>{
+    const chainKey=s(row?.chain_key)||(walletKind==='solana'?'solana':'unknown'),mint=s(row?.asset_address||row?.mint),sourceKinds=s(row?.source_kinds).split(',').map(s).filter(Boolean),observed=walletKind==='solana'||sourceKinds.includes('observed-fact');
+    return Object.freeze({chainKey,mint,eventCount:Math.max(0,Math.trunc(Number(row?.event_count)||0)),tradeCount:Math.max(0,Math.trunc(Number(row?.trade_count)||0)),firstObservedAt:Math.max(0,Math.trunc(Number(row?.first_event)||0))||null,lastObservedAt:Math.max(0,Math.trunc(Number(row?.last_event)||0))||null,observedTokenFlow:Math.abs(Number(row?.observed_token_flow)||0),confidence:Math.max(0,Math.min(1,Number(row?.max_confidence)||0)),sourceKind:observed?'observed':'provider-reported',sourceKinds:Object.freeze(sourceKinds)});
+  }).filter(row=>row.mint&&row.chainKey!=='unknown').sort((a,b)=>b.tradeCount-a.tradeCount||b.eventCount-a.eventCount||(b.lastObservedAt||0)-(a.lastObservedAt||0)).slice(0,cap));
+}
+
+async function listWalletSystem(request,env={}){
+  const db=intelligenceDb(env);if(!db)return json({ok:false,coverage:'degraded',items:[],error:'database_unavailable',disclosure:'The Intelligence D1 binding is unavailable. No wallet activity was invented.'},503,'no-store');
+  const url=new URL(request.url),wallet=s(url.searchParams.get('wallet')),walletKind=walletAddressKind(wallet),limit=Math.max(1,Math.min(50,Math.trunc(Number(url.searchParams.get('limit'))||10)));
+  if(!walletKind)return json({ok:false,coverage:'empty',wallet,items:[],error:'invalid_public_wallet',disclosure:'A valid public Solana or EVM wallet is required. No activity was invented.'},400,'no-store');
+  try{
+    let rows=[];
+    if(walletKind==='solana'){
+      const result=await db.prepare(`SELECT 'solana' chain_key,mint asset_address,COUNT(*) event_count,SUM(CASE WHEN event_class='swap-like' THEN 1 ELSE 0 END) trade_count,MIN(block_time) first_event,MAX(block_time) last_event,SUM(ABS(COALESCE(token_delta,0))) observed_token_flow,MAX(COALESCE(confidence,0)) max_confidence,'observed-fact' source_kinds FROM bull_wallet_events WHERE wallet=? AND mint IS NOT NULL AND mint<>'' GROUP BY mint ORDER BY trade_count DESC,event_count DESC,last_event DESC LIMIT ?`).bind(wallet,limit).all();
+      rows=result?.results||[];
+    }
+    if(!rows.length){
+      const result=await db.prepare(`SELECT chain_key,asset_address,COUNT(*) event_count,SUM(CASE WHEN event_class IN ('swap','swap-like','trade') OR side IN ('buy','sell') THEN 1 ELSE 0 END) trade_count,MIN(block_time) first_event,MAX(block_time) last_event,SUM(ABS(COALESCE(amount,0))) observed_token_flow,MAX(COALESCE(confidence,0)) max_confidence,GROUP_CONCAT(DISTINCT source_kind) source_kinds FROM intelligence_chain_events_v2 WHERE LOWER(wallet_address)=LOWER(?) AND asset_address IS NOT NULL AND asset_address<>'' GROUP BY chain_key,asset_address ORDER BY trade_count DESC,event_count DESC,last_event DESC LIMIT ?`).bind(wallet,limit).all();
+      rows=result?.results||[];
+    }
+    const items=mapWalletSystemRows(rows,{walletKind,limit}),coverage=items.length?'fresh':'empty';
+    return json({ok:true,coverage,wallet,walletKind,items,disclosure:items.length?'PLANETS represent retained wallet/token observations only. Event and trade counts describe indexed evidence, not intent, identity, ownership, skill, or complete history. Provider-reported rows remain labeled separately.':'No retained wallet/token observations are indexed for this public address. The STAR remains empty rather than inventing holdings or activity.'});
+  }catch{return json({ok:false,coverage:'degraded',wallet,walletKind,items:[],error:'wallet_system_unavailable',disclosure:'Indexed wallet activity could not be read. No holdings, trades, or PnL were invented.'},503,'no-store');}
+}
+
 async function coverage(env={}){
   const db=intelligenceDb(env);if(!db)return json({ok:false,coverage:'degraded',sources:[],error:'database_unavailable'},503,'no-store');
   try{const result=await db.prepare('SELECT source,last_observed_slot,last_verified_slot,gap_from_slot,gap_to_slot,status,detail,updated_at FROM index_coverage_checkpoints ORDER BY source ASC').all();return json({ok:true,coverage:'fresh',sources:result?.results||[],disclosure:'Observed-through and verified-through are different. Verified-through slots are shown only when an indexing process independently wrote verification evidence.'});}catch{return json({ok:false,coverage:'degraded',sources:[],error:'coverage_store_unavailable'},503,'no-store');}
@@ -73,6 +104,7 @@ export async function handleResearchIndexRequest(request,env={}){
   if(request.method==='GET'&&detail)return objectDetail(env,decodeURIComponent(detail[1]));
   if(request.method==='GET'&&url.pathname==='/api/intelligence/research/rounds')return listRounds(request,env);
   if(request.method==='GET'&&url.pathname==='/api/intelligence/research/holdings')return listHoldings(request,env);
+  if(request.method==='GET'&&url.pathname==='/api/intelligence/research/wallet-system')return listWalletSystem(request,env);
   if(request.method==='GET'&&url.pathname==='/api/intelligence/research/coverage')return coverage(env);
   return null;
 }
