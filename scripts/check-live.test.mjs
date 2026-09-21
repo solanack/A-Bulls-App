@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LIVE_FIXTURE, fixtureFromFrozenCut, fomoSolanaTopTokens, validateCutPage, validateEvidenceFixture, validateFomoAudit, validateFomoGalaxy, validateFomoTrader, validateReplay } from "./check-live.mjs";
+import { LIVE_FIXTURE, fixtureFromFrozenCut, fomoSolanaTopTokens, validateAfterbellTraders, validateCutPage, validateEvidenceFixture, validateFomoAudit, validateFomoGalaxy, validateFomoTrader, validateReplay, validateTokenSystem, validateWalletSystem } from "./check-live.mjs";
 
 const fixture = Object.freeze({
   wallet: LIVE_FIXTURE.wallet,
@@ -85,4 +85,30 @@ test("live route probes cover depths 1–4 and reject broken segments or HTML fa
   assert.deepEqual(await checkRouteFamilies({ origin: "https://frontend.example.test", fetchImpl: makeFetch() }), [1, 2, 3, 4]);
   for (let i = 0; i < 4; i++) await assert.rejects(checkRouteFamilies({ fetchImpl: makeFetch(i) }), /HTTP 404/);
   await assert.rejects(checkRouteFamilies({ fetchImpl: makeFetch(3, true) }), /returned HTML/);
+});
+
+
+test("Afterbell Top 50 smoke preserves rank, provenance, and unavailable PnL",()=>{
+  const body={ok:true,coverage:"fresh",window:{from:100,to:200,timezone:"America/New_York"},items:[
+    {rank:1,wallet:LIVE_FIXTURE.wallet,transactionCount:4,realizedPnlUsd:null,realizedPnlSol:1.25,sourceKind:"observed"}
+  ]};
+  assert.equal(validateAfterbellTraders(body).length,1);
+  assert.throws(()=>validateAfterbellTraders({...body,items:[{...body.items[0],rank:2}]}),/ranks are not contiguous/);
+  assert.throws(()=>validateAfterbellTraders({...body,items:[{...body.items[0],transactionCount:0}]}),/no counted transactions/);
+});
+
+test("wallet-system smoke accepts bounded chain-qualified honest-empty coverage",()=>{
+  const wallet=LIVE_FIXTURE.wallet;
+  assert.deepEqual(validateWalletSystem({ok:true,wallet,walletKind:"solana",coverage:"empty",items:[]},wallet,"solana"),[]);
+  const evm="0x1111111111111111111111111111111111111111";
+  const items=validateWalletSystem({ok:true,wallet:evm,walletKind:"evm",coverage:"fresh",items:[{chainKey:"base",mint:"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",sourceKind:"provider-reported"}]},evm,"evm");
+  assert.equal(items[0].chainKey,"base");
+  assert.throws(()=>validateWalletSystem({ok:true,wallet:evm,walletKind:"evm",items:[{chainKey:"arc",mint:"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",sourceKind:"provider-reported"}]},evm,"evm"),/unsupported chain key/);
+});
+
+test("EVM token-system smoke rejects invented SOL valuation",()=>{
+  const ok={ok:true,chainKey:"base",holders:[{chainKey:"base",buySolObserved:null,sellSolObserved:null}],trades:[]};
+  assert.equal(validateTokenSystem(ok,"base").chainKey,"base");
+  assert.throws(()=>validateTokenSystem({...ok,holders:[{chainKey:"base",buySolObserved:1,sellSolObserved:null}]},"base"),/invented SOL buy value/);
+  assert.throws(()=>validateTokenSystem({...ok,chainKey:"solana"},"base"),/lost chain identity/);
 });
