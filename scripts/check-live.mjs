@@ -212,6 +212,11 @@ export async function runLiveChecks({
   assert.ok(assets.length, "Application JavaScript references are missing");
   for (const path of assets) {const asset = await get(path);assert.match(asset.headers.get("content-type") || "", /javascript/, "JavaScript has incorrect MIME type");}
 
+  const afterbellDocument = await (await get("/afterbell/")).text();
+  assert.match(afterbellDocument, /AFTERBELL/i, "Afterbell deep link is missing its product identity");
+  assert.match(afterbellDocument, /Research only|does not advise|no execution/i, "Afterbell deep link lost its read-only research disclosure");
+  assert.match(afterbellDocument, /No synthetic candles|Missing data stays unavailable/i, "Afterbell deep link lost its no-fabrication disclosure");
+
   for (const path of [
     "/api/health",
     "/api/intelligence/field/resolve?query=So11111111111111111111111111111111111111112",
@@ -228,7 +233,7 @@ export async function runLiveChecks({
   const fomoCandidate=fomoItems.find((item)=>item?.solanaWallet&&fomoSolanaTopTokens(item).length>0)??fomoItems.find((item)=>SOLANA_ADDRESS_RE.test(String(item?.solanaWallet || "")));
   validateFomoTrader(await (await get(`/api/intelligence/fomo/trader?handle=${encodeURIComponent(fomoCandidate.handle)}`)).json(),fomoCandidate);
 
-  console.log("Live release, Fomo PnL coverage, trader data, frozen Cut route, retained Replay receipts, OHLC, holdings, and resolver coverage checks passed.");
+  console.log("Live release, Fomo PnL coverage, trader data, Afterbell deep link, frozen Cut route, retained Replay receipts, OHLC, holdings, and resolver coverage checks passed.");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
