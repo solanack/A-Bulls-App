@@ -81,11 +81,11 @@ async function listWalletSystem(request,env={}){
   try{
     let rows=[];
     if(walletKind==='solana'){
-      const result=await db.prepare(\`SELECT 'solana' chain_key,mint asset_address,COUNT(*) event_count,SUM(CASE WHEN event_class='swap-like' THEN 1 ELSE 0 END) trade_count,MIN(block_time) first_event,MAX(block_time) last_event,SUM(ABS(COALESCE(token_delta,0))) observed_token_flow,MAX(COALESCE(confidence,0)) max_confidence,'observed-fact' source_kinds FROM bull_wallet_events WHERE wallet=? AND mint IS NOT NULL AND mint<>'' GROUP BY mint ORDER BY trade_count DESC,event_count DESC,last_event DESC LIMIT ?\`).bind(wallet,limit).all();
+      const result=await db.prepare(`SELECT 'solana' chain_key,mint asset_address,COUNT(*) event_count,SUM(CASE WHEN event_class='swap-like' THEN 1 ELSE 0 END) trade_count,MIN(block_time) first_event,MAX(block_time) last_event,SUM(ABS(COALESCE(token_delta,0))) observed_token_flow,MAX(COALESCE(confidence,0)) max_confidence,'observed-fact' source_kinds FROM bull_wallet_events WHERE wallet=? AND mint IS NOT NULL AND mint<>'' GROUP BY mint ORDER BY trade_count DESC,event_count DESC,last_event DESC LIMIT ?`).bind(wallet,limit).all();
       rows=result?.results||[];
     }
     if(!rows.length){
-      const result=await db.prepare(\`SELECT chain_key,asset_address,COUNT(*) event_count,SUM(CASE WHEN event_class IN ('swap','swap-like','trade') OR side IN ('buy','sell') THEN 1 ELSE 0 END) trade_count,MIN(block_time) first_event,MAX(block_time) last_event,SUM(ABS(COALESCE(amount,0))) observed_token_flow,MAX(COALESCE(confidence,0)) max_confidence,GROUP_CONCAT(DISTINCT source_kind) source_kinds FROM intelligence_chain_events_v2 WHERE LOWER(wallet_address)=LOWER(?) AND asset_address IS NOT NULL AND asset_address<>'' GROUP BY chain_key,asset_address ORDER BY trade_count DESC,event_count DESC,last_event DESC LIMIT ?\`).bind(wallet,limit).all();
+      const result=await db.prepare(`SELECT chain_key,asset_address,COUNT(*) event_count,SUM(CASE WHEN event_class IN ('swap','swap-like','trade') OR side IN ('buy','sell') THEN 1 ELSE 0 END) trade_count,MIN(block_time) first_event,MAX(block_time) last_event,SUM(ABS(COALESCE(amount,0))) observed_token_flow,MAX(COALESCE(confidence,0)) max_confidence,GROUP_CONCAT(DISTINCT source_kind) source_kinds FROM intelligence_chain_events_v2 WHERE LOWER(wallet_address)=LOWER(?) AND asset_address IS NOT NULL AND asset_address<>'' GROUP BY chain_key,asset_address ORDER BY trade_count DESC,event_count DESC,last_event DESC LIMIT ?`).bind(wallet,limit).all();
       rows=result?.results||[];
     }
     const items=mapWalletSystemRows(rows,{walletKind,limit}),coverage=items.length?'fresh':'empty';
