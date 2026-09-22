@@ -13,3 +13,12 @@ test('provider top tokens preserve an explicit EVM chain instead of disappearing
   assert.equal(positions[0].mint,evm);
   assert.equal(positions[0].chain,'base');
 });
+
+
+test('provider numeric network id 1399811149 remains Solana in top-token context',()=>{
+  const items=normalizeFomoLeaderboard({data:[{rank:1,handle:'sol-trader',solanaWallet:SOL,topTokens:[{address:SOL,symbol:'SOL',networkId:'1399811149'}]}]});
+  assert.equal(items[0].topTokens[0].chain,'solana');
+  const positions=providerPositions(items[0]);
+  assert.equal(positions[0].chain,'solana');
+  assert.equal(positions[0].mint,SOL);
+});
