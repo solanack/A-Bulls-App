@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { candidateTransactionId,fomoPositionToChainAsset,fomoTradeToChainEvent,fomoTradeToChainEvents,verifyEvmTransaction,__multichainEvidenceContract } from './intelligence-multichain-evidence.mjs';
+import { candidateTransactionId,fomoPositionToChainAsset,fomoTradeToChainEvent,fomoTradeToChainEvents,selectReconciliationEvents,verifyEvmTransaction,__multichainEvidenceContract } from './intelligence-multichain-evidence.mjs';
 
 const TOKEN='0x1111111111111111111111111111111111111111';
 const WALLET='0x2222222222222222222222222222222222222222';
@@ -36,4 +36,26 @@ test('closed provider lifecycle uses phase-specific transaction references when 
   const entry=`0x${'b'.repeat(64)}`,exit=`0x${'c'.repeat(64)}`,events=fomoTradeToChainEvents({handle:'Trader',trade_id:'provider-id',token_address:TOKEN,chain:'base',status:'closed',created_at:100,closed_at:200,entry_tx_id:entry,exit_tx_id:exit,evm_wallet:WALLET});
   assert.equal(events[0].txId,entry);
   assert.equal(events[1].txId,exit);
+});
+
+
+test('bounded reconciliation rotates instead of retrying the same provider events forever',()=>{
+  const events=Array.from({length:6},(_,index)=>({eventId:'e'+index,txId:null,walletAddress:WALLET,blockTime:100+index}));
+  const first=selectReconciliationEvents(events,2,0);
+  const second=selectReconciliationEvents(events,2,15*60*1000);
+  const third=selectReconciliationEvents(events,2,30*60*1000);
+  assert.deepEqual(first.map(row=>row.eventId),['e0','e1']);
+  assert.deepEqual(second.map(row=>row.eventId),['e2','e3']);
+  assert.deepEqual(third.map(row=>row.eventId),['e4','e5']);
+  assert.equal(__multichainEvidenceContract.reconciliationSelection,'rotating-bounded');
+  assert.equal(__multichainEvidenceContract.reconciliationHealthRecorded,true);
+});
+
+test('reconciliation rotation excludes events that already have a transaction or cannot be matched',()=>{
+  const events=[
+    {eventId:'resolved',txId:HASH,walletAddress:WALLET,blockTime:100},
+    {eventId:'no-wallet',txId:null,walletAddress:null,blockTime:101},
+    {eventId:'eligible',txId:null,walletAddress:WALLET,blockTime:102},
+  ];
+  assert.deepEqual(selectReconciliationEvents(events,2,0).map(row=>row.eventId),['eligible']);
 });
