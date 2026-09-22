@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseExactReplayPool, discoverExactReplayPool, discoverExactReplayPools, normalizeGeckoOhlcvRows, replayMarketProviders, replayPoolsForToken } from './intelligence-replay-market-hydration.mjs';
+import { chooseExactReplayPool, chooseReplayPrewarmBucket, discoverExactReplayPool, discoverExactReplayPools, normalizeGeckoOhlcvRows, replayMarketProviders, replayPoolsForToken, __replayMarketHydrationContract } from './intelligence-replay-market-hydration.mjs';
 
 const mint='33333333333333333333333333333333';
 const quote='44444444444444444444444444444444';
@@ -128,4 +128,25 @@ test('auto quote discovery keeps the actual paired token and prefers the most li
   assert.equal(pools[0].address,pool2);
   assert.equal(pools[0].quoteMint,other);
   assert.equal(pools[1].quoteMint,quote);
+});
+
+
+test('accepts bytes32 Robinhood pool ids used by public GeckoTerminal markets',()=>{
+  const token='0x89da5167eb1a0067f9b3e39a544ef8d4b9c41e18';
+  const ai='0x2e800d0c64f7de2feaf3b7f6148468bdc61c1e18';
+  const bytes32Pool='0x6d6e25a50843dad7cd400f43ea3f4ab52d1c0d4871e9adf6d4cae58645f31d07';
+  const payload={data:[{id:`robinhood_${bytes32Pool}`,attributes:{address:bytes32Pool,reserve_in_usd:'639477',volume_usd:{h24:'268800'}},relationships:{base_token:{data:{id:`robinhood_${token}`}},quote_token:{data:{id:`robinhood_${ai}`}}}}]};
+  const pools=replayPoolsForToken(payload,token,'robinhood','robinhood');
+  assert.equal(pools.length,1);
+  assert.equal(pools[0].address,bytes32Pool);
+  assert.equal(pools[0].quoteMint,ai);
+});
+
+
+test('scheduled Fomo prewarm chooses bounded candle buckets instead of flooding minute history',()=>{
+  assert.equal(chooseReplayPrewarmBucket(0,3600,240),60);
+  assert.equal(chooseReplayPrewarmBucket(0,7*86400,240),3600);
+  assert.equal(chooseReplayPrewarmBucket(0,90*86400,240),43200);
+  assert.equal(__replayMarketHydrationContract.scheduledFomoPrewarm,true);
+  assert.equal(__replayMarketHydrationContract.supportsEvmBytes32PoolIds,true);
 });

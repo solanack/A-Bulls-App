@@ -16,6 +16,12 @@ const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const finitePositive=value=>{const out=Number(value);return Number.isFinite(out)&&out>0?out:null;};
 const nowSec=()=>Math.floor(Date.now()/1000);
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const EVM_POOL_ID=/^0x(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/;
+function canonicalProviderPoolId(chain,value){
+  const chainKey=normalizeChainKey(chain),definition=resolveChain(chainKey,{address:value}),raw=s(value);if(!definition||!raw)return null;
+  if(definition.kind==='svm')return canonicalChainAddress(chainKey,raw);
+  return EVM_POOL_ID.test(raw)?raw.toLowerCase():null;
+}
 
 function relationAddress(value,network=''){
   const id=s(value),prefix=network?`${network}_`:'';
@@ -36,7 +42,7 @@ export function exactReplayPools(payload={},mint='',quoteMint='',chain='solana',
   for(const row of rows){
     const baseRaw=relationAddress(row?.relationships?.base_token?.data?.id,network),quoteRaw=relationAddress(row?.relationships?.quote_token?.data?.id,network),base=canonicalChainAddress(chainKey,baseRaw),quote=canonicalChainAddress(chainKey,quoteRaw);
     if(!base||!quote||!((sameChainAddress(chainKey,base,wantedMint)&&sameChainAddress(chainKey,quote,wantedQuote))||(sameChainAddress(chainKey,base,wantedQuote)&&sameChainAddress(chainKey,quote,wantedMint))))continue;
-    const address=canonicalChainAddress(chainKey,s(row?.attributes?.address)||relationAddress(row?.id,network));if(!address||seen.has(address))continue;
+    const address=canonicalProviderPoolId(chainKey,s(row?.attributes?.address)||relationAddress(row?.id,network));if(!address||seen.has(address))continue;
     seen.add(address);out.push(Object.freeze({address,base,quote}));
   }
   return Object.freeze(out);
@@ -46,7 +52,7 @@ export function chooseExactReplayPool(payload={},mint='',quoteMint='',chain='sol
 
 export function replayPoolsForToken(payload={},mint='',chain='solana',network='solana'){
   const chainKey=normalizeChainKey(chain),wanted=canonicalChainAddress(chainKey,mint),rows=Array.isArray(payload?.data)?payload.data:[],out=[],seen=new Set();if(!wanted)return Object.freeze([]);
-  for(const row of rows){const base=canonicalChainAddress(chainKey,relationAddress(row?.relationships?.base_token?.data?.id,network)),quote=canonicalChainAddress(chainKey,relationAddress(row?.relationships?.quote_token?.data?.id,network));if(!base||!quote)continue;const wantedIsBase=sameChainAddress(chainKey,base,wanted),wantedIsQuote=sameChainAddress(chainKey,quote,wanted);if(!wantedIsBase&&!wantedIsQuote)continue;const quoteMint=wantedIsBase?quote:base;if(!quoteMint||sameChainAddress(chainKey,quoteMint,wanted))continue;const address=canonicalChainAddress(chainKey,s(row?.attributes?.address)||relationAddress(row?.id,network));if(!address||seen.has(address))continue;seen.add(address);out.push(Object.freeze({address,base,quote,quoteMint,reserveUsd:finitePositive(row?.attributes?.reserve_in_usd)||0,volumeH24Usd:finitePositive(row?.attributes?.volume_usd?.h24)||0}));}
+  for(const row of rows){const base=canonicalChainAddress(chainKey,relationAddress(row?.relationships?.base_token?.data?.id,network)),quote=canonicalChainAddress(chainKey,relationAddress(row?.relationships?.quote_token?.data?.id,network));if(!base||!quote)continue;const wantedIsBase=sameChainAddress(chainKey,base,wanted),wantedIsQuote=sameChainAddress(chainKey,quote,wanted);if(!wantedIsBase&&!wantedIsQuote)continue;const quoteMint=wantedIsBase?quote:base;if(!quoteMint||sameChainAddress(chainKey,quoteMint,wanted))continue;const address=canonicalProviderPoolId(chainKey,s(row?.attributes?.address)||relationAddress(row?.id,network));if(!address||seen.has(address))continue;seen.add(address);out.push(Object.freeze({address,base,quote,quoteMint,reserveUsd:finitePositive(row?.attributes?.reserve_in_usd)||0,volumeH24Usd:finitePositive(row?.attributes?.volume_usd?.h24)||0}));}
   return Object.freeze(out.sort((a,b)=>b.reserveUsd-a.reserveUsd||b.volumeH24Usd-a.volumeH24Usd||a.address.localeCompare(b.address)));
 }
 
@@ -135,4 +141,41 @@ export async function hydrateReplayMarketCandles(env={},input={}, {fetchImpl=pro
     await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',chain,quoteMint:resolvedQuote,requestedQuoteMint:quoteMint||null,quoteFallback:Boolean(quoteMint&&resolvedQuote!==quoteMint),candles:selected.rows.length,source:selected.provider,network:selected.network,pool:selected.pool,poolsChecked:checked};
   }catch(error){const code=s(error?.message||error)||'market_hydration_failed';await markLease(db,key,'error',code,{completedAt:nowSec()}).catch(()=>null);return{ok:false,state:'unavailable',chain,error:code};}
 }
-export const __replayMarketHydrationContract=Object.freeze({chainQualified:true,legacySolanaDualWrite:true,providers:Object.freeze(['coingecko-onchain','geckoterminal-public']),autoDiscoversObservedQuote:true,noSyntheticCandles:true});
+
+const PREWARM_BUCKETS=Object.freeze([60,300,900,3600,14400,43200,86400]);
+export function chooseReplayPrewarmBucket(from,to,target=240){
+  const duration=Math.max(60,Math.trunc(n(to))-Math.trunc(n(from))),wanted=Math.max(60,Math.ceil(duration/Math.max(60,Math.trunc(n(target)||240))));
+  return PREWARM_BUCKETS.find(value=>value>=wanted)??86400;
+}
+async function retainedAnyCandleCount(db,chain,mint,from,to){
+  const row=await first(db.prepare(`SELECT COUNT(*) count FROM intelligence_price_candles_v2 WHERE chain_key=? AND asset_address=? AND bucket_start BETWEEN ? AND ?`).bind(chain,mint,from,to));return Math.max(0,Math.trunc(n(row?.count)));
+}
+export async function prewarmFomoReplayCandles(env={},nowMs=Date.now(),{fetchImpl=providerFetch}={}){
+  if(String(env.MULTICHAIN_MARKET_ENABLED||'').toLowerCase()!=='true')return Object.freeze({enabled:false});
+  const db=intelligenceDb(env);if(!db)return Object.freeze({enabled:true,ok:false,error:'intelligence_db_unavailable'});
+  const limit=Math.max(0,Math.min(8,Math.trunc(n(env.FOMO_REPLAY_CANDLE_PREWARM_PER_RUN)||4)));if(!limit)return Object.freeze({enabled:true,ok:true,processed:0,ready:0,skipped:0});
+  const rows=(await db.prepare(`
+    SELECT x.handle,x.chain,x.token_address,x.created_at,x.closed_at,x.realized_pnl_usd
+    FROM fomo_trader_trades x
+    JOIN fomo_traders t ON lower(t.handle)=lower(x.handle)
+    WHERE t.current_rank BETWEEN 1 AND 50
+      AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders)
+      AND x.created_at IS NOT NULL AND x.created_at>0
+      AND x.token_address IS NOT NULL AND TRIM(x.token_address)<>''
+    ORDER BY CASE WHEN x.realized_pnl_usd IS NULL THEN 1 ELSE 0 END,
+             ABS(COALESCE(x.realized_pnl_usd,0)) DESC,
+             x.created_at DESC
+    LIMIT 250
+  `).all().catch(()=>({results:[]})))?.results||[];
+  const now=Math.floor(nowMs/1000),seen=new Set(),results=[];
+  for(const row of rows){
+    if(results.length>=limit)break;
+    const chain=normalizeChainKey(row.chain||''),mint=canonicalChainAddress(chain,row.token_address);if(!mint)continue;
+    const created=Math.max(0,Math.trunc(n(row.created_at))),closed=Math.max(0,Math.trunc(n(row.closed_at))),from=Math.max(0,created-7*86400),to=Math.max(from+60,closed>=created&&closed>0?closed:now),key=`${chain}:${mint}:${from}:${to}`;if(seen.has(key))continue;seen.add(key);
+    if(await retainedAnyCandleCount(db,chain,mint,from,to)>0){results.push(Object.freeze({chain,mint,state:'already-ready'}));continue;}
+    const bucketSeconds=chooseReplayPrewarmBucket(from,to),hydrated=await hydrateReplayMarketCandles(env,{chain,mint,from,to,bucketSeconds},{fetchImpl});
+    results.push(Object.freeze({chain,mint,bucketSeconds,state:s(hydrated?.state)||'unknown',candles:Math.max(0,Math.trunc(n(hydrated?.candles))),source:s(hydrated?.source)||null,reason:s(hydrated?.reason??hydrated?.error)||null}));
+  }
+  return Object.freeze({enabled:true,ok:true,processed:results.length,ready:results.filter(item=>item.state==='ready'||item.state==='already-ready').length,results:Object.freeze(results)});
+}
+export const __replayMarketHydrationContract=Object.freeze({chainQualified:true,legacySolanaDualWrite:true,providers:Object.freeze(['coingecko-onchain','geckoterminal-public']),autoDiscoversObservedQuote:true,supportsEvmBytes32PoolIds:true,scheduledFomoPrewarm:true,noSyntheticCandles:true});
