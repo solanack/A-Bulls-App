@@ -15,6 +15,32 @@ const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const SOLANA_SIGNATURE_RE = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 const AFTERBELL_SMOKE_MINT = "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh";
 const FOMO_CHAIN_KEYS = new Set(["solana","base","bsc","ethereum","monad","robinhood"]);
+const DEPLOY_PROPAGATION_RETRY_STATUSES = new Set([404,408,425,429,500,502,503,504]);
+
+export async function fetchWithDeployPropagationRetry({
+  fetchImpl=fetch,
+  url,
+  init={},
+  sleep=(ms)=>new Promise(resolve=>setTimeout(resolve,ms)),
+  attempts=8,
+  delayMs=1500,
+}={}){
+  assert.ok(url,"retry fetch URL is required");
+  const limit=Math.max(1,Math.min(12,Math.trunc(Number(attempts)||1)));
+  let response=null,lastError=null;
+  for(let attempt=0;attempt<limit;attempt++){
+    try{
+      response=await fetchImpl(url,{...init,headers:{"cache-control":"no-cache",...(init.headers||{})},signal:AbortSignal.timeout(30_000)});
+      if(response.status===200||!DEPLOY_PROPAGATION_RETRY_STATUSES.has(response.status)||attempt===limit-1)return response;
+    }catch(error){
+      lastError=error;
+      if(attempt===limit-1)throw error;
+    }
+    await sleep(Math.min(5000,delayMs*(attempt+1)));
+  }
+  if(lastError)throw lastError;
+  return response;
+}
 
 const requiredInteger = (name, value) => {
   const parsed = Number(value);
@@ -261,7 +287,7 @@ export async function runLiveChecks({
   assert.deepEqual(publicOrigins, ["ZERO", "FOMO"], "Public galaxy origins must remain ZERO + FOMO");
   const assets = [...new Set([...document.matchAll(/(?:src|href)="(\/assets\/[^"?]+\.js)(?:\?[^" ]*)?"/g)].map((match) => match[1]))];
   assert.ok(assets.length, "Application JavaScript references are missing");
-  for (const path of assets) {const asset = await get(path);assert.match(asset.headers.get("content-type") || "", /javascript/, "JavaScript has incorrect MIME type");}
+  for (const path of assets) {const asset=await fetchWithDeployPropagationRetry({fetchImpl,url:`${origin}${path}`,sleep,attempts:8,delayMs:1500});assert.equal(asset.status,200,`${path}: HTTP ${asset.status} after deployment propagation retries`);assert.match(asset.headers.get("content-type") || "", /javascript/, "JavaScript has incorrect MIME type");}
 
   const afterbellDocument = await (await get("/afterbell/")).text();
   assert.match(afterbellDocument, /AFTERBELL/i, "Afterbell deep link is missing its product identity");
