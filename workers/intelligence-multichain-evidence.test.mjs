@@ -30,3 +30,10 @@ test('RPC verification creates a separate observed receipt fact without claiming
 });
 
 test('contract keeps public reads provider-free and execution disabled',()=>{assert.equal(__multichainEvidenceContract.readOnly,true);assert.equal(__multichainEvidenceContract.pageReadsProviderFree,true);assert.equal(__multichainEvidenceContract.providerLifecyclePreservesEntryAndExit,true);assert.equal(__multichainEvidenceContract.providerReportedTradeFactsStayProviderReported,true);});
+
+
+test('closed provider lifecycle uses phase-specific transaction references when supplied',()=>{
+  const entry=`0x${'b'.repeat(64)}`,exit=`0x${'c'.repeat(64)}`,events=fomoTradeToChainEvents({handle:'Trader',trade_id:'provider-id',token_address:TOKEN,chain:'base',status:'closed',created_at:100,closed_at:200,entry_tx_id:entry,exit_tx_id:exit,evm_wallet:WALLET});
+  assert.equal(events[0].txId,entry);
+  assert.equal(events[1].txId,exit);
+});
