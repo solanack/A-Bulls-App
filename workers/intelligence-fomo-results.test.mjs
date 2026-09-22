@@ -6,7 +6,7 @@ const wallet='9P6Ej2CRTDYMW9628wXA8awM1t82jnfynYNNPSVx7pfU';
 const mintA='5761e8gCMZFBHLU4RuFsfkWab96oJEtEr3uoF9A4pump';
 const mintB='So11111111111111111111111111111111111111112';
 const now=1_789_560_000_000;
-const row=(overrides={})=>({handle:'coby',display_name:'Coby',current_rank:1,solana_wallet:wallet,trade_id:'trade-1',token_address:mintA,symbol:'TEST',status:'closed',realized_pnl_usd:100,avg_entry_price:1,avg_exit_price:2,created_at:1_789_500_000,closed_at:1_789_540_000,observed_indexed:0,...overrides});
+const row=(overrides={})=>({handle:'coby',display_name:'Coby',current_rank:1,chain:'solana',solana_wallet:wallet,evm_wallet:null,trade_id:'trade-1',token_address:mintA,symbol:'TEST',status:'closed',realized_pnl_usd:100,avg_entry_price:1,avg_exit_price:2,created_at:1_789_500_000,closed_at:1_789_540_000,observed_indexed:0,chart_indexed:0,...overrides});
 
 test('closed Fomo outcomes split winners and losses and rank by realized provider PnL',()=>{
   const result=rankClosedFomoTrades([
@@ -22,15 +22,19 @@ test('closed Fomo outcomes split winners and losses and rank by realized provide
   assert.equal(result.winners[0].toTs,1_789_543_600_000);
 });
 
-test('finished outcome discovery rejects open, neutral, missing-close, and non-Solana subjects',()=>{
+test('finished outcome discovery rejects incomplete rows but keeps valid EVM closed trades',()=>{
+  const evmWallet='0x1111111111111111111111111111111111111111',evmToken='0x2222222222222222222222222222222222222222';
   const result=rankClosedFomoTrades([
     row({trade_id:'open',status:'open'}),
     row({trade_id:'neutral',realized_pnl_usd:0}),
     row({trade_id:'missing-close',closed_at:null}),
-    row({trade_id:'evm-wallet',solana_wallet:'0x322f0929c4625ed5bad873c95208d54e1c4f30f2'}),
-    row({trade_id:'evm-token',token_address:'0x322f0929c4625ed5bad873c95208d54e1c4f30f2'}),
+    row({trade_id:'base-win',chain:'base',solana_wallet:null,evm_wallet:evmWallet,token_address:evmToken,realized_pnl_usd:125000,observed_indexed:1,chart_indexed:1}),
   ],{nowMs:now});
-  assert.equal(result.winners.length,0);
+  assert.deepEqual(result.winners.map(item=>item.tradeId),['base-win']);
+  assert.equal(result.winners[0].chain,'base');
+  assert.equal(result.winners[0].wallet,evmWallet);
+  assert.equal(result.winners[0].mint,evmToken);
+  assert.equal(result.winners[0].chartIndexed,true);
   assert.equal(result.losers.length,0);
 });
 
@@ -38,6 +42,8 @@ test('Fomo result surface is closed-only, read-only, and provider-free on page r
   assert.equal(__fomoResultsContract.path,'/api/intelligence/fomo/results');
   assert.equal(__fomoResultsContract.closedOnly,true);
   assert.equal(__fomoResultsContract.requiresFiniteRealizedPnl,true);
+  assert.equal(__fomoResultsContract.multiChain,true);
+  assert.equal(__fomoResultsContract.currentSnapshotOnly,true);
   assert.equal(__fomoResultsContract.pageReadsProviderFree,true);
   assert.equal(__fomoResultsContract.readOnly,true);
 });
