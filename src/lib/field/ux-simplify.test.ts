@@ -71,6 +71,24 @@ describe("UX simplify pack — Cut-first demo menu", () => {
 const GALAXY_WALLET = "BWVR4KqS8eVkmKXCsb8cq76jJMN7FjWjCYxZtzGpYQnx";
 const GALAXY_MINT = "97jCC4dL3ceKFqovn3gPKApKQ8hUYwJmCUV3m9d1pump";
 
+describe("public galaxy deep-link", () => {
+  it("accepts only current public Field galaxies", () => {
+    assert.equal(inboundGalaxyFromSearch("?galaxy=afterbell"), "afterbell");
+    assert.equal(inboundGalaxyFromSearch("?galaxy=FOMO"), "fomo");
+    assert.equal(inboundGalaxyFromSearch("?galaxy=galaxy-zero"), "galaxy-zero");
+    assert.equal(inboundGalaxyFromSearch("?galaxy=pons"), null);
+    assert.equal(inboundGalaxyFromSearch("?galaxy=pump-fun"), null);
+    assert.equal(inboundGalaxyFromSearch("?galaxy=solana-core"), null);
+  });
+
+  it("lets Cut and Replay intent win before a galaxy deep-link", () => {
+    assert.equal(inboundWorkspaceMode(`?galaxy=afterbell&mode=replay&wallet=${GALAXY_WALLET}&mint=${GALAXY_MINT}`), "replay");
+    assert.equal(inboundWorkspaceMode("?galaxy=afterbell&cut=ad2538ff000fcceb707d55d5", "ad2538ff000fcceb707d55d5"), "trickster");
+    assert.match(shell, /inboundGalaxyFromSearch/);
+    assert.match(shell, /const requestedGalaxy=inboundGalaxy\(\);if\(requestedGalaxy\)os\.setGalaxy\(requestedGalaxy\)/);
+  });
+});
+
 describe("paste-proof wallet+mint deep-link", () => {
   it("reads wallet (mint optional) and lands in explore holdings, not Trickster", () => {
     assert.deepEqual(
