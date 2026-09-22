@@ -72,8 +72,7 @@ Different classes should be recognizable by scale, silhouette, motion, placement
 
 ## 4. Public Galaxy Zero topology
 
-The active public Field origins are **ZERO + FOMO**. ZERO is the overview;
-**Fomo** is the only active public research galaxy/lens.
+The active public Field origins are **ZERO + FOMO + AFTERBELL**. ZERO is the overview. **Fomo** is the retained trader-discovery lens. **Afterbell** is the tokenized-stock research lens for supported Solana xStocks, centered on ranked trader STARS and their evidence-backed after-close trades.
 
 PonsFamily (`pons`) and pump.fun (`pump-fun`) are retired public galaxies.
 Their historical launch-origin identifiers, applied migrations, and retained
@@ -94,7 +93,7 @@ This is the signature interaction path and should feel like one continuous resea
 **Universe → Galaxy → Planet → Holder Sky → Star → Holdings → Matched Rounds → Chosen Trade → Tools → Trickster Cut**
 
 ### Beat 1 — Galaxy Zero
-ZERO overview with Fomo as the sole active research destination. Do not replace the Field with cards.
+ZERO overview with Fomo and Afterbell as active research destinations. A single tap enters a galaxy immediately; galaxy entry does not require a narration or confirmation tap. Do not replace the Field with cards.
 
 ### Beat 2 — Enter galaxy
 The chosen galaxy fills the frame. Token PLANETS or trader STARS appear according to the galaxy's meaning.
@@ -187,6 +186,18 @@ A bounded trader system should reveal:
 The purpose is to learn how a public wallet traded, not to copy it.
 
 ---
+
+## 7A. Afterbell Galaxy
+
+Afterbell is the **WHO trades tokenized stocks after the bell** galaxy for the STOCKLANA-era product surface.
+
+- The landing field contains up to 50 ranked public-wallet STARS across the currently supported Solana xStock universe.
+- Ranking is based on unique retained after-close transactions, not a claim of skill or recommendation.
+- Selecting a STAR opens that trader's retained xStock activity: stock PLANETS and trade COMETS.
+- Selecting a retained trade creates/updates the Research Thread and descends into Replay, Evidence, Compare, What-If, Sequences, Ghost, and Trickster/Cut.
+- The default research window follows the weekday 4:00 PM to 9:30 AM America/New_York schedule. Exchange-holiday exceptions must be disclosed unless an authoritative calendar is integrated.
+- PnL remains unavailable unless retained acquisition basis and sale evidence support deterministic calculation.
+- Empty coverage stays empty. The indexer must repair missing evidence; the renderer must never fabricate traders or trades.
 
 ## 8. Retired galaxy provenance
 
