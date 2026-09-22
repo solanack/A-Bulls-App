@@ -58,6 +58,9 @@ MULTICHAIN_TX_VERIFY_LIMIT = "4"
 # a transaction hash. Ambiguous candidates are left provider-reported rather than guessed.
 MULTICHAIN_TX_RECONCILE_LIMIT = "2"
 MULTICHAIN_TX_RECONCILE_WINDOW_SECONDS = "900"
+# Cache current Robinhood Stock Token underlying and Lighter reference context.
+# These tracks remain explicitly separate from execution prices and Replay OHLC.
+ROBINHOOD_REFERENCE_ASSETS_PER_RUN = "6"
 # Pre-hydrate a few current Fomo trade windows per 15-minute cron so Replay charts
 # are usually warm before the user opens them. Source data remains CoinGecko/
 # GeckoTerminal OHLC; no synthetic candles are generated.
