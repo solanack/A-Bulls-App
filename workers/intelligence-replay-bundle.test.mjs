@@ -132,3 +132,12 @@ test('provider-reported closed Fomo trades expose both entry and exit price poin
   assert.deepEqual(events.map(event=>event.priceUsd),[1.25,2.5]);
   assert.ok(events.every(event=>event.signature===null&&event.verification==='provider-reported'&&event.price===null));
 });
+
+
+test('provider-reported Replay events carry structurally valid EVM transaction references without upgrading verification',()=>{
+  const evmWallet='0x1111111111111111111111111111111111111111',evmMint='0x2222222222222222222222222222222222222222',entry=`0x${'a'.repeat(64)}`,exit=`0x${'b'.repeat(64)}`;
+  const events=providerReportedFomoTradeEvents({handle:'Trader',trade_id:'provider-id',chain:'base',status:'closed',created_at:100,closed_at:200,entry_tx_id:entry,exit_tx_id:exit,avg_entry_price:1,avg_exit_price:2},'base',evmWallet,evmMint);
+  assert.deepEqual(events.map(event=>event.signature),[entry,exit]);
+  assert.ok(events.every(event=>event.verification==='provider-reported'));
+  assert.deepEqual(events.map(event=>event.evidence.providerTransactionReference),[entry,exit]);
+});
