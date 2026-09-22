@@ -64,3 +64,10 @@ test("provider context and planet IDs never become observed Replay receipts",()=
     assert.equal(selection?.toTs,null);
   }
 });
+
+test("numeric Fomo Solana network id opens a Solana Replay instead of a synthetic chain",()=>{
+  const selection=tradeReplaySelection({id:"numeric-solana",observedAt:1_789_500_000_000,metadata:{chain:"1399811149",wallet,mint}},null,1_789_560_000_000);
+  assert.equal(selection?.chainKey,"solana");
+  assert.equal(selection?.wallet,wallet);
+  assert.equal(selection?.mint,mint);
+});

@@ -149,4 +149,6 @@ test('scheduled Fomo prewarm chooses bounded candle buckets instead of flooding 
   assert.equal(chooseReplayPrewarmBucket(0,90*86400,240),43200);
   assert.equal(__replayMarketHydrationContract.scheduledFomoPrewarm,true);
   assert.equal(__replayMarketHydrationContract.supportsEvmBytes32PoolIds,true);
+  assert.equal(__replayMarketHydrationContract.prewarmSkipsReadyMarkets,true);
+  assert.equal(__replayMarketHydrationContract.prewarmFailureCooldownHours,6);
 });

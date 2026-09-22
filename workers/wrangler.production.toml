@@ -58,6 +58,10 @@ MULTICHAIN_TX_VERIFY_LIMIT = "4"
 # are usually warm before the user opens them. Source data remains CoinGecko/
 # GeckoTerminal OHLC; no synthetic candles are generated.
 FOMO_REPLAY_CANDLE_PREWARM_PER_RUN = "4"
+# Ask Fomo for a deeper recent trade window. The Worker automatically falls back
+# to 25 if the provider rejects the larger limit, while closed trades already
+# discovered by A Bulls remain durable in D1.
+FOMO_TRADE_FETCH_LIMIT = "100"
 
 # Helius currently publishes 1M / 10M / 100M / 200M monthly credit tiers.
 # This 1M value is the conservative configured floor and is deliberately marked

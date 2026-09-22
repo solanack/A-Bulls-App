@@ -3,7 +3,9 @@ import { buildCutFrameModel, preferredCutVideoMime } from "../../js/trickster-cu
 
 type Data=Record<string,unknown>;
 type Progress=(value:number,label:string)=>void;
-type CutVideoResult={blob:Blob;mimeType:string;extension:"mp4"|"webm";narrationAvailable:boolean};
+type CutSoundPack="cosmic"|"terminal"|"arcade"|"minimal";
+type CutMusicPreset="none"|"pulse"|"nebula"|"drive";
+type CutVideoResult={blob:Blob;mimeType:string;extension:"mp4"|"webm";narrationAvailable:boolean;musicIncluded:boolean};
 type VoiceClip={role:NarrationRole;buffer:AudioBuffer|null};
 type PreparedScene={duration:number;grey:VoiceClip;trickster:VoiceClip};
 type CutFrameInput={manifest?:Data;candles?:Data[];events?:Data[];sceneIndex?:number;progress?:number;shareHref?:string;tokenLabel?:string;walletLabel?:string};
@@ -44,6 +46,10 @@ async function prepareVoice(context:AudioContext,line:string,role:NarrationRole)
     const delivery=await synthesizeCutNarration({data:{text:line,role}});
     return{role,buffer:await decodeDelivery(context,delivery)};
   }catch{return{role,buffer:null};}
+}
+async function decodeMusic(context:AudioContext,file:Blob|null|undefined):Promise<AudioBuffer|null>{
+  if(!file)return null;
+  try{return await context.decodeAudioData(await file.arrayBuffer());}catch{return null;}
 }
 
 function sceneNarration(manifest:Data,events:Data[],index:number){
@@ -102,16 +108,23 @@ function drawCinematicFrame(ctx:CanvasRenderingContext2D,model:Data,role:Narrati
   if(!allRows.length){
     ctx.textAlign="center";ctx.fillStyle="#d8e1ec";ctx.font=`700 ${Math.round(w*.032)}px system-ui,sans-serif`;ctx.fillText("NO INDEXED OHLC · RECEIPT TIMELINE ONLY",w/2,num(chart.y)+num(chart.h)*.48);ctx.fillStyle="#8395a8";ctx.font=`600 ${Math.round(w*.021)}px ui-monospace,monospace`;ctx.fillText("NO PRICE PATH WAS INVENTED",w/2,num(chart.y)+num(chart.h)*.56);ctx.textAlign="left";
   }else{
-    const highs=allRows.map(row=>num(row.high)),lows=allRows.map(row=>num(row.low)),high=Math.max(...highs),low=Math.min(...lows),range=Math.max(Number.EPSILON,high-low),cw=num(chart.w),ch=num(chart.h),cx=num(chart.x),cy=num(chart.y),padX=cw*.035,padY=ch*.09;
+    const highs=allRows.map(row=>num(row.high)),lows=allRows.map(row=>num(row.low)),high=Math.max(...highs),low=Math.min(...lows),range=Math.max(Number.EPSILON,high-low),volMax=Math.max(1,...allRows.map(row=>Math.abs(num(row.volume)))),cw=num(chart.w),ch=num(chart.h),cx=num(chart.x),cy=num(chart.y),padX=cw*.035,priceTop=cy+ch*.07,priceBottom=cy+ch*.78,volumeTop=cy+ch*.82,volumeBottom=cy+ch*.94;
     const x=(index:number)=>cx+padX+index*((cw-padX*2)/Math.max(1,allRows.length-1));
-    const y=(value:number)=>cy+padY+(1-(value-low)/range)*(ch-padY*2);
+    const y=(value:number)=>priceTop+(1-(value-low)/range)*(priceBottom-priceTop);
+    ctx.save();roundedRect(ctx,cx,cy,cw,ch,24);ctx.clip();
+    ctx.strokeStyle="rgba(210,224,245,.07)";ctx.lineWidth=1;for(const fraction of [.25,.5,.75]){const gy=priceTop+(priceBottom-priceTop)*fraction;ctx.beginPath();ctx.moveTo(cx+padX,gy);ctx.lineTo(cx+cw-padX,gy);ctx.stroke();}
+    for(let index=0;index<rows.length;index++){const row=rows[index],up=num(row.close)>=num(row.open),color=up?"#42efbd":"#ff5b82",px=x(index),volume=Math.abs(num(row.volume)),vh=volume/volMax*(volumeBottom-volumeTop);ctx.globalAlpha=.18;ctx.fillStyle=color;ctx.fillRect(px-3,volumeBottom-vh,6,Math.max(1,vh));ctx.globalAlpha=1;}
+    ctx.beginPath();for(let index=0;index<rows.length;index++){const row=rows[index],px=x(index),py=y(num(row.close));if(index===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);}ctx.strokeStyle="rgba(142,233,255,.28)";ctx.lineWidth=Math.max(1.2,w/900);ctx.shadowColor="rgba(142,233,255,.45)";ctx.shadowBlur=8;ctx.stroke();ctx.shadowBlur=0;
     ctx.lineWidth=Math.max(1,w/700);
     for(let index=0;index<rows.length;index++){
-      const row=rows[index],up=num(row.close)>=num(row.open),color=up?"#42efbd":"#ff5b82",px=x(index);ctx.strokeStyle=color;ctx.beginPath();ctx.moveTo(px,y(num(row.high)));ctx.lineTo(px,y(num(row.low)));ctx.stroke();ctx.fillStyle=color;const top=Math.min(y(num(row.open)),y(num(row.close))),body=Math.max(2,Math.abs(y(num(row.open))-y(num(row.close))));ctx.fillRect(px-3,top,6,body);
+      const row=rows[index],up=num(row.close)>=num(row.open),color=up?"#42efbd":"#ff5b82",px=x(index);ctx.strokeStyle=color;ctx.beginPath();ctx.moveTo(px,y(num(row.high)));ctx.lineTo(px,y(num(row.low)));ctx.stroke();ctx.fillStyle=color;const top=Math.min(y(num(row.open)),y(num(row.close))),body=Math.max(2,Math.abs(y(num(row.open))-y(num(row.close))));ctx.fillRect(px-3.5,top,7,body);
     }
     if(Boolean(model.markerVisible)){
-      const marker=Math.trunc(num(model.markerIndex)),px=x(marker),row=allRows[marker],py=row?y(num(row.close)):cy+ch*.5,pulse=num(model.pulse);ctx.strokeStyle=accent;ctx.lineWidth=4;ctx.globalAlpha=.55+.4*pulse;ctx.beginPath();ctx.arc(px,py,18+28*pulse,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;ctx.fillStyle=accent;ctx.beginPath();ctx.arc(px,py,9,0,Math.PI*2);ctx.fill();
+      const marker=Math.trunc(num(model.markerIndex)),px=x(marker),row=allRows[marker],py=row?y(num(row.close)):cy+ch*.5,pulse=clamp(num(model.pulse),0,1),radius=22+46*pulse;ctx.strokeStyle=accent;ctx.shadowColor=accent;ctx.shadowBlur=22;ctx.lineWidth=5;ctx.globalAlpha=.5+.45*pulse;ctx.beginPath();ctx.arc(px,py,radius,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=.42;ctx.beginPath();ctx.arc(px,py,radius*1.55,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;ctx.shadowBlur=0;ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(px,py,7+5*pulse,0,Math.PI*2);ctx.fill();ctx.strokeStyle=accent;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(px,priceTop);ctx.lineTo(px,priceBottom);ctx.stroke();
+      ctx.save();ctx.translate(px,py);ctx.rotate((buy?-1:1)*.08);ctx.strokeStyle=accent;ctx.lineWidth=5;ctx.globalAlpha=.75;ctx.beginPath();ctx.moveTo(-44,-28);ctx.lineTo(-8,-4);ctx.lineTo(-31,13);ctx.moveTo(44,-28);ctx.lineTo(8,-4);ctx.lineTo(31,13);ctx.stroke();ctx.restore();ctx.globalAlpha=1;
+      ctx.fillStyle=accent;ctx.font=`900 ${Math.round(w*.042)}px system-ui,sans-serif`;ctx.textAlign="right";ctx.globalAlpha=clamp((progress-.12)/.25,0,1);ctx.fillText(buy?"BUY":sell?"SELL":"EVENT",cx+cw-padX,cy+ch*.105);ctx.globalAlpha=1;ctx.textAlign="left";
     }
+    ctx.restore();
   }
 
   const caption=obj(model.caption),captionAlpha=clamp((progress-.1)/.22,0,1);ctx.globalAlpha=captionAlpha;ctx.fillStyle="rgba(6,8,15,.88)";roundedRect(ctx,w*.055,h*.70,w*.89,h*.145,22);ctx.fill();ctx.strokeStyle="rgba(142,233,255,.18)";ctx.stroke();ctx.fillStyle=accent;ctx.font=`800 ${Math.round(w*.021)}px ui-monospace,monospace`;ctx.fillText(text(caption.eyebrow),w*.08,h*.735);ctx.fillStyle="#f5f8ff";ctx.font=`700 ${Math.round(w*.032)}px system-ui,sans-serif`;wrapLines(ctx,text(caption.caption),w*.82,2).forEach((line,index)=>ctx.fillText(line,w*.08,h*(.775+index*.033)));ctx.globalAlpha=1;
@@ -124,15 +137,36 @@ function drawCinematicFrame(ctx:CanvasRenderingContext2D,model:Data,role:Narrati
 function connectVoice(context:AudioContext,destination:MediaStreamAudioDestinationNode,buffer:AudioBuffer,start:number,available:number){
   const source=context.createBufferSource(),gain=context.createGain(),rate=buffer.duration>available&&available>0?clamp(buffer.duration/available,1,1.35):1;source.buffer=buffer;source.playbackRate.value=rate;gain.gain.value=.95;source.connect(gain).connect(destination);source.start(start);return buffer.duration/rate;
 }
-function scheduleImpact(context:AudioContext,destination:MediaStreamAudioDestinationNode,start:number,side:string){
+function scheduleImpact(context:AudioContext,destination:MediaStreamAudioDestinationNode,start:number,side:string,pack:CutSoundPack="cosmic"){
   if(side!=="buy"&&side!=="sell")return;
-  const oscillator=context.createOscillator(),gain=context.createGain();oscillator.type="sine";oscillator.frequency.setValueAtTime(side==="sell"?260:420,start);oscillator.frequency.exponentialRampToValueAtTime(side==="sell"?110:760,start+.18);gain.gain.setValueAtTime(.0001,start);gain.gain.exponentialRampToValueAtTime(.08,start+.015);gain.gain.exponentialRampToValueAtTime(.0001,start+.28);oscillator.connect(gain).connect(destination);oscillator.start(start);oscillator.stop(start+.3);
+  const up=side==="buy",master=context.createGain();master.gain.setValueAtTime(.0001,start);master.gain.exponentialRampToValueAtTime(pack==="minimal"?.045:.085,start+.012);master.gain.exponentialRampToValueAtTime(.0001,start+(pack==="terminal"?.13:.3));master.connect(destination);
+  const make=(type:OscillatorType,from:number,to:number,stop:number,level=1)=>{const osc=context.createOscillator(),gain=context.createGain();osc.type=type;osc.frequency.setValueAtTime(from,start);osc.frequency.exponentialRampToValueAtTime(Math.max(20,to),start+stop*.7);gain.gain.value=level;osc.connect(gain).connect(master);osc.start(start);osc.stop(start+stop);};
+  if(pack==="terminal"){make("square",up?880:310,up?1320:180,.12,.38);make("sine",up?440:155,up?660:100,.16,.55);}
+  else if(pack==="arcade"){make("triangle",up?520:260,up?1040:130,.26,.8);make("square",up?780:390,up?1560:195,.11,.18);}
+  else if(pack==="minimal"){make("sine",up?720:260,up?900:180,.1,.7);}
+  else{make("sine",up?420:260,up?760:110,.28,.8);make("triangle",up?840:180,up?1180:75,.2,.18);}
 }
 function scheduleBed(context:AudioContext,destination:MediaStreamAudioDestinationNode,start:number,duration:number){
   const oscillator=context.createOscillator(),gain=context.createGain();oscillator.type="sine";oscillator.frequency.value=55;gain.gain.setValueAtTime(.0001,start);gain.gain.linearRampToValueAtTime(.012,start+.25);gain.gain.setValueAtTime(.012,Math.max(start+.25,start+duration-.3));gain.gain.linearRampToValueAtTime(.0001,start+duration);oscillator.connect(gain).connect(destination);oscillator.start(start);oscillator.stop(start+duration+.02);
 }
+function musicGain(context:AudioContext,destination:MediaStreamAudioDestinationNode,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
+  const gain=context.createGain(),level=clamp(volume,0,.8);gain.gain.setValueAtTime(.0001,start);gain.gain.linearRampToValueAtTime(level,start+.22);
+  for(let index=0;index<sceneOffsets.length;index++){const sceneStart=start+sceneOffsets[index],sceneEnd=sceneStart+scenes[index].duration;gain.gain.setValueAtTime(level,Math.max(start,sceneStart));gain.gain.linearRampToValueAtTime(level*.38,sceneStart+.1);gain.gain.setValueAtTime(level*.38,Math.max(sceneStart+.1,sceneEnd-.16));gain.gain.linearRampToValueAtTime(level,sceneEnd);}
+  gain.gain.setValueAtTime(level,Math.max(start+.22,start+duration-.22));gain.gain.linearRampToValueAtTime(.0001,start+duration);gain.connect(destination);return gain;
+}
+function scheduleMusic(context:AudioContext,destination:MediaStreamAudioDestinationNode,buffer:AudioBuffer,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
+  const source=context.createBufferSource(),gain=musicGain(context,destination,start,duration,volume,sceneOffsets,scenes);source.buffer=buffer;source.loop=true;source.connect(gain);source.start(start,0);source.stop(start+duration+.02);
+}
+function scheduleProceduralMusic(context:AudioContext,destination:MediaStreamAudioDestinationNode,preset:CutMusicPreset,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
+  if(preset==="none")return;const master=musicGain(context,destination,start,duration,volume,sceneOffsets,scenes);
+  const drone=(type:OscillatorType,freq:number,level:number)=>{const osc=context.createOscillator(),gain=context.createGain();osc.type=type;osc.frequency.value=freq;gain.gain.value=level;osc.connect(gain).connect(master);osc.start(start);osc.stop(start+duration+.03);};
+  const pulse=(when:number,freq:number,level:number,length=.12,type:OscillatorType="triangle")=>{const osc=context.createOscillator(),gain=context.createGain();osc.type=type;osc.frequency.setValueAtTime(freq,when);osc.frequency.exponentialRampToValueAtTime(Math.max(24,freq*.72),when+length);gain.gain.setValueAtTime(.0001,when);gain.gain.exponentialRampToValueAtTime(level,when+.012);gain.gain.exponentialRampToValueAtTime(.0001,when+length);osc.connect(gain).connect(master);osc.start(when);osc.stop(when+length+.01);};
+  if(preset==="nebula"){drone("sine",55,.22);drone("sine",82.41,.12);drone("triangle",110,.045);for(let t=.4,index=0;t<duration;t+=1.5,index++)pulse(start+t,index%2?164.81:146.83,.11,.4,"sine");return;}
+  if(preset==="drive"){drone("sawtooth",48.99,.06);drone("sine",73.42,.12);for(let t=.15,index=0;t<duration;t+=.375,index++)pulse(start+t,index%4===0?146.83:index%2?98:110,.18,index%4===0?.18:.09,index%4===0?"triangle":"square");return;}
+  drone("sine",55,.16);for(let t=.2,index=0;t<duration;t+=.5,index++)pulse(start+t,index%4===0?164.81:index%2?110:130.81,.16,index%4===0?.2:.1,"triangle");
+}
 
-export async function recordTricksterCut({manifest,candles,events,shareHref,tokenLabel,walletLabel,soundBed=true,onProgress=()=>{}}:{manifest:Data;candles:Data[];events:Data[];shareHref:string;tokenLabel:string;walletLabel:string;soundBed?:boolean;onProgress?:Progress}):Promise<CutVideoResult>{
+export async function recordTricksterCut({manifest,candles,events,shareHref,tokenLabel,walletLabel,soundBed=true,musicFile=null,musicPreset="none",musicVolume=.2,sfxPack="cosmic",onProgress=()=>{}}:{manifest:Data;candles:Data[];events:Data[];shareHref:string;tokenLabel:string;walletLabel:string;soundBed?:boolean;musicFile?:Blob|null;musicPreset?:CutMusicPreset;musicVolume?:number;sfxPack?:CutSoundPack;onProgress?:Progress}):Promise<CutVideoResult>{
   if(!tricksterCutCaptureSupported())throw Object.assign(new Error("cut_capture_unsupported"),{code:"cut_capture_unsupported"});
   const scenes=arr(manifest.scenes);if(!scenes.length)throw new Error("cut_scenes_unavailable");
   const first=obj(buildCutFrame({manifest,candles,events,sceneIndex:0,progress:0,shareHref,tokenLabel,walletLabel})),size=obj(first.size),canvas=document.createElement("canvas") as HTMLCanvasElement&{captureStream:(fps?:number)=>MediaStream};
@@ -142,7 +176,7 @@ export async function recordTricksterCut({manifest,candles,events,shareHref,toke
   if(!AudioCtor)throw new Error("cut_audio_context_unavailable");
   const audioContext=new AudioCtor(),destination=audioContext.createMediaStreamDestination();await audioContext.resume();
   onProgress(.02,"Preparing Cut audio");
-  const fps=24,prepared=await prepareScenes(audioContext,manifest,events,fps,onProgress),totalDuration=prepared.reduce((sum,item)=>sum+item.duration,0),videoStream=canvas.captureStream(fps),combined=new MediaStream([...videoStream.getVideoTracks(),...destination.stream.getAudioTracks()]);
+  const fps=24,prepared=await prepareScenes(audioContext,manifest,events,fps,onProgress),musicBuffer=await decodeMusic(audioContext,musicFile),totalDuration=prepared.reduce((sum,item)=>sum+item.duration,0),videoStream=canvas.captureStream(fps),combined=new MediaStream([...videoStream.getVideoTracks(),...destination.stream.getAudioTracks()]);
   const mimeType=chooseVideoMime(value=>typeof MediaRecorder.isTypeSupported==="function"&&MediaRecorder.isTypeSupported(value));
   if(!mimeType){combined.getTracks().forEach(track=>track.stop());await audioContext.close();throw Object.assign(new Error("cut_capture_format_unsupported"),{code:"cut_capture_format_unsupported"});}
 
@@ -155,23 +189,26 @@ export async function recordTricksterCut({manifest,candles,events,shareHref,toke
   });
 
   recorder.start(1000);
-  const audioStart=audioContext.currentTime+.12;let offset=0;
+  const audioStart=audioContext.currentTime+.12,sceneOffsets:number[]=[];let offset=0;
+  for(const item of prepared){sceneOffsets.push(offset);offset+=item.duration;}
+  if(musicBuffer)scheduleMusic(audioContext,destination,musicBuffer,audioStart,totalDuration,musicVolume,sceneOffsets,prepared);else scheduleProceduralMusic(audioContext,destination,musicPreset,audioStart,totalDuration,musicVolume,sceneOffsets,prepared);
+  offset=0;
   for(let index=0;index<prepared.length;index++){
     const item=prepared[index],event=obj(events[index]),sceneStart=audioStart+offset;
-    if(soundBed)scheduleBed(audioContext,destination,sceneStart,item.duration);
-    scheduleImpact(audioContext,destination,sceneStart+.08,text(event.side).toLowerCase());
+    if(soundBed&&!musicBuffer&&musicPreset==="none")scheduleBed(audioContext,destination,sceneStart,item.duration);
+    scheduleImpact(audioContext,destination,sceneStart+.08,text(event.side).toLowerCase(),sfxPack);
     const available=Math.max(.5,item.duration-.45),greyDuration=item.grey.buffer?connectVoice(audioContext,destination,item.grey.buffer,sceneStart+.18,available*.56):0;
     if(item.trickster.buffer)connectVoice(audioContext,destination,item.trickster.buffer,sceneStart+.3+greyDuration,Math.max(.45,available-greyDuration));
     offset+=item.duration;
   }
 
-  const wallStart=performance.now()+120,sceneOffsets:number[]=[];let running=0;
-  for(const item of prepared){sceneOffsets.push(running);running+=item.duration;}
+  const wallStart=performance.now()+120,drawSceneOffsets:number[]=[];let running=0;
+  for(const item of prepared){drawSceneOffsets.push(running);running+=item.duration;}
   await new Promise<void>(resolve=>{
     const draw=(now:number)=>{
       const elapsed=Math.max(0,(now-wallStart)/1000);let index=prepared.length-1;
-      for(let i=0;i<prepared.length;i++){if(elapsed<sceneOffsets[i]+prepared[i].duration){index=i;break;}}
-      const local=clamp((elapsed-sceneOffsets[index])/prepared[index].duration,0,1),role:NarrationRole=local<.56?"grey":"trickster",model=obj(buildCutFrame({manifest,candles,events,sceneIndex:index,progress:local,shareHref,tokenLabel,walletLabel}));
+      for(let i=0;i<prepared.length;i++){if(elapsed<drawSceneOffsets[i]+prepared[i].duration){index=i;break;}}
+      const local=clamp((elapsed-drawSceneOffsets[index])/prepared[index].duration,0,1),role:NarrationRole=local<.56?"grey":"trickster",model=obj(buildCutFrame({manifest,candles,events,sceneIndex:index,progress:local,shareHref,tokenLabel,walletLabel}));
       drawCinematicFrame(ctx,model,role);onProgress(.24+.72*clamp(elapsed/Math.max(.1,totalDuration),0,1),`Encoding scene ${index+1}/${prepared.length}`);
       if(elapsed>=totalDuration){resolve();return;}requestAnimationFrame(draw);
     };
@@ -184,5 +221,5 @@ export async function recordTricksterCut({manifest,candles,events,shareHref,toke
   const extension:"mp4"|"webm"=mimeType.startsWith("video/mp4")?"mp4":"webm";
   if(!blob.size)throw new Error("cut_recording_empty");
   onProgress(1,"Cut ready");
-  return{blob,mimeType,extension,narrationAvailable:prepared.some(item=>Boolean(item.grey.buffer||item.trickster.buffer))};
+  return{blob,mimeType,extension,narrationAvailable:prepared.some(item=>Boolean(item.grey.buffer||item.trickster.buffer)),musicIncluded:Boolean(musicBuffer||musicPreset!=="none")};
 }

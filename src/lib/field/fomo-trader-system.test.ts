@@ -38,3 +38,14 @@ test("Fomo trade comets preserve the provider chain even when the traded token i
   assert.equal(comet?.metadata?.chainKey,"base");
   assert.equal(comet?.metadata?.wallet,evmWallet);
 });
+
+
+test("numeric Fomo Solana network ids keep planets and comets on the Solana subject wallet",()=>{
+  const data=response();
+  data.positions=[{...data.positions[0],chain:"1399811149",networkId:"1399811149"}];
+  data.latestTrades=[{...data.latestTrades[0],chain:"1399811149",mint:data.positions[0].mint}];
+  const snapshot=buildFomoTraderSystemSnapshot(data),planet=snapshot.particles.find(item=>item.cosmicKind==="planet"),comet=snapshot.particles.find(item=>item.cosmicKind==="comet");
+  assert.equal(planet?.metadata?.chainKey,"solana");
+  assert.equal(comet?.metadata?.chainKey,"solana");
+  assert.equal(comet?.metadata?.wallet,solanaWallet);
+});

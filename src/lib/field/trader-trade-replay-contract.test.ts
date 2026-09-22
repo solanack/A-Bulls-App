@@ -7,6 +7,8 @@ const replay=readFileSync(new URL("../../components/replay-workspace.tsx",import
 const workspace=readFileSync(new URL("../../components/universe-workspace.tsx",import.meta.url),"utf8");
 const appShell=readFileSync(new URL("../../components/app-shell.tsx",import.meta.url),"utf8");
 const closedTrades=readFileSync(new URL("../../components/fomo-closed-trades.tsx",import.meta.url),"utf8");
+const trickster=readFileSync(new URL("../../components/trickster-director.tsx",import.meta.url),"utf8");
+const recorder=readFileSync(new URL("../trickster-cut-recorder.ts",import.meta.url),"utf8");
 
 test("Fomo trader comets and token planets open the selected wallet-token Replay",()=>{
   assert.match(fieldOS,/fieldSection\.kind==="trader-system"&&\(particle\.cosmicKind==="comet"\|\|particle\.cosmicKind==="planet"\)&&mint/);
@@ -16,11 +18,11 @@ test("Fomo trader comets and token planets open the selected wallet-token Replay
 });
 
 test("Replay chart renders trader buys and sells without inventing execution price",()=>{
-  assert.match(replay,/TRADER BUY\/SELL RECEIPTS/);
+  assert.match(replay,/TRADER RECEIPTS/);
   assert.match(replay,/replay-trade-marker--buy/);
   assert.match(replay,/replay-trade-marker--sell/);
   assert.match(replay,/time marker only; execution price unavailable/);
-  assert.match(replay,/Marker height uses indexed execution price/);
+  assert.match(replay,/Candle and volume geometry comes only from indexed market evidence/);
 });
 
 test("selected trade exposes the downstream research tools",()=>{
@@ -65,4 +67,39 @@ test("closed Fomo outcomes preserve the selected blockchain into Replay",()=>{
   assert.match(closedTrades,/trade\.chain\.toUpperCase\(\)/);
   assert.match(closedTrades,/CANDLES READY/);
   assert.doesNotMatch(closedTrades,/maximumFractionDigits:0\}\);/);
+});
+
+
+test("Replay is a full-screen creator-oriented Studio with presentation-only controls",()=>{
+  assert.match(replay,/REPLAY STUDIO/);
+  assert.match(replay,/CINEMA/);
+  assert.match(replay,/MAKE CUT/);
+  assert.match(replay,/replay-workspace--fullscreen/);
+  assert.match(replay,/data-fx=\{fxLevel\}/);
+  assert.match(replay,/COSMIC/);
+  assert.match(replay,/VOLUME/);
+  assert.match(replay,/CINEMA MODE changes presentation only/);
+});
+
+test("Trickster Cut export accepts user soundtrack audio and keeps it separate from evidence",()=>{
+  assert.match(trickster,/UPLOAD YOUR TRACK/);
+  assert.match(trickster,/I have the right to use this track/);
+  assert.match(trickster,/A BULLS ORIGINAL/);
+  assert.match(trickster,/A Bulls originals are synthesized in-browser/);
+  assert.match(trickster,/musicFile,musicPreset,musicVolume,sfxPack/);
+  assert.match(recorder,/decodeMusic/);
+  assert.match(recorder,/scheduleMusic/);
+  assert.match(recorder,/scheduleProceduralMusic/);
+  assert.match(recorder,/CutMusicPreset/);
+  assert.match(recorder,/musicIncluded/);
+  assert.match(recorder,/CutSoundPack/);
+});
+
+
+test("Trickster ships built-in rights-safe procedural soundtrack choices for mobile creators",()=>{
+  assert.match(trickster,/A BULLS ORIGINAL/);
+  assert.match(trickster,/A Bulls originals are synthesized in-browser/);
+  assert.match(trickster,/Pulse/);
+  assert.match(trickster,/Nebula/);
+  assert.match(trickster,/Drive/);
 });

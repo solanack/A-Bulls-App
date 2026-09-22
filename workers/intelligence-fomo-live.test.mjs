@@ -7,7 +7,7 @@ test('documented FomoAPI traders envelope populates wallet stars',()=>{const pay
 test('leaderboard PnL accepts nested and currency-formatted provider variants without guessing',()=>{assert.equal(fomoLeaderboardPnl({pnl:{allTime:'+$16,518,210.66'}}),16518210.66);assert.equal(fomoLeaderboardPnl({performance:{all:{pnl:'-$1,250.50'}}}),-1250.5);assert.equal(fomoLeaderboardPnl({foo:'bar'}),null);const rows=normalizeFomoLiveLeaderboard({traders:[{rank:1,handle:'Nested',displayName:'Nested',performance:{all:{pnl:'+$2,500.25'}},wallets:{solana:SOL}}]});assert.equal(rows[0].reportedPnlUsd,2500.25);});
 test('balances become value-ranked top ten research positions',()=>{const rows=normalizeFomoHoldings({holdings:[{token:{symbol:'LOW',address:'low'},chain:'solana',valueUsd:'$10.00'},{token:{symbol:'HIGH',address:'high'},chain:'robinhood',amount:12,priceUsd:10,valueUsd:'$120.00'}]});assert.equal(rows[0].tokenAddress,'high');assert.equal(rows[0].rank,1);assert.equal(rows[0].chain,'robinhood');assert.equal(rows[0].valueUsd,120);});
 test('trade cache preserves open/closed timing, chain identity, and provider PnL without inventing swaps',()=>{const rows=normalizeFomoTrades({trades:[{tradeId:'t1',token:{symbol:'ONE',address:'token-one'},chain:'base',status:'closed',amount:4,avgEntryPrice:1,avgExitPrice:2,realizedPnlUsd:'+$4.00',createdAt:'2026-09-07T00:00:00Z',closedAt:'2026-09-08T00:00:00Z'}]});assert.equal(rows.length,1);assert.equal(rows[0].chain,'base');assert.equal(rows[0].status,'closed');assert.equal(rows[0].realizedPnlUsd,4);assert.ok(rows[0].closedAt>rows[0].createdAt);});
-test('live Fomo cache remains bounded, prioritizes visible top traders, and stays provider-free on page reads',()=>{assert.equal(__fomoLiveContract.maximumTraders,50);assert.equal(__fomoLiveContract.maximumPositions,10);assert.equal(__fomoLiveContract.latestTrades,3);assert.equal(__fomoLiveContract.pageReadsProviderFree,true);assert.equal(__fomoLiveContract.requiresApiKey,true);assert.equal(__fomoLiveContract.priorityDetailedTraders,50);assert.equal(__fomoLiveContract.coverageBackfillMax,10);assert.equal(__fomoLiveContract.activeTradeAnchors,true);});
+test('live Fomo cache remains bounded, prioritizes visible top traders, and stays provider-free on page reads',()=>{assert.equal(__fomoLiveContract.maximumTraders,50);assert.equal(__fomoLiveContract.maximumPositions,10);assert.equal(__fomoLiveContract.latestTrades,3);assert.equal(__fomoLiveContract.pageReadsProviderFree,true);assert.equal(__fomoLiveContract.requiresApiKey,true);assert.equal(__fomoLiveContract.priorityDetailedTraders,50);assert.equal(__fomoLiveContract.coverageBackfillMax,10);assert.equal(__fomoLiveContract.activeTradeAnchors,true);assert.equal(__fomoLiveContract.providerTradeFetchDefault,100);assert.equal(__fomoLiveContract.providerTradeFetchFallback,25);assert.equal(__fomoLiveContract.closedTradeRetention,'durable');});
 
 
 test('balance activeTrade metadata preserves a provider-reported Replay anchor and entry price',()=>{
@@ -29,4 +29,19 @@ test('trade timestamps accept epoch seconds and documented price field variants'
   assert.equal(rows[0].closedAt,1_789_100_000);
   assert.equal(rows[0].avgEntryPrice,.5);
   assert.equal(rows[0].avgExitPrice,.75);
+});
+
+
+test('trade normalization no longer truncates a deeper provider history window to 25 rows',()=>{
+  const trades=Array.from({length:60},(_,index)=>({tradeId:`deep-${index}`,tokenAddress:'0x3333333333333333333333333333333333333333',chain:'base',status:'closed',createdAt:1_789_000_000-index*1000,closedAt:1_789_000_500-index*1000,realizedPnlUsd:index+1}));
+  const rows=normalizeFomoTrades({trades});
+  assert.equal(rows.length,60);
+});
+
+
+test('provider trade transaction references are retained for later independent verification',()=>{
+  const entry=`0x${'a'.repeat(64)}`,exit=`0x${'b'.repeat(64)}`;
+  const rows=normalizeFomoTrades({trades:[{tradeId:'provider-id',tokenAddress:'0x3333333333333333333333333333333333333333',chain:'base',status:'closed',createdAt:1_789_000_000,closedAt:1_789_100_000,entryTxHash:entry,exitTransactionHash:exit}]});
+  assert.equal(rows[0].entryTxId,entry);
+  assert.equal(rows[0].exitTxId,exit);
 });

@@ -7,6 +7,7 @@ import {
   cutSharePath,
   cutShareReceiptLines,
   cutShareSize,
+  manifestDisclosures,
   shareCutLink,
   shareIdFromSearch,
   validateStoryManifest
@@ -66,4 +67,25 @@ test('native share prefers a file, then the VERIFY URL, then clipboard', async (
     nav: { clipboard: { writeText: async (value) => { copied = value; } } }
   }), 'copied');
   assert.equal(copied, 'https://app.example.test/?cut=abc');
+});
+
+
+test('Cut presentation metadata preserves soundtrack provenance without changing evidence claims',()=>{
+  const manifest=validateStoryManifest({...valid,presentation:{sfxPack:'arcade',soundtrack:{kind:'user-supplied',name:'my-track.wav',volume:.24,rightsConfirmed:true}}});
+  assert.equal(manifest.presentation.sfxPack,'arcade');
+  assert.equal(manifest.presentation.soundtrack.kind,'user-supplied');
+  assert.equal(manifest.presentation.soundtrack.name,'my-track.wav');
+  assert.equal(manifest.presentation.soundtrack.volume,.24);
+  assert.ok(manifestDisclosures(manifest).some(line=>/presentation layers only/.test(line)));
+  assert.throws(()=>validateStoryManifest({...valid,presentation:{sfxPack:'cosmic',soundtrack:{kind:'user-supplied',name:'x',volume:.2,rightsConfirmed:false}}}),/rights confirmation/);
+});
+
+
+test('A Bulls original soundtrack presets freeze without external music rights',()=>{
+  const manifest=validateStoryManifest({...valid,presentation:{sfxPack:'cosmic',soundtrack:{kind:'a-bulls-original',name:'A Bulls Nebula',preset:'nebula',volume:.18,rightsConfirmed:true}}});
+  assert.equal(manifest.presentation.soundtrack.kind,'a-bulls-original');
+  assert.equal(manifest.presentation.soundtrack.preset,'nebula');
+  assert.equal(manifest.presentation.soundtrack.volume,.18);
+  assert.ok(manifestDisclosures(manifest).some(line=>/A Bulls original soundtrack/.test(line)));
+  assert.throws(()=>validateStoryManifest({...valid,presentation:{soundtrack:{kind:'a-bulls-original',preset:'unknown',volume:.2}}}),/unsupported A Bulls soundtrack preset/);
 });

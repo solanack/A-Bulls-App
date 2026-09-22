@@ -5,6 +5,9 @@ const STORY_TYPES = new Set([
 ]);
 const CLAIM_KINDS = new Set(['observed','calculated','estimated','inferred']);
 const RATIOS = new Set(['9:16','16:9','1:1']);
+const SFX_PACKS = new Set(['cosmic','terminal','arcade','minimal']);
+const SOUNDTRACK_KINDS = new Set(['none','user-supplied','a-bulls-original']);
+const MUSIC_PRESETS = new Set(['pulse','nebula','drive']);
 
 function text(value, name) {
   const result = String(value ?? '').trim();
@@ -78,6 +81,14 @@ export function validateStoryManifest(input) {
 
   const aspectRatio = text(input.output?.aspectRatio ?? '9:16', 'aspectRatio');
   if (!RATIOS.has(aspectRatio)) throw new RangeError(`unsupported aspect ratio: ${aspectRatio}`);
+  const sfxPack=String(input.presentation?.sfxPack??'cosmic').trim().toLowerCase();
+  if(!SFX_PACKS.has(sfxPack))throw new RangeError(`unsupported sfx pack: ${sfxPack}`);
+  const soundtrackKind=String(input.presentation?.soundtrack?.kind??'none').trim().toLowerCase();
+  if(!SOUNDTRACK_KINDS.has(soundtrackKind))throw new RangeError(`unsupported soundtrack kind: ${soundtrackKind}`);
+  if(soundtrackKind==='user-supplied'&&input.presentation?.soundtrack?.rightsConfirmed!==true)throw new TypeError('user-supplied soundtrack requires rights confirmation');
+  const musicPreset=soundtrackKind==='a-bulls-original'?String(input.presentation?.soundtrack?.preset??'pulse').trim().toLowerCase():null;
+  if(musicPreset&&!MUSIC_PRESETS.has(musicPreset))throw new RangeError(`unsupported A Bulls soundtrack preset: ${musicPreset}`);
+  const hasMusic=soundtrackKind!=='none',presentation=Object.freeze({sfxPack,soundtrack:Object.freeze({kind:soundtrackKind,name:hasMusic?String(input.presentation?.soundtrack?.name??(soundtrackKind==='a-bulls-original'?`A Bulls ${musicPreset}`:'user-supplied audio')).slice(0,180):null,preset:musicPreset,volume:hasMusic?Math.max(0,Math.min(.8,number(input.presentation?.soundtrack?.volume??.2,'soundtrack.volume'))):0,rightsConfirmed:soundtrackKind==='user-supplied'?true:soundtrackKind==='a-bulls-original'})});
 
   const coverage = Object.freeze({
     from: number(input.coverage?.from, 'coverage.from'),
@@ -99,6 +110,7 @@ export function validateStoryManifest(input) {
     evidence: Object.freeze([...receipts.values()]),
     claims: Object.freeze(claims),
     scenes: Object.freeze(scenes),
+    presentation,
     output: Object.freeze({
       aspectRatio,
       locale: String(input.output?.locale ?? 'en-US'),
@@ -112,6 +124,8 @@ export function manifestDisclosures(manifest) {
   const disclosures = new Set();
   if (manifest.coverage.verifiedPercent < 100) disclosures.add(manifest.coverage.statement);
   for (const claim of manifest.claims) if (claim.disclosure) disclosures.add(claim.disclosure);
+  if(manifest.presentation?.soundtrack?.kind==='user-supplied')disclosures.add('User-supplied soundtrack and cinematic SFX are presentation layers only; they do not alter the frozen evidence, timestamps, prices, or claims.');
+  if(manifest.presentation?.soundtrack?.kind==='a-bulls-original')disclosures.add('A Bulls original soundtrack and cinematic SFX are presentation layers only; they do not alter the frozen evidence, timestamps, prices, or claims.');
   return Object.freeze([...disclosures]);
 }
 

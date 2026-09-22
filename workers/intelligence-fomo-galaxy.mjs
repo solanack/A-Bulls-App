@@ -18,7 +18,7 @@ const bool=value=>s(value).toLowerCase()==='true';
 const json=(body,status=200,cache='no-store')=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':cache,'x-content-type-options':'nosniff'}});
 const all=async stmt=>{try{return(await stmt.all())?.results||[];}catch{return[];}};
 const clamp=(value,fallback,min,max)=>Math.max(min,Math.min(max,Math.trunc(n(value)||fallback)));
-const chainAlias=value=>{const raw=s(value).toLowerCase().replace(/[_\s:]+/g,'-');if(['sol','svm','solana-mainnet'].includes(raw)||raw==='solana')return'solana';if(['bnb','bnb-chain','bnbchain','binance-smart-chain'].includes(raw)||raw==='bsc')return'bsc';if(['eth','ethereum-mainnet','mainnet'].includes(raw)||raw==='ethereum')return'ethereum';if(['robinhood-chain','robinhoodchain','hood'].includes(raw)||raw==='robinhood')return'robinhood';return raw||null;};
+const chainAlias=value=>{const raw=s(value).toLowerCase().replace(/[_\s:]+/g,'-');if(['sol','svm','solana-mainnet','1399811149'].includes(raw)||raw==='solana')return'solana';if(['bnb','bnb-chain','bnbchain','binance-smart-chain','56'].includes(raw)||raw==='bsc')return'bsc';if(['eth','ethereum-mainnet','mainnet','1'].includes(raw)||raw==='ethereum')return'ethereum';if(['base-mainnet','coinbase-base','8453'].includes(raw)||raw==='base')return'base';if(['monad-mainnet','143'].includes(raw)||raw==='monad')return'monad';if(['robinhood-chain','robinhoodchain','hood','4663'].includes(raw)||raw==='robinhood')return'robinhood';return raw||null;};
 
 function rowsFrom(payload){
   const candidates=[payload?.data?.leaderboard,payload?.data?.items,payload?.data?.results,payload?.leaderboard,payload?.items,payload?.results,payload?.data,payload];

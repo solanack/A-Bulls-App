@@ -165,17 +165,20 @@ export async function prewarmFomoReplayCandles(env={},nowMs=Date.now(),{fetchImp
     ORDER BY CASE WHEN x.realized_pnl_usd IS NULL THEN 1 ELSE 0 END,
              ABS(COALESCE(x.realized_pnl_usd,0)) DESC,
              x.created_at DESC
-    LIMIT 250
+    LIMIT 500
   `).all().catch(()=>({results:[]})))?.results||[];
-  const now=Math.floor(nowMs/1000),seen=new Set(),results=[];
+  const now=Math.floor(nowMs/1000),seen=new Set(),results=[];let scanned=0,alreadyReady=0,cooldownSkipped=0;
   for(const row of rows){
-    if(results.length>=limit)break;
+    if(results.length>=limit)break;scanned+=1;
     const chain=normalizeChainKey(row.chain||''),mint=canonicalChainAddress(chain,row.token_address);if(!mint)continue;
     const created=Math.max(0,Math.trunc(n(row.created_at))),closed=Math.max(0,Math.trunc(n(row.closed_at))),from=Math.max(0,created-7*86400),to=Math.max(from+60,closed>=created&&closed>0?closed:now),key=`${chain}:${mint}:${from}:${to}`;if(seen.has(key))continue;seen.add(key);
-    if(await retainedAnyCandleCount(db,chain,mint,from,to)>0){results.push(Object.freeze({chain,mint,state:'already-ready'}));continue;}
-    const bucketSeconds=chooseReplayPrewarmBucket(from,to),hydrated=await hydrateReplayMarketCandles(env,{chain,mint,from,to,bucketSeconds},{fetchImpl});
+    if(await retainedAnyCandleCount(db,chain,mint,from,to)>0){alreadyReady+=1;continue;}
+    const bucketSeconds=chooseReplayPrewarmBucket(from,to),lease=await leaseRow(db,leaseKey({chain,mint,quoteMint:'',bucketSeconds,from,to})),leaseState=s(lease?.last_state),leaseUpdated=Math.trunc(n(lease?.updated_at));
+    if((leaseState==='empty'||leaseState==='error')&&leaseUpdated&&now-leaseUpdated<6*3600){cooldownSkipped+=1;continue;}
+    const hydrated=await hydrateReplayMarketCandles(env,{chain,mint,from,to,bucketSeconds},{fetchImpl});
     results.push(Object.freeze({chain,mint,bucketSeconds,state:s(hydrated?.state)||'unknown',candles:Math.max(0,Math.trunc(n(hydrated?.candles))),source:s(hydrated?.source)||null,reason:s(hydrated?.reason??hydrated?.error)||null}));
   }
-  return Object.freeze({enabled:true,ok:true,processed:results.length,ready:results.filter(item=>item.state==='ready'||item.state==='already-ready').length,results:Object.freeze(results)});
+  return Object.freeze({enabled:true,ok:true,processed:results.length,ready:results.filter(item=>item.state==='ready').length,alreadyReady,cooldownSkipped,scanned,results:Object.freeze(results)});
 }
-export const __replayMarketHydrationContract=Object.freeze({chainQualified:true,legacySolanaDualWrite:true,providers:Object.freeze(['coingecko-onchain','geckoterminal-public']),autoDiscoversObservedQuote:true,supportsEvmBytes32PoolIds:true,scheduledFomoPrewarm:true,noSyntheticCandles:true});
+
+export const __replayMarketHydrationContract=Object.freeze({chainQualified:true,legacySolanaDualWrite:true,providers:Object.freeze(['coingecko-onchain','geckoterminal-public']),autoDiscoversObservedQuote:true,supportsEvmBytes32PoolIds:true,scheduledFomoPrewarm:true,prewarmSkipsReadyMarkets:true,prewarmFailureCooldownHours:6,noSyntheticCandles:true});
