@@ -37,3 +37,11 @@ test('trade normalization no longer truncates a deeper provider history window t
   const rows=normalizeFomoTrades({trades});
   assert.equal(rows.length,60);
 });
+
+
+test('provider trade transaction references are retained for later independent verification',()=>{
+  const entry=`0x${'a'.repeat(64)}`,exit=`0x${'b'.repeat(64)}`;
+  const rows=normalizeFomoTrades({trades:[{tradeId:'provider-id',tokenAddress:'0x3333333333333333333333333333333333333333',chain:'base',status:'closed',createdAt:1_789_000_000,closedAt:1_789_100_000,entryTxHash:entry,exitTransactionHash:exit}]});
+  assert.equal(rows[0].entryTxId,entry);
+  assert.equal(rows[0].exitTxId,exit);
+});
