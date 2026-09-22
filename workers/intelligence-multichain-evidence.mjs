@@ -37,6 +37,12 @@ export function selectReconciliationEvents(events=[],limit=2,nowMs=Date.now()){
   return Object.freeze(out);
 }
 
+export function rotatingFomoTradeOffset(totalRows=0,limit=100,nowMs=Date.now()){
+  const total=Math.max(0,Math.trunc(n(totalRows))),cap=Math.max(1,Math.trunc(n(limit)||100));if(total<=cap)return 0;
+  const pages=Math.max(1,Math.ceil(total/cap)),slot=Math.floor(Math.max(0,n(nowMs))/(15*60*1000));
+  return (slot%pages)*cap;
+}
+
 function rowChain(row={}){return normalizeChainKey(row.chain??row.network_id??row.networkId??'');}
 function walletForRow(row,definition){return definition?.kind==='svm'?s(row.solana_wallet):s(row.evm_wallet);}
 
@@ -86,7 +92,8 @@ export async function materializeFomoMultichainEvidence(env={},nowMs=Date.now(),
   if(!bool(env.MULTICHAIN_EVIDENCE_ENABLED))return Object.freeze({enabled:false});const db=intelligenceDb(env);if(!db)throw new Error('intelligence_db_unavailable');
   const assetLimit=clamp(env.MULTICHAIN_MARKET_ASSETS_PER_RUN,60,1,120),eventLimit=clamp(env.MULTICHAIN_FOMO_EVENTS_PER_RUN,100,1,250),verifyLimit=clamp(env.MULTICHAIN_TX_VERIFY_LIMIT,4,0,12);
   const positions=await all(db.prepare(`SELECT p.handle,p.token_address,p.symbol,p.name,p.chain,p.network_id,p.captured_at,t.current_rank,t.solana_wallet,t.evm_wallet FROM fomo_trader_positions p JOIN fomo_traders t ON t.handle=p.handle WHERE t.current_rank BETWEEN 1 AND 50 AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders) ORDER BY t.current_rank ASC,p.position_rank ASC LIMIT ?`).bind(assetLimit));
-  const trades=await all(db.prepare(`SELECT tr.handle,tr.trade_id,tr.token_address,tr.symbol,tr.chain,tr.status,tr.amount,tr.avg_entry_price,tr.avg_exit_price,tr.realized_pnl_usd,tr.unrealized_pnl_usd,tr.created_at,tr.closed_at,tr.captured_at,tr.tx_id,tr.entry_tx_id,tr.exit_tx_id,t.current_rank,t.solana_wallet,t.evm_wallet FROM fomo_trader_trades tr JOIN fomo_traders t ON t.handle=tr.handle WHERE t.current_rank BETWEEN 1 AND 50 AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders) ORDER BY t.current_rank ASC,MAX(COALESCE(tr.closed_at,0),COALESCE(tr.created_at,0)) DESC LIMIT ?`).bind(eventLimit));
+  const tradeCount=Math.max(0,Math.trunc(n((await first(db.prepare(`SELECT COUNT(*) count FROM fomo_trader_trades tr JOIN fomo_traders t ON t.handle=tr.handle WHERE t.current_rank BETWEEN 1 AND 50 AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders)`)))?.count))),tradeOffset=rotatingFomoTradeOffset(tradeCount,eventLimit,nowMs);
+  const trades=await all(db.prepare(`SELECT tr.handle,tr.trade_id,tr.token_address,tr.symbol,tr.chain,tr.status,tr.amount,tr.avg_entry_price,tr.avg_exit_price,tr.realized_pnl_usd,tr.unrealized_pnl_usd,tr.created_at,tr.closed_at,tr.captured_at,tr.tx_id,tr.entry_tx_id,tr.exit_tx_id,t.current_rank,t.solana_wallet,t.evm_wallet FROM fomo_trader_trades tr JOIN fomo_traders t ON t.handle=tr.handle WHERE t.current_rank BETWEEN 1 AND 50 AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders) ORDER BY t.current_rank ASC,MAX(COALESCE(tr.closed_at,0),COALESCE(tr.created_at,0)) DESC LIMIT ? OFFSET ?`).bind(eventLimit,tradeOffset));
   const assetsById=new Map();for(const row of positions){const asset=fomoPositionToChainAsset(row);if(asset)assetsById.set(asset.assetId,asset);}for(const row of trades){const chain=rowChain(row),address=canonicalChainAddress(chain,row.token_address),assetId=address&&chainQualifiedId(chain,address);if(assetId&&!assetsById.has(assetId))assetsById.set(assetId,{assetId,chain,address,symbol:s(row.symbol).slice(0,32)||null,name:null,observedAt:Math.max(n(row.captured_at),n(row.created_at),n(row.closed_at)),source:'fomoapi.io/trades',sourceKind:'provider-reported'});}
   const events=trades.flatMap(row=>[...fomoTradeToChainEvents(row)]),writes=[];for(const asset of assetsById.values())writes.push(assetUpsert(db,asset));for(const event of events)writes.push(eventUpsert(db,event));for(let i=0;i<writes.length;i+=50)await db.batch(writes.slice(i,i+50));
 
@@ -100,7 +107,7 @@ export async function materializeFomoMultichainEvidence(env={},nowMs=Date.now(),
     await eventUpsert(db,observed).run();if(observed.walletAddress)await executionUpsert(db,{chain:event.chain,txId,walletAddress:observed.walletAddress,assetAddress:event.assetAddress,quoteAssetAddress:venue?.quoteAssetAddress||null,side,poolAddress:venue?.poolAddress||null,dexId:venue?.dexId||null,blockHeight:observed.blockHeight,blockTime:observed.blockTime,source:venue?.source||observed.source,confidence:observed.confidence,evidence:observed.evidence}).run();reconciled+=1;executionContexts+=1;
   }
   await markSourceHealth(db,'multichain-reconciliation','chain-reconciliation','ok',{attempted:reconcileAttempted,reconciled,states:reconciliationStates,rotatingSelection:true,eligibleEvents:events.filter(event=>!event.txId&&event.walletAddress&&event.blockTime).length}).catch(()=>null);
-  return Object.freeze({enabled:true,assets:assetsById.size,providerReportedEvents:events.length,marketSnapshots:marketCount,txVerificationsAttempted:attempted,observedReceipts:verified,txReconciliationsAttempted:reconcileAttempted,reconciledTransactions:reconciled,reconciliationStates:Object.freeze(reconciliationStates),executionContexts,chains:Object.freeze([...new Set([...assetsById.values()].map(item=>item.chain))].sort())});
+  return Object.freeze({enabled:true,assets:assetsById.size,providerReportedEvents:events.length,tradeRows:tradeCount,tradeOffset,marketSnapshots:marketCount,txVerificationsAttempted:attempted,observedReceipts:verified,txReconciliationsAttempted:reconcileAttempted,reconciledTransactions:reconciled,reconciliationStates:Object.freeze(reconciliationStates),executionContexts,chains:Object.freeze([...new Set([...assetsById.values()].map(item=>item.chain))].sort())});
 }
 
 async function statusPayload(env){
@@ -118,4 +125,4 @@ async function statusPayload(env){
 
 export async function handleMultichainEvidenceRequest(request,env={}){const url=new URL(request.url);if(url.pathname!==STATUS_PATH)return null;if(request.method!=='GET')return json({ok:false,error:'method_not_allowed'},405);return json(await statusPayload(env),200,'public, max-age=30, stale-while-revalidate=60');}
 
-export const __multichainEvidenceContract=Object.freeze({statusPath:STATUS_PATH,schemaVersion:'multichain-evidence-spine-v1',readOnly:true,pageReadsProviderFree:true,providerLifecyclePreservesEntryAndExit:true,providerReportedTradeFactsStayProviderReported:true,receiptVerificationDoesNotVerifyTradeInterpretation:true,independentTransactionReconciliation:true,reconciliationSelection:'rotating-bounded',reconciliationHealthRecorded:true,exactPoolResolutionFromReceipt:true});
+export const __multichainEvidenceContract=Object.freeze({statusPath:STATUS_PATH,schemaVersion:'multichain-evidence-spine-v1',readOnly:true,pageReadsProviderFree:true,providerLifecyclePreservesEntryAndExit:true,providerReportedTradeFactsStayProviderReported:true,receiptVerificationDoesNotVerifyTradeInterpretation:true,independentTransactionReconciliation:true,reconciliationSelection:'rotating-bounded',providerEventMaterialization:'rotating-current-cohort-pages',reconciliationHealthRecorded:true,exactPoolResolutionFromReceipt:true});
