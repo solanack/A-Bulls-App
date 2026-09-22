@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
+import { capabilitySummary, replayCapabilityState } from "./fomo-replay-capability-contract.mjs";
 
 const CONFIG="workers/wrangler.production.toml";
 const DB="INTELLIGENCE_DB";
@@ -49,7 +50,8 @@ ORDER BY t.current_rank,p.position_rank;
 `);
 const trades=d1(`
 SELECT tr.handle,tr.trade_id,tr.token_address,tr.symbol,tr.chain,tr.status,tr.amount,tr.avg_entry_price,tr.avg_exit_price,
-       tr.realized_pnl_usd,tr.unrealized_pnl_usd,tr.created_at,tr.closed_at,tr.captured_at
+       tr.realized_pnl_usd,tr.unrealized_pnl_usd,tr.created_at,tr.closed_at,tr.captured_at,
+       tr.tx_id,tr.entry_tx_id,tr.exit_tx_id
 FROM fomo_trader_trades tr
 JOIN fomo_traders t ON t.handle=tr.handle
 WHERE t.current_rank BETWEEN 1 AND 50
@@ -114,6 +116,51 @@ ORDER BY month_key DESC
 LIMIT 1;
 `)[0]??null;
 
+const execution=d1(`
+WITH tokens AS (
+  SELECT DISTINCT LOWER(token_address) token FROM fomo_trader_positions
+  UNION
+  SELECT DISTINCT LOWER(token_address) token FROM fomo_trader_trades
+)
+SELECT e.chain_key,e.wallet_address wallet,e.asset_address token,
+       COUNT(DISTINCT e.tx_id) observed_transactions,
+       COUNT(*) decoded_executions,
+       SUM(CASE WHEN TRIM(COALESCE(e.dex_id,''))<>'' THEN 1 ELSE 0 END) resolved_venues,
+       SUM(CASE WHEN TRIM(COALESCE(e.pool_address,''))<>'' THEN 1 ELSE 0 END) resolved_pools
+FROM intelligence_trade_execution_v2 e
+JOIN tokens x ON LOWER(e.asset_address)=x.token
+GROUP BY e.chain_key,e.wallet_address,e.asset_address;
+`);
+const solanaExecution=d1(`
+WITH tokens AS (
+  SELECT DISTINCT token_address token
+  FROM fomo_trader_positions
+  WHERE chain IS NULL OR LOWER(chain) IN ('solana','sol','svm','solana-mainnet')
+  UNION
+  SELECT DISTINCT token_address token
+  FROM fomo_trader_trades
+  WHERE chain IS NULL OR LOWER(chain) IN ('solana','sol','svm','solana-mainnet')
+), routes AS (
+  SELECT r.*,
+         CASE
+           WHEN r.input_mint IN (SELECT token FROM tokens) THEN r.input_mint
+           WHEN r.output_mint IN (SELECT token FROM tokens) THEN r.output_mint
+           ELSE NULL
+         END token
+  FROM intelligence_trade_routes r
+  WHERE r.input_mint IN (SELECT token FROM tokens)
+     OR r.output_mint IN (SELECT token FROM tokens)
+)
+SELECT wallet,token,
+       COUNT(DISTINCT signature) observed_transactions,
+       COUNT(*) decoded_executions,
+       SUM(CASE WHEN TRIM(COALESCE(venue,''))<>'' THEN 1 ELSE 0 END) resolved_venues,
+       SUM(CASE WHEN TRIM(COALESCE(pool,''))<>'' THEN 1 ELSE 0 END) resolved_pools
+FROM routes
+WHERE token IS NOT NULL
+GROUP BY wallet,token;
+`);
+
 
 const traderByHandle=new Map(traders.map(row=>[s(row.handle).toLowerCase(),row]));
 const closedOutcomes=trades.flatMap(row=>{
@@ -140,11 +187,11 @@ const pairs=new Map();
 function ensure(handle,token,chain,source){
   const trader=traderByHandle.get(s(handle).toLowerCase());if(!trader||!s(token))return null;
   const resolved=resolvedChain(handle,token,chain),id=`${s(handle).toLowerCase()}|${resolved}|${canonical(resolved,token)}`;
-  if(!pairs.has(id))pairs.set(id,{rank:n(trader.current_rank),handle:s(trader.handle),displayName:s(trader.display_name)||s(trader.handle),chain:resolved,token:canonical(resolved,token),solanaWallet:s(trader.solana_wallet)||null,evmWallet:s(trader.evm_wallet)?.toLowerCase()||null,sources:new Set(),positionRows:0,tradeRows:0,timedTradeRows:0,providerPricePoints:0,openTrades:0,closedTrades:0});
+  if(!pairs.has(id))pairs.set(id,{rank:n(trader.current_rank),handle:s(trader.handle),displayName:s(trader.display_name)||s(trader.handle),chain:resolved,token:canonical(resolved,token),solanaWallet:s(trader.solana_wallet)||null,evmWallet:s(trader.evm_wallet)?.toLowerCase()||null,sources:new Set(),providerTxRefs:new Set(),positionRows:0,tradeRows:0,timedTradeRows:0,providerPricePoints:0,openTrades:0,closedTrades:0});
   const pair=pairs.get(id);pair.sources.add(source);return pair;
 }
 for(const row of positions){const pair=ensure(row.handle,row.token_address,row.chain,"position");if(pair)pair.positionRows+=1;}
-for(const row of trades){const pair=ensure(row.handle,row.token_address,row.chain,"trade");if(!pair)continue;pair.tradeRows+=1;if(n(row.created_at)>0)pair.timedTradeRows+=1;if(finite(row.avg_entry_price)!=null)pair.providerPricePoints+=1;if(n(row.closed_at)>0&&finite(row.avg_exit_price)!=null)pair.providerPricePoints+=1;if(s(row.status).toLowerCase()==="closed"||n(row.closed_at)>0)pair.closedTrades+=1;else pair.openTrades+=1;}
+for(const row of trades){const pair=ensure(row.handle,row.token_address,row.chain,"trade");if(!pair)continue;pair.tradeRows+=1;if(n(row.created_at)>0)pair.timedTradeRows+=1;if(finite(row.avg_entry_price)!=null)pair.providerPricePoints+=1;if(n(row.closed_at)>0&&finite(row.avg_exit_price)!=null)pair.providerPricePoints+=1;for(const ref of [row.tx_id,row.entry_tx_id,row.exit_tx_id].map(s).filter(Boolean))pair.providerTxRefs.add(ref);if(s(row.status).toLowerCase()==="closed"||n(row.closed_at)>0)pair.closedTrades+=1;else pair.openTrades+=1;}
 for(const trader of traders){
   let top=[];try{top=JSON.parse(s(trader.top_tokens_json)||"[]");if(!Array.isArray(top))top=[];}catch{}
   for(const item of top){const token=s(item?.mint??item?.address),chain=item?.chain??item?.chainKey??item?.networkId??item?.network_id??"";ensure(trader.handle,token,chain,"leaderboard-top-token");}
@@ -163,6 +210,25 @@ for(const row of solana){
   else{const id=tokenKey("solana",row.token),prior=solCandleCounts.get(id)||{count:0,quotes:new Set()};prior.count+=n(row.count);if(s(row.quote))prior.quotes.add(s(row.quote));solCandleCounts.set(id,prior);}
 }
 
+const executionCounts=new Map(),solExecutionCounts=new Map();
+for(const row of execution){
+  const chain=normalizeChain(row.chain_key,row.token),wallet=canonical(chain,row.wallet),token=canonical(chain,row.token);
+  executionCounts.set(key(chain,wallet,token),{
+    observedTransactions:n(row.observed_transactions),
+    decodedExecutions:n(row.decoded_executions),
+    resolvedVenues:n(row.resolved_venues),
+    resolvedPools:n(row.resolved_pools),
+  });
+}
+for(const row of solanaExecution){
+  solExecutionCounts.set(key("solana",row.wallet,row.token),{
+    observedTransactions:n(row.observed_transactions),
+    decodedExecutions:n(row.decoded_executions),
+    resolvedVenues:n(row.resolved_venues),
+    resolvedPools:n(row.resolved_pools),
+  });
+}
+
 const rows=[...pairs.values()].sort((a,b)=>a.rank-b.rank||a.handle.localeCompare(b.handle)||a.chain.localeCompare(b.chain)||a.token.localeCompare(b.token)).map(pair=>{
   const wallet=pair.chain==="solana"?pair.solanaWallet:pair.evmWallet;
   const evt=pair.chain==="solana"?{count:solEventCounts.get(key("solana",wallet,pair.token))||0,observed:solEventCounts.get(key("solana",wallet,pair.token))||0,provider:0}:eventCounts.get(key(pair.chain,wallet,pair.token))||{count:0,observed:0,provider:0};
@@ -171,7 +237,22 @@ const rows=[...pairs.values()].sort((a,b)=>a.rank-b.rank||a.handle.localeCompare
   const replayMode=replayEvidence?(candleCount>0?"indexed-candles":pair.providerPricePoints>0?"provider-price-points":"event-timeline"):"unavailable";
   const unavailableReason=replayEvidence?null:missingWallet?"provider-wallet-unavailable":unknownChain?"chain-unresolved":pair.tradeRows>0?"timed-trade-evidence-unavailable":pair.positionRows>0?"position-only-no-timed-trade":"leaderboard-token-context-only";
   const chartUnavailableReason=chartEvidence?null:pair.tradeRows>0?"historical-ohlc-and-provider-price-unavailable":pair.positionRows>0?"position-has-no-price-history":"no-trade-price-history";
-  return{...pair,sources:[...pair.sources].sort(),wallet,retainedEvents:evt.count,observedEvents:evt.observed,materializedProviderEvents:evt.provider,marketSnapshots:marketCount,candleCount,candleQuotes:quotes,hasReplayEvidence:replayEvidence,hasChartEvidence:chartEvidence,replayMode,unavailableReason,chartUnavailableReason,missingWallet,unknownChain,positionWithoutReplay:pair.positionRows>0&&!replayEvidence,tradeWithoutReplay:pair.tradeRows>0&&!replayEvidence,tradeWithoutChart:pair.tradeRows>0&&!chartEvidence};
+  const observedExecution=pair.chain==="solana"
+    ?(solExecutionCounts.get(key("solana",wallet,pair.token))||{})
+    :(executionCounts.get(key(pair.chain,wallet,pair.token))||{});
+  const capability=replayCapabilityState({
+    replayEvidence,
+    chartEvidence,
+    missingWallet,
+    unknownChain,
+    providerTxReferences:pair.providerTxRefs.size,
+    observedTransactions:observedExecution.observedTransactions,
+    decodedExecutions:observedExecution.decodedExecutions,
+    resolvedVenues:observedExecution.resolvedVenues,
+    resolvedPools:observedExecution.resolvedPools,
+  });
+  const {sources,providerTxRefs,...pairData}=pair;
+  return{...pairData,sources:[...sources].sort(),wallet,retainedEvents:evt.count,observedEvents:evt.observed,materializedProviderEvents:evt.provider,marketSnapshots:marketCount,candleCount,candleQuotes:quotes,hasReplayEvidence:replayEvidence,hasChartEvidence:chartEvidence,replayMode,unavailableReason,chartUnavailableReason,missingWallet,unknownChain,...capability,positionWithoutReplay:pair.positionRows>0&&!replayEvidence,tradeWithoutReplay:pair.tradeRows>0&&!replayEvidence,tradeWithoutChart:pair.tradeRows>0&&!chartEvidence};
 });
 
 const tradersWithPairs=new Set(rows.map(row=>row.handle.toLowerCase()));
@@ -179,7 +260,7 @@ const perChain={};
 for(const row of rows){const item=perChain[row.chain]??={pairs:0,replayReady:0,chartReady:0,positionsWithoutReplay:0,tradesWithoutReplay:0,tradesWithoutChart:0,unknownChain:0,missingWallet:0};item.pairs+=1;item.replayReady+=Number(row.hasReplayEvidence);item.chartReady+=Number(row.hasChartEvidence);item.positionsWithoutReplay+=Number(row.positionWithoutReplay);item.tradesWithoutReplay+=Number(row.tradeWithoutReplay);item.tradesWithoutChart+=Number(row.tradeWithoutChart);item.unknownChain+=Number(row.unknownChain);item.missingWallet+=Number(row.missingWallet);}
 
 const perTrader=traders.map(trader=>{const owned=rows.filter(row=>row.handle.toLowerCase()===s(trader.handle).toLowerCase());return{rank:n(trader.current_rank),handle:s(trader.handle),pairs:owned.length,replayReady:owned.filter(row=>row.hasReplayEvidence).length,chartReady:owned.filter(row=>row.hasChartEvidence).length,positionsWithoutReplay:owned.filter(row=>row.positionWithoutReplay).length,tradesWithoutReplay:owned.filter(row=>row.tradeWithoutReplay).length,tradesWithoutChart:owned.filter(row=>row.tradeWithoutChart).length,unknownChain:owned.filter(row=>row.unknownChain).length};});
-const summary={generatedAt:new Date().toISOString(),providerBudget:budget,traders:traders.length,tradersWithAnyTokenPair:tradersWithPairs.size,tradersWithProviderPositions:new Set(positions.map(row=>s(row.handle).toLowerCase())).size,tradersWithProviderTrades:new Set(trades.map(row=>s(row.handle).toLowerCase())).size,totalPairs:rows.length,replayReadyPairs:rows.filter(row=>row.hasReplayEvidence).length,chartReadyPairs:rows.filter(row=>row.hasChartEvidence).length,eventTimelinePairs:rows.filter(row=>row.replayMode==="event-timeline").length,providerPricePointPairs:rows.filter(row=>row.replayMode==="provider-price-points").length,indexedCandlePairs:rows.filter(row=>row.replayMode==="indexed-candles").length,positionPairsWithoutReplay:rows.filter(row=>row.positionWithoutReplay).length,tradePairsWithoutReplay:rows.filter(row=>row.tradeWithoutReplay).length,tradePairsWithoutChart:rows.filter(row=>row.tradeWithoutChart).length,tradePairsMissingWallet:rows.filter(row=>row.tradeRows>0&&row.missingWallet).length,tradePairsUnknownChain:rows.filter(row=>row.tradeRows>0&&row.unknownChain).length,unknownChainPairs:rows.filter(row=>row.unknownChain).length,missingWalletPairs:rows.filter(row=>row.missingWallet).length,unavailableReasons:Object.fromEntries([...new Set(rows.map(row=>row.unavailableReason).filter(Boolean))].map(reason=>[reason,rows.filter(row=>row.unavailableReason===reason).length])),chartUnavailableReasons:Object.fromEntries([...new Set(rows.map(row=>row.chartUnavailableReason).filter(Boolean))].map(reason=>[reason,rows.filter(row=>row.chartUnavailableReason===reason).length])),closedOutcomeCount:closedOutcomes.length,topWinners,topLosses,perChain,perTrader};
+const capabilities=capabilitySummary(rows);\nconst summary={generatedAt:new Date().toISOString(),providerBudget:budget,...capabilities,traders:traders.length,tradersWithAnyTokenPair:tradersWithPairs.size,tradersWithProviderPositions:new Set(positions.map(row=>s(row.handle).toLowerCase())).size,tradersWithProviderTrades:new Set(trades.map(row=>s(row.handle).toLowerCase())).size,totalPairs:rows.length,replayReadyPairs:rows.filter(row=>row.hasReplayEvidence).length,chartReadyPairs:rows.filter(row=>row.hasChartEvidence).length,eventTimelinePairs:rows.filter(row=>row.replayMode==="event-timeline").length,providerPricePointPairs:rows.filter(row=>row.replayMode==="provider-price-points").length,indexedCandlePairs:rows.filter(row=>row.replayMode==="indexed-candles").length,positionPairsWithoutReplay:rows.filter(row=>row.positionWithoutReplay).length,tradePairsWithoutReplay:rows.filter(row=>row.tradeWithoutReplay).length,tradePairsWithoutChart:rows.filter(row=>row.tradeWithoutChart).length,tradePairsMissingWallet:rows.filter(row=>row.tradeRows>0&&row.missingWallet).length,tradePairsUnknownChain:rows.filter(row=>row.tradeRows>0&&row.unknownChain).length,unknownChainPairs:rows.filter(row=>row.unknownChain).length,missingWalletPairs:rows.filter(row=>row.missingWallet).length,unavailableReasons:Object.fromEntries([...new Set(rows.map(row=>row.unavailableReason).filter(Boolean))].map(reason=>[reason,rows.filter(row=>row.unavailableReason===reason).length])),chartUnavailableReasons:Object.fromEntries([...new Set(rows.map(row=>row.chartUnavailableReason).filter(Boolean))].map(reason=>[reason,rows.filter(row=>row.chartUnavailableReason===reason).length])),closedOutcomeCount:closedOutcomes.length,topWinners,topLosses,perChain,perTrader};
 
 writeFileSync("fomo-replay-audit.json",JSON.stringify({summary,rows},null,2));
 writeFileSync("fomo-replay-audit-summary.json",JSON.stringify(summary,null,2));
@@ -188,3 +269,4 @@ if(!traders.length)process.exitCode=2;
 else if(summary.tradePairsWithoutReplay>0){console.error(`Fomo Replay release gate failed: ${summary.tradePairsWithoutReplay} current trade pairs have no Replay evidence.`);process.exitCode=3;}
 else if(summary.tradePairsUnknownChain>0){console.error(`Fomo Replay release gate failed: ${summary.tradePairsUnknownChain} current trade pairs have unresolved chains.`);process.exitCode=4;}
 else if(summary.tradePairsMissingWallet>0){console.error(`Fomo Replay release gate failed: ${summary.tradePairsMissingWallet} current trade pairs have no public wallet subject.`);process.exitCode=5;}
+else if(rows.some(row=>row.tradeRows>0&&row.cutExportReadiness!=="data-ready-client-capability-gated")){console.error("Fomo Replay release gate failed: one or more current trade pairs are not Cut-data-ready.");process.exitCode=6;}
