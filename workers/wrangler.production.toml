@@ -35,8 +35,7 @@ COINGECKO_FETCH_BACKOFF_MS = "350"
 FOMO_GALAXY_ENABLED = "true"
 FOMO_REFRESH_MINUTES = "180"
 FOMO_PROFILE_LOOKUPS_PER_REFRESH = "0"
-FOMO_BOOTSTRAP_ENRICH_LIMIT = "10"
-FOMO_ENRICH_TRADERS_PER_REFRESH = "1"
+# While the current top-50 has never-enriched traders, cron fills up to ten of those missing records per 15-minute tick.\n# Once current coverage is complete this consumes zero extra calls; the normal 3-hour refresh stays at one trader.\nFOMO_BOOTSTRAP_ENRICH_LIMIT = "10"\nFOMO_COVERAGE_BACKFILL_LIMIT = "10"\nFOMO_ENRICH_TRADERS_PER_REFRESH = "1"
 # FOMO bills ordinary leaderboard/trade/balance reads at 250 raw credits each.
 # 250,000 is the provider's published Free monthly floor (1,000 ordinary calls),
 # not the old 1,000-call placeholder. Live provider observations may raise the
