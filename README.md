@@ -2,7 +2,7 @@
 
 **Study the trader. Replay the trade. Verify the story.**
 
-A Bulls App is an evidence-native Solana research operating system rendered as an explorable universe.
+A Bulls App is an evidence-native Solana research and content-creation operating system rendered as an explorable universe. It turns public blockchain activity into navigable evidence, deterministic Replay, and verifiable cinematic Cuts.
 
 ## START HERE
 
@@ -34,8 +34,7 @@ If an older document conflicts with `MASTER_PLAN.md`, the master plan wins unles
 
 ## Public Galaxy Zero
 
-The public Field exposes **ZERO + FOMO**: ZERO is the overview, and **Fomo**
-is its only active public research galaxy/lens.
+The public Field exposes **ZERO + FOMO + AFTERBELL**. ZERO is the overview. **Fomo** is the trader-discovery lens for retained Fomo activity. **Afterbell** is the tokenized-stock research lens: it opens to ranked trader STARS observed trading supported Solana xStocks during the after-close window, then descends into their stock PLANETS and retained trade COMETS.
 
 PonsFamily (`pons`) and pump.fun (`pump-fun`) are retired public galaxies.
 Their historical launch origins, applied migrations, and retained research
