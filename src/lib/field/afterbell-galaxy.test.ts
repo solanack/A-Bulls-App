@@ -17,11 +17,11 @@ test("Afterbell pair selection rejects other chains and ranks exact-symbol Solan
 });
 
 
-test("Galaxy Zero exposes Fomo and Afterbell as sibling portals without changing public origin chips",()=>{
+test("Galaxy Zero exposes Fomo and Afterbell as sibling portals and public navigation origins",()=>{
   const snapshot=createUniverseMapSnapshot(800,861);
   const targets=[...new Set(snapshot.particles.map(particle=>particle.metadata?.targetGalaxyId).filter(Boolean))].sort();
   assert.deepEqual(targets,["afterbell","fomo"]);
-  assert.deepEqual(GALAXY_ORIGIN_CHIPS.map(item=>item.label),["ZERO","FOMO"]);
+  assert.deepEqual(GALAXY_ORIGIN_CHIPS.map(item=>item.label),["ZERO","FOMO","AFTERBELL"]);
   const afterbell=snapshot.particles.find(particle=>particle.metadata?.targetGalaxyId==="afterbell"&&particle.metadata?.galaxyRole==="core");
   assert.ok(afterbell,"Galaxy Zero is missing its Afterbell core portal");
   assert.equal(afterbell?.cosmicKind,"galaxy");
