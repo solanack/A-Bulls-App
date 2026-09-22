@@ -48,3 +48,11 @@ test("Replay shows source-labeled provider USD trade price points while real OHL
   assert.match(replay,/NOT OHLC/);
   assert.match(replay,/NO INTERPOLATED PATH/);
 });
+
+
+test("Replay renders a deterministic time-axis visual when trade timing exists but price history does not",()=>{
+  assert.match(replay,/ReplayEventTimeline/);
+  assert.match(replay,/TRADE EVENT TIMELINE/);
+  assert.match(replay,/PRICE EVIDENCE UNAVAILABLE/);
+  assert.match(replay,/NO INVENTED PRICE PATH/);
+});
