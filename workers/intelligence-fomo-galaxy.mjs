@@ -18,6 +18,7 @@ const bool=value=>s(value).toLowerCase()==='true';
 const json=(body,status=200,cache='no-store')=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':cache,'x-content-type-options':'nosniff'}});
 const all=async stmt=>{try{return(await stmt.all())?.results||[];}catch{return[];}};
 const clamp=(value,fallback,min,max)=>Math.max(min,Math.min(max,Math.trunc(n(value)||fallback)));
+const chainAlias=value=>{const raw=s(value).toLowerCase().replace(/[_\s:]+/g,'-');if(['sol','svm','solana-mainnet'].includes(raw)||raw==='solana')return'solana';if(['bnb','bnb-chain','bnbchain','binance-smart-chain'].includes(raw)||raw==='bsc')return'bsc';if(['eth','ethereum-mainnet','mainnet'].includes(raw)||raw==='ethereum')return'ethereum';if(['robinhood-chain','robinhoodchain','hood'].includes(raw)||raw==='robinhood')return'robinhood';return raw||null;};
 
 function rowsFrom(payload){
   const candidates=[payload?.data?.leaderboard,payload?.data?.items,payload?.data?.results,payload?.leaderboard,payload?.items,payload?.results,payload?.data,payload];
@@ -34,13 +35,12 @@ function walletValue(row,kind){
     : row?.evmWallet??row?.evm_wallet??row?.ethereumWallet??row?.ethereum_wallet??row?.robinhoodWallet??row?.robinhood_wallet??wallets.evm??wallets.ethereum??wallets.robinhood;
   const text=s(value);return kind==='solana'?(SOLANA_RE.test(text)?text:null):(EVM_RE.test(text)?text.toLowerCase():null);
 }
-function normalizeTopTokens(row){
+export function normalizeTopTokens(row){
   const source=Array.isArray(row?.topTokens)?row.topTokens:Array.isArray(row?.top_tokens)?row.top_tokens:Array.isArray(row?.tokens)?row.tokens:[];
   return source.slice(0,20).map(item=>{
-    if(typeof item==='string')return {mint:SOLANA_RE.test(item)?item:null,address:EVM_RE.test(item)?item.toLowerCase():null,symbol:null,name:null,reported:true};
-    const mint=s(item?.mint??item?.tokenMint??item?.token_mint??item?.solanaAddress??item?.solana_address);
-    const address=s(item?.address??item?.tokenAddress??item?.token_address??item?.contractAddress??item?.contract_address);
-    return {mint:SOLANA_RE.test(mint)?mint:null,address:EVM_RE.test(address)?address.toLowerCase():SOLANA_RE.test(address)?address:null,symbol:s(item?.symbol??item?.ticker).slice(0,32)||null,name:s(item?.name).slice(0,120)||null,reported:true};
+    if(typeof item==='string')return {mint:SOLANA_RE.test(item)?item:null,address:EVM_RE.test(item)?item.toLowerCase():null,symbol:null,name:null,chain:SOLANA_RE.test(item)?'solana':null,networkId:null,reported:true};
+    const mint=s(item?.mint??item?.tokenMint??item?.token_mint??item?.solanaAddress??item?.solana_address),address=s(item?.address??item?.tokenAddress??item?.token_address??item?.contractAddress??item?.contract_address),chain=chainAlias(item?.chain??item?.chainKey??item?.chain_key??item?.network??item?.networkId??item?.network_id);
+    return {mint:SOLANA_RE.test(mint)?mint:null,address:EVM_RE.test(address)?address.toLowerCase():SOLANA_RE.test(address)?address:null,symbol:s(item?.symbol??item?.ticker).slice(0,32)||null,name:s(item?.name).slice(0,120)||null,chain:chain??(SOLANA_RE.test(mint)||SOLANA_RE.test(address)?'solana':null),networkId:s(item?.networkId??item?.network_id).slice(0,32)||null,reported:true};
   }).filter(item=>item.mint||item.address||item.symbol||item.name);
 }
 export function normalizeFomoLeaderboard(payload,capturedAt=Date.now()){
@@ -80,7 +80,7 @@ export async function refreshFomoGalaxy(env={},nowMs=Date.now()){
     }
     await db.prepare('DELETE FROM fomo_traders WHERE captured_at<?').bind(now-7*86400).run();
     const profileLimit=clamp(env.FOMO_PROFILE_LOOKUPS_PER_REFRESH,1,0,2);
-    const missing=profileLimit?await all(db.prepare(`SELECT handle FROM fomo_traders WHERE current_rank BETWEEN 1 AND 50 AND (profile_checked_at IS NULL OR profile_checked_at<?) ORDER BY CASE WHEN profile_picture_url IS NULL THEN 0 ELSE 1 END,current_rank LIMIT ?`).bind(now-30*86400,profileLimit)):[];
+    const missing=profileLimit?await all(db.prepare(`SELECT handle FROM fomo_traders WHERE current_rank BETWEEN 1 AND 50 AND captured_at=(SELECT MAX(captured_at) FROM fomo_traders) AND (profile_checked_at IS NULL OR profile_checked_at<?) ORDER BY CASE WHEN profile_picture_url IS NULL THEN 0 ELSE 1 END,current_rank LIMIT ?`).bind(now-30*86400,profileLimit)):[];
     let profiles=0;
     for(const row of missing){
       const handle=s(row.handle);if(!handle)continue;
@@ -97,7 +97,7 @@ function rowToTrader(row){
 }
 
 async function galaxyPayload(db){
-  const rows=await all(db.prepare(`SELECT * FROM fomo_traders WHERE current_rank BETWEEN 1 AND 50 ORDER BY current_rank ASC LIMIT 50`));
+  const rows=await all(db.prepare(`SELECT * FROM fomo_traders WHERE current_rank BETWEEN 1 AND 50 AND captured_at=(SELECT MAX(captured_at) FROM fomo_traders) ORDER BY current_rank ASC,handle ASC LIMIT 50`));
   const items=rows.map(rowToTrader),capturedAt=items.reduce((max,item)=>Math.max(max,item.capturedAt||0),0)||null;
   return {ok:true,coverage:items.length?'fresh':'empty',items,source:'fomoapi.io',capturedAt,disclosure:items.length?'Fomo Galaxy shows the independent fomoapi.io all-time leaderboard as reported at the capture time. PnL, rank, profile, and top-token fields are provider-reported context, not independently verified A Bulls App performance claims. Wallet activity shown after entering a trader is separately sourced from retained public-chain evidence. No trade can be executed here.':'The cached Fomo all-time leaderboard is empty. No logged-in fomo.family session or public mirror was scraped as a fallback.'};
 }
@@ -113,8 +113,8 @@ async function latestWalletTrades(db,wallet){
   if(!rows.length)rows=(await all(db.prepare(`SELECT mint,token_delta,sol_delta,block_time,signature,source FROM bull_wallet_events WHERE wallet=? AND mint IS NOT NULL AND mint<>'' AND token_delta<>0 AND sol_delta<>0 ORDER BY block_time DESC,id DESC LIMIT 3`).bind(wallet))).map(row=>({...row,side:n(row.token_delta)>0?'buy':'sell',token_amount:Math.abs(n(row.token_delta)),sol_amount:Math.abs(n(row.sol_delta))}));
   return rows.filter(row=>SOLANA_RE.test(s(row.mint))).slice(0,3).map(row=>({signature:s(row.signature)||null,wallet,mint:s(row.mint),side:s(row.side)==='sell'?'sell':'buy',solAmount:Math.abs(n(row.sol_amount)),tokenAmount:Math.abs(n(row.token_amount)),priceSol:n(row.token_amount)>0?Math.abs(n(row.sol_amount))/Math.abs(n(row.token_amount)):null,observedAt:n(row.block_time)*1000,source:s(row.source)||'indexed-d1'}));
 }
-function providerPositions(trader){
-  return (Array.isArray(trader.topTokens)?trader.topTokens:[]).flatMap(item=>{const mint=s(item?.mint??item?.address);if(!SOLANA_RE.test(mint))return[];return [{mint,symbol:s(item?.symbol)||null,name:s(item?.name)||null,sourceKind:'fomo-reported',observedNetTokenFlow:null,tradeCount:null,eventCount:null,lastObservedAt:null}];});
+export function providerPositions(trader){
+  return (Array.isArray(trader.topTokens)?trader.topTokens:[]).flatMap(item=>{const mint=s(item?.mint??item?.address),chain=chainAlias(item?.chain??item?.networkId)??(SOLANA_RE.test(mint)?'solana':null);if(!mint||chain==='solana'&&!SOLANA_RE.test(mint)||chain!=='solana'&&!EVM_RE.test(mint))return[];return [{mint:chain==='solana'?mint:mint.toLowerCase(),symbol:s(item?.symbol)||null,name:s(item?.name)||null,chain,networkId:s(item?.networkId)||chain,sourceKind:'fomo-reported',observedNetTokenFlow:null,tradeCount:null,eventCount:null,lastObservedAt:null}];});
 }
 function mergePositions(provider,observed){
   const byMint=new Map();for(const item of provider)byMint.set(item.mint,{...item});for(const item of observed){const prior=byMint.get(item.mint);byMint.set(item.mint,prior?{...item,symbol:prior.symbol,name:prior.name,sourceKind:'fomo-reported+a-bulls-observed'}:item);}return [...byMint.values()].sort((a,b)=>Number(String(b.sourceKind).includes('fomo-reported'))-Number(String(a.sourceKind).includes('fomo-reported'))||n(b.tradeCount)-n(a.tradeCount)||n(b.lastObservedAt)-n(a.lastObservedAt)).slice(0,10).map((item,index)=>({...item,rank:index+1}));
@@ -126,11 +126,11 @@ export async function handleFomoGalaxyRequest(request,env={}){
   const db=intelligenceDb(env);if(!db)return json({ok:false,error:'intelligence_db_unavailable',coverage:'degraded',items:[],disclosure:'The Intelligence D1 binding is unavailable.'},503);
   if(url.pathname===GALAXY_PATH)return json(await galaxyPayload(db),200,'public, max-age=60, stale-while-revalidate=300');
   const handle=s(url.searchParams.get('handle')).replace(/^@/,'');if(!handle)return json({ok:false,error:'handle_required'},400);
-  const row=await db.prepare('SELECT * FROM fomo_traders WHERE lower(handle)=lower(?) LIMIT 1').bind(handle).first();if(!row)return json({ok:false,error:'trader_not_found',coverage:'empty',positions:[],latestTrades:[],disclosure:'This trader is not present in the current cached Fomo top 50.'},404);
+  const row=await db.prepare('SELECT * FROM fomo_traders WHERE lower(handle)=lower(?) AND captured_at=(SELECT MAX(captured_at) FROM fomo_traders) LIMIT 1').bind(handle).first();if(!row)return json({ok:false,error:'trader_not_found',coverage:'empty',positions:[],latestTrades:[],disclosure:'This trader is not present in the current cached Fomo top 50.'},404);
   const trader=rowToTrader(row),wallet=trader.solanaWallet;
   const [observed,trades]=wallet?await Promise.all([observedWalletPositions(db,wallet),latestWalletTrades(db,wallet)]):[[],[]];
   const positions=mergePositions(providerPositions(trader),observed);
   return json({ok:true,coverage:positions.length||trades.length?'partial':'empty',trader,positions,latestTrades:trades,source:'fomoapi.io + a-bulls-indexed-public-chain',disclosure:`${trader.displayName} is a Fomo-reported trader identity linked to the public wallet fields supplied by the cached provider record; A Bulls App does not claim who controls those addresses. Top-position planets are limited to public token addresses that can be mapped. Fomo-reported top tokens stay labeled provider-reported; event counts and the three latest comets come only from currently retained A Bulls App public-chain evidence and may be incomplete. No copy-trade or execution action exists.`},200,'public, max-age=30, stale-while-revalidate=120');
 }
 
-export const __fomoGalaxyContract=Object.freeze({galaxyPath:GALAXY_PATH,traderPath:TRADER_PATH,maximumTraders:50,maximumPositions:10,latestTrades:3,readOnly:true,provider:'fomoapi.io'});
+export const __fomoGalaxyContract=Object.freeze({galaxyPath:GALAXY_PATH,traderPath:TRADER_PATH,maximumTraders:50,maximumPositions:10,latestTrades:3,currentSnapshotOnly:true,chainQualifiedTopTokens:true,readOnly:true,provider:'fomoapi.io'});
