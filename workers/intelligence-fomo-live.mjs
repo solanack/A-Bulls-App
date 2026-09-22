@@ -22,7 +22,7 @@ const json=(body,status=200,cache='no-store')=>new Response(JSON.stringify(body)
 const parseMs=value=>{const numeric=Number(value);if(Number.isFinite(numeric)&&numeric>0){if(numeric<10_000_000_000)return Math.trunc(numeric*1000);if(numeric<10_000_000_000_000)return Math.trunc(numeric);}const time=Date.parse(s(value));return Number.isFinite(time)?time:null;};
 const parseSec=value=>{const ms=parseMs(value);return ms==null?null:Math.floor(ms/1000);};
 let effectiveTradeFetchLimit=null;
-function tradePaginationPointer(payload={}){
+export function tradePaginationPointer(payload={}){
   const candidates=[
     ['cursor',payload?.nextCursor],['cursor',payload?.next_cursor],['cursor',payload?.pagination?.nextCursor],['cursor',payload?.pagination?.next_cursor],['cursor',payload?.meta?.nextCursor],['cursor',payload?.meta?.next_cursor],['cursor',payload?.data?.nextCursor],['cursor',payload?.data?.next_cursor],
     ['pageToken',payload?.nextPageToken],['pageToken',payload?.next_page_token],['pageToken',payload?.pagination?.nextPageToken],['pageToken',payload?.pagination?.next_page_token],
