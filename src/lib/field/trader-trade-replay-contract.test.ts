@@ -86,7 +86,7 @@ test("Trickster Cut export accepts user soundtrack audio and keeps it separate f
   assert.match(trickster,/I have the right to use this track/);
   assert.match(trickster,/A BULLS ORIGINAL/);
   assert.match(trickster,/A Bulls originals are synthesized in-browser/);
-  assert.match(trickster,/musicFile,musicVolume,sfxPack/);
+  assert.match(trickster,/musicFile,musicPreset,musicVolume,sfxPack/);
   assert.match(recorder,/decodeMusic/);
   assert.match(recorder,/scheduleMusic/);
   assert.match(recorder,/scheduleProceduralMusic/);
