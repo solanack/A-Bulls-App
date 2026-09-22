@@ -11,10 +11,12 @@ const finite=value=>value==null||value===""?null:Number.isFinite(Number(value))?
 
 function normalizeChain(value,token=""){
   const raw=s(value).toLowerCase().replace(/[_\s:]+/g,"-");
-  if(["sol","svm","solana-mainnet"].includes(raw)||raw==="solana")return"solana";
-  if(["bnb","bnb-chain","bnbchain","binance-smart-chain"].includes(raw)||raw==="bsc")return"bsc";
-  if(["eth","ethereum-mainnet","mainnet"].includes(raw)||raw==="ethereum")return"ethereum";
-  if(["robinhood-chain","robinhoodchain","hood"].includes(raw)||raw==="robinhood")return"robinhood";
+  if(["sol","svm","solana-mainnet","1399811149"].includes(raw)||raw==="solana")return"solana";
+  if(["bnb","bnb-chain","bnbchain","binance-smart-chain","56"].includes(raw)||raw==="bsc")return"bsc";
+  if(["eth","ethereum-mainnet","mainnet","1"].includes(raw)||raw==="ethereum")return"ethereum";
+  if(["base-mainnet","coinbase-base","8453"].includes(raw)||raw==="base")return"base";
+  if(["monad-mainnet","143"].includes(raw)||raw==="monad")return"monad";
+  if(["robinhood-chain","robinhoodchain","hood","4663"].includes(raw)||raw==="robinhood")return"robinhood";
   if(raw)return raw;
   if(SOLANA_RE.test(s(token)))return"solana";
   if(EVM_RE.test(s(token)))return"unknown-evm";
