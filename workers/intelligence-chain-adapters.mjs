@@ -61,6 +61,22 @@ async function blockRangeForTime(url,from,to,fetchImpl){
 function parseTransferAmount(data=''){const raw=s(data);if(!/^0x[0-9a-f]*$/i.test(raw))return 0n;try{return BigInt(raw);}catch{return 0n;}}
 function sideForTransfers(incoming,outgoing){const net=incoming-outgoing;if(net>0n)return'buy';if(net<0n)return'sell';return null;}
 
+
+const GOLDRUSH_CHAIN=Object.freeze({ethereum:'eth-mainnet',base:'base-mainnet',bsc:'bsc-mainnet',monad:'monad-mainnet',robinhood:'robinhood-mainnet'});
+function decodedParam(event,name){const params=Array.isArray(event?.decoded?.params)?event.decoded.params:[],row=params.find(item=>s(item?.name).toLowerCase()===name.toLowerCase());return s(row?.value);}
+function goldRushTransferSide(event,wallet){
+  if(s(event?.decoded?.name).toLowerCase()!=='transfer')return null;const from=decodedParam(event,'from').toLowerCase(),to=decodedParam(event,'to').toLowerCase(),wanted=s(wallet).toLowerCase();if(to===wanted&&from!==wanted)return'buy';if(from===wanted&&to!==wanted)return'sell';return null;
+}
+export async function discoverGoldRushWalletTokenActivity(env={},input={}, {fetchImpl=providerFetch}={}){
+  const key=s(env.GOLDRUSH_API_KEY),chain=normalizeChainKey(input.chain),slug=GOLDRUSH_CHAIN[chain],wallet=canonicalChainAddress(chain,input.wallet),token=canonicalChainAddress(chain,input.token??input.mint),at=Math.max(0,Math.trunc(n(input.at))),windowSeconds=clamp(Math.trunc(n(input.windowSeconds)||900),60,3600);if(!key||!slug||!wallet||!token||!at)return Object.freeze({ok:false,state:'unavailable',reason:key?'goldrush_chain_unsupported':'goldrush_unconfigured'});
+  const firstBucket=Math.floor((at-windowSeconds)/900),lastBucket=Math.floor((at+windowSeconds)/900),buckets=[];for(let bucket=firstBucket;bucket<=lastBucket&&buckets.length<9;bucket+=1)buckets.push(bucket);
+  const candidates=[];
+  for(const bucket of buckets){const url='https://api.covalenthq.com/v1/'+encodeURIComponent(slug)+'/bulk/transactions/'+encodeURIComponent(wallet)+'/'+String(bucket)+'/',response=await fetchImpl(url,{headers:{accept:'application/json',authorization:'Bearer '+key,'user-agent':'A-Bulls-App/1.0'}}).catch(()=>null);if(!response?.ok)continue;const body=await response.json().catch(()=>null),items=Array.isArray(body?.data?.items)?body.data.items:Array.isArray(body?.items)?body.items:[];
+    for(const tx of items){const txId=s(tx?.tx_hash).toLowerCase();if(!EVM_TX.test(txId))continue;const blockTime=Math.floor(Date.parse(s(tx?.block_signed_at))/1000);if(!Number.isFinite(blockTime)||Math.abs(blockTime-at)>windowSeconds)continue;const events=Array.isArray(tx?.log_events)?tx.log_events:[],tokenEvents=events.filter(event=>canonicalChainAddress(chain,event?.sender_address)===token);if(!tokenEvents.length)continue;const sides=tokenEvents.map(event=>goldRushTransferSide(event,wallet)).filter(Boolean),side=sides.includes('buy')&&!sides.includes('sell')?'buy':sides.includes('sell')&&!sides.includes('buy')?'sell':null;candidates.push({txId,blockTime,blockNumber:Math.trunc(n(tx?.block_height))||null,side,receiptSuccess:tx?.successful!==false,source:'goldrush-transactions-v3',discoveryOnly:true});}
+  }
+  const selected=selectReconciliationCandidate(candidates,{at,side:input.side,maxWindowSeconds:windowSeconds});return selected?Object.freeze({ok:true,state:'matched',chain,wallet,token,...selected}):Object.freeze({ok:true,state:candidates.length?'ambiguous-or-direction-mismatch':'unmatched',chain,wallet,token,candidates:candidates.length,source:'goldrush-transactions-v3'});
+}
+
 export function selectReconciliationCandidate(candidates=[],{at=0,side='',maxWindowSeconds=900}={}){
   const expected=s(side).toLowerCase()==='entry'?'buy':s(side).toLowerCase()==='exit'?'sell':s(side).toLowerCase(),target=Math.max(0,Math.trunc(n(at))),window=Math.max(30,Math.trunc(n(maxWindowSeconds)||900));
   const ranked=(Array.isArray(candidates)?candidates:[]).map(row=>{const delta=Math.abs(Math.trunc(n(row.blockTime))-target),sideMatch=!expected||row.side===expected,score=(sideMatch?60:0)+Math.max(0,40-Math.min(40,delta/window*40))+(row.receiptSuccess===true?8:0);return{...row,timeDeltaSeconds:delta,sideMatch,score};}).filter(row=>row.sideMatch&&row.timeDeltaSeconds<=window&&EVM_TX.test(s(row.txId))).sort((a,b)=>b.score-a.score||a.timeDeltaSeconds-b.timeDeltaSeconds||s(a.txId).localeCompare(s(b.txId)));
@@ -73,6 +89,8 @@ export async function findEvmWalletTokenActivity(env={},input={}, {fetchImpl=pro
   const chain=normalizeChainKey(input.chain),wallet=canonicalChainAddress(chain,input.wallet),token=canonicalChainAddress(chain,input.token??input.mint),at=Math.max(0,Math.trunc(n(input.at))),windowSeconds=clamp(Math.trunc(n(input.windowSeconds)||900),60,3600),definition=resolveChain(chain,{address:token});
   if(definition?.kind!=='evm'||!wallet||!token||!at)return Object.freeze({ok:false,state:'unavailable',reason:'invalid_evm_reconciliation_subject'});
   const walletTopic=erc20TopicAddress(wallet),rpc=rpcCandidatesForChain(env,chain,token);if(!walletTopic||!rpc.length)return Object.freeze({ok:false,state:'unavailable',reason:'evm_rpc_unconfigured',chain});
+  const goldrush=await discoverGoldRushWalletTokenActivity(env,{chain,wallet,token,at,side:input.side,windowSeconds},{fetchImpl}).catch(()=>null);
+  if(goldrush?.state==='matched'){for(const candidate of rpc){try{const receipt=await evmRpc(candidate.url,'eth_getTransactionReceipt',[goldrush.txId],fetchImpl),receiptSuccess=s(receipt?.status).toLowerCase()==='0x1';if(!receiptSuccess)continue;return Object.freeze({...goldrush,receipt,receiptSuccess:true,source:goldrush.source+' + '+candidate.source,verifiedBy:candidate.source});}catch{}}}
   const errors=[];
   for(const candidate of rpc){try{
     const range=await blockRangeForTime(candidate.url,at-windowSeconds,at+windowSeconds,fetchImpl),fromBlock='0x'+range.fromBlock.toString(16),toBlock='0x'+range.toBlock.toString(16),base={address:token,fromBlock,toBlock},responses=await Promise.all([
@@ -116,9 +134,9 @@ export async function resolveEvmVenuePool(env={},input={}, {fetchImpl=providerFe
 
 export const __chainAdapterContract=Object.freeze({
   version:'chain-evidence-adapter-v1',readOnly:true,
-  methods:Object.freeze(['findWalletTokenActivity','resolveEvmVenuePool']),
+  methods:Object.freeze(['discoverGoldRushWalletTokenActivity','findWalletTokenActivity','resolveEvmVenuePool']),
   solanaHistory:'helius-getTransactionsForAddress-when-configured',
-  evmReconciliation:'erc20-transfer-log+receipt',
+  evmReconciliation:'goldrush-time-bucket-discovery-optional+erc20-transfer-log+receipt',
   exactPool:'receipt-log-address+dexscreener-pair-match',
   noExecution:true
 });
