@@ -16,6 +16,12 @@ const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const finitePositive=value=>{const out=Number(value);return Number.isFinite(out)&&out>0?out:null;};
 const nowSec=()=>Math.floor(Date.now()/1000);
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const EVM_POOL_ID=/^0x(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/;
+function canonicalProviderPoolId(chain,value){
+  const chainKey=normalizeChainKey(chain),definition=resolveChain(chainKey,{address:value}),raw=s(value);if(!definition||!raw)return null;
+  if(definition.kind==='svm')return canonicalChainAddress(chainKey,raw);
+  return EVM_POOL_ID.test(raw)?raw.toLowerCase():null;
+}
 
 function relationAddress(value,network=''){
   const id=s(value),prefix=network?`${network}_`:'';
@@ -36,7 +42,7 @@ export function exactReplayPools(payload={},mint='',quoteMint='',chain='solana',
   for(const row of rows){
     const baseRaw=relationAddress(row?.relationships?.base_token?.data?.id,network),quoteRaw=relationAddress(row?.relationships?.quote_token?.data?.id,network),base=canonicalChainAddress(chainKey,baseRaw),quote=canonicalChainAddress(chainKey,quoteRaw);
     if(!base||!quote||!((sameChainAddress(chainKey,base,wantedMint)&&sameChainAddress(chainKey,quote,wantedQuote))||(sameChainAddress(chainKey,base,wantedQuote)&&sameChainAddress(chainKey,quote,wantedMint))))continue;
-    const address=canonicalChainAddress(chainKey,s(row?.attributes?.address)||relationAddress(row?.id,network));if(!address||seen.has(address))continue;
+    const address=canonicalProviderPoolId(chainKey,s(row?.attributes?.address)||relationAddress(row?.id,network));if(!address||seen.has(address))continue;
     seen.add(address);out.push(Object.freeze({address,base,quote}));
   }
   return Object.freeze(out);
@@ -46,7 +52,7 @@ export function chooseExactReplayPool(payload={},mint='',quoteMint='',chain='sol
 
 export function replayPoolsForToken(payload={},mint='',chain='solana',network='solana'){
   const chainKey=normalizeChainKey(chain),wanted=canonicalChainAddress(chainKey,mint),rows=Array.isArray(payload?.data)?payload.data:[],out=[],seen=new Set();if(!wanted)return Object.freeze([]);
-  for(const row of rows){const base=canonicalChainAddress(chainKey,relationAddress(row?.relationships?.base_token?.data?.id,network)),quote=canonicalChainAddress(chainKey,relationAddress(row?.relationships?.quote_token?.data?.id,network));if(!base||!quote)continue;const wantedIsBase=sameChainAddress(chainKey,base,wanted),wantedIsQuote=sameChainAddress(chainKey,quote,wanted);if(!wantedIsBase&&!wantedIsQuote)continue;const quoteMint=wantedIsBase?quote:base;if(!quoteMint||sameChainAddress(chainKey,quoteMint,wanted))continue;const address=canonicalChainAddress(chainKey,s(row?.attributes?.address)||relationAddress(row?.id,network));if(!address||seen.has(address))continue;seen.add(address);out.push(Object.freeze({address,base,quote,quoteMint,reserveUsd:finitePositive(row?.attributes?.reserve_in_usd)||0,volumeH24Usd:finitePositive(row?.attributes?.volume_usd?.h24)||0}));}
+  for(const row of rows){const base=canonicalChainAddress(chainKey,relationAddress(row?.relationships?.base_token?.data?.id,network)),quote=canonicalChainAddress(chainKey,relationAddress(row?.relationships?.quote_token?.data?.id,network));if(!base||!quote)continue;const wantedIsBase=sameChainAddress(chainKey,base,wanted),wantedIsQuote=sameChainAddress(chainKey,quote,wanted);if(!wantedIsBase&&!wantedIsQuote)continue;const quoteMint=wantedIsBase?quote:base;if(!quoteMint||sameChainAddress(chainKey,quoteMint,wanted))continue;const address=canonicalProviderPoolId(chainKey,s(row?.attributes?.address)||relationAddress(row?.id,network));if(!address||seen.has(address))continue;seen.add(address);out.push(Object.freeze({address,base,quote,quoteMint,reserveUsd:finitePositive(row?.attributes?.reserve_in_usd)||0,volumeH24Usd:finitePositive(row?.attributes?.volume_usd?.h24)||0}));}
   return Object.freeze(out.sort((a,b)=>b.reserveUsd-a.reserveUsd||b.volumeH24Usd-a.volumeH24Usd||a.address.localeCompare(b.address)));
 }
 
@@ -135,4 +141,4 @@ export async function hydrateReplayMarketCandles(env={},input={}, {fetchImpl=pro
     await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',chain,quoteMint:resolvedQuote,requestedQuoteMint:quoteMint||null,quoteFallback:Boolean(quoteMint&&resolvedQuote!==quoteMint),candles:selected.rows.length,source:selected.provider,network:selected.network,pool:selected.pool,poolsChecked:checked};
   }catch(error){const code=s(error?.message||error)||'market_hydration_failed';await markLease(db,key,'error',code,{completedAt:nowSec()}).catch(()=>null);return{ok:false,state:'unavailable',chain,error:code};}
 }
-export const __replayMarketHydrationContract=Object.freeze({chainQualified:true,legacySolanaDualWrite:true,providers:Object.freeze(['coingecko-onchain','geckoterminal-public']),autoDiscoversObservedQuote:true,noSyntheticCandles:true});
+export const __replayMarketHydrationContract=Object.freeze({chainQualified:true,legacySolanaDualWrite:true,providers:Object.freeze(['coingecko-onchain','geckoterminal-public']),autoDiscoversObservedQuote:true,supportsEvmBytes32PoolIds:true,noSyntheticCandles:true});
