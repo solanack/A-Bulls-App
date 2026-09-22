@@ -226,7 +226,7 @@ jobs:
           SQL=$(cat <<'SQL'
           SELECT source,source_kind,state,last_ok_at,last_error_at,latency_ms,details_json,updated_at
           FROM intelligence_source_health
-          WHERE source IN ('helius-getTransactionsForAddress','helius-standard-rpc','solana-public-rpc')
+          WHERE source IN ('helius-getTransactionsForAddress','helius-standard-rpc','solana-public-rpc','multichain-reconciliation')
              OR source LIKE 'configured-rpc%'
           ORDER BY updated_at DESC;
           SQL
