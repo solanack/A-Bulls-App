@@ -198,57 +198,14 @@ async function recordMediaRecorderFallback({canvas,ctx,manifest,candles,events,s
 export async function recordTricksterCut({manifest,candles,events,shareHref,tokenLabel,walletLabel,soundBed=true,musicFile=null,musicPreset="none",musicVolume=.2,sfxPack="cosmic",onProgress=()=>{}}:{manifest:Data;candles:Data[];events:Data[];shareHref:string;tokenLabel:string;walletLabel:string;soundBed?:boolean;musicFile?:Blob|null;musicPreset?:CutMusicPreset;musicVolume?:number;sfxPack?:CutSoundPack;onProgress?:Progress}):Promise<CutVideoResult>{
   if(!tricksterCutCaptureSupported())throw Object.assign(new Error("cut_capture_unsupported"),{code:"cut_capture_unsupported"});
   const scenes=arr(manifest.scenes);if(!scenes.length)throw new Error("cut_scenes_unavailable");
-  const first=obj(buildCutFrame({manifest,candles,events,sceneIndex:0,progress:0,shareHref,tokenLabel,walletLabel})),size=obj(first.size),canvas=document.createElement("canvas") as HTMLCanvasElement&{captureStream:(fps?:number)=>MediaStream};
-  canvas.width=Math.max(1,Math.trunc(num(size.w)));canvas.height=Math.max(1,Math.trunc(num(size.h)));
-  const ctx=canvas.getContext("2d",{alpha:false});if(!ctx)throw new Error("cut_canvas_unavailable");
-  const root=globalThis as typeof globalThis&{webkitAudioContext?:typeof AudioContext},AudioCtor=root.AudioContext??root.webkitAudioContext;
-  if(!AudioCtor)throw new Error("cut_audio_context_unavailable");
-  const audioContext=new AudioCtor(),destination=audioContext.createMediaStreamDestination();await audioContext.resume();
-  onProgress(.02,"Preparing Cut audio");
-  const fps=24,prepared=await prepareScenes(audioContext,manifest,events,fps,onProgress),musicBuffer=await decodeMusic(audioContext,musicFile),totalDuration=prepared.reduce((sum,item)=>sum+item.duration,0),videoStream=canvas.captureStream(fps),combined=new MediaStream([...videoStream.getVideoTracks(),...destination.stream.getAudioTracks()]);
-  const mimeType=chooseVideoMime(value=>typeof MediaRecorder.isTypeSupported==="function"&&MediaRecorder.isTypeSupported(value));
-  if(!mimeType){combined.getTracks().forEach(track=>track.stop());await audioContext.close();throw Object.assign(new Error("cut_capture_format_unsupported"),{code:"cut_capture_format_unsupported"});}
-
-  const recorder=new MediaRecorder(combined,{mimeType,videoBitsPerSecond:6_000_000,audioBitsPerSecond:128_000});
-  const chunks:Blob[]=[];
-  recorder.addEventListener("dataavailable",event=>{if(event.data.size)chunks.push(event.data);});
-  const stopped=new Promise<void>((resolve,reject)=>{
-    recorder.addEventListener("stop",()=>resolve(),{once:true});
-    recorder.addEventListener("error",event=>reject((event as ErrorEvent).error??new Error("cut_recording_failed")),{once:true});
-  });
-
-  recorder.start(1000);
-  const audioStart=audioContext.currentTime+.12,sceneOffsets:number[]=[];let offset=0;
-  for(const item of prepared){sceneOffsets.push(offset);offset+=item.duration;}
-  if(musicBuffer)scheduleMusic(audioContext,destination,musicBuffer,audioStart,totalDuration,musicVolume,sceneOffsets,prepared);else scheduleProceduralMusic(audioContext,destination,musicPreset,audioStart,totalDuration,musicVolume,sceneOffsets,prepared);
-  offset=0;
-  for(let index=0;index<prepared.length;index++){
-    const item=prepared[index],event=obj(events[index]),sceneStart=audioStart+offset;
-    if(soundBed&&!musicBuffer&&musicPreset==="none")scheduleBed(audioContext,destination,sceneStart,item.duration);
-    scheduleImpact(audioContext,destination,sceneStart+.08,text(event.side).toLowerCase(),sfxPack);
-    const available=Math.max(.5,item.duration-.45),greyDuration=item.grey.buffer?connectVoice(audioContext,destination,item.grey.buffer,sceneStart+.18,available*.56):0;
-    if(item.trickster.buffer)connectVoice(audioContext,destination,item.trickster.buffer,sceneStart+.3+greyDuration,Math.max(.45,available-greyDuration));
-    offset+=item.duration;
+  const first=obj(buildCutFrame({manifest,candles,events,sceneIndex:0,progress:0,shareHref,tokenLabel,walletLabel})),size=obj(first.size),canvas=document.createElement("canvas") as HTMLCanvasElement&{captureStream:(fps?:number)=>MediaStream};canvas.width=Math.max(1,Math.trunc(num(size.w)));canvas.height=Math.max(1,Math.trunc(num(size.h)));const ctx=canvas.getContext("2d",{alpha:false});if(!ctx)throw new Error("cut_canvas_unavailable");
+  const root=globalThis as typeof globalThis&{webkitAudioContext?:typeof AudioContext},AudioCtor=root.AudioContext??root.webkitAudioContext;if(!AudioCtor)throw new Error("cut_audio_context_unavailable");const audioContext=new AudioCtor();await audioContext.resume();onProgress(.02,"Preparing narration and deterministic audio mix");
+  const fps=24,prepared=await prepareScenes(audioContext,manifest,events,fps,onProgress),musicBuffer=await decodeMusic(audioContext,musicFile),timeline=sceneOffsets(prepared),offlineAudio=await renderOfflineCutAudio(prepared,musicBuffer,musicPreset,musicVolume,sfxPack,soundBed,events,timeline.total),narrationAvailable=prepared.some(item=>Boolean(item.grey.buffer||item.trickster.buffer)),musicIncluded=Boolean(musicBuffer||musicPreset!=="none");
+  try{
+    onProgress(.25,"Starting deterministic MP4 renderer");
+    const blob=await recordDeterministicCut({canvas,ctx,manifest,candles,events,shareHref,tokenLabel,walletLabel,prepared,audioBuffer:offlineAudio,fps,onProgress});await audioContext.close();onProgress(1,"Deterministic MP4 ready");return{blob,mimeType:"video/mp4",extension:"mp4",narrationAvailable,musicIncluded,deterministic:true,renderer:"mediabunny-webcodecs"};
+  }catch(error){
+    const fallbackAllowed=typeof globalThis.MediaRecorder==="function"&&typeof canvas.captureStream==="function";if(!fallbackAllowed){await audioContext.close();throw error;}onProgress(.26,"Deterministic encoder unavailable · using media fallback");
+    const result=await recordMediaRecorderFallback({canvas,ctx,manifest,candles,events,shareHref,tokenLabel,walletLabel,prepared,audioContext,musicBuffer,musicPreset,musicVolume,sfxPack,soundBed,fps,onProgress});await audioContext.close();const extension:"mp4"|"webm"=result.mimeType.startsWith("video/mp4")?"mp4":"webm";onProgress(1,"Fallback Cut ready");return{blob:result.blob,mimeType:result.mimeType,extension,narrationAvailable,musicIncluded,deterministic:false,renderer:"mediarecorder-fallback"};
   }
-
-  const wallStart=performance.now()+120,drawSceneOffsets:number[]=[];let running=0;
-  for(const item of prepared){drawSceneOffsets.push(running);running+=item.duration;}
-  await new Promise<void>(resolve=>{
-    const draw=(now:number)=>{
-      const elapsed=Math.max(0,(now-wallStart)/1000);let index=prepared.length-1;
-      for(let i=0;i<prepared.length;i++){if(elapsed<drawSceneOffsets[i]+prepared[i].duration){index=i;break;}}
-      const local=clamp((elapsed-drawSceneOffsets[index])/prepared[index].duration,0,1),role:NarrationRole=local<.56?"grey":"trickster",model=obj(buildCutFrame({manifest,candles,events,sceneIndex:index,progress:local,shareHref,tokenLabel,walletLabel}));
-      drawCinematicFrame(ctx,model,role);onProgress(.24+.72*clamp(elapsed/Math.max(.1,totalDuration),0,1),`Encoding scene ${index+1}/${prepared.length}`);
-      if(elapsed>=totalDuration){resolve();return;}requestAnimationFrame(draw);
-    };
-    requestAnimationFrame(draw);
-  });
-
-  if(recorder.state!=="inactive")recorder.stop();
-  await stopped;await sleep(40);combined.getTracks().forEach(track=>track.stop());await audioContext.close();
-  const blob=new Blob(chunks,{type:mimeType});
-  const extension:"mp4"|"webm"=mimeType.startsWith("video/mp4")?"mp4":"webm";
-  if(!blob.size)throw new Error("cut_recording_empty");
-  onProgress(1,"Cut ready");
-  return{blob,mimeType,extension,narrationAvailable:prepared.some(item=>Boolean(item.grey.buffer||item.trickster.buffer)),musicIncluded:Boolean(musicBuffer||musicPreset!=="none")};
 }
