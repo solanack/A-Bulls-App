@@ -54,6 +54,10 @@ MULTICHAIN_PUBLIC_RPC_FALLBACKS = "true"
 MULTICHAIN_MARKET_ASSETS_PER_RUN = "60"
 MULTICHAIN_FOMO_EVENTS_PER_RUN = "100"
 MULTICHAIN_TX_VERIFY_LIMIT = "4"
+# Pre-hydrate a few current Fomo trade windows per 15-minute cron so Replay charts
+# are usually warm before the user opens them. Source data remains CoinGecko/
+# GeckoTerminal OHLC; no synthetic candles are generated.
+FOMO_REPLAY_CANDLE_PREWARM_PER_RUN = "4"
 
 # Helius currently publishes 1M / 10M / 100M / 200M monthly credit tiers.
 # This 1M value is the conservative configured floor and is deliberately marked
