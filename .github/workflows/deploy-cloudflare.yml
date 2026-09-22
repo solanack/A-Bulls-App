@@ -194,7 +194,6 @@ jobs:
           )
           npx wrangler d1 execute INTELLIGENCE_DB --remote --config workers/wrangler.production.toml --json --command "$SQL" | tee multichain-d1-diagnostic.json
       - name: Diagnose sparse Replay hydration
-        continue-on-error: true
         run: node scripts/diagnose-replay-production.mjs | tee replay-hydration-diagnostic.json
       - name: Capture Replay history source health
         if: always()
