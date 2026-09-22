@@ -181,6 +181,14 @@ export function validateAfterbellTraders(body) {
   if (body.coverage === "fresh") assert.ok(body.items.length > 0, "Afterbell fresh coverage returned no trader stars");
   return body.items;
 }
+export function validateAfterbellAudit(body) {
+  assert.equal(body?.ok, true, `Afterbell audit failed: ${body?.error || "not ok"}`);
+  const counts = asObject(body?.counts, "Afterbell audit is missing counts");
+  for (const key of ["events","wallets","transactions","assets"]) assert.ok(Number.isSafeInteger(Number(counts[key])) && Number(counts[key]) >= 0, `Afterbell audit ${key} must be a non-negative integer`);
+  assert.ok(["fresh","empty"].includes(String(body?.coverage || "")), "Afterbell audit coverage is invalid");
+  if (body.coverage === "fresh") assert.ok(Number(counts.events) > 0 && Number(counts.wallets) > 0 && Number(counts.transactions) > 0, "Afterbell fresh audit has no retained evidence");
+  return counts;
+}
 
 export function validateWalletSystem(body, expectedWallet, expectedKind) {
   assert.equal(body?.ok, true, `Wallet system failed: ${body?.error || "not ok"}`);
@@ -311,6 +319,8 @@ export async function runLiveChecks({
   const fomoTrader=validateFomoTrader(await (await get(`/api/intelligence/fomo/trader?handle=${encodeURIComponent(fomoCandidate.handle)}`)).json(),fomoCandidate);
 
   validateAfterbellTraders(await (await get(`/api/intelligence/afterbell/traders?mint=${encodeURIComponent(AFTERBELL_SMOKE_MINT)}&limit=50`)).json());
+  const afterbellAudit=validateAfterbellAudit(await (await get('/api/intelligence/afterbell/audit')).json());
+  console.log(JSON.stringify({afterbellAudit}));
   validateWalletSystem(await (await get(`/api/intelligence/research/wallet-system?wallet=${encodeURIComponent(fomoCandidate.solanaWallet)}&limit=10`)).json(),fomoCandidate.solanaWallet,"solana");
   if (EVM_ADDRESS_RE.test(String(fomoCandidate.evmWallet || ""))) validateWalletSystem(await (await get(`/api/intelligence/research/wallet-system?wallet=${encodeURIComponent(fomoCandidate.evmWallet)}&limit=10`)).json(),fomoCandidate.evmWallet.toLowerCase(),"evm");
   const evmPosition=fomoTrader.positions.find((item)=>EVM_ADDRESS_RE.test(String(item?.mint || ""))&&FOMO_CHAIN_KEYS.has(String(item?.chain || "").toLowerCase()));
