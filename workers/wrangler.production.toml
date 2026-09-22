@@ -66,6 +66,11 @@ FOMO_REPLAY_CANDLE_PREWARM_PER_RUN = "4"
 # to 25 if the provider rejects the larger limit, while closed trades already
 # discovered by A Bulls remain durable in D1.
 FOMO_TRADE_FETCH_LIMIT = "100"
+# When the provider exposes a continuation cursor/page token, retain older closed
+# trade pages progressively. This runs only on the normal Fomo refresh window,
+# not every 15-minute fresh-cache tick, to protect provider credits.
+FOMO_TRADE_HISTORY_PAGES_PER_ENRICH = "2"
+FOMO_TRADE_HISTORY_BACKFILL_TRADERS_PER_REFRESH = "2"
 
 # Helius currently publishes 1M / 10M / 100M / 200M monthly credit tiers.
 # This 1M value is the conservative configured floor and is deliberately marked
