@@ -5,7 +5,7 @@ type Data=Record<string,unknown>;
 type Progress=(value:number,label:string)=>void;
 type CutSoundPack="cosmic"|"terminal"|"arcade"|"minimal";
 type CutMusicPreset="none"|"pulse"|"nebula"|"drive";
-type CutVideoResult={blob:Blob;mimeType:string;extension:"mp4"|"webm";narrationAvailable:boolean;musicIncluded:boolean};
+type CutVideoResult={blob:Blob;mimeType:string;extension:"mp4"|"webm";narrationAvailable:boolean;musicIncluded:boolean;deterministic:boolean;renderer:"mediabunny-webcodecs"|"mediarecorder-fallback"};
 type VoiceClip={role:NarrationRole;buffer:AudioBuffer|null};
 type PreparedScene={duration:number;grey:VoiceClip;trickster:VoiceClip};
 type CutFrameInput={manifest?:Data;candles?:Data[];events?:Data[];sceneIndex?:number;progress?:number;shareHref?:string;tokenLabel?:string;walletLabel?:string};
@@ -20,10 +20,11 @@ const clamp=(value:number,min:number,max:number)=>Math.min(max,Math.max(min,valu
 const sleep=(ms:number)=>new Promise<void>(resolve=>globalThis.setTimeout(resolve,ms));
 
 export function tricksterCutCaptureSupported(){
-  const doc=globalThis.document,Recorder=globalThis.MediaRecorder;
-  if(!doc||typeof Recorder!=="function")return false;
-  const canvas=doc.createElement("canvas") as HTMLCanvasElement&{captureStream?:(fps?:number)=>MediaStream};
-  return typeof canvas.captureStream==="function";
+  const doc=globalThis.document,root=globalThis as typeof globalThis&{VideoEncoder?:unknown};if(!doc)return false;if(typeof root.VideoEncoder==="function")return true;
+  const Recorder=globalThis.MediaRecorder,canvas=doc.createElement("canvas") as HTMLCanvasElement&{captureStream?:(fps?:number)=>MediaStream};return typeof Recorder==="function"&&typeof canvas.captureStream==="function";
+}
+export async function tricksterCutDeterministicSupported(width=1080,height=1920,fps=24){
+  try{const media=await import("mediabunny"),quality=new media.Quality({bitrate:6_000_000}),audioQuality=new media.Quality({bitrate:128_000});return Boolean(await media.canEncodeVideo("avc",{width,height,frameRate:fps,quality})&&await media.canEncodeAudio("aac",{numberOfChannels:2,sampleRate:48_000,quality:audioQuality}));}catch{return false;}
 }
 
 function base64Bytes(value:string){
@@ -32,7 +33,7 @@ function base64Bytes(value:string){
   return bytes;
 }
 
-async function decodeDelivery(context:AudioContext,delivery:AlienVoiceDelivery):Promise<AudioBuffer|null>{
+async function decodeDelivery(context:BaseAudioContext,delivery:AlienVoiceDelivery):Promise<AudioBuffer|null>{
   if(!delivery.ok||!delivery.audioBase64)return null;
   try{
     const bytes=base64Bytes(delivery.audioBase64),copy=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength) as ArrayBuffer;
@@ -40,14 +41,14 @@ async function decodeDelivery(context:AudioContext,delivery:AlienVoiceDelivery):
   }catch{return null;}
 }
 
-async function prepareVoice(context:AudioContext,line:string,role:NarrationRole):Promise<VoiceClip>{
+async function prepareVoice(context:BaseAudioContext,line:string,role:NarrationRole):Promise<VoiceClip>{
   if(!line.trim())return{role,buffer:null};
   try{
     const delivery=await synthesizeCutNarration({data:{text:line,role}});
     return{role,buffer:await decodeDelivery(context,delivery)};
   }catch{return{role,buffer:null};}
 }
-async function decodeMusic(context:AudioContext,file:Blob|null|undefined):Promise<AudioBuffer|null>{
+async function decodeMusic(context:BaseAudioContext,file:Blob|null|undefined):Promise<AudioBuffer|null>{
   if(!file)return null;
   try{return await context.decodeAudioData(await file.arrayBuffer());}catch{return null;}
 }
@@ -56,7 +57,7 @@ function sceneNarration(manifest:Data,events:Data[],index:number){
   return obj(obj(buildCutFrame({manifest,events,sceneIndex:index,progress:0})).narration);
 }
 
-async function prepareScenes(context:AudioContext,manifest:Data,events:Data[],fps:number,onProgress:Progress):Promise<PreparedScene[]>{
+async function prepareScenes(context:BaseAudioContext,manifest:Data,events:Data[],fps:number,onProgress:Progress):Promise<PreparedScene[]>{
   const scenes=arr(manifest.scenes),prepared:PreparedScene[]=[];
   for(let index=0;index<scenes.length;index++){
     const scene=obj(scenes[index]),narration=sceneNarration(manifest,events,index),nominal=Math.max(1,num(scene.durationFrames))/fps;
@@ -134,10 +135,10 @@ function drawCinematicFrame(ctx:CanvasRenderingContext2D,model:Data,role:Narrati
   ctx.textAlign="right";ctx.fillStyle="#65f4d2";ctx.font=`800 ${Math.round(w*.015)}px ui-monospace,monospace`;ctx.fillText(`VERIFY ${text(model.shareHref)||"link unavailable"}`,w*.94,h*.06);ctx.textAlign="left";
 }
 
-function connectVoice(context:AudioContext,destination:MediaStreamAudioDestinationNode,buffer:AudioBuffer,start:number,available:number){
+function connectVoice(context:BaseAudioContext,destination:AudioNode,buffer:AudioBuffer,start:number,available:number){
   const source=context.createBufferSource(),gain=context.createGain(),rate=buffer.duration>available&&available>0?clamp(buffer.duration/available,1,1.35):1;source.buffer=buffer;source.playbackRate.value=rate;gain.gain.value=.95;source.connect(gain).connect(destination);source.start(start);return buffer.duration/rate;
 }
-function scheduleImpact(context:AudioContext,destination:MediaStreamAudioDestinationNode,start:number,side:string,pack:CutSoundPack="cosmic"){
+function scheduleImpact(context:BaseAudioContext,destination:AudioNode,start:number,side:string,pack:CutSoundPack="cosmic"){
   if(side!=="buy"&&side!=="sell")return;
   const up=side==="buy",master=context.createGain();master.gain.setValueAtTime(.0001,start);master.gain.exponentialRampToValueAtTime(pack==="minimal"?.045:.085,start+.012);master.gain.exponentialRampToValueAtTime(.0001,start+(pack==="terminal"?.13:.3));master.connect(destination);
   const make=(type:OscillatorType,from:number,to:number,stop:number,level=1)=>{const osc=context.createOscillator(),gain=context.createGain();osc.type=type;osc.frequency.setValueAtTime(from,start);osc.frequency.exponentialRampToValueAtTime(Math.max(20,to),start+stop*.7);gain.gain.value=level;osc.connect(gain).connect(master);osc.start(start);osc.stop(start+stop);};
@@ -146,18 +147,18 @@ function scheduleImpact(context:AudioContext,destination:MediaStreamAudioDestina
   else if(pack==="minimal"){make("sine",up?720:260,up?900:180,.1,.7);}
   else{make("sine",up?420:260,up?760:110,.28,.8);make("triangle",up?840:180,up?1180:75,.2,.18);}
 }
-function scheduleBed(context:AudioContext,destination:MediaStreamAudioDestinationNode,start:number,duration:number){
+function scheduleBed(context:BaseAudioContext,destination:AudioNode,start:number,duration:number){
   const oscillator=context.createOscillator(),gain=context.createGain();oscillator.type="sine";oscillator.frequency.value=55;gain.gain.setValueAtTime(.0001,start);gain.gain.linearRampToValueAtTime(.012,start+.25);gain.gain.setValueAtTime(.012,Math.max(start+.25,start+duration-.3));gain.gain.linearRampToValueAtTime(.0001,start+duration);oscillator.connect(gain).connect(destination);oscillator.start(start);oscillator.stop(start+duration+.02);
 }
-function musicGain(context:AudioContext,destination:MediaStreamAudioDestinationNode,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
+function musicGain(context:BaseAudioContext,destination:AudioNode,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
   const gain=context.createGain(),level=clamp(volume,0,.8);gain.gain.setValueAtTime(.0001,start);gain.gain.linearRampToValueAtTime(level,start+.22);
   for(let index=0;index<sceneOffsets.length;index++){const sceneStart=start+sceneOffsets[index],sceneEnd=sceneStart+scenes[index].duration;gain.gain.setValueAtTime(level,Math.max(start,sceneStart));gain.gain.linearRampToValueAtTime(level*.38,sceneStart+.1);gain.gain.setValueAtTime(level*.38,Math.max(sceneStart+.1,sceneEnd-.16));gain.gain.linearRampToValueAtTime(level,sceneEnd);}
   gain.gain.setValueAtTime(level,Math.max(start+.22,start+duration-.22));gain.gain.linearRampToValueAtTime(.0001,start+duration);gain.connect(destination);return gain;
 }
-function scheduleMusic(context:AudioContext,destination:MediaStreamAudioDestinationNode,buffer:AudioBuffer,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
+function scheduleMusic(context:BaseAudioContext,destination:AudioNode,buffer:AudioBuffer,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
   const source=context.createBufferSource(),gain=musicGain(context,destination,start,duration,volume,sceneOffsets,scenes);source.buffer=buffer;source.loop=true;source.connect(gain);source.start(start,0);source.stop(start+duration+.02);
 }
-function scheduleProceduralMusic(context:AudioContext,destination:MediaStreamAudioDestinationNode,preset:CutMusicPreset,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
+function scheduleProceduralMusic(context:BaseAudioContext,destination:AudioNode,preset:CutMusicPreset,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
   if(preset==="none")return;const master=musicGain(context,destination,start,duration,volume,sceneOffsets,scenes);
   const drone=(type:OscillatorType,freq:number,level:number)=>{const osc=context.createOscillator(),gain=context.createGain();osc.type=type;osc.frequency.value=freq;gain.gain.value=level;osc.connect(gain).connect(master);osc.start(start);osc.stop(start+duration+.03);};
   const pulse=(when:number,freq:number,level:number,length=.12,type:OscillatorType="triangle")=>{const osc=context.createOscillator(),gain=context.createGain();osc.type=type;osc.frequency.setValueAtTime(freq,when);osc.frequency.exponentialRampToValueAtTime(Math.max(24,freq*.72),when+length);gain.gain.setValueAtTime(.0001,when);gain.gain.exponentialRampToValueAtTime(level,when+.012);gain.gain.exponentialRampToValueAtTime(.0001,when+length);osc.connect(gain).connect(master);osc.start(when);osc.stop(when+length+.01);};
