@@ -29,10 +29,10 @@ function relationAddress(value,network=''){
   const underscore=id.indexOf('_');return underscore>0?id.slice(underscore+1):id;
 }
 function normalizeReplayIdentity(input={}){
-  const chain=normalizeChainKey(input.chain??input.chainKey??input.network??'solana'),mint=canonicalChainAddress(chain,input.mint??input.token??''),quoteMint=canonicalChainAddress(chain,input.quoteMint??input.quote_mint??'');
-  return{chain,mint,quoteMint};
+  const chain=normalizeChainKey(input.chain??input.chainKey??input.network??'solana'),mint=canonicalChainAddress(chain,input.mint??input.token??''),quoteMint=canonicalChainAddress(chain,input.quoteMint??input.quote_mint??''),poolAddress=canonicalProviderPoolId(chain,input.poolAddress??input.pool_address??'');
+  return{chain,mint,quoteMint,poolAddress};
 }
-function leaseKey({chain,mint,quoteMint,bucketSeconds,from,to}){return`replay-market:v4:${s(chain)}:${s(mint)}:${s(quoteMint)}:${Math.trunc(n(bucketSeconds)||60)}:${Math.trunc(n(from))}:${Math.trunc(n(to))}`;}
+function leaseKey({chain,mint,quoteMint,poolAddress,bucketSeconds,from,to}){return`replay-market:v5:${s(chain)}:${s(mint)}:${s(quoteMint)}:${s(poolAddress)}:${Math.trunc(n(bucketSeconds)||60)}:${Math.trunc(n(from))}:${Math.trunc(n(to))}`;}
 function candleSpec(bucketSeconds){const seconds=Math.max(60,Math.trunc(n(bucketSeconds)||60));if(seconds===60)return{timeframe:'minute',aggregate:1,bucketSeconds:60};if(seconds===300)return{timeframe:'minute',aggregate:5,bucketSeconds:300};if(seconds===900)return{timeframe:'minute',aggregate:15,bucketSeconds:900};if(seconds===3600)return{timeframe:'hour',aggregate:1,bucketSeconds:3600};if(seconds===14400)return{timeframe:'hour',aggregate:4,bucketSeconds:14400};if(seconds===43200)return{timeframe:'hour',aggregate:12,bucketSeconds:43200};if(seconds===86400)return{timeframe:'day',aggregate:1,bucketSeconds:86400};return null;}
 async function first(stmt){try{return await stmt.first();}catch{return null;}}
 
@@ -66,15 +66,15 @@ async function leaseRow(db,key){return first(db.prepare(`SELECT lease_until,last
 async function markLease(db,key,state,error=null,{leaseUntil=0,startedAt=null,completedAt=null}={}){await db.prepare(`INSERT INTO intelligence_scheduler_leases(lease_key,lease_until,last_started_at,last_completed_at,last_state,last_error,run_count,updated_at) VALUES(?,?,?,?,?,?,1,unixepoch()) ON CONFLICT(lease_key) DO UPDATE SET lease_until=excluded.lease_until,last_started_at=COALESCE(excluded.last_started_at,last_started_at),last_completed_at=COALESCE(excluded.last_completed_at,last_completed_at),last_state=excluded.last_state,last_error=excluded.last_error,run_count=CASE WHEN excluded.last_state='running' THEN run_count+1 ELSE run_count END,updated_at=unixepoch()`).bind(key,leaseUntil,startedAt,completedAt,state,error).run();}
 
 export async function replayMarketHydrationState(env={},input={}){
-  const {chain,mint,quoteMint}=normalizeReplayIdentity(input),bucketSeconds=Math.trunc(n(input.bucketSeconds)||60),from=Math.trunc(n(input.from)),to=Math.trunc(n(input.to)),candleCount=Math.max(0,Math.trunc(n(input.candleCount)));
+  const {chain,mint,quoteMint,poolAddress}=normalizeReplayIdentity(input),bucketSeconds=Math.trunc(n(input.bucketSeconds)||60),from=Math.trunc(n(input.from)),to=Math.trunc(n(input.to)),candleCount=Math.max(0,Math.trunc(n(input.candleCount)));
   if(candleCount>0)return Object.freeze({provider:PROVIDER,chain,needed:false,requested:false,pending:false,state:'ready',disclosure:'Indexed OHLC is ready for Replay.'});
   if(!mint||!candleSpec(bucketSeconds))return Object.freeze({provider:PROVIDER,chain,needed:false,requested:false,pending:false,state:'not-required',disclosure:'Replay market hydration requires a supported chain-qualified asset and candle bucket.'});
   const db=intelligenceDb(env);if(!db)return Object.freeze({provider:PROVIDER,chain,needed:true,requested:false,pending:false,state:'unavailable',disclosure:'Market candle cache is unavailable; no price path was invented.'});
-  const now=nowSec(),row=await leaseRow(db,leaseKey({chain,mint,quoteMint,bucketSeconds,from,to})),state=s(row?.last_state),updated=Math.trunc(n(row?.updated_at)),leaseUntil=Math.trunc(n(row?.lease_until));
+  const now=nowSec(),row=await leaseRow(db,leaseKey({chain,mint,quoteMint,poolAddress,bucketSeconds,from,to})),state=s(row?.last_state),updated=Math.trunc(n(row?.updated_at)),leaseUntil=Math.trunc(n(row?.lease_until));
   if(state==='running'&&leaseUntil>now)return Object.freeze({provider:PROVIDER,chain,needed:true,requested:false,pending:true,state:'running',disclosure:'Historical market candles are being indexed for this Replay and will appear automatically.'});
   if(state==='empty'&&updated&&now-updated<EMPTY_COOLDOWN_SECONDS)return Object.freeze({provider:PROVIDER,chain,needed:true,requested:false,pending:false,state:'unavailable',reason:s(row?.last_error)||'no_exact_quote_market',disclosure:'No exact source-labeled OHLC market was available for this base/quote selection. No chart path was invented.'});
   if(state==='error'&&updated&&now-updated<ERROR_COOLDOWN_SECONDS)return Object.freeze({provider:PROVIDER,chain,needed:true,requested:false,pending:false,state:'unavailable',reason:s(row?.last_error)||'market_source_error',disclosure:'Historical market hydration is temporarily unavailable. Replay receipts remain authoritative.'});
-  return Object.freeze({provider:PROVIDER,chain,needed:true,requested:true,pending:true,state:'queued',disclosure:quoteMint?'Historical market candles were queued automatically for this Replay.':'Historical market pair discovery and candles were queued automatically for this Replay; only source-labeled provider markets may be retained.'});
+  return Object.freeze({provider:PROVIDER,chain,needed:true,requested:true,pending:true,state:'queued',disclosure:poolAddress?'Historical candles for the transaction-observed pool were queued first for this Replay.':quoteMint?'Historical market candles were queued automatically for this Replay.':'Historical market pair discovery and candles were queued automatically for this Replay; only source-labeled provider markets may be retained.'});
 }
 
 export function replayMarketProviders(env={}){
@@ -125,20 +125,20 @@ function legacyCandleStatement(db,mint,quoteMint,row,source){return db.prepare(`
 
 export async function hydrateReplayMarketCandles(env={},input={}, {fetchImpl=providerFetch}={}){
   const db=intelligenceDb(env);if(!db)return{ok:false,state:'unavailable',error:'intelligence_db_unavailable'};
-  const {chain,mint,quoteMint}=normalizeReplayIdentity(input),from=Math.max(0,Math.trunc(n(input.from))),to=Math.max(from,Math.trunc(n(input.to))),requestedBucket=Math.trunc(n(input.bucketSeconds)||60),spec=candleSpec(requestedBucket);
+  const {chain,mint,quoteMint,poolAddress}=normalizeReplayIdentity(input),from=Math.max(0,Math.trunc(n(input.from))),to=Math.max(from,Math.trunc(n(input.to))),requestedBucket=Math.trunc(n(input.bucketSeconds)||60),spec=candleSpec(requestedBucket);
   if(!mint||!spec)return{ok:false,state:'unavailable',error:'invalid_replay_market_subject'};
-  const key=leaseKey({chain,mint,quoteMint,bucketSeconds:requestedBucket,from,to}),now=nowSec(),existing=await leaseRow(db,key);if(s(existing?.last_state)==='running'&&n(existing?.lease_until)>now)return{ok:true,state:'running',deduped:true,chain};
+  const key=leaseKey({chain,mint,quoteMint,poolAddress,bucketSeconds:requestedBucket,from,to}),now=nowSec(),existing=await leaseRow(db,key);if(s(existing?.last_state)==='running'&&n(existing?.lease_until)>now)return{ok:true,state:'running',deduped:true,chain};
   await markLease(db,key,'running',null,{leaseUntil:now+LEASE_SECONDS,startedAt:now});
   try{
     if(quoteMint){const indexed=await indexedCandleCount(db,chain,mint,quoteMint,spec,from,to);if(indexed>0){await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',chain,quoteMint,candles:indexed,source:'indexed'};}}
-    const exactPools=quoteMint?await discoverExactReplayPools(env,mint,quoteMint,{fetchImpl,chain}):[],autoPools=!quoteMint||!exactPools.length?await discoverReplayQuotePools(env,mint,{fetchImpl,chain}):[],candidates=[...exactPools,...autoPools.filter(pool=>!exactPools.some(exact=>exact.address===pool.address))];
+    const provider=providerChainConfig(chain,mint,env),observedPools=poolAddress&&quoteMint&&provider?provider.geckoNetworks.map(network=>Object.freeze({address:poolAddress,base:mint,quote:quoteMint,quoteMint,provider:'',network,chain,observed:true})):[],exactPools=quoteMint?await discoverExactReplayPools(env,mint,quoteMint,{fetchImpl,chain}):[],autoPools=!quoteMint||!exactPools.length?await discoverReplayQuotePools(env,mint,{fetchImpl,chain}):[],candidates=[...observedPools,...exactPools.filter(pool=>!observedPools.some(observed=>observed.address===pool.address)),...autoPools.filter(pool=>!observedPools.some(observed=>observed.address===pool.address)&&!exactPools.some(exact=>exact.address===pool.address))];
     let selected=null,resolvedQuote=quoteMint||null,checked=0;
     for(const pool of candidates){checked+=1;const candidate=await fetchPoolWindow(env,pool,mint,from,to,spec,fetchImpl);if(candidate.rows.length){selected=candidate;resolvedQuote=quoteMint&&exactPools.some(exact=>exact.address===pool.address)?quoteMint:pool.quoteMint||null;break;}}
     if(!selected&&quoteMint){const fallbackPools=await discoverReplayQuotePools(env,mint,{fetchImpl,chain});for(const pool of fallbackPools){if(candidates.some(candidate=>candidate.address===pool.address))continue;checked+=1;const candidate=await fetchPoolWindow(env,pool,mint,from,to,spec,fetchImpl);if(candidate.rows.length){selected=candidate;resolvedQuote=pool.quoteMint||null;break;}}}
     if(!selected||!resolvedQuote){const reason=candidates.length?'no_ohlcv_rows_in_window':'no_replay_market_pool';await markLease(db,key,'empty',reason,{completedAt:nowSec()});return{ok:true,state:'unavailable',chain,candles:0,reason,poolsChecked:checked};}
     const source=JSON.stringify([`${selected.provider}:${selected.network}:${selected.pool}`]),statements=[];for(const row of selected.rows){statements.push(v2CandleStatement(db,chain,mint,resolvedQuote,row,source));if(chain==='solana')statements.push(legacyCandleStatement(db,mint,resolvedQuote,row,source));}
     for(let index=0;index<statements.length;index+=50)await db.batch(statements.slice(index,index+50));
-    await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',chain,quoteMint:resolvedQuote,requestedQuoteMint:quoteMint||null,quoteFallback:Boolean(quoteMint&&resolvedQuote!==quoteMint),candles:selected.rows.length,source:selected.provider,network:selected.network,pool:selected.pool,poolsChecked:checked};
+    await markLease(db,key,'complete',null,{completedAt:nowSec()});return{ok:true,state:'ready',chain,quoteMint:resolvedQuote,requestedQuoteMint:quoteMint||null,requestedPoolAddress:poolAddress||null,exactObservedPool:Boolean(poolAddress&&selected.pool===poolAddress),quoteFallback:Boolean(quoteMint&&resolvedQuote!==quoteMint),candles:selected.rows.length,source:selected.provider,network:selected.network,pool:selected.pool,poolsChecked:checked};
   }catch(error){const code=s(error?.message||error)||'market_hydration_failed';await markLease(db,key,'error',code,{completedAt:nowSec()}).catch(()=>null);return{ok:false,state:'unavailable',chain,error:code};}
 }
 
@@ -173,12 +173,12 @@ export async function prewarmFomoReplayCandles(env={},nowMs=Date.now(),{fetchImp
     const chain=normalizeChainKey(row.chain||''),mint=canonicalChainAddress(chain,row.token_address);if(!mint)continue;
     const created=Math.max(0,Math.trunc(n(row.created_at))),closed=Math.max(0,Math.trunc(n(row.closed_at))),from=Math.max(0,created-7*86400),to=Math.max(from+60,closed>=created&&closed>0?closed:now),key=`${chain}:${mint}:${from}:${to}`;if(seen.has(key))continue;seen.add(key);
     if(await retainedAnyCandleCount(db,chain,mint,from,to)>0){alreadyReady+=1;continue;}
-    const bucketSeconds=chooseReplayPrewarmBucket(from,to),lease=await leaseRow(db,leaseKey({chain,mint,quoteMint:'',bucketSeconds,from,to})),leaseState=s(lease?.last_state),leaseUpdated=Math.trunc(n(lease?.updated_at));
+    const execution=await first(db.prepare(`SELECT quote_asset_address,pool_address FROM intelligence_trade_execution_v2 WHERE chain_key=? AND asset_address=? AND block_time BETWEEN ? AND ? ORDER BY confidence DESC,block_time ASC LIMIT 1`).bind(chain,mint,from,to)),quoteMint=canonicalChainAddress(chain,execution?.quote_asset_address)||'',poolAddress=canonicalProviderPoolId(chain,execution?.pool_address)||'',bucketSeconds=chooseReplayPrewarmBucket(from,to),lease=await leaseRow(db,leaseKey({chain,mint,quoteMint,poolAddress,bucketSeconds,from,to})),leaseState=s(lease?.last_state),leaseUpdated=Math.trunc(n(lease?.updated_at));
     if((leaseState==='empty'||leaseState==='error')&&leaseUpdated&&now-leaseUpdated<6*3600){cooldownSkipped+=1;continue;}
-    const hydrated=await hydrateReplayMarketCandles(env,{chain,mint,from,to,bucketSeconds},{fetchImpl});
+    const hydrated=await hydrateReplayMarketCandles(env,{chain,mint,quoteMint,poolAddress,from,to,bucketSeconds},{fetchImpl});
     results.push(Object.freeze({chain,mint,bucketSeconds,state:s(hydrated?.state)||'unknown',candles:Math.max(0,Math.trunc(n(hydrated?.candles))),source:s(hydrated?.source)||null,reason:s(hydrated?.reason??hydrated?.error)||null}));
   }
   return Object.freeze({enabled:true,ok:true,processed:results.length,ready:results.filter(item=>item.state==='ready').length,alreadyReady,cooldownSkipped,scanned,results:Object.freeze(results)});
 }
 
-export const __replayMarketHydrationContract=Object.freeze({chainQualified:true,legacySolanaDualWrite:true,providers:Object.freeze(['coingecko-onchain','geckoterminal-public']),autoDiscoversObservedQuote:true,supportsEvmBytes32PoolIds:true,scheduledFomoPrewarm:true,prewarmSkipsReadyMarkets:true,prewarmFailureCooldownHours:6,noSyntheticCandles:true});
+export const __replayMarketHydrationContract=Object.freeze({chainQualified:true,legacySolanaDualWrite:true,providers:Object.freeze(['coingecko-onchain','geckoterminal-public']),autoDiscoversObservedQuote:true,supportsEvmBytes32PoolIds:true,transactionObservedPoolFirst:true,scheduledFomoPrewarm:true,prewarmSkipsReadyMarkets:true,prewarmFailureCooldownHours:6,noSyntheticCandles:true});

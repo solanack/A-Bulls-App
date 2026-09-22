@@ -38,9 +38,9 @@ test('RPC candidates prefer configured endpoints and bounded public fallbacks',(
   const configured=rpcCandidatesForChain({BASE_RPC_URL:'https://private.example',MULTICHAIN_PUBLIC_RPC_FALLBACKS:'true'},'base',EVM);
   assert.equal(configured[0].url,'https://private.example');
   assert.ok(configured.some(item=>item.url.includes('publicnode.com')));
-  const robinhood=rpcCandidatesForChain({PONS_RPC_URL:'https://robinhood.example'},'robinhood',EVM);
-  assert.equal(robinhood.length,1);
+  const robinhood=rpcCandidatesForChain({PONS_RPC_URL:'https://robinhood.example',MULTICHAIN_PUBLIC_RPC_FALLBACKS:'true'},'robinhood',EVM);
   assert.equal(robinhood[0].url,'https://robinhood.example');
+  assert.ok(robinhood.some(item=>item.url==='https://rpc.mainnet.chain.robinhood.com'));
 });
 
 test('registry matches current Fomo token-chain coverage and remains read only',()=>{

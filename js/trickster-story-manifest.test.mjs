@@ -89,3 +89,11 @@ test('A Bulls original soundtrack presets freeze without external music rights',
   assert.ok(manifestDisclosures(manifest).some(line=>/A Bulls original soundtrack/.test(line)));
   assert.throws(()=>validateStoryManifest({...valid,presentation:{soundtrack:{kind:'a-bulls-original',preset:'unknown',volume:.2}}}),/unsupported A Bulls soundtrack preset/);
 });
+
+
+test('Replay creator template is frozen as presentation metadata and invalid templates fail closed',()=>{
+  const manifest=validateStoryManifest({...valid,presentation:{template:'galaxy-dive',sfxPack:'cosmic',soundtrack:{kind:'none'}}});
+  assert.equal(manifest.presentation.template,'galaxy-dive');
+  assert.equal(manifest.claims[0].statement,'The transaction was observed.');
+  assert.throws(()=>validateStoryManifest({...valid,presentation:{template:'invented-template',soundtrack:{kind:'none'}}}),/unsupported Cut template/);
+});

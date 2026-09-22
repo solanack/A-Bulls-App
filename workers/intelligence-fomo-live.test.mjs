@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fomoLeaderboardPnl,normalizeFomoLiveLeaderboard,normalizeFomoHoldings,normalizeFomoTrades,holdingTradeAnchors,__fomoLiveContract } from './intelligence-fomo-live.mjs';
+import { fomoLeaderboardPnl,normalizeFomoLiveLeaderboard,normalizeFomoHoldings,normalizeFomoTrades,holdingTradeAnchors,tradePaginationPointer,__fomoLiveContract } from './intelligence-fomo-live.mjs';
 const SOL='5AhfPStn66hRYoNNDfJHSDgCH7fBbwMQZUECRrhTo62F';
 
 test('documented FomoAPI traders envelope populates wallet stars',()=>{const payload={capturedAt:'2026-09-08T12:00:00Z',traders:[{rank:1,handle:'Unipcs',displayName:'Unipcs',pnlUsd:16518210.66,volumeUsd:123,trades:42,followers:100,wallets:{solana:SOL,evm:'0x7b4d16237683fe1765e727eadf99c6f02adf0b59'},topTokens:['0x7b4d16237683fe1765e727eadf99c6f02adf0b59']} ]};const rows=normalizeFomoLiveLeaderboard(payload);assert.equal(rows.length,1);assert.equal(rows[0].handle,'Unipcs');assert.equal(rows[0].reportedPnlUsd,16518210.66);assert.equal(rows[0].solanaWallet,SOL);assert.equal(rows[0].topTokens.length,1);});
 test('leaderboard PnL accepts nested and currency-formatted provider variants without guessing',()=>{assert.equal(fomoLeaderboardPnl({pnl:{allTime:'+$16,518,210.66'}}),16518210.66);assert.equal(fomoLeaderboardPnl({performance:{all:{pnl:'-$1,250.50'}}}),-1250.5);assert.equal(fomoLeaderboardPnl({foo:'bar'}),null);const rows=normalizeFomoLiveLeaderboard({traders:[{rank:1,handle:'Nested',displayName:'Nested',performance:{all:{pnl:'+$2,500.25'}},wallets:{solana:SOL}}]});assert.equal(rows[0].reportedPnlUsd,2500.25);});
 test('balances become value-ranked top ten research positions',()=>{const rows=normalizeFomoHoldings({holdings:[{token:{symbol:'LOW',address:'low'},chain:'solana',valueUsd:'$10.00'},{token:{symbol:'HIGH',address:'high'},chain:'robinhood',amount:12,priceUsd:10,valueUsd:'$120.00'}]});assert.equal(rows[0].tokenAddress,'high');assert.equal(rows[0].rank,1);assert.equal(rows[0].chain,'robinhood');assert.equal(rows[0].valueUsd,120);});
 test('trade cache preserves open/closed timing, chain identity, and provider PnL without inventing swaps',()=>{const rows=normalizeFomoTrades({trades:[{tradeId:'t1',token:{symbol:'ONE',address:'token-one'},chain:'base',status:'closed',amount:4,avgEntryPrice:1,avgExitPrice:2,realizedPnlUsd:'+$4.00',createdAt:'2026-09-07T00:00:00Z',closedAt:'2026-09-08T00:00:00Z'}]});assert.equal(rows.length,1);assert.equal(rows[0].chain,'base');assert.equal(rows[0].status,'closed');assert.equal(rows[0].realizedPnlUsd,4);assert.ok(rows[0].closedAt>rows[0].createdAt);});
-test('live Fomo cache remains bounded, prioritizes visible top traders, and stays provider-free on page reads',()=>{assert.equal(__fomoLiveContract.maximumTraders,50);assert.equal(__fomoLiveContract.maximumPositions,10);assert.equal(__fomoLiveContract.latestTrades,3);assert.equal(__fomoLiveContract.pageReadsProviderFree,true);assert.equal(__fomoLiveContract.requiresApiKey,true);assert.equal(__fomoLiveContract.priorityDetailedTraders,50);assert.equal(__fomoLiveContract.coverageBackfillMax,10);assert.equal(__fomoLiveContract.activeTradeAnchors,true);assert.equal(__fomoLiveContract.providerTradeFetchDefault,100);assert.equal(__fomoLiveContract.providerTradeFetchFallback,25);assert.equal(__fomoLiveContract.closedTradeRetention,'durable');});
+test('live Fomo cache remains bounded, prioritizes visible top traders, and stays provider-free on page reads',()=>{assert.equal(__fomoLiveContract.maximumTraders,50);assert.equal(__fomoLiveContract.maximumPositions,10);assert.equal(__fomoLiveContract.latestTrades,3);assert.equal(__fomoLiveContract.pageReadsProviderFree,true);assert.equal(__fomoLiveContract.requiresApiKey,true);assert.equal(__fomoLiveContract.priorityDetailedTraders,50);assert.equal(__fomoLiveContract.coverageBackfillMax,10);assert.equal(__fomoLiveContract.activeTradeAnchors,true);assert.equal(__fomoLiveContract.providerTradeFetchDefault,100);assert.equal(__fomoLiveContract.providerTradeFetchFallback,25);assert.equal(__fomoLiveContract.providerTradePagination,'continuation-when-exposed');assert.equal(__fomoLiveContract.closedTradeRetention,'durable');});
 
 
 test('balance activeTrade metadata preserves a provider-reported Replay anchor and entry price',()=>{
@@ -44,4 +44,12 @@ test('provider trade transaction references are retained for later independent v
   const rows=normalizeFomoTrades({trades:[{tradeId:'provider-id',tokenAddress:'0x3333333333333333333333333333333333333333',chain:'base',status:'closed',createdAt:1_789_000_000,closedAt:1_789_100_000,entryTxHash:entry,exitTransactionHash:exit}]});
   assert.equal(rows[0].entryTxId,entry);
   assert.equal(rows[0].exitTxId,exit);
+});
+
+
+test('trade pagination recognizes provider cursor and page-token variants without inventing continuation',()=>{
+  assert.deepEqual(tradePaginationPointer({nextCursor:'abc'}),{param:'cursor',cursor:'abc'});
+  assert.deepEqual(tradePaginationPointer({pagination:{next_page_token:'def'}}),{param:'pageToken',cursor:'def'});
+  assert.deepEqual(tradePaginationPointer({links:{next:'https://api.fomoapi.io/v2/users/x/trades?limit=100&cursor=ghi'}}),{param:'cursor',cursor:'ghi'});
+  assert.equal(tradePaginationPointer({trades:[]}),null);
 });

@@ -10,6 +10,7 @@ import { handleUniverseRequest } from './intelligence-universe-router.mjs';
 import { handleTricksterRequest, pruneTricksterShareManifests } from './intelligence-trickster-router.mjs';
 import { handleReplayBundleRequest } from './intelligence-replay-bundle.mjs';
 import { prewarmFomoReplayCandles } from './intelligence-replay-market-hydration.mjs';
+import { refreshRobinhoodReferenceContext } from './intelligence-robinhood-reference.mjs';
 import { handleMarketReplayRequest } from './intelligence-market-replay.mjs';
 import { handleMarketBackfillPlanRequest } from './intelligence-market-backfill-router.mjs';
 import { handleMarketBackfillRequest } from './intelligence-market-backfill-request.mjs';
@@ -48,9 +49,10 @@ async function refreshFomoAndMultichain(env={}){
   let fomo=null;
   try{fomo=await refreshFomoLive(env);}catch(error){console.error('[fomo-refresh-error]',String(error?.stack||error?.message||error));}
   const multichain=await materializeFomoMultichainEvidence(env);
-  let replayCandles=null;
+  let replayCandles=null,robinhoodReference=null;
   try{replayCandles=await prewarmFomoReplayCandles(env);}catch(error){console.error('[fomo-replay-prewarm-error]',String(error?.stack||error?.message||error));}
-  return Object.freeze({fomo,multichain,replayCandles});
+  try{robinhoodReference=await refreshRobinhoodReferenceContext(env);}catch(error){console.error('[robinhood-reference-refresh-error]',String(error?.stack||error?.message||error));}
+  return Object.freeze({fomo,multichain,replayCandles,robinhoodReference});
 }
 
 export async function handleIntelligenceFetch(request,env={},ctx=null){if(ctx)env.__EXECUTION_CTX=ctx;for(const handler of [handleProviderSecretDiagnosticsRequest,handleProviderBudgetDiagnosticsRequest,handleAfterbellTradersRequest,handleFullChainStreamRequest,handleMultichainEvidenceRequest,handleGhostSimilarityRequest,handleBehaviorFingerprintRequest,handleResearchRelationshipsRequest,handleResearchIndexRequest,handleFomoResultsRequest,handleFomoMergedRequest,handleRetiredPonsGalaxyRequest,handleTokenSystemRequest,handleTraderObservatoryRequest,handleThesisRequest,handleSocialFiRequest,handleFieldV0Request,handleFieldCompatibilityRequest,handleHeliusUniverseWebhook,handleExternalRetrievalTaskRequest,handleIntelligenceMeshIngestRequest,handleIntelligenceAdapterRequest,handleUniverseRequest,handleWalletTokenIndexRequest,handleEventMarketContextRequest,handleMarketReplayRequest,handleMarketBackfillPlanRequest,handleMarketBackfillRequest,handleIndexJobStatusRequest,handleReplayBundleRequest,handleTricksterRequest]){const response=await handler(request,env);if(response)return response;}return handleIntelligenceVNext(request,env);}

@@ -17,12 +17,14 @@ test("Fomo trader comets and token planets open the selected wallet-token Replay
   assert.match(fieldOS,/this\.mode="replay"/);
 });
 
-test("Replay chart renders trader buys and sells without inventing execution price",()=>{
-  assert.match(replay,/TRADER RECEIPTS/);
-  assert.match(replay,/replay-trade-marker--buy/);
-  assert.match(replay,/replay-trade-marker--sell/);
-  assert.match(replay,/time marker only; execution price unavailable/);
-  assert.match(replay,/Candle and volume geometry comes only from indexed market evidence/);
+test("Replay chart uses an interactive financial series with receipt-bound buy and sell markers",()=>{
+  assert.match(replay,/lightweight-charts/);
+  assert.match(replay,/RECEIPT-BOUND MARKERS/);
+  assert.match(replay,/CandlestickSeries/);
+  assert.match(replay,/HistogramSeries/);
+  assert.match(replay,/arrowUp/);
+  assert.match(replay,/arrowDown/);
+  assert.match(replay,/candlestick and volume series use indexed market evidence/i);
 });
 
 test("selected trade exposes the downstream research tools",()=>{
@@ -102,4 +104,15 @@ test("Trickster ships built-in rights-safe procedural soundtrack choices for mob
   assert.match(trickster,/Pulse/);
   assert.match(trickster,/Nebula/);
   assert.match(trickster,/Drive/);
+});
+
+
+test("Cut export prefers deterministic Mediabunny WebCodecs MP4 with OfflineAudioContext and retains MediaRecorder only as fallback",()=>{
+  assert.match(recorder,/mediabunny/);
+  assert.match(recorder,/CanvasSource/);
+  assert.match(recorder,/AudioBufferSource/);
+  assert.match(recorder,/OfflineAudioContext/);
+  assert.match(recorder,/mediabunny-webcodecs/);
+  assert.match(recorder,/mediarecorder-fallback/);
+  assert.match(recorder,/deterministic:true/);
 });
