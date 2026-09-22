@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LIVE_FIXTURE, fixtureFromFrozenCut, fomoSolanaTopTokens, validateAfterbellTraders, validateCutPage, validateEvidenceFixture, validateFomoAudit, validateFomoGalaxy, validateFomoTrader, validateReplay, validateTokenSystem, validateWalletSystem } from "./check-live.mjs";
+import { LIVE_FIXTURE, fixtureFromFrozenCut, fomoSolanaTopTokens, validateAfterbellAudit, validateAfterbellTraders, validateCutPage, validateEvidenceFixture, validateFomoAudit, validateFomoGalaxy, validateFomoTrader, validateReplay, validateTokenSystem, validateWalletSystem } from "./check-live.mjs";
 
 const fixture = Object.freeze({
   wallet: LIVE_FIXTURE.wallet,
@@ -87,6 +87,13 @@ test("live route probes cover depths 1–4 and reject broken segments or HTML fa
   await assert.rejects(checkRouteFamilies({ fetchImpl: makeFetch(3, true) }), /returned HTML/);
 });
 
+
+test("Afterbell audit distinguishes retained evidence from honest empty coverage",()=>{
+  const counts=validateAfterbellAudit({ok:true,coverage:"fresh",counts:{events:159,wallets:14,transactions:61,assets:1},assets:[{mint:LIVE_FIXTURE.mint}]});
+  assert.equal(counts.transactions,61);
+  assert.throws(()=>validateAfterbellAudit({ok:true,coverage:"fresh",counts:{events:0,wallets:0,transactions:0,assets:0}}),/no retained evidence/);
+  assert.doesNotThrow(()=>validateAfterbellAudit({ok:true,coverage:"empty",counts:{events:0,wallets:0,transactions:0,assets:0}}));
+});
 
 test("Afterbell Top 50 smoke preserves rank, provenance, and unavailable PnL",()=>{
   const body={ok:true,coverage:"fresh",window:{from:100,to:200,timezone:"America/New_York"},items:[
