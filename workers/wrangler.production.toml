@@ -54,6 +54,10 @@ MULTICHAIN_PUBLIC_RPC_FALLBACKS = "true"
 MULTICHAIN_MARKET_ASSETS_PER_RUN = "60"
 MULTICHAIN_FOMO_EVENTS_PER_RUN = "100"
 MULTICHAIN_TX_VERIFY_LIMIT = "4"
+# Independently search a bounded wallet/token time window when Fomo did not supply
+# a transaction hash. Ambiguous candidates are left provider-reported rather than guessed.
+MULTICHAIN_TX_RECONCILE_LIMIT = "2"
+MULTICHAIN_TX_RECONCILE_WINDOW_SECONDS = "900"
 # Pre-hydrate a few current Fomo trade windows per 15-minute cron so Replay charts
 # are usually warm before the user opens them. Source data remains CoinGecko/
 # GeckoTerminal OHLC; no synthetic candles are generated.
@@ -107,6 +111,12 @@ BULL_ARCHIVAL_ENABLED = "false"
 #   npx wrangler secret put HELIUS_API_KEY --config workers/wrangler.production.toml
 # Required for enabled multichain market enrichment:
 #   npx wrangler secret put COINGECKO_API_KEY --config workers/wrangler.production.toml
+# Strongly recommended for archive-grade Robinhood history. Without it the Worker
+# can use Robinhood's rate-limited public read RPC as a disclosed fallback:
+#   npx wrangler secret put ROBINHOOD_RPC_URL --config workers/wrangler.production.toml
+# Optional multichain discovery/stream acceleration. Chain receipts remain the
+# evidence boundary even when GoldRush is configured:
+#   npx wrangler secret put GOLDRUSH_API_KEY --config workers/wrangler.production.toml
 # Required for the enabled Helius universe webhook auth; either dedicated secret OR
 # the retained PUMP_INGEST_SECRET fallback must be configured:
 #   npx wrangler secret put HELIUS_WEBHOOK_AUTH_SECRET --config workers/wrangler.production.toml
