@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseExactReplayPool, discoverExactReplayPool, discoverExactReplayPools, normalizeGeckoOhlcvRows, replayMarketProviders, replayPoolsForToken } from './intelligence-replay-market-hydration.mjs';
+import { chooseExactReplayPool, chooseReplayPrewarmBucket, discoverExactReplayPool, discoverExactReplayPools, normalizeGeckoOhlcvRows, replayMarketProviders, replayPoolsForToken, __replayMarketHydrationContract } from './intelligence-replay-market-hydration.mjs';
 
 const mint='33333333333333333333333333333333';
 const quote='44444444444444444444444444444444';
@@ -140,4 +140,13 @@ test('accepts bytes32 Robinhood pool ids used by public GeckoTerminal markets',(
   assert.equal(pools.length,1);
   assert.equal(pools[0].address,bytes32Pool);
   assert.equal(pools[0].quoteMint,ai);
+});
+
+
+test('scheduled Fomo prewarm chooses bounded candle buckets instead of flooding minute history',()=>{
+  assert.equal(chooseReplayPrewarmBucket(0,3600,240),60);
+  assert.equal(chooseReplayPrewarmBucket(0,7*86400,240),3600);
+  assert.equal(chooseReplayPrewarmBucket(0,90*86400,240),43200);
+  assert.equal(__replayMarketHydrationContract.scheduledFomoPrewarm,true);
+  assert.equal(__replayMarketHydrationContract.supportsEvmBytes32PoolIds,true);
 });
