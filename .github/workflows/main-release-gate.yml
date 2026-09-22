@@ -54,6 +54,19 @@ jobs:
       - name: All repository tests
         run: npm test
 
+      - name: Audit every production Fomo trader-token Replay
+        run: node scripts/audit-fomo-replay-coverage.mjs
+
+      - name: Upload Fomo Replay coverage audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: fomo-replay-audit-${{ github.sha }}
+          path: |
+            fomo-replay-audit.json
+            fomo-replay-audit-summary.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Production frontend build
         env:
           CF_DEPLOY: "1"
