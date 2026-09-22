@@ -36,19 +36,24 @@ Already present:
 - cinematic BUY/SELL effects and sound packs.
 - optional soundtrack handling for Cuts.
 
-Still incomplete:
-- provider-history pagination to exhaustion / historical completeness.
-- independent transaction reconciliation when Fomo does not supply a transaction id.
-- exact swap/DEX/pool identification from the resolved transaction.
-- exact-pool-first historical market reconstruction.
-- explicit chain adapter capability contract.
-- live streaming data plane (LaserStream / EVM wallet streams) and durable gap repair.
-- production-grade Robinhood archive provider + Lighter market adapter.
-- professional interactive chart engine (current Replay remains custom SVG).
-- unified RESEARCH / CINEMA / EDIT / EXPORT workflow.
-- deterministic Canvas + audio-buffer encoder pipeline (current recorder still uses MediaRecorder/captureStream).
-- saved Replay styles/templates and Galaxy Dive template.
-- end-to-end production coverage gates for every current Fomo trader/token pair.
+Completion status after the 2026-09-22 production pass:
+- provider-history continuation is retained when Fomo exposes cursors/pages, with durable closed-trade history and measurable coverage state;
+- bounded independent Solana/EVM transaction reconciliation is implemented and refuses ambiguous matches;
+- observed execution context stores transaction, venue and pool when independently resolved;
+- historical market hydration prefers the transaction-observed pool, then disclosed source-labeled fallbacks;
+- a common read-only chain-adapter capability contract covers Solana, Ethereum, Base, BSC, Monad and Robinhood;
+- Robinhood supports configured archive RPC, disclosed public fallback, Lighter/reference context and separate underlying-reference series;
+- Replay uses Lightweight Charts 5.x with interactive candles/volume and cinematic overlays;
+- Replay Studio provides RESEARCH / CINEMA / EDIT / EXPORT plus creator templates and local-first presentation settings;
+- deterministic Cut export uses Canvas + OfflineAudioContext + Mediabunny/WebCodecs H.264/AAC where supported, with MediaRecorder only as a capability fallback;
+- the production Fomo audit gates every current timed trade on Replay/chain/wallet integrity and records exact per-pair transaction, venue, pool, chart and Cut-data capability;
+- post-deploy verification includes retained Replay evidence, multichain evidence, sparse hydration and desktop/mobile Chromium canvas smoke.
+
+External/device boundaries that remain intentionally capability-gated rather than falsely enabled:
+- always-on direct LaserStream/EVM wallet streaming requires a configured upstream authenticated stream producer; the gap-aware ingest/repair boundary exists and archive/RPC backfill remains production-active;
+- GoldRush discovery is optional and activates only when `GOLDRUSH_API_KEY` is configured; on-chain RPC/receipt verification remains the evidence boundary;
+- `ROBINHOOD_RPC_URL` is an optional archive-quality upgrade because a disclosed public read fallback exists;
+- physical Seeker/Android GPU, audio hardware and codec behavior still require device acceptance; headless desktop/mobile browser acceptance is automated in the deployment gate.
 
 ## Locked execution order
 

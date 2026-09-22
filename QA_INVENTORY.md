@@ -1,6 +1,6 @@
 # A Bulls App — Production QA Inventory
 
-Audit baseline: production-verified `main` at `7688665cfe6a6c12d56d162c384a060a049e7193` (2026-09-21). GitHub Actions run `35660603868` passed the full release gate and Deploy Cloudflare run `35660603738` published both Workers and passed post-deploy live verification.
+Audit baseline: the latest successful production deployment on `main` is the source of truth. The release path now requires repository tests, typecheck, production builds, Worker dry-runs, retained Replay evidence, six-chain checks, full Fomo Replay/capability audit, sparse hydration and deployed desktop/mobile Chromium smoke before a release is accepted.
 
 This inventory is code-derived from the active frontend, Intelligence Worker, production Wrangler flags, and release/live-check scripts. Missing evidence remains unavailable; no surface is allowed to fabricate wallets, holdings, candles, prices, exits, PnL, chain identity, or performance claims.
 
@@ -31,7 +31,7 @@ This inventory is code-derived from the active frontend, Intelligence Worker, pr
 | Ghost | `/api/intelligence/ghost-portfolio` | research thread | retained historical similarity/index evidence | repository tests; no independent production fixture assertion yet |
 | Trickster validation | `/api/intelligence/trickster/validate` | research thread | frozen Research Thread + Evidence IDs | repository tests |
 | Frozen Trickster Cut read/share/VERIFY | `/api/intelligence/trickster/share/:id`, `/?cut=:id` | public read-only | frozen Cut manifest in D1/cache | live frozen-manifest/VERIFY checks |
-| Trickster video export | `src/lib/trickster-cut-recorder.ts`, `trickster-director.tsx` | capable browsers | frozen receipt-bound scenes + browser MediaRecorder/Web Audio | typecheck/unit/build coverage; actual codec capture/export remains browser/manual QA |
+| Trickster video export | `src/lib/trickster-cut-recorder.ts`, `trickster-director.tsx` | capable browsers | frozen receipt-bound scenes + deterministic Canvas/OfflineAudioContext + Mediabunny/WebCodecs, MediaRecorder fallback | typecheck/unit/build coverage + deployed browser shell smoke; physical codec capture/playback remains device acceptance |
 | Trickster Auto Cut | director + pure cue/video model | frozen receipt set | highest-magnitude receipt window | pure-function tests |
 | Grey + Trickster narration | ElevenLabs path + separate role text | capable clients | Grey factual text + Trickster interpretation text kept distinct | repository tests/types; audio playback/export remains browser/manual |
 | Trending Cuts | Index + `/api/intelligence/trickster/trending` | public frozen Cuts | anonymous retained view/share actions only | repository tests + release gate |
@@ -55,7 +55,7 @@ GitHub Actions is authorized for Cloudflare production deployment. The historica
 1. Main release gate: provider-secret coverage → release baseline → TypeScript → full tests → production frontend build → Intelligence Worker bundle → migration safety → frontend Worker bundle → immutable tested artifact.
 2. Deploy Cloudflare: rebuild/verify exact artifact → pending migration inspection → retained Replay evidence validation → migrations → Intelligence Worker publish → frontend Worker publish → public routes → multichain evidence → D1 population → sparse Replay diagnostic → source-health capture.
 
-Production verification for `7688665cfe6a6c12d56d162c384a060a049e7193` passed both workflows.
+Production verification is attached to each successful `main` deployment as GitHub Actions artifacts, including the pair-level Replay capability matrix and production browser screenshots/verdict.
 
 ## Production feature flags / explicit exclusions
 
@@ -65,7 +65,7 @@ Trading, signing, custody, token launch, native token, Bull Invaders, LIFE, copy
 
 ## Manual/device acceptance still required
 
-Automation does not certify physical Android/Seeker GPU or browser codec behavior. Manual acceptance remains required for:
+Deployment automation now certifies desktop/mobile Chromium navigation, application canvas presence, console/page-error freedom and horizontal-overflow safety. It still does not certify physical Android/Seeker GPU, speakers, thermals or device codec implementations. Manual acceptance remains required for:
 
 - native WebGL rendering, rotation/pinch/lifecycle recovery and no black-screen regression;
 - actual MediaRecorder/WebCodecs availability, exported Trickster MP4/WebM playback, narration mix and watermark legibility;
