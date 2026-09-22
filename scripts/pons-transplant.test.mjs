@@ -19,9 +19,10 @@ test("PONS remains additive inside the locked interface", () => {
   assert.doesNotMatch(appShell, /className="field-shell__galaxy-trigger"/);
 });
 
-test("Galaxy selection narrates only the sourced directory description", () => {
-  assert.doesNotMatch(appShell, /observedGalaxySpeech|observedBodySpeech|unlockSpeech/);
-  assert.match(fieldOs, /Tap again to enter/);
+test("Galaxy selection is one tap and does not narrate an entry description", () => {
+  assert.doesNotMatch(appShell, /observedGalaxySpeech|observedBodySpeech|unlockSpeech|TAP AGAIN/);
+  assert.doesNotMatch(fieldOs, /Tap again to enter/);
+  assert.match(fieldOs, /if\(target\)\{this\.field\.clearFocus\(true\);this\.setGalaxy\(target\);return;\}/);
   assert.doesNotMatch(fieldOs, /safe to buy|guaranteed|will pump/i);
 });
 
