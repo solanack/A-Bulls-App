@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { candidateTransactionId,fomoPositionToChainAsset,fomoTradeToChainEvent,fomoTradeToChainEvents,selectReconciliationEvents,verifyEvmTransaction,__multichainEvidenceContract } from './intelligence-multichain-evidence.mjs';
+import { candidateTransactionId,fomoPositionToChainAsset,fomoTradeToChainEvent,fomoTradeToChainEvents,rotatingFomoTradeOffset,selectReconciliationEvents,verifyEvmTransaction,__multichainEvidenceContract } from './intelligence-multichain-evidence.mjs';
 
 const TOKEN='0x1111111111111111111111111111111111111111';
 const WALLET='0x2222222222222222222222222222222222222222';
@@ -58,4 +58,15 @@ test('reconciliation rotation excludes events that already have a transaction or
     {eventId:'eligible',txId:null,walletAddress:WALLET,blockTime:102},
   ];
   assert.deepEqual(selectReconciliationEvents(events,2,0).map(row=>row.eventId),['eligible']);
+});
+
+
+test('current Fomo trade materialization rotates through bounded pages instead of pinning rank-one rows',()=>{
+  const interval=15*60*1000;
+  assert.equal(rotatingFomoTradeOffset(2368,100,0),0);
+  assert.equal(rotatingFomoTradeOffset(2368,100,interval),100);
+  assert.equal(rotatingFomoTradeOffset(2368,100,23*interval),2300);
+  assert.equal(rotatingFomoTradeOffset(2368,100,24*interval),0);
+  assert.equal(rotatingFomoTradeOffset(80,100,999*interval),0);
+  assert.equal(__multichainEvidenceContract.providerEventMaterialization,'rotating-current-cohort-pages');
 });
