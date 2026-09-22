@@ -7,6 +7,7 @@ import {
   cutSharePath,
   cutShareReceiptLines,
   cutShareSize,
+  manifestDisclosures,
   shareCutLink,
   shareIdFromSearch,
   validateStoryManifest
@@ -66,4 +67,15 @@ test('native share prefers a file, then the VERIFY URL, then clipboard', async (
     nav: { clipboard: { writeText: async (value) => { copied = value; } } }
   }), 'copied');
   assert.equal(copied, 'https://app.example.test/?cut=abc');
+});
+
+
+test('Cut presentation metadata preserves soundtrack provenance without changing evidence claims',()=>{
+  const manifest=validateStoryManifest({...valid,presentation:{sfxPack:'arcade',soundtrack:{kind:'user-supplied',name:'my-track.wav',volume:.24,rightsConfirmed:true}}});
+  assert.equal(manifest.presentation.sfxPack,'arcade');
+  assert.equal(manifest.presentation.soundtrack.kind,'user-supplied');
+  assert.equal(manifest.presentation.soundtrack.name,'my-track.wav');
+  assert.equal(manifest.presentation.soundtrack.volume,.24);
+  assert.ok(manifestDisclosures(manifest).some(line=>/presentation layers only/.test(line)));
+  assert.throws(()=>validateStoryManifest({...valid,presentation:{sfxPack:'cosmic',soundtrack:{kind:'user-supplied',name:'x',volume:.2,rightsConfirmed:false}}}),/rights confirmation/);
 });
