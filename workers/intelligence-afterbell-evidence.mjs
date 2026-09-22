@@ -103,7 +103,7 @@ export async function refreshAfterbellEvidence(env={},options={}){
   const db=intelligenceDb(env);if(!db)return{ok:false,error:'database_unavailable'};
   const now=Math.trunc(n(options.nowMs)||Date.now()),window=afterbellWindow(now);
   if(options.force!==true&&!shouldRefreshAfterbell(now))return{ok:true,skipped:'regular-market-session',window,totalAccepted:0,results:[]};
-  const slot=Math.floor(now/(15*60*1000)),batch=Math.max(1,Math.min(2,Math.trunc(n(options.batch)||1));
+  const slot=Math.floor(now/(15*60*1000)),batch=Math.max(1,Math.min(2,Math.trunc(n(options.batch)||1)));
   const resolved=(await Promise.all(SYMBOLS.map(symbol=>resolveMarket(symbol,options.fetchImpl)))).filter(Boolean);
   if(!resolved.length)return{ok:false,error:'xstock_registry_unavailable',window};
   const start=(slot*batch)%resolved.length,selected=Array.from({length:Math.min(batch,resolved.length)},(_,i)=>resolved[(start+i)%resolved.length]),results=[];
