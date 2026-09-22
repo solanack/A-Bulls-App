@@ -84,6 +84,8 @@ test("Replay is a full-screen creator-oriented Studio with presentation-only con
 test("Trickster Cut export accepts user soundtrack audio and keeps it separate from evidence",()=>{
   assert.match(trickster,/UPLOAD YOUR TRACK/);
   assert.match(trickster,/I have the right to use this track/);
+  assert.match(trickster,/A BULLS ORIGINAL/);
+  assert.match(trickster,/A Bulls originals are synthesized in-browser/);
   assert.match(trickster,/musicFile,musicVolume,sfxPack/);
   assert.match(recorder,/decodeMusic/);
   assert.match(recorder,/scheduleMusic/);
