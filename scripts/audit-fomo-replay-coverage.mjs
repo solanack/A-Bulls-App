@@ -34,6 +34,7 @@ const traders=d1(`
 SELECT handle,current_rank,display_name,solana_wallet,evm_wallet,top_tokens_json,captured_at
 FROM fomo_traders
 WHERE current_rank BETWEEN 1 AND 50
+  AND captured_at=(SELECT MAX(captured_at) FROM fomo_traders)
 ORDER BY current_rank ASC;
 `);
 const positions=d1(`
@@ -41,6 +42,7 @@ SELECT p.handle,p.position_rank,p.token_address,p.symbol,p.name,p.chain,p.networ
 FROM fomo_trader_positions p
 JOIN fomo_traders t ON t.handle=p.handle
 WHERE t.current_rank BETWEEN 1 AND 50
+  AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders)
 ORDER BY t.current_rank,p.position_rank;
 `);
 const trades=d1(`
@@ -49,6 +51,7 @@ SELECT tr.handle,tr.trade_id,tr.token_address,tr.symbol,tr.chain,tr.status,tr.am
 FROM fomo_trader_trades tr
 JOIN fomo_traders t ON t.handle=tr.handle
 WHERE t.current_rank BETWEEN 1 AND 50
+  AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders)
 ORDER BY t.current_rank,MAX(COALESCE(tr.closed_at,0),COALESCE(tr.created_at,0)) DESC;
 `);
 const multichain=d1(`
@@ -78,7 +81,9 @@ const solana=d1(`
 WITH wallets AS (
   SELECT DISTINCT solana_wallet wallet
   FROM fomo_traders
-  WHERE current_rank BETWEEN 1 AND 50 AND solana_wallet IS NOT NULL AND TRIM(solana_wallet)<>''
+  WHERE current_rank BETWEEN 1 AND 50
+    AND captured_at=(SELECT MAX(captured_at) FROM fomo_traders)
+    AND solana_wallet IS NOT NULL AND TRIM(solana_wallet)<>''
 ),
 tokens AS (
   SELECT DISTINCT token_address token FROM fomo_trader_positions WHERE chain IS NULL OR LOWER(chain) IN ('solana','sol','svm','solana-mainnet')
@@ -96,6 +101,17 @@ FROM intelligence_price_candles c
 JOIN tokens x ON x.token=c.mint
 GROUP BY c.mint,c.quote_mint;
 `);
+const budget=d1(`
+SELECT provider,month_key,call_count,credits_reserved,monthly_limit,breaker_ratio,
+       CAST(monthly_limit*breaker_ratio AS INTEGER) hard_limit,
+       MAX(0,CAST(monthly_limit*breaker_ratio AS INTEGER)-credits_reserved) headroom,
+       updated_at
+FROM intelligence_provider_budget_monthly
+WHERE provider='fomoapi'
+ORDER BY month_key DESC
+LIMIT 1;
+`)[0]??null;
+
 
 const traderByHandle=new Map(traders.map(row=>[s(row.handle).toLowerCase(),row]));
 const knownChainsByHandleToken=new Map();
@@ -150,7 +166,7 @@ const perChain={};
 for(const row of rows){const item=perChain[row.chain]??={pairs:0,replayReady:0,chartReady:0,positionsWithoutReplay:0,tradesWithoutReplay:0,tradesWithoutChart:0,unknownChain:0,missingWallet:0};item.pairs+=1;item.replayReady+=Number(row.hasReplayEvidence);item.chartReady+=Number(row.hasChartEvidence);item.positionsWithoutReplay+=Number(row.positionWithoutReplay);item.tradesWithoutReplay+=Number(row.tradeWithoutReplay);item.tradesWithoutChart+=Number(row.tradeWithoutChart);item.unknownChain+=Number(row.unknownChain);item.missingWallet+=Number(row.missingWallet);}
 
 const perTrader=traders.map(trader=>{const owned=rows.filter(row=>row.handle.toLowerCase()===s(trader.handle).toLowerCase());return{rank:n(trader.current_rank),handle:s(trader.handle),pairs:owned.length,replayReady:owned.filter(row=>row.hasReplayEvidence).length,chartReady:owned.filter(row=>row.hasChartEvidence).length,positionsWithoutReplay:owned.filter(row=>row.positionWithoutReplay).length,tradesWithoutReplay:owned.filter(row=>row.tradeWithoutReplay).length,tradesWithoutChart:owned.filter(row=>row.tradeWithoutChart).length,unknownChain:owned.filter(row=>row.unknownChain).length};});
-const summary={generatedAt:new Date().toISOString(),traders:traders.length,tradersWithAnyTokenPair:tradersWithPairs.size,tradersWithProviderPositions:new Set(positions.map(row=>s(row.handle).toLowerCase())).size,tradersWithProviderTrades:new Set(trades.map(row=>s(row.handle).toLowerCase())).size,totalPairs:rows.length,replayReadyPairs:rows.filter(row=>row.hasReplayEvidence).length,chartReadyPairs:rows.filter(row=>row.hasChartEvidence).length,positionPairsWithoutReplay:rows.filter(row=>row.positionWithoutReplay).length,tradePairsWithoutReplay:rows.filter(row=>row.tradeWithoutReplay).length,tradePairsWithoutChart:rows.filter(row=>row.tradeWithoutChart).length,unknownChainPairs:rows.filter(row=>row.unknownChain).length,missingWalletPairs:rows.filter(row=>row.missingWallet).length,perChain,perTrader};
+const summary={generatedAt:new Date().toISOString(),providerBudget:budget,traders:traders.length,tradersWithAnyTokenPair:tradersWithPairs.size,tradersWithProviderPositions:new Set(positions.map(row=>s(row.handle).toLowerCase())).size,tradersWithProviderTrades:new Set(trades.map(row=>s(row.handle).toLowerCase())).size,totalPairs:rows.length,replayReadyPairs:rows.filter(row=>row.hasReplayEvidence).length,chartReadyPairs:rows.filter(row=>row.hasChartEvidence).length,positionPairsWithoutReplay:rows.filter(row=>row.positionWithoutReplay).length,tradePairsWithoutReplay:rows.filter(row=>row.tradeWithoutReplay).length,tradePairsWithoutChart:rows.filter(row=>row.tradeWithoutChart).length,unknownChainPairs:rows.filter(row=>row.unknownChain).length,missingWalletPairs:rows.filter(row=>row.missingWallet).length,perChain,perTrader};
 
 writeFileSync("fomo-replay-audit.json",JSON.stringify({summary,rows},null,2));
 writeFileSync("fomo-replay-audit-summary.json",JSON.stringify(summary,null,2));
