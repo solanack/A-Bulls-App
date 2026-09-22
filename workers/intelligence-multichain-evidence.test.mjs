@@ -29,7 +29,7 @@ test('RPC verification creates a separate observed receipt fact without claiming
   assert.equal(receipt.sourceKind,'observed-fact');assert.equal(receipt.blockHeight,16);assert.equal(receipt.evidence.success,true);assert.equal(receipt.evidence.tradeInterpretationVerified,false);assert.equal(receipt.eventClass,'transaction-receipt');
 });
 
-test('contract keeps public reads provider-free and execution disabled',()=>{assert.equal(__multichainEvidenceContract.readOnly,true);assert.equal(__multichainEvidenceContract.pageReadsProviderFree,true);assert.equal(__multichainEvidenceContract.providerLifecyclePreservesEntryAndExit,true);assert.equal(__multichainEvidenceContract.providerReportedTradeFactsStayProviderReported,true);});
+test('contract keeps public reads provider-free and execution disabled',()=>{assert.equal(__multichainEvidenceContract.readOnly,true);assert.equal(__multichainEvidenceContract.pageReadsProviderFree,true);assert.equal(__multichainEvidenceContract.providerLifecyclePreservesEntryAndExit,true);assert.equal(__multichainEvidenceContract.providerReportedTradeFactsStayProviderReported,true);assert.equal(__multichainEvidenceContract.independentTransactionReconciliation,true);assert.equal(__multichainEvidenceContract.exactPoolResolutionFromReceipt,true);});
 
 
 test('closed provider lifecycle uses phase-specific transaction references when supplied',()=>{
