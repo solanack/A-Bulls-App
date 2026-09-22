@@ -12,7 +12,7 @@ const uniq=values=>[...new Set(values.map(s).filter(Boolean))];
 const slug=value=>s(value).toLowerCase().replace(/[_\s:]+/g,'-').replace(/[^a-z0-9-]/g,'').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,48);
 
 const DEFINITIONS=Object.freeze([
-  Object.freeze({key:'solana',kind:'svm',chainId:null,fomo:true,aliases:Object.freeze(['solana','sol','svm','solana-mainnet']),dexScreenerId:'solana',geckoNetworks:Object.freeze(['solana']),rpcEnv:Object.freeze([]),publicRpc:Object.freeze([])}),
+  Object.freeze({key:'solana',kind:'svm',chainId:null,fomo:true,aliases:Object.freeze(['solana','sol','svm','solana-mainnet','1399811149']),dexScreenerId:'solana',geckoNetworks:Object.freeze(['solana']),rpcEnv:Object.freeze([]),publicRpc:Object.freeze([])}),
   Object.freeze({key:'base',kind:'evm',chainId:8453,fomo:true,aliases:Object.freeze(['base','base-mainnet','coinbase-base','8453','eip155-8453']),dexScreenerId:'base',geckoNetworks:Object.freeze(['base']),rpcEnv:Object.freeze(['BASE_RPC_URL','EVM_RPC_BASE_URL']),publicRpc:Object.freeze(['https://base-rpc.publicnode.com'])}),
   Object.freeze({key:'bsc',kind:'evm',chainId:56,fomo:true,aliases:Object.freeze(['bsc','bnb','bnb-chain','bnbchain','binance-smart-chain','56','eip155-56']),dexScreenerId:'bsc',geckoNetworks:Object.freeze(['bsc','binance-smart-chain']),rpcEnv:Object.freeze(['BSC_RPC_URL','BNB_RPC_URL','EVM_RPC_BSC_URL']),publicRpc:Object.freeze(['https://bsc-rpc.publicnode.com'])}),
   Object.freeze({key:'monad',kind:'evm',chainId:143,fomo:true,aliases:Object.freeze(['monad','monad-mainnet','143','eip155-143']),dexScreenerId:'monad',geckoNetworks:Object.freeze(['monad']),rpcEnv:Object.freeze(['MONAD_RPC_URL','EVM_RPC_MONAD_URL']),publicRpc:Object.freeze(['https://rpc.monad.xyz'])}),
