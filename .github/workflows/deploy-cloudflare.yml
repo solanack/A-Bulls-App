@@ -166,6 +166,8 @@ jobs:
         run: node scripts/check-live.mjs
       - name: Verify multichain evidence spine
         run: node scripts/check-multichain-live.mjs | tee multichain-live-status.json
+      - name: Audit every current Fomo trader-token Replay
+        run: node scripts/audit-fomo-replay-coverage.mjs
       - name: Capture multichain D1 population
         if: always()
         run: |
@@ -218,6 +220,8 @@ jobs:
             retained-live-evidence.json
             retained-live-fixture.json
             multichain-live-status.json
+            fomo-replay-audit.json
+            fomo-replay-audit-summary.json
             multichain-d1-diagnostic.json
             replay-hydration-diagnostic.json
             replay-history-source-health.json
