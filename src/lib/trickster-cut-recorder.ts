@@ -107,16 +107,23 @@ function drawCinematicFrame(ctx:CanvasRenderingContext2D,model:Data,role:Narrati
   if(!allRows.length){
     ctx.textAlign="center";ctx.fillStyle="#d8e1ec";ctx.font=`700 ${Math.round(w*.032)}px system-ui,sans-serif`;ctx.fillText("NO INDEXED OHLC · RECEIPT TIMELINE ONLY",w/2,num(chart.y)+num(chart.h)*.48);ctx.fillStyle="#8395a8";ctx.font=`600 ${Math.round(w*.021)}px ui-monospace,monospace`;ctx.fillText("NO PRICE PATH WAS INVENTED",w/2,num(chart.y)+num(chart.h)*.56);ctx.textAlign="left";
   }else{
-    const highs=allRows.map(row=>num(row.high)),lows=allRows.map(row=>num(row.low)),high=Math.max(...highs),low=Math.min(...lows),range=Math.max(Number.EPSILON,high-low),cw=num(chart.w),ch=num(chart.h),cx=num(chart.x),cy=num(chart.y),padX=cw*.035,padY=ch*.09;
+    const highs=allRows.map(row=>num(row.high)),lows=allRows.map(row=>num(row.low)),high=Math.max(...highs),low=Math.min(...lows),range=Math.max(Number.EPSILON,high-low),volMax=Math.max(1,...allRows.map(row=>Math.abs(num(row.volume)))),cw=num(chart.w),ch=num(chart.h),cx=num(chart.x),cy=num(chart.y),padX=cw*.035,priceTop=cy+ch*.07,priceBottom=cy+ch*.78,volumeTop=cy+ch*.82,volumeBottom=cy+ch*.94;
     const x=(index:number)=>cx+padX+index*((cw-padX*2)/Math.max(1,allRows.length-1));
-    const y=(value:number)=>cy+padY+(1-(value-low)/range)*(ch-padY*2);
+    const y=(value:number)=>priceTop+(1-(value-low)/range)*(priceBottom-priceTop);
+    ctx.save();roundedRect(ctx,cx,cy,cw,ch,24);ctx.clip();
+    ctx.strokeStyle="rgba(210,224,245,.07)";ctx.lineWidth=1;for(const fraction of [.25,.5,.75]){const gy=priceTop+(priceBottom-priceTop)*fraction;ctx.beginPath();ctx.moveTo(cx+padX,gy);ctx.lineTo(cx+cw-padX,gy);ctx.stroke();}
+    for(let index=0;index<rows.length;index++){const row=rows[index],up=num(row.close)>=num(row.open),color=up?"#42efbd":"#ff5b82",px=x(index),volume=Math.abs(num(row.volume)),vh=volume/volMax*(volumeBottom-volumeTop);ctx.globalAlpha=.18;ctx.fillStyle=color;ctx.fillRect(px-3,volumeBottom-vh,6,Math.max(1,vh));ctx.globalAlpha=1;}
+    ctx.beginPath();for(let index=0;index<rows.length;index++){const row=rows[index],px=x(index),py=y(num(row.close));if(index===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);}ctx.strokeStyle="rgba(142,233,255,.28)";ctx.lineWidth=Math.max(1.2,w/900);ctx.shadowColor="rgba(142,233,255,.45)";ctx.shadowBlur=8;ctx.stroke();ctx.shadowBlur=0;
     ctx.lineWidth=Math.max(1,w/700);
     for(let index=0;index<rows.length;index++){
-      const row=rows[index],up=num(row.close)>=num(row.open),color=up?"#42efbd":"#ff5b82",px=x(index);ctx.strokeStyle=color;ctx.beginPath();ctx.moveTo(px,y(num(row.high)));ctx.lineTo(px,y(num(row.low)));ctx.stroke();ctx.fillStyle=color;const top=Math.min(y(num(row.open)),y(num(row.close))),body=Math.max(2,Math.abs(y(num(row.open))-y(num(row.close))));ctx.fillRect(px-3,top,6,body);
+      const row=rows[index],up=num(row.close)>=num(row.open),color=up?"#42efbd":"#ff5b82",px=x(index);ctx.strokeStyle=color;ctx.beginPath();ctx.moveTo(px,y(num(row.high)));ctx.lineTo(px,y(num(row.low)));ctx.stroke();ctx.fillStyle=color;const top=Math.min(y(num(row.open)),y(num(row.close))),body=Math.max(2,Math.abs(y(num(row.open))-y(num(row.close))));ctx.fillRect(px-3.5,top,7,body);
     }
     if(Boolean(model.markerVisible)){
-      const marker=Math.trunc(num(model.markerIndex)),px=x(marker),row=allRows[marker],py=row?y(num(row.close)):cy+ch*.5,pulse=num(model.pulse);ctx.strokeStyle=accent;ctx.lineWidth=4;ctx.globalAlpha=.55+.4*pulse;ctx.beginPath();ctx.arc(px,py,18+28*pulse,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;ctx.fillStyle=accent;ctx.beginPath();ctx.arc(px,py,9,0,Math.PI*2);ctx.fill();
+      const marker=Math.trunc(num(model.markerIndex)),px=x(marker),row=allRows[marker],py=row?y(num(row.close)):cy+ch*.5,pulse=clamp(num(model.pulse),0,1),radius=22+46*pulse;ctx.strokeStyle=accent;ctx.shadowColor=accent;ctx.shadowBlur=22;ctx.lineWidth=5;ctx.globalAlpha=.5+.45*pulse;ctx.beginPath();ctx.arc(px,py,radius,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=.42;ctx.beginPath();ctx.arc(px,py,radius*1.55,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;ctx.shadowBlur=0;ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(px,py,7+5*pulse,0,Math.PI*2);ctx.fill();ctx.strokeStyle=accent;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(px,priceTop);ctx.lineTo(px,priceBottom);ctx.stroke();
+      ctx.save();ctx.translate(px,py);ctx.rotate((buy?-1:1)*.08);ctx.strokeStyle=accent;ctx.lineWidth=5;ctx.globalAlpha=.75;ctx.beginPath();ctx.moveTo(-44,-28);ctx.lineTo(-8,-4);ctx.lineTo(-31,13);ctx.moveTo(44,-28);ctx.lineTo(8,-4);ctx.lineTo(31,13);ctx.stroke();ctx.restore();ctx.globalAlpha=1;
+      ctx.fillStyle=accent;ctx.font=`900 ${Math.round(w*.042)}px system-ui,sans-serif`;ctx.textAlign="right";ctx.globalAlpha=clamp((progress-.12)/.25,0,1);ctx.fillText(buy?"BUY":sell?"SELL":"EVENT",cx+cw-padX,cy+ch*.105);ctx.globalAlpha=1;ctx.textAlign="left";
     }
+    ctx.restore();
   }
 
   const caption=obj(model.caption),captionAlpha=clamp((progress-.1)/.22,0,1);ctx.globalAlpha=captionAlpha;ctx.fillStyle="rgba(6,8,15,.88)";roundedRect(ctx,w*.055,h*.70,w*.89,h*.145,22);ctx.fill();ctx.strokeStyle="rgba(142,233,255,.18)";ctx.stroke();ctx.fillStyle=accent;ctx.font=`800 ${Math.round(w*.021)}px ui-monospace,monospace`;ctx.fillText(text(caption.eyebrow),w*.08,h*.735);ctx.fillStyle="#f5f8ff";ctx.font=`700 ${Math.round(w*.032)}px system-ui,sans-serif`;wrapLines(ctx,text(caption.caption),w*.82,2).forEach((line,index)=>ctx.fillText(line,w*.08,h*(.775+index*.033)));ctx.globalAlpha=1;
