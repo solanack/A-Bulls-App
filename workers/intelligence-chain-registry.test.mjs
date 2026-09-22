@@ -9,6 +9,8 @@ test('normalizes Fomo chain aliases and numeric network ids without collapsing c
   assert.equal(normalizeChainKey('BNB Chain'),'bsc');
   assert.equal(normalizeChainKey('Robinhood Chain'),'robinhood');
   assert.equal(normalizeChainKey('SOL'),'solana');
+  assert.equal(normalizeChainKey('1399811149'),'solana');
+  assert.equal(resolveChain('1399811149').kind,'svm');
   assert.equal(normalizeChainKey('eip155:8453'),'base');
   assert.equal(normalizeChainKey('56'),'bsc');
   assert.equal(normalizeChainKey('1'),'ethereum');
