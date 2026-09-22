@@ -114,6 +114,14 @@ LIMIT 1;
 
 
 const traderByHandle=new Map(traders.map(row=>[s(row.handle).toLowerCase(),row]));
+const closedOutcomes=trades.flatMap(row=>{
+  const trader=traderByHandle.get(s(row.handle).toLowerCase()),pnl=finite(row.realized_pnl_usd),token=s(row.token_address),chain=normalizeChain(row.chain,token),wallet=chain==="solana"?s(trader?.solana_wallet):s(trader?.evm_wallet).toLowerCase();
+  const validWallet=chain==="solana"?SOLANA_RE.test(wallet):EVM_RE.test(wallet),validToken=chain==="solana"?SOLANA_RE.test(token):EVM_RE.test(token);
+  if(!trader||s(row.status).toLowerCase()!=="closed"||pnl==null||pnl===0||n(row.closed_at)<=0||!validWallet||!validToken)return[];
+  return[{rank:n(trader.current_rank),handle:s(trader.handle),displayName:s(trader.display_name)||s(trader.handle),chain,wallet,token:canonical(chain,token),symbol:s(row.symbol)||null,tradeId:s(row.trade_id),realizedPnlUsd:pnl,entryPriceUsd:finite(row.avg_entry_price),exitPriceUsd:finite(row.avg_exit_price),createdAt:n(row.created_at)||null,closedAt:n(row.closed_at)}];
+});
+const topWinners=closedOutcomes.filter(row=>row.realizedPnlUsd>0).sort((a,b)=>b.realizedPnlUsd-a.realizedPnlUsd||b.closedAt-a.closedAt).slice(0,10);
+const topLosses=closedOutcomes.filter(row=>row.realizedPnlUsd<0).sort((a,b)=>a.realizedPnlUsd-b.realizedPnlUsd||b.closedAt-a.closedAt).slice(0,10);
 const knownChainsByHandleToken=new Map();
 for(const row of [...positions,...trades]){
   const handle=s(row.handle).toLowerCase(),token=s(row.token_address),chain=normalizeChain(row.chain,token);
@@ -166,7 +174,7 @@ const perChain={};
 for(const row of rows){const item=perChain[row.chain]??={pairs:0,replayReady:0,chartReady:0,positionsWithoutReplay:0,tradesWithoutReplay:0,tradesWithoutChart:0,unknownChain:0,missingWallet:0};item.pairs+=1;item.replayReady+=Number(row.hasReplayEvidence);item.chartReady+=Number(row.hasChartEvidence);item.positionsWithoutReplay+=Number(row.positionWithoutReplay);item.tradesWithoutReplay+=Number(row.tradeWithoutReplay);item.tradesWithoutChart+=Number(row.tradeWithoutChart);item.unknownChain+=Number(row.unknownChain);item.missingWallet+=Number(row.missingWallet);}
 
 const perTrader=traders.map(trader=>{const owned=rows.filter(row=>row.handle.toLowerCase()===s(trader.handle).toLowerCase());return{rank:n(trader.current_rank),handle:s(trader.handle),pairs:owned.length,replayReady:owned.filter(row=>row.hasReplayEvidence).length,chartReady:owned.filter(row=>row.hasChartEvidence).length,positionsWithoutReplay:owned.filter(row=>row.positionWithoutReplay).length,tradesWithoutReplay:owned.filter(row=>row.tradeWithoutReplay).length,tradesWithoutChart:owned.filter(row=>row.tradeWithoutChart).length,unknownChain:owned.filter(row=>row.unknownChain).length};});
-const summary={generatedAt:new Date().toISOString(),providerBudget:budget,traders:traders.length,tradersWithAnyTokenPair:tradersWithPairs.size,tradersWithProviderPositions:new Set(positions.map(row=>s(row.handle).toLowerCase())).size,tradersWithProviderTrades:new Set(trades.map(row=>s(row.handle).toLowerCase())).size,totalPairs:rows.length,replayReadyPairs:rows.filter(row=>row.hasReplayEvidence).length,chartReadyPairs:rows.filter(row=>row.hasChartEvidence).length,positionPairsWithoutReplay:rows.filter(row=>row.positionWithoutReplay).length,tradePairsWithoutReplay:rows.filter(row=>row.tradeWithoutReplay).length,tradePairsWithoutChart:rows.filter(row=>row.tradeWithoutChart).length,unknownChainPairs:rows.filter(row=>row.unknownChain).length,missingWalletPairs:rows.filter(row=>row.missingWallet).length,perChain,perTrader};
+const summary={generatedAt:new Date().toISOString(),providerBudget:budget,traders:traders.length,tradersWithAnyTokenPair:tradersWithPairs.size,tradersWithProviderPositions:new Set(positions.map(row=>s(row.handle).toLowerCase())).size,tradersWithProviderTrades:new Set(trades.map(row=>s(row.handle).toLowerCase())).size,totalPairs:rows.length,replayReadyPairs:rows.filter(row=>row.hasReplayEvidence).length,chartReadyPairs:rows.filter(row=>row.hasChartEvidence).length,positionPairsWithoutReplay:rows.filter(row=>row.positionWithoutReplay).length,tradePairsWithoutReplay:rows.filter(row=>row.tradeWithoutReplay).length,tradePairsWithoutChart:rows.filter(row=>row.tradeWithoutChart).length,unknownChainPairs:rows.filter(row=>row.unknownChain).length,missingWalletPairs:rows.filter(row=>row.missingWallet).length,closedOutcomeCount:closedOutcomes.length,topWinners,topLosses,perChain,perTrader};
 
 writeFileSync("fomo-replay-audit.json",JSON.stringify({summary,rows},null,2));
 writeFileSync("fomo-replay-audit-summary.json",JSON.stringify(summary,null,2));
