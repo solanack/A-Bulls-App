@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { ADVANCED_MODES, ANALYSIS_MODES, MODE_HINT, TOOL_TITLE } from "./types.ts";
 import {
   heroSubjectLabel,
+  inboundGalaxyFromSearch,
   inboundWorkspaceMode,
   looksLikeMint,
   needsSelectedTrade,
