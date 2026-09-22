@@ -31,7 +31,7 @@ export function candidateTransactionId(chain,value){
 
 export function selectReconciliationEvents(events=[],limit=2,nowMs=Date.now()){
   const eligible=(Array.isArray(events)?events:[]).filter(event=>!event?.txId&&event?.walletAddress&&event?.blockTime);
-  const cap=Math.max(0,Math.min(8,Math.trunc(n(limit)||0));if(!cap||!eligible.length)return Object.freeze([]);
+  const cap=Math.max(0,Math.min(8,Math.trunc(n(limit)||0)));if(!cap||!eligible.length)return Object.freeze([]);
   const slot=Math.floor(Math.max(0,n(nowMs))/(15*60*1000)),start=(slot*cap)%eligible.length,out=[];
   for(let index=0;index<Math.min(cap,eligible.length);index+=1)out.push(eligible[(start+index)%eligible.length]);
   return Object.freeze(out);
