@@ -76,13 +76,13 @@ async function enrichTrader(env,db,handle,now){
     if(balances?.available!==false)await storeHoldings(db,handle,holdings,now);
     if(balances?.available!==false&&anchors.length)await storeTrades(db,handle,anchors,now);
     if(trades?.available!==false)await storeTrades(db,handle,history,now);
-    await db.prepare(`INSERT INTO fomo_enrichment_state(handle,last_positions_at,last_trades_at,last_error,updated_at) VALUES(?,?,?,NULL,?) ON CONFLICT(handle) DO UPDATE SET last_positions_at=excluded.last_positions_at,last_trades_at=excluded.last_trades_at,last_error=NULL,updated_at=excluded.updated_at`).bind(handle,now,now,now).run();
+    await db.prepare(`INSERT INTO fomo_enrichment_state(handle,last_positions_at,last_trades_at,last_error,updated_at,replay_anchor_version) VALUES(?,?,?,NULL,?,1) ON CONFLICT(handle) DO UPDATE SET last_positions_at=excluded.last_positions_at,last_trades_at=excluded.last_trades_at,last_error=NULL,updated_at=excluded.updated_at,replay_anchor_version=1`).bind(handle,now,now,now).run();
     return {handle,holdings:holdings.length,trades:history.length};
   }catch(error){const message=s(error?.message||error);await db.prepare(`INSERT INTO fomo_enrichment_state(handle,last_error,updated_at) VALUES(?,?,?) ON CONFLICT(handle) DO UPDATE SET last_error=excluded.last_error,updated_at=excluded.updated_at`).bind(handle,message,now).run().catch(()=>null);console.error('[fomo-enrich]',handle,message);return {handle,error:message};}
 }
 
 async function currentEnrichmentTargets(db,limit,{missingOnly=false}={}){
-  if(!(limit>0))return[];const predicate=missingOnly?'AND (e.last_positions_at IS NULL OR e.last_trades_at IS NULL)':'';
+  if(!(limit>0))return[];const predicate=missingOnly?'AND (e.last_positions_at IS NULL OR e.last_trades_at IS NULL OR COALESCE(e.replay_anchor_version,0)<1)':'';
   return all(db.prepare(`SELECT t.handle FROM fomo_traders t LEFT JOIN fomo_enrichment_state e ON e.handle=t.handle WHERE t.current_rank BETWEEN 1 AND 50 AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders) ${predicate} ORDER BY CASE WHEN e.last_positions_at IS NULL OR e.last_trades_at IS NULL THEN 0 ELSE 1 END,MIN(COALESCE(e.last_positions_at,0),COALESCE(e.last_trades_at,0)),t.current_rank LIMIT ?`).bind(limit));
 }
 async function enrichTargets(env,db,targets,now){const enriched=[];for(const row of targets){const handle=s(row.handle);if(handle)enriched.push(await enrichTrader(env,db,handle,now));}return enriched;}
