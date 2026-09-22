@@ -12,7 +12,7 @@ async function resolveMint(symbol,fetchImpl=fetch){
     .sort((a,b)=>n(b?.liquidity?.usd)-n(a?.liquidity?.usd)||n(b?.volume?.h24)-n(a?.volume?.h24));
   return rows[0]?{symbol,mint:s(rows[0].baseToken.address)}:null;
 }
-function ownerDeltas(tx,mint){
+export function afterbellOwnerDeltas(tx,mint){
   const pre=Array.isArray(tx?.meta?.preTokenBalances)?tx.meta.preTokenBalances:[],post=Array.isArray(tx?.meta?.postTokenBalances)?tx.meta.postTokenBalances:[],map=new Map();
   for(const row of pre){const owner=s(row.owner),m=s(row.mint);if(!valid(owner)||!valid(m))continue;const key=owner+'|'+m,cur=map.get(key)||{owner,mint:m,pre:0,post:0};cur.pre=n(row?.uiTokenAmount?.uiAmountString??row?.uiTokenAmount?.uiAmount);map.set(key,cur);}
   for(const row of post){const owner=s(row.owner),m=s(row.mint);if(!valid(owner)||!valid(m))continue;const key=owner+'|'+m,cur=map.get(key)||{owner,mint:m,pre:0,post:0};cur.post=n(row?.uiTokenAmount?.uiAmountString??row?.uiTokenAmount?.uiAmount);map.set(key,cur);}
@@ -25,7 +25,7 @@ async function fetchMintWindow(env,mint,window,fetchImpl=fetch){
   const budget=await reserveProviderCredits(env,100,'helius');if(budget.blocked)return{mint,error:'provider_budget_blocked',events:[]};
   const r=await fetchImpl(`https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(key)}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'getTransactionsForAddress',params:[mint,{transactionDetails:'full',encoding:'jsonParsed',maxSupportedTransactionVersion:0,sortOrder:'desc',commitment:'confirmed',limit:100,filters:{blockTime:{gte:window.from,lte:window.to},status:'succeeded',tokenAccounts:'balanceChanged'}}]})});
   if(!r.ok)return{mint,error:`helius_http_${r.status}`,events:[]};const body=await r.json(),data=Array.isArray(body?.result?.data)?body.result.data:[],events=[];
-  for(const tx of data){const signature=s(tx?.transaction?.signatures?.[0]),blockTime=Math.trunc(n(tx?.blockTime)),slot=Math.trunc(n(tx?.slot));if(!signature||!blockTime)continue;for(const item of ownerDeltas(tx,mint))events.push({signature,slot,blockTime,wallet:item.owner,mint,eventClass:'swap-like',solDelta:0,tokenDelta:item.delta,feeLamports:0,source:'helius-afterbell-mint-window',confidence:.9,decoderVersion:'afterbell-mint-window-v1'});}
+  for(const tx of data){const signature=s(tx?.transaction?.signatures?.[0]),blockTime=Math.trunc(n(tx?.blockTime)),slot=Math.trunc(n(tx?.slot));if(!signature||!blockTime)continue;for(const item of afterbellOwnerDeltas(tx,mint))events.push({signature,slot,blockTime,wallet:item.owner,mint,eventClass:'swap-like',solDelta:0,tokenDelta:item.delta,feeLamports:0,source:'helius-afterbell-mint-window',confidence:.9,decoderVersion:'afterbell-mint-window-v1'});}
   return{mint,error:null,events};
 }
 export async function refreshAfterbellEvidence(env={},options={}){
