@@ -76,8 +76,8 @@ async function auditPayload(env){
   const first=async(sql)=>{try{return await db.prepare(sql).first();}catch{return null;}};
   const [summary,positionHandles,tradeHandles,observedHandles]=await Promise.all([
     first(`SELECT COUNT(*) traders,SUM(CASE WHEN reported_pnl_usd IS NOT NULL THEN 1 ELSE 0 END) with_pnl,SUM(CASE WHEN solana_wallet IS NOT NULL AND TRIM(solana_wallet)<>'' THEN 1 ELSE 0 END) with_solana_wallet,SUM(CASE WHEN top_tokens_json IS NOT NULL AND top_tokens_json<>'' AND top_tokens_json<>'[]' THEN 1 ELSE 0 END) with_mapped_tokens FROM fomo_traders WHERE current_rank BETWEEN 1 AND 50 AND captured_at=(SELECT MAX(captured_at) FROM fomo_traders)`),
-    first(`SELECT COUNT(DISTINCT handle) count FROM fomo_trader_positions p JOIN fomo_traders t ON t.handle=p.handle WHERE t.current_rank BETWEEN 1 AND 50 AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders)`),
-    first(`SELECT COUNT(DISTINCT handle) count FROM fomo_trader_trades tr JOIN fomo_traders t ON t.handle=tr.handle WHERE t.current_rank BETWEEN 1 AND 50 AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders)`),
+    first(`SELECT COUNT(DISTINCT p.handle) count FROM fomo_trader_positions p JOIN fomo_traders t ON t.handle=p.handle WHERE t.current_rank BETWEEN 1 AND 50 AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders)`),
+    first(`SELECT COUNT(DISTINCT tr.handle) count FROM fomo_trader_trades tr JOIN fomo_traders t ON t.handle=tr.handle WHERE t.current_rank BETWEEN 1 AND 50 AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders)`),
     first(`SELECT COUNT(DISTINCT t.handle) count FROM fomo_traders t JOIN bull_wallet_events e ON e.wallet=t.solana_wallet WHERE t.current_rank BETWEEN 1 AND 50 AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders)`),
   ]);
   const traders=n(summary?.traders),withPnl=n(summary?.with_pnl),withSolanaWallet=n(summary?.with_solana_wallet),withMappedTokens=n(summary?.with_mapped_tokens),withProviderPositions=n(positionHandles?.count),withProviderTrades=n(tradeHandles?.count),withObservedChain=n(observedHandles?.count);
