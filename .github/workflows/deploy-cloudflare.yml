@@ -81,6 +81,8 @@ jobs:
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Add CLOUDFLARE_ACCOUNT_ID to repository Actions secrets. Nothing was deployed."; exit 1; }
       - name: Install deployment tooling
         run: npm install --ignore-scripts --no-fund --no-audit
+      - name: Install Chromium for production browser acceptance
+        run: npx playwright install --with-deps chromium
       - name: Download exact tested frontend release
         uses: actions/download-artifact@v4
         with:
@@ -195,6 +197,28 @@ jobs:
           npx wrangler d1 execute INTELLIGENCE_DB --remote --config workers/wrangler.production.toml --json --command "$SQL" | tee multichain-d1-diagnostic.json
       - name: Diagnose sparse Replay hydration
         run: node scripts/diagnose-replay-production.mjs | tee replay-hydration-diagnostic.json
+      - name: Verify deployed Field in desktop and mobile Chromium
+        env:
+          BROWSER_ALLOW_EXTERNAL_HOST: "1"
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /workspace/screenshots
+          sudo chown -R "$USER":"$USER" /workspace
+          node scripts/browser-smoke.mjs https://abullsapp.com/ /workspace/screenshots/production-field.png
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const verdict=JSON.parse(fs.readFileSync("/workspace/screenshots/production-field.json","utf8"));
+          const entries=Object.entries(verdict.viewports||{});
+          if(entries.length!==2)throw new Error("production browser smoke did not return both viewports");
+          for(const [name,row] of entries){
+            if(Number(row.status)!==200)throw new Error(name+" returned HTTP "+String(row.status));
+            if(row.hasCanvas!==true)throw new Error(name+" Field canvas is missing");
+            if(row.horizontalOverflow===true)throw new Error(name+" has horizontal overflow");
+          }
+          NODE
+          rm -rf production-browser-smoke
+          mkdir -p production-browser-smoke
+          cp /workspace/screenshots/production-field* production-browser-smoke/
       - name: Capture Replay history source health
         if: always()
         continue-on-error: true
@@ -224,5 +248,6 @@ jobs:
             multichain-d1-diagnostic.json
             replay-hydration-diagnostic.json
             replay-history-source-health.json
+            production-browser-smoke
           if-no-files-found: warn
           retention-days: 14
