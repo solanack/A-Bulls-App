@@ -87,6 +87,17 @@ test("Trickster Cut export accepts user soundtrack audio and keeps it separate f
   assert.match(trickster,/musicFile,musicVolume,sfxPack/);
   assert.match(recorder,/decodeMusic/);
   assert.match(recorder,/scheduleMusic/);
+  assert.match(recorder,/scheduleProceduralMusic/);
+  assert.match(recorder,/CutMusicPreset/);
   assert.match(recorder,/musicIncluded/);
   assert.match(recorder,/CutSoundPack/);
+});
+
+
+test("Trickster ships built-in rights-safe procedural soundtrack choices for mobile creators",()=>{
+  assert.match(trickster,/A BULLS ORIGINAL/);
+  assert.match(trickster,/A Bulls originals are synthesized in-browser/);
+  assert.match(trickster,/Pulse/);
+  assert.match(trickster,/Nebula/);
+  assert.match(trickster,/Drive/);
 });
