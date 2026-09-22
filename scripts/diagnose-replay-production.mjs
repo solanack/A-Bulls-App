@@ -1,6 +1,6 @@
 import { productionOrigins } from "./deployment-origins.mjs";
+import { buildReplayDiagnosticRequest, terminalReplayDiagnosticFailure } from "./replay-production-diagnostic-contract.mjs";
 const origin=String(process.env.A_BULLS_ORIGIN||productionOrigins.public).replace(/\/$/,'');
-const SOL='So11111111111111111111111111111111111111112';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const safeText=value=>String(value==null?'':value).trim();
 
@@ -85,25 +85,28 @@ async function main(){
     console.log(JSON.stringify({ok:true,status:'no-sparse-row-currently-available',sample:{tradeId:safeText(trade.tradeId||trade.id),observedIndexed:Boolean(trade.observedIndexed)},elapsedMs:Date.now()-started}));
     return;
   }
-  const request={wallet:trade.wallet,mint:trade.mint,quoteMint:SOL,from:Math.floor(Number(trade.fromTs)/1000),to:Math.ceil(Number(trade.toTs)/1000),bucketSeconds:60,limit:500};
+  const {chain,request}=buildReplayDiagnosticRequest(trade);
   const attempts=[];
   for(let attempt=0;attempt<7;attempt+=1){
     const response=await getJson('/api/intelligence/replay-bundle',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(request)});
     let jobStatus=null;try{jobStatus=await readJobStatus(response)}catch(error){jobStatus={ok:false,error:safeText(error?.message||error)}}
     const state=snapshot(trade,attempt,response,jobStatus);attempts.push(state);
     if(state.eventCount>0&&state.candleCount>0)break;
+    if(terminalReplayDiagnosticFailure(state))break;
     if(attempt<6)await sleep(attempt===0?3000:5000);
   }
-  const final=attempts.at(-1)||{};
+  const final=attempts.at(-1)||{},terminalFailure=terminalReplayDiagnosticFailure(final);
   console.log(JSON.stringify({
-    ok:true,
-    status:final.eventCount>0&&final.candleCount>0?'hydrated':final.eventCount>0?'events-ready-market-pending':final.candleCount>0?'market-ready-history-pending':final.windowComplete?'window-complete-no-matching-token-events':'still-hydrating',
-    target:{tradeId:safeText(trade.tradeId||trade.id),handle:safeText(trade.handle)||null,wallet:safeText(trade.wallet),mint:safeText(trade.mint),from:request.from,to:request.to,observedIndexed:Boolean(trade.observedIndexed)},
+    ok:!terminalFailure,
+    status:terminalFailure?'request-failed':final.eventCount>0&&final.candleCount>0?'hydrated':final.eventCount>0?'events-ready-market-pending':final.candleCount>0?'market-ready-history-pending':final.windowComplete?'window-complete-no-matching-token-events':'still-hydrating',
+    target:{tradeId:safeText(trade.tradeId||trade.id),handle:safeText(trade.handle)||null,chain,wallet:safeText(trade.wallet),mint:safeText(trade.mint),from:request.from,to:request.to,observedIndexed:Boolean(trade.observedIndexed)},
     attempts,
     elapsedMs:Date.now()-started
   }));
+  if(terminalFailure)process.exitCode=1;
 }
 
 try{await main()}catch(error){
   console.log(JSON.stringify({ok:false,status:'diagnostic-error',error:safeText(error?.message||error)}));
+  process.exitCode=1;
 }
