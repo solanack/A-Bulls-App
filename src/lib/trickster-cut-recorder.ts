@@ -190,13 +190,13 @@ export async function recordTricksterCut({manifest,candles,events,shareHref,toke
     offset+=item.duration;
   }
 
-  const wallStart=performance.now()+120,sceneOffsets:number[]=[];let running=0;
-  for(const item of prepared){sceneOffsets.push(running);running+=item.duration;}
+  const wallStart=performance.now()+120,drawSceneOffsets:number[]=[];let running=0;
+  for(const item of prepared){drawSceneOffsets.push(running);running+=item.duration;}
   await new Promise<void>(resolve=>{
     const draw=(now:number)=>{
       const elapsed=Math.max(0,(now-wallStart)/1000);let index=prepared.length-1;
-      for(let i=0;i<prepared.length;i++){if(elapsed<sceneOffsets[i]+prepared[i].duration){index=i;break;}}
-      const local=clamp((elapsed-sceneOffsets[index])/prepared[index].duration,0,1),role:NarrationRole=local<.56?"grey":"trickster",model=obj(buildCutFrame({manifest,candles,events,sceneIndex:index,progress:local,shareHref,tokenLabel,walletLabel}));
+      for(let i=0;i<prepared.length;i++){if(elapsed<drawSceneOffsets[i]+prepared[i].duration){index=i;break;}}
+      const local=clamp((elapsed-drawSceneOffsets[index])/prepared[index].duration,0,1),role:NarrationRole=local<.56?"grey":"trickster",model=obj(buildCutFrame({manifest,candles,events,sceneIndex:index,progress:local,shareHref,tokenLabel,walletLabel}));
       drawCinematicFrame(ctx,model,role);onProgress(.24+.72*clamp(elapsed/Math.max(.1,totalDuration),0,1),`Encoding scene ${index+1}/${prepared.length}`);
       if(elapsed>=totalDuration){resolve();return;}requestAnimationFrame(draw);
     };
