@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 const fieldOS=readFileSync(new URL("./field-os.ts",import.meta.url),"utf8");
 const replay=readFileSync(new URL("../../components/replay-workspace.tsx",import.meta.url),"utf8");
 const workspace=readFileSync(new URL("../../components/universe-workspace.tsx",import.meta.url),"utf8");
+const appShell=readFileSync(new URL("../../components/app-shell.tsx",import.meta.url),"utf8");
+const closedTrades=readFileSync(new URL("../../components/fomo-closed-trades.tsx",import.meta.url),"utf8");
 
 test("Fomo trader comets and token planets open the selected wallet-token Replay",()=>{
   assert.match(fieldOS,/fieldSection\.kind==="trader-system"&&\(particle\.cosmicKind==="comet"\|\|particle\.cosmicKind==="planet"\)&&mint/);
@@ -55,4 +57,12 @@ test("Replay renders a deterministic time-axis visual when trade timing exists b
   assert.match(replay,/TRADE EVENT TIMELINE/);
   assert.match(replay,/PRICE EVIDENCE UNAVAILABLE/);
   assert.match(replay,/NO INVENTED PRICE PATH/);
+});
+
+
+test("closed Fomo outcomes preserve the selected blockchain into Replay",()=>{
+  assert.match(appShell,/chainKey:trade\.chain/);
+  assert.match(closedTrades,/trade\.chain\.toUpperCase\(\)/);
+  assert.match(closedTrades,/CANDLES READY/);
+  assert.doesNotMatch(closedTrades,/maximumFractionDigits:0\}\);/);
 });
