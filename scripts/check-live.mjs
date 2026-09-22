@@ -319,7 +319,13 @@ export async function runLiveChecks({
   const fomoTrader=validateFomoTrader(await (await get(`/api/intelligence/fomo/trader?handle=${encodeURIComponent(fomoCandidate.handle)}`)).json(),fomoCandidate);
 
   validateAfterbellTraders(await (await get(`/api/intelligence/afterbell/traders?mint=${encodeURIComponent(AFTERBELL_SMOKE_MINT)}&limit=50`)).json());
-  const afterbellAudit=validateAfterbellAudit(await (await get('/api/intelligence/afterbell/audit')).json());
+  const afterbellAuditBody=await (await get('/api/intelligence/afterbell/audit')).json(),afterbellAudit=validateAfterbellAudit(afterbellAuditBody);
+  if(Number(afterbellAudit.events)>0){
+    const indexedMints=[...new Set((Array.isArray(afterbellAuditBody?.assets)?afterbellAuditBody.assets:[]).map(row=>String(row?.mint||"").trim()).filter(mint=>SOLANA_ADDRESS_RE.test(mint)))];
+    assert.ok(indexedMints.length>0,"Afterbell has retained events but the audit exposed no indexed xStock mint");
+    const materialized=validateAfterbellTraders(await (await get(`/api/intelligence/afterbell/traders?mints=${encodeURIComponent(indexedMints.join(","))}&limit=50`)).json());
+    assert.ok(materialized.length>0,"Afterbell has retained xStock evidence but materialized zero trader STARS");
+  }
   console.log(JSON.stringify({afterbellAudit}));
   validateWalletSystem(await (await get(`/api/intelligence/research/wallet-system?wallet=${encodeURIComponent(fomoCandidate.solanaWallet)}&limit=10`)).json(),fomoCandidate.solanaWallet,"solana");
   if (EVM_ADDRESS_RE.test(String(fomoCandidate.evmWallet || ""))) validateWalletSystem(await (await get(`/api/intelligence/research/wallet-system?wallet=${encodeURIComponent(fomoCandidate.evmWallet)}&limit=10`)).json(),fomoCandidate.evmWallet.toLowerCase(),"evm");
