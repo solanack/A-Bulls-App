@@ -4,6 +4,7 @@ import { buildCutFrameModel, preferredCutVideoMime } from "../../js/trickster-cu
 type Data=Record<string,unknown>;
 type Progress=(value:number,label:string)=>void;
 type CutSoundPack="cosmic"|"terminal"|"arcade"|"minimal";
+type CutMusicPreset="none"|"pulse"|"nebula"|"drive";
 type CutVideoResult={blob:Blob;mimeType:string;extension:"mp4"|"webm";narrationAvailable:boolean;musicIncluded:boolean};
 type VoiceClip={role:NarrationRole;buffer:AudioBuffer|null};
 type PreparedScene={duration:number;grey:VoiceClip;trickster:VoiceClip};
@@ -148,13 +149,24 @@ function scheduleImpact(context:AudioContext,destination:MediaStreamAudioDestina
 function scheduleBed(context:AudioContext,destination:MediaStreamAudioDestinationNode,start:number,duration:number){
   const oscillator=context.createOscillator(),gain=context.createGain();oscillator.type="sine";oscillator.frequency.value=55;gain.gain.setValueAtTime(.0001,start);gain.gain.linearRampToValueAtTime(.012,start+.25);gain.gain.setValueAtTime(.012,Math.max(start+.25,start+duration-.3));gain.gain.linearRampToValueAtTime(.0001,start+duration);oscillator.connect(gain).connect(destination);oscillator.start(start);oscillator.stop(start+duration+.02);
 }
-function scheduleMusic(context:AudioContext,destination:MediaStreamAudioDestinationNode,buffer:AudioBuffer,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
-  const source=context.createBufferSource(),gain=context.createGain(),level=clamp(volume,0,.8);source.buffer=buffer;source.loop=true;gain.gain.setValueAtTime(.0001,start);gain.gain.linearRampToValueAtTime(level,start+.22);
+function musicGain(context:AudioContext,destination:MediaStreamAudioDestinationNode,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
+  const gain=context.createGain(),level=clamp(volume,0,.8);gain.gain.setValueAtTime(.0001,start);gain.gain.linearRampToValueAtTime(level,start+.22);
   for(let index=0;index<sceneOffsets.length;index++){const sceneStart=start+sceneOffsets[index],sceneEnd=sceneStart+scenes[index].duration;gain.gain.setValueAtTime(level,Math.max(start,sceneStart));gain.gain.linearRampToValueAtTime(level*.38,sceneStart+.1);gain.gain.setValueAtTime(level*.38,Math.max(sceneStart+.1,sceneEnd-.16));gain.gain.linearRampToValueAtTime(level,sceneEnd);}
-  gain.gain.setValueAtTime(level,Math.max(start+.22,start+duration-.22));gain.gain.linearRampToValueAtTime(.0001,start+duration);source.connect(gain).connect(destination);source.start(start,0);source.stop(start+duration+.02);
+  gain.gain.setValueAtTime(level,Math.max(start+.22,start+duration-.22));gain.gain.linearRampToValueAtTime(.0001,start+duration);gain.connect(destination);return gain;
+}
+function scheduleMusic(context:AudioContext,destination:MediaStreamAudioDestinationNode,buffer:AudioBuffer,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
+  const source=context.createBufferSource(),gain=musicGain(context,destination,start,duration,volume,sceneOffsets,scenes);source.buffer=buffer;source.loop=true;source.connect(gain);source.start(start,0);source.stop(start+duration+.02);
+}
+function scheduleProceduralMusic(context:AudioContext,destination:MediaStreamAudioDestinationNode,preset:CutMusicPreset,start:number,duration:number,volume:number,sceneOffsets:number[],scenes:PreparedScene[]){
+  if(preset==="none")return;const master=musicGain(context,destination,start,duration,volume,sceneOffsets,scenes);
+  const drone=(type:OscillatorType,freq:number,level:number)=>{const osc=context.createOscillator(),gain=context.createGain();osc.type=type;osc.frequency.value=freq;gain.gain.value=level;osc.connect(gain).connect(master);osc.start(start);osc.stop(start+duration+.03);};
+  const pulse=(when:number,freq:number,level:number,length=.12,type:OscillatorType="triangle")=>{const osc=context.createOscillator(),gain=context.createGain();osc.type=type;osc.frequency.setValueAtTime(freq,when);osc.frequency.exponentialRampToValueAtTime(Math.max(24,freq*.72),when+length);gain.gain.setValueAtTime(.0001,when);gain.gain.exponentialRampToValueAtTime(level,when+.012);gain.gain.exponentialRampToValueAtTime(.0001,when+length);osc.connect(gain).connect(master);osc.start(when);osc.stop(when+length+.01);};
+  if(preset==="nebula"){drone("sine",55,.22);drone("sine",82.41,.12);drone("triangle",110,.045);for(let t=.4,index=0;t<duration;t+=1.5,index++)pulse(start+t,index%2?164.81:146.83,.11,.4,"sine");return;}
+  if(preset==="drive"){drone("sawtooth",48.99,.06);drone("sine",73.42,.12);for(let t=.15,index=0;t<duration;t+=.375,index++)pulse(start+t,index%4===0?146.83:index%2?98:110,.18,index%4===0?.18:.09,index%4===0?"triangle":"square");return;}
+  drone("sine",55,.16);for(let t=.2,index=0;t<duration;t+=.5,index++)pulse(start+t,index%4===0?164.81:index%2?110:130.81,.16,index%4===0?.2:.1,"triangle");
 }
 
-export async function recordTricksterCut({manifest,candles,events,shareHref,tokenLabel,walletLabel,soundBed=true,musicFile=null,musicVolume=.2,sfxPack="cosmic",onProgress=()=>{}}:{manifest:Data;candles:Data[];events:Data[];shareHref:string;tokenLabel:string;walletLabel:string;soundBed?:boolean;musicFile?:Blob|null;musicVolume?:number;sfxPack?:CutSoundPack;onProgress?:Progress}):Promise<CutVideoResult>{
+export async function recordTricksterCut({manifest,candles,events,shareHref,tokenLabel,walletLabel,soundBed=true,musicFile=null,musicPreset="none",musicVolume=.2,sfxPack="cosmic",onProgress=()=>{}}:{manifest:Data;candles:Data[];events:Data[];shareHref:string;tokenLabel:string;walletLabel:string;soundBed?:boolean;musicFile?:Blob|null;musicPreset?:CutMusicPreset;musicVolume?:number;sfxPack?:CutSoundPack;onProgress?:Progress}):Promise<CutVideoResult>{
   if(!tricksterCutCaptureSupported())throw Object.assign(new Error("cut_capture_unsupported"),{code:"cut_capture_unsupported"});
   const scenes=arr(manifest.scenes);if(!scenes.length)throw new Error("cut_scenes_unavailable");
   const first=obj(buildCutFrame({manifest,candles,events,sceneIndex:0,progress:0,shareHref,tokenLabel,walletLabel})),size=obj(first.size),canvas=document.createElement("canvas") as HTMLCanvasElement&{captureStream:(fps?:number)=>MediaStream};
@@ -179,11 +191,11 @@ export async function recordTricksterCut({manifest,candles,events,shareHref,toke
   recorder.start(1000);
   const audioStart=audioContext.currentTime+.12,sceneOffsets:number[]=[];let offset=0;
   for(const item of prepared){sceneOffsets.push(offset);offset+=item.duration;}
-  if(musicBuffer)scheduleMusic(audioContext,destination,musicBuffer,audioStart,totalDuration,musicVolume,sceneOffsets,prepared);
+  if(musicBuffer)scheduleMusic(audioContext,destination,musicBuffer,audioStart,totalDuration,musicVolume,sceneOffsets,prepared);else scheduleProceduralMusic(audioContext,destination,musicPreset,audioStart,totalDuration,musicVolume,sceneOffsets,prepared);
   offset=0;
   for(let index=0;index<prepared.length;index++){
     const item=prepared[index],event=obj(events[index]),sceneStart=audioStart+offset;
-    if(soundBed&&!musicBuffer)scheduleBed(audioContext,destination,sceneStart,item.duration);
+    if(soundBed&&!musicBuffer&&musicPreset==="none")scheduleBed(audioContext,destination,sceneStart,item.duration);
     scheduleImpact(audioContext,destination,sceneStart+.08,text(event.side).toLowerCase(),sfxPack);
     const available=Math.max(.5,item.duration-.45),greyDuration=item.grey.buffer?connectVoice(audioContext,destination,item.grey.buffer,sceneStart+.18,available*.56):0;
     if(item.trickster.buffer)connectVoice(audioContext,destination,item.trickster.buffer,sceneStart+.3+greyDuration,Math.max(.45,available-greyDuration));
@@ -209,5 +221,5 @@ export async function recordTricksterCut({manifest,candles,events,shareHref,toke
   const extension:"mp4"|"webm"=mimeType.startsWith("video/mp4")?"mp4":"webm";
   if(!blob.size)throw new Error("cut_recording_empty");
   onProgress(1,"Cut ready");
-  return{blob,mimeType,extension,narrationAvailable:prepared.some(item=>Boolean(item.grey.buffer||item.trickster.buffer)),musicIncluded:Boolean(musicBuffer)};
+  return{blob,mimeType,extension,narrationAvailable:prepared.some(item=>Boolean(item.grey.buffer||item.trickster.buffer)),musicIncluded:Boolean(musicBuffer||musicPreset!=="none")};
 }
