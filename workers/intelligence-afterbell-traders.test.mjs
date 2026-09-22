@@ -25,11 +25,11 @@ test('Afterbell live window begins at 4 PM ET and ends at now until next open',(
 test('Afterbell ranks unique transactions and computes only defensible FIFO PnL',()=>{
   const from=200,to=400;
   const rows=[
-    {wallet:A,mint:'MINTA1111111111111111111111111111111111111',txId:'prebuy',side:'buy',amount:10,priceUsd:5,blockTime:100,source:'observed',sourceKind:'observed-fact'},
-    {wallet:A,mint:'MINTA1111111111111111111111111111111111111',txId:'sell-a',side:'sell',amount:4,priceUsd:7,blockTime:220,source:'observed',sourceKind:'observed-fact'},
-    {wallet:B,mint:'MINTB1111111111111111111111111111111111111',txId:'buy-b',side:'buy',amount:3,priceUsd:null,blockTime:210,source:'provider',sourceKind:'provider-reported'},
-    {wallet:B,mint:'MINTB1111111111111111111111111111111111111',txId:'sell-b',side:'sell',amount:2,priceUsd:9,blockTime:230,source:'provider',sourceKind:'provider-reported'},
-    {wallet:B,mint:'MINTB1111111111111111111111111111111111111',txId:'sell-b',side:'sell',amount:2,priceUsd:9,blockTime:230,source:'observed-copy',sourceKind:'observed-fact'},
+    {wallet:A,mint:'Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh',txId:'prebuy',side:'buy',amount:10,priceUsd:5,blockTime:100,source:'observed',sourceKind:'observed-fact'},
+    {wallet:A,mint:'Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh',txId:'sell-a',side:'sell',amount:4,priceUsd:7,blockTime:220,source:'observed',sourceKind:'observed-fact'},
+    {wallet:B,mint:'XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB',txId:'buy-b',side:'buy',amount:3,priceUsd:null,blockTime:210,source:'provider',sourceKind:'provider-reported'},
+    {wallet:B,mint:'XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB',txId:'sell-b',side:'sell',amount:2,priceUsd:9,blockTime:230,source:'provider',sourceKind:'provider-reported'},
+    {wallet:B,mint:'XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB',txId:'sell-b',side:'sell',amount:2,priceUsd:9,blockTime:230,source:'observed-copy',sourceKind:'observed-fact'},
   ];
   const ranked=rankAfterbellTraders(rows,{from,to,limit:50});
   assert.equal(ranked[0].wallet,B);
@@ -44,8 +44,8 @@ test('Afterbell ranks unique transactions and computes only defensible FIFO PnL'
 
 test('Afterbell dedupes duplicate transaction evidence without losing observed provenance',()=>{
   const rows=normalizeAfterbellEvents([
-    {wallet:A,mint:'MINTA1111111111111111111111111111111111111',txId:'same',side:'buy',amount:1,priceUsd:2,blockTime:300,source:'provider',sourceKind:'provider-reported'},
-    {wallet:A,mint:'MINTA1111111111111111111111111111111111111',txId:'same',side:'buy',amount:1,priceUsd:2,blockTime:300,source:'chain',sourceKind:'observed-fact'},
+    {wallet:A,mint:'Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh',txId:'same',side:'buy',amount:1,priceUsd:2,blockTime:300,source:'provider',sourceKind:'provider-reported'},
+    {wallet:A,mint:'Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh',txId:'same',side:'buy',amount:1,priceUsd:2,blockTime:300,source:'chain',sourceKind:'observed-fact'},
   ]);
   assert.equal(rows.length,1);
   assert.equal(rows[0].sourceKind,'observed-fact');
@@ -54,13 +54,13 @@ test('Afterbell dedupes duplicate transaction evidence without losing observed p
 
 test('Afterbell cross-stock ranking aggregates a trader across tokenized equities without double-counting tx ids',()=>{
   const rows=[
-    {wallet:A,mint:'MINTA1111111111111111111111111111111111111',txId:'tx-1',side:'buy',amount:1,priceUsd:10,blockTime:210,source:'chain',sourceKind:'observed-fact'},
-    {wallet:A,mint:'MINTB1111111111111111111111111111111111111',txId:'tx-2',side:'buy',amount:2,priceUsd:20,blockTime:220,source:'chain',sourceKind:'observed-fact'},
-    {wallet:A,mint:'MINTB1111111111111111111111111111111111111',txId:'tx-2',side:'buy',amount:2,priceUsd:20,blockTime:220,source:'provider',sourceKind:'provider-reported'},
+    {wallet:A,mint:'Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh',txId:'tx-1',side:'buy',amount:1,priceUsd:10,blockTime:210,source:'chain',sourceKind:'observed-fact'},
+    {wallet:A,mint:'XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB',txId:'tx-2',side:'buy',amount:2,priceUsd:20,blockTime:220,source:'chain',sourceKind:'observed-fact'},
+    {wallet:A,mint:'XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB',txId:'tx-2',side:'buy',amount:2,priceUsd:20,blockTime:220,source:'provider',sourceKind:'provider-reported'},
   ];
   const ranked=rankAfterbellTraders(rows,{from:200,to:400,limit:50});
   assert.equal(ranked[0].wallet,A);
   assert.equal(ranked[0].transactionCount,2);
   assert.equal(ranked[0].assetCount,2);
-  assert.deepEqual(new Set(ranked[0].mints),new Set(['MINTA1111111111111111111111111111111111111','MINTB1111111111111111111111111111111111111']));
+  assert.deepEqual(new Set(ranked[0].mints),new Set(['Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh','XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB']));
 });
