@@ -4,7 +4,7 @@ import { afterbellOwnerDeltas, __afterbellEvidenceContract } from "./intelligenc
 
 const STOCK="Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh";
 const USDC="EPjFWdd5AufqSSqeM2q8vMLQV4G7wEGGkZwyTDt1v";
-const WALLET="11111111111111111111111111111111";
+const WALLET="9P6Ej2CRTDYMW9628wXA8awM1t82jnfynYNNPSVx7pfU";
 
 const balance=(accountIndex,mint,owner,amount)=>({accountIndex,mint,owner,uiTokenAmount:{uiAmountString:String(amount)}});
 
