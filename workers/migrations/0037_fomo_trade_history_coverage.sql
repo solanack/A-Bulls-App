@@ -4,6 +4,7 @@
 
 ALTER TABLE fomo_enrichment_state ADD COLUMN trade_history_cursor TEXT;
 ALTER TABLE fomo_enrichment_state ADD COLUMN trade_history_complete INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE fomo_enrichment_state ADD COLUMN trade_history_state TEXT NOT NULL DEFAULT 'unknown';
 ALTER TABLE fomo_enrichment_state ADD COLUMN trade_history_pages INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE fomo_enrichment_state ADD COLUMN trade_history_oldest_at INTEGER;
 
