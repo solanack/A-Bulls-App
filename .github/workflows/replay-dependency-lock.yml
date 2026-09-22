@@ -22,7 +22,8 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install locked Replay Studio dependencies
-        run: npm install --save-exact lightweight-charts@5.2.1 mediabunny@1.58.1 tone@15.1.22
+        run: npm uninstall tone
+          npm install --save-exact lightweight-charts@5.2.1 mediabunny@1.58.1
       - name: Commit package lock
         run: |
           git config user.name "github-actions[bot]"
