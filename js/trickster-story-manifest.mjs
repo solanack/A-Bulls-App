@@ -8,6 +8,7 @@ const RATIOS = new Set(['9:16','16:9','1:1']);
 const SFX_PACKS = new Set(['cosmic','terminal','arcade','minimal']);
 const SOUNDTRACK_KINDS = new Set(['none','user-supplied','a-bulls-original']);
 const MUSIC_PRESETS = new Set(['pulse','nebula','drive']);
+const CUT_TEMPLATES = new Set(['galaxy-dive','proof-mode','whale-print','scale-in-story','round-trip','pnl-reveal','minimal-tape']);
 
 function text(value, name) {
   const result = String(value ?? '').trim();
@@ -88,7 +89,8 @@ export function validateStoryManifest(input) {
   if(soundtrackKind==='user-supplied'&&input.presentation?.soundtrack?.rightsConfirmed!==true)throw new TypeError('user-supplied soundtrack requires rights confirmation');
   const musicPreset=soundtrackKind==='a-bulls-original'?String(input.presentation?.soundtrack?.preset??'pulse').trim().toLowerCase():null;
   if(musicPreset&&!MUSIC_PRESETS.has(musicPreset))throw new RangeError(`unsupported A Bulls soundtrack preset: ${musicPreset}`);
-  const hasMusic=soundtrackKind!=='none',presentation=Object.freeze({sfxPack,soundtrack:Object.freeze({kind:soundtrackKind,name:hasMusic?String(input.presentation?.soundtrack?.name??(soundtrackKind==='a-bulls-original'?`A Bulls ${musicPreset}`:'user-supplied audio')).slice(0,180):null,preset:musicPreset,volume:hasMusic?Math.max(0,Math.min(.8,number(input.presentation?.soundtrack?.volume??.2,'soundtrack.volume'))):0,rightsConfirmed:soundtrackKind==='user-supplied'?true:soundtrackKind==='a-bulls-original'})});
+  const template=String(input.presentation?.template??'proof-mode').trim().toLowerCase();if(!CUT_TEMPLATES.has(template))throw new RangeError(`unsupported Cut template: ${template}`);
+  const hasMusic=soundtrackKind!=='none',presentation=Object.freeze({template,sfxPack,soundtrack:Object.freeze({kind:soundtrackKind,name:hasMusic?String(input.presentation?.soundtrack?.name??(soundtrackKind==='a-bulls-original'?`A Bulls ${musicPreset}`:'user-supplied audio')).slice(0,180):null,preset:musicPreset,volume:hasMusic?Math.max(0,Math.min(.8,number(input.presentation?.soundtrack?.volume??.2,'soundtrack.volume'))):0,rightsConfirmed:soundtrackKind==='user-supplied'?true:soundtrackKind==='a-bulls-original'})});
 
   const coverage = Object.freeze({
     from: number(input.coverage?.from, 'coverage.from'),
