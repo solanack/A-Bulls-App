@@ -27,7 +27,8 @@ const STATE_LABEL:Record<OrganismState,string>={idle:"THE FIELD IS CONSCIOUS",li
 function watchSubject(focus:FocusedParticle|null):{subjectKind:WatchSubjectKind;subjectId:string}|null{if(!focus)return null;if(focus.cosmicKind==="planet"||focus.cosmicKind==="black-hole"||focus.cosmicKind==="supernova"){const mint=particleMint(focus);return mint?{subjectKind:"token",subjectId:mint}:null;}if(focus.cosmicKind==="star"&&typeof focus.metadata?.wallet==="string"&&focus.metadata.wallet.trim())return{subjectKind:"wallet",subjectId:focus.metadata.wallet.trim()};return null;}
 function inboundShareId(){return shareIdFromSearch(globalThis.location?.search??"");}
 function inboundPrefill(){return subjectPrefillFromSearch(globalThis.location?.search??"");}
-function inboundMode(){return inboundWorkspaceMode(globalThis.location?.search??"",inboundShareId());}\nfunction inboundGalaxy(){return inboundGalaxyFromSearch(globalThis.location?.search??"");}
+function inboundMode(){return inboundWorkspaceMode(globalThis.location?.search??"",inboundShareId());}
+function inboundGalaxy(){return inboundGalaxyFromSearch(globalThis.location?.search??"");}
 
 export function AppShell(){
   const hostRef=useRef<HTMLDivElement>(null),osRef=useRef<FieldOS|null>(null),inputRef=useRef<HTMLInputElement>(null),queryInputRef=useRef<HTMLInputElement>(null),querySequence=useRef(0);
