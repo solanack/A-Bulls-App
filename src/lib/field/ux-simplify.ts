@@ -3,6 +3,17 @@ import { ADVANCED_MODES, ANALYSIS_MODES, MODE_HINT, TOOL_TITLE, type FieldMode }
 const BASE58_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
 
+
+export type PublicGalaxyDeepLink = "galaxy-zero" | "fomo" | "afterbell";
+
+/** Public Field galaxy deep-link. Retired/internal origins are intentionally rejected. */
+export function inboundGalaxyFromSearch(search: string): PublicGalaxyDeepLink | null {
+  const raw = String(search ?? "");
+  const params = new URLSearchParams(raw.startsWith("?") ? raw.slice(1) : raw);
+  const galaxy = String(params.get("galaxy") || "").trim().toLowerCase();
+  return galaxy === "galaxy-zero" || galaxy === "fomo" || galaxy === "afterbell" ? galaxy : null;
+}
+
 export type TradePrefill = {
   wallet: string;
   mint: string;
