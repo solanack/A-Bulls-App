@@ -174,6 +174,15 @@ export function candleSource(value: unknown): string | null {
   return null;
 }
 
+/** Screen and video name for a candle source. The Cut manifest keeps the exact source id. */
+export function candleSourceLabel(source: string | null): string {
+  const provider = (source ?? "").split(":")[0].toLowerCase();
+  if (provider.startsWith("coingecko")) return "CoinGecko onchain OHLC";
+  if (provider.startsWith("geckoterminal")) return "GeckoTerminal OHLC";
+  if (provider.startsWith("birdeye")) return "Birdeye OHLC";
+  return "indexed OHLC";
+}
+
 export function explorerUrl(chainKey: string, signature: string | null) {
   if (!signature) return null;
   if (chainKey === "solana") return `https://solscan.io/tx/${signature}`;

@@ -63,3 +63,12 @@ test("Cut manifest carries wallet, mint, window, signatures and candle source; n
   assert.equal(manifest.buyCount, 1);
   assert.match(manifest.disclosure, /No price path was invented/);
 });
+
+test("candle source shows a provider name on screen, never the API tier id", async () => {
+  const { candleSourceLabel } = await import("./replay-tape.ts");
+  assert.equal(candleSourceLabel("coingecko-demo-onchain:solana:3zozghHn3cCmbAVPF3Bm5AiyT7VorSdHwTt2qJjLfDo2"), "CoinGecko onchain OHLC");
+  assert.equal(candleSourceLabel("coingecko-pro-onchain:solana:pool"), "CoinGecko onchain OHLC");
+  assert.equal(candleSourceLabel("geckoterminal-public:solana:pool"), "GeckoTerminal OHLC");
+  assert.equal(candleSourceLabel(null), "indexed OHLC");
+  assert.doesNotMatch(candleSourceLabel("coingecko-demo-onchain:x"), /demo/i);
+});

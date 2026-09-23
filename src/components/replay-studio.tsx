@@ -4,7 +4,7 @@ import { ArrowLeft, Pause, Play, Share2, SkipBack, SkipForward, Volume2, VolumeX
 import { callUniverseTool } from "@/lib/universe-intelligence";
 import { loadResearchThread, saveResearchThread } from "@/lib/research-thread-store";
 import { requestTradeResearchMode } from "@/lib/field/trade-research-navigation";
-import { anchorBolts, buildCutManifest, candleSource, explorerUrl, replayShareUrl, replaySubjectFrom, replayToolInput, tapeCandles, tapeEvents, tapeWindow, type CutFormat, type ReplaySubject, type TapeBolt } from "@/lib/field/replay-tape";
+import { anchorBolts, buildCutManifest, candleSource, candleSourceLabel, explorerUrl, replayShareUrl, replaySubjectFrom, replayToolInput, tapeCandles, tapeEvents, tapeWindow, type CutFormat, type ReplaySubject, type TapeBolt } from "@/lib/field/replay-tape";
 import { drawTape, hitBolt, type BoltHit } from "@/lib/field/replay-tape-render";
 import { callsign } from "@/lib/field/trader-sheet";
 import { getAfterbellGalaxy, XSTOCK_REGISTRY } from "@/lib/universe-data/afterbell-client";
@@ -273,7 +273,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom }: { mute
               <button type="button" className="rs-pill" onClick={() => void share()} aria-label="Copy a link to this Replay"><Share2 size={13} /> {shareNote && shareNote.length < 20 ? shareNote : "SHARE"}</button>
               <button type="button" className="rs-pill rs-pill--cut" disabled={status !== "ready"} onClick={() => { setPlaying(false); setCutOpen(true); }}>CUT</button>
             </div>
-            <p className="rs-source">{candles.length ? `Candles · ${source ?? "indexed OHLC"}` : status === "ready" ? "Candles unavailable · event tape only · no price path drawn" : ""}{status === "ready" ? ` · ${bolts.length} prints${events.some((row) => row.verification === "provider-reported") ? " · Fomo-reported" : ""}` : ""}</p>
+            <p className="rs-source">{candles.length ? `Candles · ${candleSourceLabel(source)}` : status === "ready" ? "Candles unavailable · event tape only · no price path drawn" : ""}{status === "ready" ? ` · ${bolts.length} prints${events.some((row) => row.verification === "provider-reported") ? " · Fomo-reported" : ""}` : ""}</p>
           </>
         )}
       </footer>
@@ -307,7 +307,7 @@ function CutPanel({ subject, title, room, bolts, candles, start, end, source, on
   const replayUrl = replayShareUrl(typeof window === "undefined" ? INTELLIGENCE_PUBLIC_ORIGIN : window.location.origin, subject);
   const buys = bolts.filter((bolt) => bolt.side === "buy").length, sells = bolts.length - buys;
   const greyLine = `${subject.displayName ?? "This wallet"} printed ${buys} buys and ${sells} sells of ${subject.symbol ?? "this token"} in this window. Every one is on the tape.`;
-  const sourceLine = `${candles.length ? `Candles: ${source ?? "indexed OHLC"}` : "Candles unavailable: event tape only"} · ${bolts.length} prints · ${subject.chainKey}`;
+  const sourceLine = `${candles.length ? `Candles: ${candleSourceLabel(source)}` : "Candles unavailable: event tape only"} · ${bolts.length} prints · ${subject.chainKey}`;
   const slug = `abulls-replay-${(subject.symbol ?? subject.mint.slice(0, 6)).replace(/[^a-z0-9]+/gi, "").toLowerCase()}-${format}`;
 
   useEffect(() => () => { if (result) { URL.revokeObjectURL(result.videoUrl); URL.revokeObjectURL(result.manifestUrl); } }, [result]);
