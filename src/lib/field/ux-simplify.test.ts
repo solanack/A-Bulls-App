@@ -128,7 +128,9 @@ describe("paste-proof wallet+mint deep-link", () => {
     assert.match(shell, /else if\(inboundPrefill\(\)\?\.mode==="replay"\)os\.setMode\("replay"\)/);
     assert.match(shell, /setMode\(inboundShareId\(\)\?"trickster":event\.mode\)/);
     assert.doesNotMatch(shell, /inboundPrefill\(\)\?\.mode\?\?event\.mode/);
-    assert.match(shell, /workspaceMint=cutSubject\?\.mint\|\|searchPrefill\?\.mint\|\|focusedMint/);\n    assert.match(shell, /askMint=\{workspaceMint\}/);\n    assert.doesNotMatch(shell, /workspaceMint=.*askPrefill/);
+    assert.match(shell, /workspaceMint=cutSubject\?\.mint\|\|searchPrefill\?\.mint\|\|focusedMint/);
+    assert.match(shell, /askMint=\{workspaceMint\}/);
+    assert.doesNotMatch(shell, /workspaceMint=.*askPrefill/);
     assert.match(shell, /askWallet=\{cutSubject\?\.wallet\|\|searchPrefill\?\.wallet\|\|contextWallet\}/);
     assert.match(workspace, /subjectPrefillFromSearch/);
     assert.match(workspace, /inboundPrefill\?\.wallet/);
