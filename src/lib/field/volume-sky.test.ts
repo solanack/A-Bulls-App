@@ -8,6 +8,7 @@ import {
   admitPlanet,
   composeVolumeSky,
   countLivePlanets,
+  countLiveStars,
   fiveMinuteHeat,
   liquidityBeltForPlanet,
 } from "./volume-sky.ts";
@@ -124,6 +125,27 @@ describe("liquidity belt", () => {
     const belt = liquidityBeltForPlanet(healthy("A".padEnd(44, "1"), 400));
     assert.equal(belt?.cosmicKind, "asteroid-belt");
     assert.equal(belt?.metadata?.parentMint, "A".padEnd(44, "1"));
+  });
+});
+
+describe("live STAR counting", () => {
+  it("counts trader STARS independently from token PLANETS", () => {
+    const trader: FieldParticle = {
+      id: "trader-star",
+      kind: "wallet",
+      cosmicKind: "star",
+      originGalaxyId: "afterbell",
+      verificationState: "observed",
+      observedAt: now,
+      category: "swap",
+      magnitudeBand: 0.8,
+      position: [0, 10, 0],
+      source: "indexed-afterbell",
+      metadata: { wallet: "9P6Ej2CRTDYMW9628wXA8awM1t82jnfynYNNPSVx7pfU", skyRole: "live" },
+    };
+    const field = { ...snapshot([trader]), galaxyId: "afterbell" as const };
+    assert.equal(countLiveStars(field), 1);
+    assert.equal(countLivePlanets(field), 0);
   });
 });
 
