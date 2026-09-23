@@ -9,7 +9,6 @@ import {
   composeVolumeSky,
   countLivePlanets,
   countLiveStars,
-  countLiveStars,
   fiveMinuteHeat,
   liquidityBeltForPlanet,
 } from "./volume-sky.ts";
