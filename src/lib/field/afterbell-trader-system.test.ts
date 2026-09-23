@@ -40,9 +40,9 @@ test("Afterbell STAR selection creates a wallet-only thread and mint enters only
  const start=fieldOs.indexOf("async enterAfterbellTraderSystem");
  const end=fieldOs.indexOf("async enterFomoTraderSystem",start);
  const starMethod=fieldOs.slice(start,end);
- assert.match(starMethod,/createResearchThreadContext\(\{galaxyId:"afterbell",chainKey:"solana",wallet,replaySpeed:/);
+ assert.match(starMethod,/createResearchThreadContext\(\{galaxyId:"afterbell",chainKey:"solana",wallet,displayName:label,fromTs:snapshot\.windowStart,toTs:snapshot\.windowEnd,replaySpeed:/);
  assert.doesNotMatch(starMethod,/firstMint|mint:firstMint/);
- assert.match(fieldOs,/particle\.cosmicKind==="planet"&&walletContext/);
- assert.match(fieldOs,/wallet:walletContext,mint,fromTs:this\.field\.snapshot\.windowStart,toTs:this\.field\.snapshot\.windowEnd/);
+ assert.match(fieldOs,/particle\.cosmicKind==="planet"&&mint\)\{this\.#selectTraderPlanet\(particle,mint\)/);
+ assert.match(fieldOs,/wallet,displayName:section\.trader\?\.identity\?\?section\.label,mint,symbol:/);
  assert.match(fieldOs,/entrySignature:signature/);
 });

@@ -13,6 +13,8 @@ export type ResearchThreadContext = {
   mint: string | null;
   quoteMint: string | null;
   wallet: string | null;
+  displayName: string | null;
+  symbol: string | null;
   matchedRoundId: string | null;
   fromTs: number | null;
   toTs: number | null;
@@ -77,7 +79,7 @@ export function createResearchThreadContext(input:Partial<ResearchThreadContext>
   const fromTs=finiteMs(input.fromTs),toTs=finiteMs(input.toTs);
   return Object.freeze({
     id:text(input.id),visibility:input.visibility==="public"||input.visibility==="unlisted"?input.visibility:"private",
-    galaxyId:text(input.galaxyId),launchOrigin:text(input.launchOrigin),chainKey:text(input.chainKey),mint:text(input.mint),quoteMint:text(input.quoteMint),wallet:text(input.wallet),matchedRoundId:text(input.matchedRoundId),
+    galaxyId:text(input.galaxyId),launchOrigin:text(input.launchOrigin),chainKey:text(input.chainKey),mint:text(input.mint),quoteMint:text(input.quoteMint),wallet:text(input.wallet),displayName:text(input.displayName),symbol:text(input.symbol),matchedRoundId:text(input.matchedRoundId),
     fromTs,toTs:fromTs!=null&&toTs!=null&&toTs>=fromTs?toTs:null,
     entrySignature:text(input.entrySignature),exitSignature:text(input.exitSignature),replayRef:text(input.replayRef),replayCursor:cursor(input.replayCursor),replaySpeed:speed(input.replaySpeed),
     evidenceIds:refs(input.evidenceIds),compareRefs:refs(input.compareRefs),sequenceRefs:refs(input.sequenceRefs),ghostRefs:refs(input.ghostRefs),thesisRefs:refs(input.thesisRefs),cutRefs:refs(input.cutRefs),
@@ -90,10 +92,10 @@ export function mergeResearchThreadContext(current:ResearchThreadContext,patch:P
 }
 
 export function encodeResearchThread(context:ResearchThreadContext):string{
-  const compact={g:context.galaxyId,o:context.launchOrigin,h:context.chainKey,m:context.mint,q:context.quoteMint,w:context.wallet,r:context.matchedRoundId,f:context.fromTs,t:context.toTs,e:context.entrySignature,x:context.exitSignature,p:context.replayRef,c:context.replayCursor,s:context.replaySpeed};
+  const compact={g:context.galaxyId,o:context.launchOrigin,h:context.chainKey,m:context.mint,q:context.quoteMint,w:context.wallet,n:context.displayName,y:context.symbol,r:context.matchedRoundId,f:context.fromTs,t:context.toTs,e:context.entrySignature,x:context.exitSignature,p:context.replayRef,c:context.replayCursor,s:context.replaySpeed};
   return btoa(unescape(encodeURIComponent(JSON.stringify(compact)))).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
 }
 
 export function decodeResearchThread(value:string):ResearchThreadContext|null{
-  try{const normalized=value.replaceAll("-","+").replaceAll("_","/");const padded=normalized+"=".repeat((4-normalized.length%4)%4);const raw=JSON.parse(decodeURIComponent(escape(atob(padded)))) as Record<string,unknown>;return createResearchThreadContext({galaxyId:text(raw.g),launchOrigin:text(raw.o),chainKey:text(raw.h),mint:text(raw.m),quoteMint:text(raw.q),wallet:text(raw.w),matchedRoundId:text(raw.r),fromTs:finiteMs(raw.f),toTs:finiteMs(raw.t),entrySignature:text(raw.e),exitSignature:text(raw.x),replayRef:text(raw.p),replayCursor:cursor(raw.c),replaySpeed:speed(raw.s)});}catch{return null;}
+  try{const normalized=value.replaceAll("-","+").replaceAll("_","/");const padded=normalized+"=".repeat((4-normalized.length%4)%4);const raw=JSON.parse(decodeURIComponent(escape(atob(padded)))) as Record<string,unknown>;return createResearchThreadContext({galaxyId:text(raw.g),launchOrigin:text(raw.o),chainKey:text(raw.h),mint:text(raw.m),quoteMint:text(raw.q),wallet:text(raw.w),displayName:text(raw.n),symbol:text(raw.y),matchedRoundId:text(raw.r),fromTs:finiteMs(raw.f),toTs:finiteMs(raw.t),entrySignature:text(raw.e),exitSignature:text(raw.x),replayRef:text(raw.p),replayCursor:cursor(raw.c),replaySpeed:speed(raw.s)});}catch{return null;}
 }
