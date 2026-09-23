@@ -4,8 +4,8 @@ export type AfterbellPair = {
 export type AfterbellPlanetRecord = AfterbellPair & { name:string; cashSymbol:string; issuer:string; source:"DexScreener venue-reported"; observedAt:number; };
 export type AfterbellGalaxyData = { ok:boolean; coverage:"fresh"|"degraded"|"empty"; planets:readonly AfterbellPlanetRecord[]; disclosure:string; source:"DexScreener venue-reported"; };
 
-type CatalogItem={symbol:string;name:string;cashSymbol:string;issuer:string;mintHint?:string};
-const CATALOG:readonly CatalogItem[]=[
+export type CatalogItem={symbol:string;name:string;cashSymbol:string;issuer:string;mintHint?:string};
+export const XSTOCK_REGISTRY:readonly CatalogItem[]=[
   {symbol:"AAPLx",name:"Apple",cashSymbol:"AAPL",issuer:"xStocks"},
   {symbol:"NVDAx",name:"NVIDIA",cashSymbol:"NVDA",issuer:"xStocks",mintHint:"Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh"},
   {symbol:"TSLAx",name:"Tesla",cashSymbol:"TSLA",issuer:"xStocks",mintHint:"XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB"},
@@ -33,7 +33,7 @@ async function loadPairs(item:CatalogItem,fetchImpl:typeof fetch){
 }
 export async function getAfterbellGalaxy(fetchImpl:typeof fetch=fetch):Promise<AfterbellGalaxyData>{
   const now=Date.now();if(cached&&now-cached.at<CACHE_MS)return cached.value;
-  const settled=await Promise.allSettled(CATALOG.map(async item=>{const pair=await loadPairs(item,fetchImpl);return pair?{...pair,name:item.name,cashSymbol:item.cashSymbol,issuer:item.issuer,source:SOURCE,observedAt:Date.now()}:null;})),planets=settled.flatMap(result=>result.status==="fulfilled"&&result.value?[result.value]:[]),failures=settled.filter(result=>result.status==="rejected").length,coverage=planets.length===CATALOG.length?"fresh":planets.length?"degraded":"empty",value:AfterbellGalaxyData={ok:planets.length>0,coverage,planets,source:SOURCE,disclosure:planets.length?`${planets.length} of ${CATALOG.length} Afterbell xStock PLANETS currently have finite Solana venue prices. Values are DexScreener venue-reported; missing coverage is not zero, and token provenance remains Solana.`:failures?"Afterbell venue reads are temporarily unavailable. No token or price was fabricated.":"No qualifying Solana xStock venue pairs are currently available. Missing coverage is not zero."};
+  const settled=await Promise.allSettled(XSTOCK_REGISTRY.map(async item=>{const pair=await loadPairs(item,fetchImpl);return pair?{...pair,name:item.name,cashSymbol:item.cashSymbol,issuer:item.issuer,source:SOURCE,observedAt:Date.now()}:null;})),planets=settled.flatMap(result=>result.status==="fulfilled"&&result.value?[result.value]:[]),failures=settled.filter(result=>result.status==="rejected").length,coverage=planets.length===XSTOCK_REGISTRY.length?"fresh":planets.length?"degraded":"empty",value:AfterbellGalaxyData={ok:planets.length>0,coverage,planets,source:SOURCE,disclosure:planets.length?`${planets.length} of ${XSTOCK_REGISTRY.length} Afterbell xStock PLANETS currently have finite Solana venue prices. Values are DexScreener venue-reported; missing coverage is not zero, and token provenance remains Solana.`:failures?"Afterbell venue reads are temporarily unavailable. No token or price was fabricated.":"No qualifying Solana xStock venue pairs are currently available. Missing coverage is not zero."};
   cached={at:now,value};return value;
 }
-export const __afterbellClientContract=Object.freeze({readOnly:true,execution:false,custody:false,source:SOURCE,catalogSize:CATALOG.length,cacheMs:CACHE_MS});
+export const __afterbellClientContract=Object.freeze({readOnly:true,execution:false,custody:false,source:SOURCE,catalogSize:XSTOCK_REGISTRY.length,cacheMs:CACHE_MS});
