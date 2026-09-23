@@ -3,7 +3,8 @@ import { chromium } from "playwright";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
-const origin=String(process.argv[2]||"https://abullsapp.com").replace(/\/$/,"");
+const origin=String(process.argv[2]||process.env.PUBLIC_APP_ORIGIN||"").replace(/\/$/,"");
+if(!/^https?:\/\//.test(origin))throw new Error("Pass the production app origin as argv[2] or PUBLIC_APP_ORIGIN");
 const out=String(process.argv[3]||"/workspace/screenshots/afterbell-live-journey.json");
 mkdirSync(dirname(out),{recursive:true});
 
