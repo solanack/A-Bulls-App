@@ -72,11 +72,11 @@ export const TOOL_TITLE: Partial<Record<FieldMode, string>> = {
 };
 export const MODE_HINT: Record<FieldMode, string> = {
   explore: "Return to the Field.",
-  intelligence: "Inspect verified activity. Facts only.",
+  intelligence: "Inspect sourced activity. Evidence labels stay visible.",
   index: "Search the permanent research archive and jump between indexed evidence and the Field.",
   query: "Paste a public identifier. ASK wakes the Field.",
   trickster: "Share the story with receipts",
-  games: "Learn from narrated, indexed events. No scores. No missions.",
+  games: "Retired mode. No game surface is active in the public Field.",
   compare: "Compare two traders side by side",
   "what-if": "What if you held instead?",
   sequences: "Discover bounded market sequences.",
@@ -84,6 +84,6 @@ export const MODE_HINT: Record<FieldMode, string> = {
   replay: "Watch this trade on the chart",
   ghost: "See the indexed counterfactual portfolio. Estimates stay labeled.",
   social: "Follow evidence, creators, wallets, tokens, and galaxies without connecting a wallet.",
-  observatory: "Open the Fomo Galaxy and study its cached all-time trader stars. No copy trading.",
+  observatory: "Study cached Fomo trader STARS alongside separately labeled provider and chain evidence. No copy trading.",
   watchlist: "Your saved token planets and wallet stars. Local-first and read-only.",
 };

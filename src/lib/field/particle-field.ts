@@ -103,13 +103,19 @@ void main() {
   float light = 1.0;
 
   if (vCosmic < 0.5) {
-    // GALAXY — broad spiral body with a dense center.
+    // GALAXY — layered spiral body: luminous core, rotating arms, dust lanes and a faint halo.
     if (d > 1.0) discard;
-    float core = 1.0 - smoothstep(0.05, 0.34, d);
-    float arms = 1.0 - smoothstep(0.12, 0.72, abs(sin(a * 3.0 - d * 11.0)));
-    arms *= 1.0 - smoothstep(0.22, 1.0, d);
-    alpha = max(core, arms * 0.58);
-    light = 0.82 + core * 0.8 + arms * 0.34;
+    float core = 1.0 - smoothstep(0.035, 0.30, d);
+    float spin = a * 3.0 - d * 12.5 - uTime * 0.10 * uMotion + vPhase * 2.2;
+    float armsA = 1.0 - smoothstep(0.10, 0.64, abs(sin(spin)));
+    float armsB = 1.0 - smoothstep(0.12, 0.72, abs(sin(a * 2.0 - d * 8.2 + uTime * 0.055 * uMotion)));
+    float falloff = 1.0 - smoothstep(0.18, 1.0, d);
+    float halo = (1.0 - smoothstep(0.22, 1.0, d)) * 0.14;
+    float dustLane = smoothstep(0.18, 0.62, abs(sin(spin + 0.52)));
+    float arms = max(armsA * 0.76, armsB * 0.38) * falloff * mix(0.66, 1.0, dustLane);
+    float knots = pow(max(0.0, sin(a * 9.0 + d * 24.0 + vPhase * 6.28318)), 18.0) * arms;
+    alpha = max(core, max(arms * 0.66, halo));
+    light = 0.76 + core * 1.05 + arms * 0.42 + knots * 0.58;
   } else if (vCosmic < 1.5) {
     // STAR — bright token body with short rays.
     if (d > 1.0) discard;
@@ -268,14 +274,19 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
   visible.forEach((entity, i) => {
     positions.set(entity.position, i * 3);
     const base = parentColorForCategory(entity.category);
+    const targetGalaxy = typeof entity.metadata?.targetGalaxyId === "string" ? entity.metadata.targetGalaxyId : "";
     const color =
-      snapshot.galaxyId === "pons"
-        ? ([
-            base[0] * 0.58 + 0.38,
-            base[1] * 0.62 + 0.34,
-            base[2] * 0.48 + 0.12,
-          ] as [number, number, number])
-        : base;
+      targetGalaxy === "fomo" || entity.metadata?.fomoTrader === true
+        ? ([0.66, 0.31, 1.0] as [number, number, number])
+        : targetGalaxy === "afterbell" || entity.metadata?.afterbellTrader === true
+          ? ([0.18, 0.68, 1.0] as [number, number, number])
+          : snapshot.galaxyId === "pons"
+            ? ([
+                base[0] * 0.58 + 0.38,
+                base[1] * 0.62 + 0.34,
+                base[2] * 0.48 + 0.12,
+              ] as [number, number, number])
+            : base;
     colors.set(color, i * 3);
     cats[i] = CATEGORY_INDEX[entity.category] ?? 6;
     cosmic[i] = COSMIC_KIND_INDEX[renderCosmicKind(entity)] ?? COSMIC_KIND_INDEX.dust;
@@ -365,6 +376,7 @@ export class ParticleFieldRenderer {
   #contextLost = false;
   #didRender = false;
   #pageVisible = document.visibilityState !== "hidden";
+  #flightUntil = 0;
 
   constructor(host: HTMLElement, snapshot: UniverseSnapshot) {
     this.host = host;
@@ -523,7 +535,7 @@ export class ParticleFieldRenderer {
     this.snapshot = snapshot;
     if (galaxyChanged) {
       this.cameraState = { yaw: 0.4, pitch: 0.18, distance: snapshot.galaxyId === "galaxy-zero" ? GALAXY_ZERO_CAMERA_DISTANCE : 125, target: [0, 0, 0] };
-      this.#placeCamera();
+      this.#flightUntil = performance.now() + (this.reducedMotion ? 0 : 1150);
     }
     this.basePositions = new Float32Array(fieldMesh.positions);
     this.colors = fieldMesh.colors;
@@ -821,13 +833,16 @@ export class ParticleFieldRenderer {
     const desiredX = tx + Math.sin(c.yaw) * Math.cos(c.pitch) * c.distance;
     const desiredY = ty + Math.sin(c.pitch) * c.distance;
     const desiredZ = tz + Math.cos(c.yaw) * Math.cos(c.pitch) * c.distance;
+    const cinematicFlight = now < this.#flightUntil && !this.reducedMotion && !this.#gestures.interacting;
     const follow = this.#gestures.pinching
       ? 0.5
       : this.#gestures.orbiting
         ? 0.28
-        : this.queryBlend > 0.02 && this.queryBlend < 0.9
-          ? 0.18
-          : 0.16;
+        : cinematicFlight
+          ? 0.065
+          : this.queryBlend > 0.02 && this.queryBlend < 0.9
+            ? 0.18
+            : 0.16;
     this.camera.position.x += (desiredX - this.camera.position.x) * follow;
     this.camera.position.y += (desiredY - this.camera.position.y) * follow;
     this.camera.position.z += (desiredZ - this.camera.position.z) * follow;
