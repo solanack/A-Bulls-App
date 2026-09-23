@@ -45,7 +45,7 @@ export function TricksterDirector({bundle,mint,wallet,tokenLabel=""}:{bundle:Dat
   useEffect(()=>{setSelected(null);setError("");invalidateFrozenCut();},[bundleKey]);
   useEffect(()=>()=>{revokeUrl(previewRef);revokeUrl(videoRef);},[]);
 
-  if(!events.length)return <p className="universe-empty">Watch this trade on the chart first. A Cut needs indexed receipts.</p>;
+  if(!events.length)return <p className="universe-empty">Open Replay first. A Cut needs indexed receipts.</p>;
 
   function toggle(id:string){setSelected(current=>{const base=current??autoIds;return base.includes(id)?base.filter(item=>item!==id):[...base,id].slice(0,CUT_RECEIPT_MAX);});invalidateFrozenCut();}
   function autoCut(){const ids=autoSelectTricksterMoment(events,5).map(row=>text(row.receiptId)).filter(Boolean);setSelected(ids.length?ids:autoIds.slice(0,5));invalidateFrozenCut();setError("");setShareStatus("Auto Cut centered on the strongest observed receipt.");}
