@@ -29,4 +29,6 @@ test("Field visual polish stays inside the known-good WebGL renderer",()=>{
   assert.match(field,/new THREE\.WebGLRenderer/);
   assert.doesNotMatch(field,/WebGPURenderer|CanvasRenderer|field2d|renderer2d|fallback2d/i);
   assert.match(field,/new THREE\.CanvasTexture\(canvas\)/);
+  assert.match(field,/context\\.measureText\\(text\\)/,"live labels reserve only their measured width instead of a fixed portrait-clipping box");
+  assert.match(field,/Math\\.min\\(400, Math\\.max\\(132,/,"live label widths stay bounded for short and long identities");
 });
