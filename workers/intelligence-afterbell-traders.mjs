@@ -80,6 +80,10 @@ function realizedForUnit(events,from,to,unit){
   return hasSell&&complete&&closedQty>0?realized:null;
 }
 
+export function walletCallsign(wallet=''){
+  const value=s(wallet);return value.length>=8?`${value.slice(0,4)}…${value.slice(-4)}`:value;
+}
+
 export function rankAfterbellTraders(events=[],{from,to,limit=AFTERBELL_MAX_TRADERS}={}){
   const start=Math.trunc(n(from)),end=Math.trunc(n(to)),cap=Math.max(1,Math.min(AFTERBELL_MAX_TRADERS,Math.trunc(n(limit)||AFTERBELL_MAX_TRADERS))),normalized=normalizeAfterbellEvents(events),byWallet=new Map();
   for(const event of normalized){
@@ -89,13 +93,19 @@ export function rankAfterbellTraders(events=[],{from,to,limit=AFTERBELL_MAX_TRAD
   }
   const result=[];
   for(const row of byWallet.values()){
-    const walletEvents=normalized.filter(event=>event.wallet===row.wallet&&event.blockTime<=end),windowTrades=row.trades.filter(event=>event.blockTime>=start&&event.blockTime<=end);
-    const perMint=[...row.mints].map(mint=>walletEvents.filter(event=>event.mint===mint));
+    const walletEvents=normalized.filter(event=>event.wallet===row.wallet&&event.blockTime<=end),perMint=[...row.mints].map(mint=>walletEvents.filter(event=>event.mint===mint));
     const pnlFor=unit=>{let total=0,has=false;for(const mintEvents of perMint){const value=realizedForUnit(mintEvents,start,end,unit),hasSell=mintEvents.some(event=>event.side==='sell'&&event.blockTime>=start&&event.blockTime<=end);if(hasSell&&value==null)return null;if(value!=null){total+=value;has=true;}}return has?total:null;};
-    const latestTrades=windowTrades.slice().sort((a,b)=>b.blockTime-a.blockTime||String(a.txId??'').localeCompare(String(b.txId??''))).slice(0,3).map(event=>Object.freeze({mint:event.mint,txId:event.txId,side:event.side,amount:event.amount,blockTime:event.blockTime,priceUsd:event.priceUsd,priceSol:event.priceSol,source:event.source,sourceKind:event.sourceKind}));
-    const mostTraded=[...row.mints].map(mint=>{const trades=windowTrades.filter(event=>event.mint===mint),txIds=new Set(trades.map(event=>event.txId||eventKey(event)));return Object.freeze({mint,uniqueAfterCloseTxCount:txIds.size,eventCount:trades.length,lastObservedAt:trades.reduce((max,event)=>Math.max(max,event.blockTime),0)*1000});}).sort((a,b)=>b.uniqueAfterCloseTxCount-a.uniqueAfterCloseTxCount||b.eventCount-a.eventCount||a.mint.localeCompare(b.mint));
-    const holdings=[...new Set(walletEvents.map(event=>event.mint))].map(mint=>{const retained=walletEvents.filter(event=>event.mint===mint),observedNetAmount=retained.reduce((sum,event)=>sum+(event.side==='buy'?event.amount:-event.amount),0),lastObservedAt=retained.reduce((max,event)=>Math.max(max,event.blockTime),0)*1000;return Object.freeze({mint,observedNetAmount,lastObservedAt,sourceKind:'retained-observed-flow'});}).filter(item=>item.observedNetAmount>1e-12).sort((a,b)=>b.observedNetAmount-a.observedNetAmount||b.lastObservedAt-a.lastObservedAt||a.mint.localeCompare(b.mint)).slice(0,10);
-    result.push(Object.freeze({wallet:row.wallet,transactionCount:row.txIds.size,uniqueAfterCloseTxCount:row.txIds.size,eventCount:row.eventCount,buyCount:row.buyCount,sellCount:row.sellCount,assetCount:row.mints.size,mints:Object.freeze([...row.mints]),holdings:Object.freeze(holdings),topHeld:Object.freeze(holdings),mostTraded:Object.freeze(mostTraded.slice(0,10)),topTraded:Object.freeze(mostTraded.slice(0,10)),latestTrades:Object.freeze(latestTrades),realizedPnlUsd:pnlFor('usd'),realizedPnlSol:pnlFor('sol'),lastObservedAt:row.lastObservedAt*1000,sourceKind:row.sourceKinds.has('observed-fact')?'observed':'provider-reported',sources:Object.freeze([...row.sources])}));
+    const latestTrades=row.trades.slice().sort((a,b)=>b.blockTime-a.blockTime||String(b.txId??'').localeCompare(String(a.txId??''))).slice(0,3).map(event=>Object.freeze({mint:event.mint,txId:event.txId,side:event.side,amount:event.amount,blockTime:event.blockTime,priceUsd:event.priceUsd,priceSol:event.priceSol,source:event.source,sourceKind:event.sourceKind}));
+    const mostTraded=[...row.mints].map(mint=>{
+      const inWindow=row.trades.filter(event=>event.mint===mint),txIds=new Set(inWindow.map(event=>event.txId||eventKey(event)));
+      return Object.freeze({mint,uniqueAfterCloseTxCount:txIds.size,eventCount:inWindow.length,lastObservedAt:inWindow.reduce((max,event)=>Math.max(max,event.blockTime*1000),0)});
+    }).sort((a,b)=>b.uniqueAfterCloseTxCount-a.uniqueAfterCloseTxCount||a.mint.localeCompare(b.mint));
+    const holdings=[...new Set(walletEvents.map(event=>event.mint))].map(mint=>{
+      const mintEvents=walletEvents.filter(event=>event.mint===mint),observedNetAmount=mintEvents.reduce((sum,event)=>sum+(event.side==='buy'?event.amount:-event.amount),0),lastObservedAt=mintEvents.reduce((max,event)=>Math.max(max,event.blockTime*1000),0);
+      return Object.freeze({mint,observedNetAmount,lastObservedAt,sourceKind:'retained-observed-flow'});
+    }).filter(item=>item.observedNetAmount>1e-12).sort((a,b)=>b.observedNetAmount-a.observedNetAmount||b.lastObservedAt-a.lastObservedAt||a.mint.localeCompare(b.mint)).slice(0,10);
+    const uniqueAfterCloseTxCount=row.txIds.size;
+    result.push(Object.freeze({wallet:row.wallet,transactionCount:uniqueAfterCloseTxCount,uniqueAfterCloseTxCount,eventCount:row.eventCount,buyCount:row.buyCount,sellCount:row.sellCount,displayName:walletCallsign(row.wallet),displayNameSource:'wallet-callsign',assetCount:row.mints.size,mints:Object.freeze([...row.mints]),holdings:Object.freeze(holdings),topHeld:Object.freeze(holdings),mostTraded:Object.freeze(mostTraded),topTraded:Object.freeze(mostTraded),latestTrades:Object.freeze(latestTrades),realizedPnlUsd:pnlFor('usd'),realizedPnlSol:pnlFor('sol'),lastObservedAt:row.lastObservedAt*1000,sourceKind:row.sourceKinds.has('observed-fact')?'observed':'provider-reported',sources:Object.freeze([...row.sources])}));
   }
   result.sort((a,b)=>b.uniqueAfterCloseTxCount-a.uniqueAfterCloseTxCount||a.wallet.localeCompare(b.wallet));
   return Object.freeze(result.slice(0,cap).map((row,index)=>Object.freeze({rank:index+1,...row})));
@@ -107,13 +117,23 @@ async function readRows(db,mint,from,to){
   const native=await all(db.prepare(`SELECT ? mint,wallet,signature txId,CASE WHEN token_delta>0 THEN 'buy' ELSE 'sell' END side,ABS(token_delta) amount,NULL priceUsd,CASE WHEN ABS(token_delta)>0 AND ABS(sol_delta)>0 THEN ABS(sol_delta/token_delta) ELSE NULL END priceSol,block_time blockTime,source,'observed-fact' sourceKind FROM bull_wallet_events WHERE mint=? AND block_time BETWEEN ? AND ? AND wallet IS NOT NULL AND token_delta<>0 ORDER BY block_time ASC LIMIT 10000`).bind(mint,mint,lookback,to));rows.push(...native);return rows;
 }
 
+async function retainedIdentityMap(db,wallets=[]){
+  const unique=[...new Set(wallets.map(s).filter(Boolean))];if(!unique.length)return new Map();
+  const placeholders=unique.map(()=>'?').join(','),out=new Map();
+  try{
+    const rows=await all(db.prepare(`SELECT solana_wallet wallet,handle,display_name,source FROM fomo_traders WHERE solana_wallet IN (${placeholders}) AND captured_at=(SELECT MAX(captured_at) FROM fomo_traders) ORDER BY current_rank ASC,handle ASC`).bind(...unique));
+    for(const row of rows){const wallet=s(row.wallet),handle=s(row.handle).replace(/^@/,'');if(!wallet||!handle||out.has(wallet))continue;out.set(wallet,{displayName:`@${handle}`,displayNameSource:s(row.source)||'fomoapi.io'});}
+  }catch{/* identity enrichment is optional; deterministic wallet callsigns remain available */}
+  return out;
+}
+
 export async function readAfterbellTraders(env={},mintInput='',options={}){
   const db=intelligenceDb(env),rawMints=Array.isArray(mintInput)?mintInput:String(mintInput||'').split(','),mints=[...new Set(rawMints.map(value=>canonicalChainAddress('solana',s(value))).filter(Boolean))].slice(0,50);
   if(!mints.length)return Object.freeze({ok:false,coverage:'empty',error:'invalid_xstock_mint',mint:'',mints:[],items:[],disclosure:'At least one valid Solana xStock mint is required. No trader list was invented.'});
   if(!db)return Object.freeze({ok:false,coverage:'degraded',error:'database_unavailable',mint:mints.length===1?mints[0]:'',mints,items:[],disclosure:'The Intelligence D1 binding is unavailable. No trader list or PnL was invented.'});
   const window=options.from&&options.to?Object.freeze({from:Math.trunc(n(options.from)),to:Math.trunc(n(options.to)),scheduledEnd:Math.trunc(n(options.to)),live:false,timezone:ZONE,label:'CUSTOM AFTERBELL WINDOW',calendarCoverage:'caller supplied'}):afterbellWindow(options.nowMs);
-  const groups=await Promise.all(mints.map(mint=>readRows(db,mint,window.from,window.to))),rows=groups.flat(),ranked=rankAfterbellTraders(rows,{from:window.from,to:window.to,limit:options.limit}),identities=await retainedIdentityMap(db,ranked.map(item=>item.wallet)),items=Object.freeze(ranked.map(item=>Object.freeze({...item,...(identities.get(item.wallet)||{displayName:walletCallsign(item.wallet),displayNameSource:'wallet-callsign'})})));
-  return Object.freeze({ok:true,coverage:items.length?'fresh':'empty',mint:mints.length===1?mints[0]:'',mints,window,items,method:'afterbell-cross-xstock-unique-retained-after-close-transactions-v3',disclosure:items.length?'Rank is based only on unique retained after-close transactions across the requested xStock universe. Display names use a retained authorized handle/alias when available, otherwise a deterministic wallet callsign. Holdings and most-traded assets describe bounded retained evidence only; missing history stays unavailable. No identity, skill, ownership, brokerage, or recommendation claim is made.':'No retained xStock wallet trades are indexed across the requested Afterbell universe in this window. Empty coverage stays empty; no trader, identity, holding, or PnL was invented.'});
+  const groups=await Promise.all(mints.map(mint=>readRows(db,mint,window.from,window.to))),rows=groups.flat(),ranked=rankAfterbellTraders(rows,{from:window.from,to:window.to,limit:options.limit}),identities=await retainedIdentityMap(db,ranked.map(item=>item.wallet)),items=Object.freeze(ranked.map(item=>Object.freeze({...item,...(identities.get(item.wallet)||{})})));
+  return Object.freeze({ok:true,coverage:items.length?'fresh':'empty',mint:mints.length===1?mints[0]:'',mints,window,items,method:'afterbell-cross-xstock-unique-transactions-v3',disclosure:items.length?'Rank is based only on unique retained after-close transactions across the requested xStock universe. Retained authorized handles are reused when available; otherwise the STAR uses a deterministic wallet callsign. Holdings, most-traded xStocks, and the latest three COMETS come only from retained evidence. PnL is never used for rank. No identity, skill, ownership, broker, execution, or recommendation claim is made.':'No retained xStock wallet trades are indexed across the requested Afterbell universe in this window. Empty coverage stays empty; no trader, identity, holding, trade, or PnL was invented.'});
 }
 
 export async function readAfterbellAudit(env={},options={}){
