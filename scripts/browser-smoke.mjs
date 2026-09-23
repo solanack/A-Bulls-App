@@ -109,7 +109,23 @@ try {
     // networkidle never settles and would burn the whole timeout.
     const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     const status = resp?.status() ?? 0;
-    await page.waitForTimeout(1000);
+    const requestedGalaxy = new URL(url).searchParams.get("galaxy");
+    if (requestedGalaxy) {
+      await page.waitForFunction(
+        (galaxy) => document.querySelector("main.field-shell")?.getAttribute("data-galaxy") === galaxy,
+        requestedGalaxy,
+        { timeout: Math.min(timeoutMs, 20_000) },
+      );
+      if (requestedGalaxy === "afterbell") {
+        await page.waitForFunction(
+          () => Number(document.querySelector("main.field-shell")?.getAttribute("data-field-count") || "0") > 0,
+          null,
+          { timeout: Math.min(timeoutMs, 20_000) },
+        );
+      }
+    } else {
+      await page.waitForTimeout(1000);
+    }
 
     const title = await page.title();
     const hasCanvas = (await page.locator("canvas").count()) > 0;
