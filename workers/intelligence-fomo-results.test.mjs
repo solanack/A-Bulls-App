@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { __fomoResultsContract, rankClosedFomoTrades } from './intelligence-fomo-results.mjs';
+import { __fomoResultsContract, handleFomoResultsRequest, rankClosedFomoTrades } from './intelligence-fomo-results.mjs';
 
 const wallet='9P6Ej2CRTDYMW9628wXA8awM1t82jnfynYNNPSVx7pfU';
 const mintA='5761e8gCMZFBHLU4RuFsfkWab96oJEtEr3uoF9A4pump';
@@ -36,6 +36,36 @@ test('finished outcome discovery rejects incomplete rows but keeps valid EVM clo
   assert.equal(result.winners[0].mint,evmToken);
   assert.equal(result.winners[0].chartIndexed,true);
   assert.equal(result.losers.length,0);
+});
+
+test('page read scans closed trades once and probes evidence only for displayed rows in one batch',async()=>{
+  const rows=Array.from({length:30},(_,i)=>row({trade_id:`t${i}`,realized_pnl_usd:i%2?-(i+1):i+1,token_address:i===2?mintB:mintA}));
+  const queries=[],batches=[];
+  const db={
+    prepare(sql){const stmt={sql,args:[],bind(...args){stmt.args=args;return stmt;},async all(){queries.push(sql);return{results:rows};}};return stmt;},
+    async batch(statements){batches.push(statements);return statements.map(stmt=>({results:stmt.args.includes(mintB)&&/bull_wallet_events|intelligence_price_candles\b/.test(stmt.sql)?[{hit:1}]:[]}));},
+  };
+  const response=await handleFomoResultsRequest(new Request('https://intel.test/api/intelligence/fomo/results?limit=3'),{FOMO_GALAXY_ENABLED:'true',INTELLIGENCE_DB:db});
+  const body=await response.json();
+  assert.equal(queries.length,1);
+  assert.doesNotMatch(queries[0],/EXISTS/);
+  assert.equal(batches.length,1);
+  assert.ok(batches[0].every(stmt=>!/LOWER\(/i.test(stmt.sql)));
+  assert.ok(batches[0].length<=6*4);
+  assert.deepEqual(body.winners.map(item=>item.tradeId),['t28','t26','t24']);
+  assert.equal(body.replayReadyCount,0);
+});
+
+test('evidence flags land on the displayed trade they were probed for',async()=>{
+  const rows=[row({trade_id:'indexed',realized_pnl_usd:500,token_address:mintB}),row({trade_id:'plain',realized_pnl_usd:400})];
+  const db={
+    prepare(sql){const stmt={sql,args:[],bind(...args){stmt.args=args;return stmt;},async all(){return{results:rows};}};return stmt;},
+    async batch(statements){return statements.map(stmt=>({results:stmt.args.includes(mintB)?[{hit:1}]:[]}));},
+  };
+  const body=await(await handleFomoResultsRequest(new Request('https://intel.test/api/intelligence/fomo/results'),{FOMO_GALAXY_ENABLED:'true',INTELLIGENCE_DB:db})).json();
+  assert.deepEqual(body.winners.map(item=>[item.tradeId,item.observedIndexed,item.chartIndexed]),[['indexed',true,true],['plain',false,false]]);
+  assert.equal(body.replayReadyCount,1);
+  assert.equal(body.chartReadyCount,1);
 });
 
 test('Fomo result surface is closed-only, read-only, and provider-free on page reads',()=>{

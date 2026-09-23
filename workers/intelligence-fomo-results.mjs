@@ -53,59 +53,48 @@ export function rankClosedFomoTrades(rows=[],{limit=8,nowMs=Date.now()}={}){
   return Object.freeze({winners:Object.freeze(winners),losers:Object.freeze(losers)});
 }
 
+/* One pass over closed trades with no correlated subqueries; the materialized cohort gets an automatic
+ * index on h. D1 serializes queries per database, so a slow read here stalls every Field read behind it. */
 async function resultRows(db){
-  const withEvidence=`
-    SELECT x.handle,x.trade_id,x.token_address,x.symbol,x.chain,x.status,x.avg_entry_price,x.avg_exit_price,
-      x.realized_pnl_usd,x.created_at,x.closed_at,x.source,t.current_rank,t.display_name,t.solana_wallet,t.evm_wallet,
-      CASE WHEN (
-        LOWER(COALESCE(x.chain,'')) IN ('solana','sol','svm','solana-mainnet')
-        AND EXISTS(
-          SELECT 1 FROM bull_wallet_events e
-          WHERE e.wallet=t.solana_wallet AND e.mint=x.token_address
-          LIMIT 1
-        )
-      ) OR EXISTS(
-        SELECT 1 FROM intelligence_chain_events_v2 e
-        WHERE LOWER(e.chain_key)=LOWER(x.chain)
-          AND LOWER(COALESCE(e.wallet_address,''))=LOWER(COALESCE(t.evm_wallet,''))
-          AND LOWER(e.asset_address)=LOWER(x.token_address)
-          AND e.source_kind='observed-fact'
-        LIMIT 1
-      ) THEN 1 ELSE 0 END observed_indexed,
-      CASE WHEN EXISTS(
-        SELECT 1 FROM intelligence_price_candles_v2 c
-        WHERE LOWER(c.chain_key)=LOWER(x.chain)
-          AND LOWER(c.asset_address)=LOWER(x.token_address)
-        LIMIT 1
-      ) OR (
-        LOWER(COALESCE(x.chain,'')) IN ('solana','sol','svm','solana-mainnet')
-        AND EXISTS(
-          SELECT 1 FROM intelligence_price_candles c
-          WHERE c.mint=x.token_address
-          LIMIT 1
-        )
-      ) THEN 1 ELSE 0 END chart_indexed
-    FROM fomo_trader_trades x
-    JOIN fomo_traders t ON lower(t.handle)=lower(x.handle)
-    WHERE x.status='closed' AND x.closed_at IS NOT NULL AND x.closed_at>0
-      AND x.realized_pnl_usd IS NOT NULL AND x.realized_pnl_usd<>0
-      AND t.current_rank BETWEEN 1 AND 50
-      AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders)
-    ORDER BY ABS(x.realized_pnl_usd) DESC, x.closed_at DESC
-    LIMIT 5000`;
-  try{return(await db.prepare(withEvidence).all())?.results||[];}catch{}
   return all(db.prepare(`
+    WITH t AS MATERIALIZED (
+      SELECT lower(handle) h,current_rank,display_name,solana_wallet,evm_wallet FROM fomo_traders
+      WHERE current_rank BETWEEN 1 AND 50 AND captured_at=(SELECT MAX(captured_at) FROM fomo_traders)
+    )
     SELECT x.handle,x.trade_id,x.token_address,x.symbol,x.chain,x.status,x.avg_entry_price,x.avg_exit_price,
       x.realized_pnl_usd,x.created_at,x.closed_at,x.source,t.current_rank,t.display_name,t.solana_wallet,t.evm_wallet,
       0 observed_indexed,0 chart_indexed
     FROM fomo_trader_trades x
-    JOIN fomo_traders t ON lower(t.handle)=lower(x.handle)
+    JOIN t ON t.h=lower(x.handle)
     WHERE x.status='closed' AND x.closed_at IS NOT NULL AND x.closed_at>0
       AND x.realized_pnl_usd IS NOT NULL AND x.realized_pnl_usd<>0
-      AND t.current_rank BETWEEN 1 AND 50
-      AND t.captured_at=(SELECT MAX(captured_at) FROM fomo_traders)
     ORDER BY ABS(x.realized_pnl_usd) DESC, x.closed_at DESC
     LIMIT 5000`));
+}
+
+const variants=(...values)=>[...new Set(values.map(s).filter(Boolean))];
+const inList=values=>values.map(()=>'?').join(',');
+const SOLANA_ALIASES=new Set(['solana','sol','svm','solana-mainnet']);
+
+/** Index-friendly evidence probes for one displayed trade: exact key matches only, no LOWER() on columns. */
+function evidenceStatements(db,row,item){
+  const chains=variants(row.chain,s(row.chain).toLowerCase(),item.chain),solana=SOLANA_ALIASES.has(s(row.chain).toLowerCase())||item.chain==='solana';
+  const wallets=variants(row.evm_wallet,s(row.evm_wallet).toLowerCase()),assets=variants(row.token_address,s(row.token_address).toLowerCase(),item.mint);
+  const observed=[],chart=[];
+  if(solana&&s(row.solana_wallet))observed.push(db.prepare('SELECT 1 hit FROM bull_wallet_events WHERE wallet=? AND mint=? LIMIT 1').bind(s(row.solana_wallet),s(row.token_address)));
+  if(wallets.length)observed.push(db.prepare(`SELECT 1 hit FROM intelligence_chain_events_v2 WHERE chain_key IN (${inList(chains)}) AND wallet_address IN (${inList(wallets)}) AND asset_address IN (${inList(assets)}) AND source_kind='observed-fact' LIMIT 1`).bind(...chains,...wallets,...assets));
+  chart.push(db.prepare(`SELECT 1 hit FROM intelligence_price_candles_v2 WHERE chain_key IN (${inList(chains)}) AND asset_address IN (${inList(assets)}) LIMIT 1`).bind(...chains,...assets));
+  if(solana)chart.push(db.prepare('SELECT 1 hit FROM intelligence_price_candles WHERE mint=? LIMIT 1').bind(s(row.token_address)));
+  return{observed,chart};
+}
+
+async function markEvidence(db,rows,displayed,nowMs){
+  const byId=new Map();for(const row of rows){const item=normalizedClosedTrade(row,nowMs);if(item)byId.set(item.id,row);}
+  const probes=displayed.map(item=>{const row=byId.get(item.id);return row?{row,...evidenceStatements(db,row,item)}:null;}).filter(Boolean);
+  const statements=probes.flatMap(probe=>[...probe.observed,...probe.chart]);if(!statements.length)return;
+  let results;try{results=await db.batch(statements);}catch{return;}
+  let cursor=0;const hit=()=>Boolean(results[cursor++]?.results?.length);
+  for(const probe of probes){const observed=probe.observed.map(hit).some(Boolean),chart=probe.chart.map(hit).some(Boolean);probe.row.observed_indexed=observed?1:0;probe.row.chart_indexed=chart?1:0;}
 }
 
 export async function handleFomoResultsRequest(request,env={}){
@@ -113,7 +102,9 @@ export async function handleFomoResultsRequest(request,env={}){
   if(request.method!=='GET')return json({ok:false,error:'method_not_allowed'},405);
   if(!bool(env.FOMO_GALAXY_ENABLED))return json({ok:false,error:'feature_disabled',coverage:'degraded',winners:[],losers:[],disclosure:'Fomo Galaxy is disabled.'},404);
   const db=intelligenceDb(env);if(!db)return json({ok:false,error:'intelligence_db_unavailable',coverage:'degraded',winners:[],losers:[],disclosure:'The Intelligence D1 binding is unavailable.'},503);
-  const limit=clamp(url.searchParams.get('limit'),8,1,20),rows=await resultRows(db),ranked=rankClosedFomoTrades(rows,{limit});
+  const limit=clamp(url.searchParams.get('limit'),8,1,20),nowMs=Date.now(),rows=(await resultRows(db)).map(row=>({...row})),first=rankClosedFomoTrades(rows,{limit,nowMs});
+  await markEvidence(db,rows,[...first.winners,...first.losers],nowMs);
+  const ranked=rankClosedFomoTrades(rows,{limit,nowMs});
   const total=ranked.winners.length+ranked.losers.length,displayed=[...ranked.winners,...ranked.losers],ready=displayed.filter(item=>item.observedIndexed).length,chartReady=displayed.filter(item=>item.chartIndexed).length;
   return json({
     ok:true,
