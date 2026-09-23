@@ -205,20 +205,31 @@ jobs:
           sudo mkdir -p /workspace/screenshots
           sudo chown -R "$USER":"$USER" /workspace
           node scripts/browser-smoke.mjs https://abullsapp.com/ /workspace/screenshots/production-field.png
+          node scripts/browser-smoke.mjs "https://abullsapp.com/?galaxy=afterbell" /workspace/screenshots/production-afterbell.png
           node --input-type=module <<'NODE'
           import fs from "node:fs";
-          const verdict=JSON.parse(fs.readFileSync("/workspace/screenshots/production-field.json","utf8"));
-          const entries=Object.entries(verdict.viewports||{});
-          if(entries.length!==2)throw new Error("production browser smoke did not return both viewports");
-          for(const [name,row] of entries){
-            if(Number(row.status)!==200)throw new Error(name+" returned HTTP "+String(row.status));
-            if(row.hasCanvas!==true)throw new Error(name+" Field canvas is missing");
-            if(row.horizontalOverflow===true)throw new Error(name+" has horizontal overflow");
+          const root=JSON.parse(fs.readFileSync("/workspace/screenshots/production-field.json","utf8"));
+          const afterbell=JSON.parse(fs.readFileSync("/workspace/screenshots/production-afterbell.json","utf8"));
+          for(const [label,verdict] of [["root",root],["afterbell",afterbell]]){
+            const entries=Object.entries(verdict.viewports||{});
+            if(entries.length!==2)throw new Error(label+" browser smoke did not return both viewports");
+            for(const [name,row] of entries){
+              if(Number(row.status)!==200)throw new Error(label+" "+name+" returned HTTP "+String(row.status));
+              if(row.hasCanvas!==true)throw new Error(label+" "+name+" Field canvas is missing");
+              if(row.horizontalOverflow===true)throw new Error(label+" "+name+" has horizontal overflow");
+              if((row.consoleErrors||[]).length)throw new Error(label+" "+name+" has console errors: "+row.consoleErrors.join(" | "));
+              if((row.pageErrors||[]).length)throw new Error(label+" "+name+" has page errors: "+row.pageErrors.join(" | "));
+            }
+          }
+          for(const [name,row] of Object.entries(afterbell.viewports||{})){
+            if(row.fieldState?.galaxy!=="afterbell")throw new Error("Afterbell "+name+" did not hydrate the integrated Afterbell galaxy");
+            if(row.fieldState?.section!=="galaxy")throw new Error("Afterbell "+name+" did not remain in the trader-star galaxy section");
+            if(!Number.isFinite(Number(row.fieldState?.count))||Number(row.fieldState.count)<=0)throw new Error("Afterbell "+name+" hydrated with zero trader STARS");
           }
           NODE
           rm -rf production-browser-smoke
           mkdir -p production-browser-smoke
-          cp /workspace/screenshots/production-field* production-browser-smoke/
+          cp /workspace/screenshots/production-field* /workspace/screenshots/production-afterbell* production-browser-smoke/
       - name: Capture Replay history source health
         if: always()
         continue-on-error: true

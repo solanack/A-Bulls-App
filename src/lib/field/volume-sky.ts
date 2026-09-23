@@ -350,7 +350,11 @@ export function countLivePlanets(snapshot: UniverseSnapshot) {
   ).length;
 }
 
-export const countLiveStars = countLivePlanets;
+export function countLiveStars(snapshot: UniverseSnapshot) {
+  return snapshot.particles.filter(
+    (p) => p.cosmicKind === "star" && p.metadata?.skyRole === "live",
+  ).length;
+}
 
 export function composeVolumeSky(input: {
   prototype: UniverseSnapshot;
