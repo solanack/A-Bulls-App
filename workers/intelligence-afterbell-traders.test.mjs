@@ -34,9 +34,12 @@ test('Afterbell ranks unique transactions and computes only defensible FIFO PnL'
   const ranked=rankAfterbellTraders(rows,{from,to,limit:50});
   assert.equal(ranked[0].wallet,B);
   assert.equal(ranked[0].transactionCount,2);
+  assert.equal(ranked[0].uniqueAfterCloseTxCount,2);
   assert.equal(ranked[0].realizedPnlUsd,null);
   assert.equal(ranked[0].assetCount,1);
   assert.equal(ranked[0].latestTrades.length,2);
+  assert.equal(ranked[0].mostTraded[0].uniqueAfterCloseTxCount,2);
+  assert.equal(ranked[0].topTraded[0].mint,ranked[0].mostTraded[0].mint);
   assert.equal(ranked[1].wallet,A);
   assert.equal(ranked[1].transactionCount,1);
   assert.equal(ranked[1].realizedPnlUsd,8);
@@ -63,4 +66,33 @@ test('Afterbell cross-stock ranking aggregates a trader across tokenized equitie
   assert.equal(ranked[0].transactionCount,2);
   assert.equal(ranked[0].assetCount,2);
   assert.deepEqual(new Set(ranked[0].mints),new Set(['Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh','XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB']));
+});
+
+
+test('Afterbell rank ignores PnL, asset breadth, and recency when unique transaction counts tie',()=>{
+  const mintA='Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh',mintB='XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB';
+  const rows=[
+    {wallet:A,mint:mintA,txId:'a-1',side:'buy',amount:10,priceUsd:1,blockTime:210,source:'chain',sourceKind:'observed-fact'},
+    {wallet:A,mint:mintA,txId:'a-2',side:'sell',amount:10,priceUsd:100,blockTime:220,source:'chain',sourceKind:'observed-fact'},
+    {wallet:B,mint:mintA,txId:'b-1',side:'buy',amount:1,priceUsd:null,blockTime:390,source:'chain',sourceKind:'observed-fact'},
+    {wallet:B,mint:mintB,txId:'b-2',side:'buy',amount:1,priceUsd:null,blockTime:395,source:'chain',sourceKind:'observed-fact'},
+  ];
+  const ranked=rankAfterbellTraders(rows,{from:200,to:400,limit:50});
+  assert.equal(ranked[0].uniqueAfterCloseTxCount,2);
+  assert.equal(ranked[1].uniqueAfterCloseTxCount,2);
+  assert.deepEqual(ranked.map(row=>row.wallet),[A,B].sort(),'ties must be deterministic by wallet only, not PnL, asset count, or recency');
+});
+
+test('Afterbell trader activity exposes bounded holdings, most-traded assets, and at most three latest trades',()=>{
+  const mint='Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh';
+  const rows=[
+    {wallet:A,mint,txId:'pre',side:'buy',amount:10,priceUsd:1,blockTime:150,source:'chain',sourceKind:'observed-fact'},
+    ...[210,220,230,240].map((blockTime,index)=>({wallet:A,mint,txId:`t-${index}`,side:index===3?'sell':'buy',amount:1,priceUsd:2+index,blockTime,source:'chain',sourceKind:'observed-fact'})),
+  ];
+  const [ranked]=rankAfterbellTraders(rows,{from:200,to:400,limit:50});
+  assert.equal(ranked.latestTrades.length,3);
+  assert.equal(ranked.mostTraded[0].uniqueAfterCloseTxCount,4);
+  assert.equal(ranked.holdings[0].mint,mint);
+  assert.ok(ranked.holdings[0].observedNetAmount>0);
+  assert.deepEqual(ranked.topHeld,ranked.holdings);
 });

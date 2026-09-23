@@ -39,6 +39,19 @@ export function afterbellWindow(nowMs=Date.now()){
   return Object.freeze({from:Math.floor(fromMs/1000),to:Math.floor(toMs/1000),scheduledEnd:Math.floor(scheduledEndMs/1000),live,timezone:ZONE,label:'AFTER CLOSE · 4:00 PM → 9:30 AM ET',calendarCoverage:'weekday Wall Street schedule; exchange-holiday exceptions are not inferred'});
 }
 
+
+function walletCallsign(wallet){const value=s(wallet);return value.length>=8?`${value.slice(0,4)}…${value.slice(-4)}`:value||'PUBLIC WALLET';}
+function safeAlias(value){const alias=s(value).replace(/^@/,'').slice(0,80);return alias&&alias.toLowerCase()!=='unknown'?alias:null;}
+async function retainedIdentityMap(db,wallets=[]){
+  const unique=[...new Set(wallets.map(s).filter(Boolean))];const map=new Map(unique.map(wallet=>[wallet,{displayName:walletCallsign(wallet),displayNameSource:'wallet-callsign'}]));
+  if(!unique.length)return map;const placeholders=unique.map(()=>'?').join(',');
+  const fomo=await all(db.prepare(`SELECT solana_wallet wallet,handle,display_name,captured_at FROM fomo_traders WHERE solana_wallet IN (${placeholders}) ORDER BY captured_at DESC,current_rank ASC`).bind(...unique));
+  for(const row of fomo){const wallet=s(row.wallet);if(!wallet||map.get(wallet)?.displayNameSource!=='wallet-callsign')continue;const handle=safeAlias(row.handle),name=safeAlias(row.display_name);if(handle||name)map.set(wallet,{displayName:handle?`@${handle}`:name,displayNameSource:'fomoapi.io-retained-handle'});}
+  const indexed=await all(db.prepare(`SELECT wallet,title,payload_json,source_kind,updated_at FROM research_index_objects WHERE kind='star' AND visibility='public' AND wallet IN (${placeholders}) ORDER BY updated_at DESC`).bind(...unique));
+  for(const row of indexed){const wallet=s(row.wallet),current=map.get(wallet);if(!wallet||!current||current.displayNameSource!=='wallet-callsign')continue;let payload={};try{payload=JSON.parse(s(row.payload_json)||'{}');}catch{}const alias=safeAlias(payload?.authorizedHandle??payload?.handle??payload?.displayName??payload?.alias??row.title);if(alias&&!/^wallet\b/i.test(alias))map.set(wallet,{displayName:alias.startsWith('@')?alias:`@${alias}`,displayNameSource:`research-index:${s(row.source_kind)||'retained'}`});}
+  return map;
+}
+
 function eventKey(event){const tx=s(event.txId);return tx?`${tx}:${s(event.mint)}`:[s(event.wallet),s(event.mint),n(event.blockTime),s(event.side),n(event.amount),s(event.source)].join(':');}
 export function normalizeAfterbellEvents(rows=[]){
   const byKey=new Map();
@@ -76,12 +89,15 @@ export function rankAfterbellTraders(events=[],{from,to,limit=AFTERBELL_MAX_TRAD
   }
   const result=[];
   for(const row of byWallet.values()){
-    const walletEvents=normalized.filter(event=>event.wallet===row.wallet&&event.blockTime<=end),perMint=[...row.mints].map(mint=>walletEvents.filter(event=>event.mint===mint));
+    const walletEvents=normalized.filter(event=>event.wallet===row.wallet&&event.blockTime<=end),windowTrades=row.trades.filter(event=>event.blockTime>=start&&event.blockTime<=end);
+    const perMint=[...row.mints].map(mint=>walletEvents.filter(event=>event.mint===mint));
     const pnlFor=unit=>{let total=0,has=false;for(const mintEvents of perMint){const value=realizedForUnit(mintEvents,start,end,unit),hasSell=mintEvents.some(event=>event.side==='sell'&&event.blockTime>=start&&event.blockTime<=end);if(hasSell&&value==null)return null;if(value!=null){total+=value;has=true;}}return has?total:null;};
-    const latestTrades=row.trades.slice().sort((a,b)=>b.blockTime-a.blockTime).slice(0,24).map(event=>Object.freeze({mint:event.mint,txId:event.txId,side:event.side,amount:event.amount,blockTime:event.blockTime,priceUsd:event.priceUsd,priceSol:event.priceSol,source:event.source,sourceKind:event.sourceKind}));
-    result.push(Object.freeze({wallet:row.wallet,transactionCount:row.txIds.size,eventCount:row.eventCount,buyCount:row.buyCount,sellCount:row.sellCount,assetCount:row.mints.size,mints:Object.freeze([...row.mints]),latestTrades:Object.freeze(latestTrades),realizedPnlUsd:pnlFor('usd'),realizedPnlSol:pnlFor('sol'),lastObservedAt:row.lastObservedAt*1000,sourceKind:row.sourceKinds.has('observed-fact')?'observed':'provider-reported',sources:Object.freeze([...row.sources])}));
+    const latestTrades=windowTrades.slice().sort((a,b)=>b.blockTime-a.blockTime||String(a.txId??'').localeCompare(String(b.txId??''))).slice(0,3).map(event=>Object.freeze({mint:event.mint,txId:event.txId,side:event.side,amount:event.amount,blockTime:event.blockTime,priceUsd:event.priceUsd,priceSol:event.priceSol,source:event.source,sourceKind:event.sourceKind}));
+    const mostTraded=[...row.mints].map(mint=>{const trades=windowTrades.filter(event=>event.mint===mint),txIds=new Set(trades.map(event=>event.txId||eventKey(event)));return Object.freeze({mint,uniqueAfterCloseTxCount:txIds.size,eventCount:trades.length,lastObservedAt:trades.reduce((max,event)=>Math.max(max,event.blockTime),0)*1000});}).sort((a,b)=>b.uniqueAfterCloseTxCount-a.uniqueAfterCloseTxCount||b.eventCount-a.eventCount||a.mint.localeCompare(b.mint));
+    const holdings=[...new Set(walletEvents.map(event=>event.mint))].map(mint=>{const retained=walletEvents.filter(event=>event.mint===mint),observedNetAmount=retained.reduce((sum,event)=>sum+(event.side==='buy'?event.amount:-event.amount),0),lastObservedAt=retained.reduce((max,event)=>Math.max(max,event.blockTime),0)*1000;return Object.freeze({mint,observedNetAmount,lastObservedAt,sourceKind:'retained-observed-flow'});}).filter(item=>item.observedNetAmount>1e-12).sort((a,b)=>b.observedNetAmount-a.observedNetAmount||b.lastObservedAt-a.lastObservedAt||a.mint.localeCompare(b.mint)).slice(0,10);
+    result.push(Object.freeze({wallet:row.wallet,transactionCount:row.txIds.size,uniqueAfterCloseTxCount:row.txIds.size,eventCount:row.eventCount,buyCount:row.buyCount,sellCount:row.sellCount,assetCount:row.mints.size,mints:Object.freeze([...row.mints]),holdings:Object.freeze(holdings),topHeld:Object.freeze(holdings),mostTraded:Object.freeze(mostTraded.slice(0,10)),topTraded:Object.freeze(mostTraded.slice(0,10)),latestTrades:Object.freeze(latestTrades),realizedPnlUsd:pnlFor('usd'),realizedPnlSol:pnlFor('sol'),lastObservedAt:row.lastObservedAt*1000,sourceKind:row.sourceKinds.has('observed-fact')?'observed':'provider-reported',sources:Object.freeze([...row.sources])}));
   }
-  result.sort((a,b)=>b.transactionCount-a.transactionCount||b.assetCount-a.assetCount||(Math.abs(b.realizedPnlUsd??b.realizedPnlSol??-Infinity)-Math.abs(a.realizedPnlUsd??a.realizedPnlSol??-Infinity))||b.lastObservedAt-a.lastObservedAt||a.wallet.localeCompare(b.wallet));
+  result.sort((a,b)=>b.uniqueAfterCloseTxCount-a.uniqueAfterCloseTxCount||a.wallet.localeCompare(b.wallet));
   return Object.freeze(result.slice(0,cap).map((row,index)=>Object.freeze({rank:index+1,...row})));
 }
 
@@ -96,8 +112,8 @@ export async function readAfterbellTraders(env={},mintInput='',options={}){
   if(!mints.length)return Object.freeze({ok:false,coverage:'empty',error:'invalid_xstock_mint',mint:'',mints:[],items:[],disclosure:'At least one valid Solana xStock mint is required. No trader list was invented.'});
   if(!db)return Object.freeze({ok:false,coverage:'degraded',error:'database_unavailable',mint:mints.length===1?mints[0]:'',mints,items:[],disclosure:'The Intelligence D1 binding is unavailable. No trader list or PnL was invented.'});
   const window=options.from&&options.to?Object.freeze({from:Math.trunc(n(options.from)),to:Math.trunc(n(options.to)),scheduledEnd:Math.trunc(n(options.to)),live:false,timezone:ZONE,label:'CUSTOM AFTERBELL WINDOW',calendarCoverage:'caller supplied'}):afterbellWindow(options.nowMs);
-  const groups=await Promise.all(mints.map(mint=>readRows(db,mint,window.from,window.to))),rows=groups.flat(),items=rankAfterbellTraders(rows,{from:window.from,to:window.to,limit:options.limit});
-  return Object.freeze({ok:true,coverage:items.length?'fresh':'empty',mint:mints.length===1?mints[0]:'',mints,window,items,method:'afterbell-cross-xstock-unique-transactions+bounded-fifo-realized-pnl-v2',disclosure:items.length?'Rank is unique retained transactions across the requested xStock universe during the Afterbell window. Realized PnL is shown only when retained FIFO acquisition basis and sale price are complete per asset; otherwise it stays unavailable. No identity, skill, ownership, or recommendation claim is made.':'No retained xStock wallet trades are indexed across the requested Afterbell universe in this window. Empty coverage stays empty; no trader or PnL was invented.'});
+  const groups=await Promise.all(mints.map(mint=>readRows(db,mint,window.from,window.to))),rows=groups.flat(),ranked=rankAfterbellTraders(rows,{from:window.from,to:window.to,limit:options.limit}),identities=await retainedIdentityMap(db,ranked.map(item=>item.wallet)),items=Object.freeze(ranked.map(item=>Object.freeze({...item,...(identities.get(item.wallet)||{displayName:walletCallsign(item.wallet),displayNameSource:'wallet-callsign'})})));
+  return Object.freeze({ok:true,coverage:items.length?'fresh':'empty',mint:mints.length===1?mints[0]:'',mints,window,items,method:'afterbell-cross-xstock-unique-retained-after-close-transactions-v3',disclosure:items.length?'Rank is based only on unique retained after-close transactions across the requested xStock universe. Display names use a retained authorized handle/alias when available, otherwise a deterministic wallet callsign. Holdings and most-traded assets describe bounded retained evidence only; missing history stays unavailable. No identity, skill, ownership, brokerage, or recommendation claim is made.':'No retained xStock wallet trades are indexed across the requested Afterbell universe in this window. Empty coverage stays empty; no trader, identity, holding, or PnL was invented.'});
 }
 
 export async function readAfterbellAudit(env={},options={}){

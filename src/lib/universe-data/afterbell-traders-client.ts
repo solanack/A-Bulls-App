@@ -5,9 +5,12 @@ export type AfterbellTrade = {
   mint:string; txId:string|null; side:"buy"|"sell"; amount:number; blockTime:number;
   priceUsd:number|null; priceSol:number|null; source:string; sourceKind:string;
 };
+export type AfterbellTraderHolding = {mint:string;observedNetAmount:number;lastObservedAt:number;sourceKind:string;};
+export type AfterbellMostTraded = {mint:string;uniqueAfterCloseTxCount:number;eventCount:number;lastObservedAt:number;};
 export type AfterbellTraderRank = {
-  rank:number; wallet:string; transactionCount:number; eventCount:number; buyCount:number; sellCount:number;
-  assetCount:number; mints:readonly string[]; latestTrades:readonly AfterbellTrade[];
+  rank:number; wallet:string; transactionCount:number; uniqueAfterCloseTxCount:number; eventCount:number; buyCount:number; sellCount:number;
+  displayName:string; displayNameSource:string; assetCount:number; mints:readonly string[];
+  holdings:readonly AfterbellTraderHolding[]; mostTraded:readonly AfterbellMostTraded[]; latestTrades:readonly AfterbellTrade[];
   realizedPnlUsd:number|null; realizedPnlSol:number|null; lastObservedAt:number;
   sourceKind:"observed"|"provider-reported"; sources:readonly string[];
 };
