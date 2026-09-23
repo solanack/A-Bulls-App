@@ -97,7 +97,7 @@ function SignalCard({ item }: { item: SocialFeedItem }) {
       </header>
       <p>{item.body}</p>
       <footer>
-        <span>{item.galaxyId ?? "GALAXY ZERO"}</span>
+        <span>{item.galaxyId ?? "FIELD"}</span>
         {item.evidenceId ? <span>EVIDENCE ATTACHED</span> : <span>OPINION</span>}
         <span>{item.reactions} SIGNALS</span>
       </footer>

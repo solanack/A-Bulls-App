@@ -18,7 +18,7 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: APP_NAME },
-      { name: "theme-color", content: "#030307" },
+      { name: "theme-color", content: "#0b0c10" },
       {
         name: "description",
         content: "Research only: explore public blockchain activity, replay evidence-backed trades, and create verifiable Cuts. No trade execution, signing, or custody. No synthetic candles; missing data stays unavailable.",

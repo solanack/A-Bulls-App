@@ -10,11 +10,11 @@ import {
 } from "./colosseum-metrics-helpers.ts";
 
 describe("statusBadge", () => {
-  it("marks d1 as INDEXED and everything else as DEMO", () => {
+  it("marks d1 as INDEXED and everything else as LOCAL, never DEMO", () => {
     assert.equal(statusBadge("d1"), "INDEXED");
-    assert.equal(statusBadge("memory-fallback"), "DEMO");
-    assert.equal(statusBadge(undefined), "DEMO");
-    assert.equal(statusBadge("other"), "DEMO");
+    assert.equal(statusBadge("memory-fallback"), "LOCAL");
+    assert.equal(statusBadge(undefined), "LOCAL");
+    assert.equal(statusBadge("other"), "LOCAL");
   });
 });
 

@@ -11,9 +11,9 @@ const finite = (value: unknown): number | null => {
 
 export type SeriesPoint = { t: number; v: number };
 
-/** Honest DEMO vs INDEXED — never INDEXED on memory-fallback / synthetic. */
-export function statusBadge(store: string | null | undefined): "INDEXED" | "DEMO" {
-  return store === "d1" ? "INDEXED" : "DEMO";
+/** Honest LOCAL vs INDEXED — never INDEXED on memory-fallback / synthetic, never a DEMO brand state. */
+export function statusBadge(store: string | null | undefined): "INDEXED" | "LOCAL" {
+  return store === "d1" ? "INDEXED" : "LOCAL";
 }
 
 export function prefersReducedMotion(win: { matchMedia?: (q: string) => { matches: boolean } } | null | undefined = globalThis): boolean {
