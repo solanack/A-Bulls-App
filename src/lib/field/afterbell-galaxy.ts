@@ -3,8 +3,16 @@ import { canonicalUniverseId } from "./galaxies.ts";
 import type { AfterbellGalaxyData } from "../universe-data/afterbell-client.ts";
 import type { AfterbellTraderResponse } from "../universe-data/afterbell-traders-client.ts";
 
-function hashUnit(input:string){let h=2166136261;for(let i=0;i<input.length;i++){h^=input.charCodeAt(i);h=Math.imul(h,16777619);}return(h>>>0)/4294967295;}
-function starPosition(wallet:string,rank:number):[number,number,number]{const angle=hashUnit(wallet)*Math.PI*2,ring=rank<=10?28:rank<=28?45:62,y=10+hashUnit(wallet+":y")*48+(rank<=10?8:0);return[Math.cos(angle)*ring,y,Math.sin(angle)*ring];}
+function starPosition(wallet:string,rank:number):[number,number,number]{
+  if(rank===1)return[0,14,0];
+  const inner=rank<=10,ring=inner?30:rank<=28?48:64,count=inner?9:18,start=inner?2:11;
+  const rankAngle=((rank-start)/count)*Math.PI*2-Math.PI/2;
+  // A small wallet-derived phase prevents rigid rows without allowing random
+  // clustering to push the evidence STARS outside the mobile camera frame.
+  let h=2166136261;for(let i=0;i<wallet.length;i++){h^=wallet.charCodeAt(i);h=Math.imul(h,16777619);}
+  const phase=(h>>>0)/4294967295-.5,angle=rankAngle+phase*.16,y=(inner?2:-7)+Math.sin(angle*2)*5;
+  return[Math.cos(angle)*ring,y,Math.sin(angle)*ring];
+}
 function clamp01(v:number){return Math.max(.18,Math.min(1,Number.isFinite(v)?v:0));}
 
 export function buildAfterbellGalaxySnapshot(markets:AfterbellGalaxyData,traders:AfterbellTraderResponse):UniverseSnapshot{
