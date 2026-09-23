@@ -230,11 +230,13 @@ function createLabelSprite(text: string) {
   context.font = "700 25px sans-serif";
   context.textAlign = "center";
   context.textBaseline = "middle";
+  const boxWidth = Math.min(400, Math.max(132, Math.ceil(context.measureText(text).width) + 46));
+  const boxLeft = (canvas.width - boxWidth) / 2;
   context.fillStyle = "rgba(7,7,11,.78)";
   context.strokeStyle = "rgba(199,240,95,.58)";
   context.lineWidth = 2;
   context.beginPath();
-  context.roundRect(24, 12, 400, 48, 20);
+  context.roundRect(boxLeft, 12, boxWidth, 48, 20);
   context.fill();
   context.stroke();
   context.fillStyle = "rgba(238,246,228,.96)";
