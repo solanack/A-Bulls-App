@@ -78,6 +78,26 @@ describe("intelligence origin", () => {
     ]);
   });
 
+  it("uses the private service binding first and never touches HTTP when it answers", async () => {
+    const httpUrls: string[] = [];
+    globalThis.fetch = async (input) => { httpUrls.push(String(input)); return jsonResponse(200, { ok: true, via: "http" }); };
+    const boundUrls: string[] = [];
+    const bindings = { INTELLIGENCE: { fetch: async (request: Request) => { boundUrls.push(request.url); return jsonResponse(200, { ok: true, via: "binding" }); } } };
+    const response = await fetchIntelligence("/api/intelligence/fomo/galaxy", { headers: { accept: "application/json" } }, bindings);
+    assert.equal((await response.json() as { via: string }).via, "binding");
+    assert.deepEqual(boundUrls, [`${INTELLIGENCE_WORKER_ORIGIN}/api/intelligence/fomo/galaxy`]);
+    assert.deepEqual(httpUrls, []);
+  });
+
+  it("falls back to the HTTP origins when the service binding fails", async () => {
+    const httpUrls: string[] = [];
+    globalThis.fetch = async (input) => { httpUrls.push(String(input)); return jsonResponse(200, { ok: true }); };
+    const bindings = { INTELLIGENCE: { fetch: async () => { throw new Error("binding_down"); } } };
+    const response = await fetchIntelligence("/api/intelligence/fomo/galaxy", {}, bindings);
+    assert.equal(response.status, 200);
+    assert.deepEqual(httpUrls, [`${INTELLIGENCE_WORKER_ORIGIN}/api/intelligence/fomo/galaxy`]);
+  });
+
   it("throws intelligence_origin_404 only when every origin is non-JSON 404", async () => {
     globalThis.fetch = async () => htmlResponse(404);
     await assert.rejects(
