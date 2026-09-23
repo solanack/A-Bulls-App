@@ -32,7 +32,7 @@ describe("UX simplify pack — Cut-first demo menu", () => {
     assert.ok(ADVANCED_MODES.some((item) => item.id === "compare"));
     assert.match(shell, /MENU_PRIMARY=ANALYSIS_MODES/);
     assert.match(shell, /<summary>Advanced<\/summary>/);
-    assert.match(shell, /label:"WATCHLIST"/);
+    assert.match(shell, /label:"My Sky"/);
     assert.match(shell, /const MENU_ITEMS/);
   });
 
@@ -40,8 +40,8 @@ describe("UX simplify pack — Cut-first demo menu", () => {
     assert.equal(toolTitle("trickster"), "Make a Cut");
     assert.equal(toolHint("trickster"), "Share the story with receipts");
     assert.equal(MODE_HINT.trickster, "Share the story with receipts");
-    assert.equal(TOOL_TITLE.replay, "Watch this trade on the chart");
-    assert.equal(MODE_HINT.replay, "Watch this trade on the chart");
+    assert.equal(TOOL_TITLE.replay, "Replay");
+    assert.equal(MODE_HINT.replay, "Replay the trade on its indexed tape.");
     assert.equal(TOOL_TITLE.evidence, "Receipts for this trade");
     assert.equal(MODE_HINT.evidence, "Receipts for this trade");
     assert.equal(TOOL_TITLE["what-if"], "What if you held instead?");
@@ -202,11 +202,11 @@ describe("hero name/symbol never shows a full mint", () => {
   });
 });
 
-describe("no regress — INDEXED vs DEMO, missing≠zero, What-If colors", () => {
+describe("no regress — INDEXED vs LOCAL, missing≠zero, What-If colors", () => {
   it("keeps honest store badges", () => {
     assert.equal(statusBadge("d1"), "INDEXED");
-    assert.equal(statusBadge("memory-fallback"), "DEMO");
-    assert.equal(statusBadge(undefined), "DEMO");
+    assert.equal(statusBadge("memory-fallback"), "LOCAL");
+    assert.equal(statusBadge(undefined), "LOCAL");
   });
 
   it("does not zero-fill Compare gaps", () => {
@@ -232,7 +232,7 @@ describe("trader-select holdings → Make a Cut climax", () => {
     assert.match(shell, /showHoldings/);
     assert.match(shell, /selectMode\("trickster"\)/);
     assert.match(shell, /inboundWallet:searchPrefill\?\.wallet/);
-    assert.match(shell, /verifyingCut:Boolean\(inboundShareId\(\)\)/);
+    assert.match(shell, /verifyingCut:hydrated&&Boolean\(inboundShareId\(\)\)/);
     assert.match(shell, /mode==="explore"/);
     assert.match(overlay, /Make a Cut\?/);
     assert.match(overlay, /Choose a held token/);
@@ -268,14 +268,20 @@ describe("trader-select holdings → Make a Cut climax", () => {
 });
 
 
-describe("Afterbell identity-first trader details", () => {
-  it("keeps rank separate from identity and requires an explicit mint for deep tools", () => {
-    assert.match(shell, /AfterbellTraderDetailSheet/);
-    assert.match(shell, /UNIQUE AFTER-CLOSE TX/);
-    assert.match(shell, /Identity source:/);
-    assert.match(shell, /Select an xStock PLANET or retained trade COMET/);
-    assert.match(shell, /No mint is guessed/);
-    assert.match(shell, /A Bulls App is not a broker/);
-    assert.doesNotMatch(shell, /AFTERBELL \#\$\{afterbellRank/);
+describe("shared identity-first trader sheet for both rooms", () => {
+  it("keeps rank separate from identity and inherits the selected thread into deep tools", () => {
+    const sheets = readFileSync(new URL("../../components/field-sheets.tsx", import.meta.url), "utf8");
+    assert.match(shell, /<TraderSheet section=\{fieldSection\}/);
+    assert.match(shell, /openTraderResearch\(next\)/);
+    assert.doesNotMatch(shell, /AfterbellTraderDetailSheet/);
+    assert.match(sheets, /aria-label=\{`\$\{ROOM_NAME\[room\]\} trader details`\}/);
+    assert.match(sheets, /Identity source:/);
+    assert.match(sheets, />REPLAY</);
+    assert.match(sheets, />EVIDENCE</);
+    assert.match(sheets, /WATCH TRADER/);
+    assert.match(sheets, /WATCH TOKEN/);
+    assert.match(sheets, /A Bulls App is not a broker/);
+    assert.match(sheets, /Watch a trader or a token from the Field\./);
+    assert.doesNotMatch(shell + sheets, /AFTERBELL #\$\{|Galaxy Zero/);
   });
 });
