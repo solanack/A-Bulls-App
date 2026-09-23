@@ -204,43 +204,97 @@ function particleHasWallet(particle: FieldParticle) {
   return Boolean(wallet || solana);
 }
 
-function liveLabel(particle: FieldParticle) {
-  const kind = renderCosmicKind(particle);
-  if (kind === "dust") return null;
-  const prefix = cosmicLabel(kind);
-  const galaxyName = particle.metadata?.name;
-  if (kind === "galaxy" && typeof galaxyName === "string" && galaxyName.trim()) {
-    return `${prefix} · ${galaxyName.trim().slice(0, 18).toUpperCase()}`;
-  }
-  const symbol = particle.metadata?.symbol;
-  const name = particle.metadata?.name;
-  if (typeof symbol === "string" && symbol.trim()) return `${prefix} · ${symbol.trim().slice(0, 12).toUpperCase()}`;
-  if (typeof name === "string" && name.trim()) return `${prefix} · ${name.trim().slice(0, 16).toUpperCase()}`;
-  const address = particle.metadata?.mint ?? particle.metadata?.wallet;
-  return typeof address === "string" ? `${prefix} · ${address.slice(0, 5)}…${address.slice(-4)}` : prefix;
+type LiveLabel = { title: string; fact: string | null; tone: "fomo" | "afterbell" | "neutral" };
+
+function labelText(value: unknown, max: number) {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
 }
 
-function createLabelSprite(text: string) {
+function labelTone(particle: FieldParticle): LiveLabel["tone"] {
+  const target = particle.metadata?.targetGalaxyId;
+  if (target === "fomo" || particle.metadata?.fomoTrader === true || particle.originGalaxyId === "fomo") return "fomo";
+  if (target === "afterbell" || particle.metadata?.afterbellTrader === true || particle.metadata?.afterbellEquity === true || particle.originGalaxyId === "afterbell") return "afterbell";
+  return "neutral";
+}
+
+function planetFact(particle: FieldParticle) {
+  const metadata = particle.metadata;
+  if (metadata?.skyRole === "watch") return "Watching";
+  if (metadata?.positionBasis === "retained-holding") return "Holds";
+  const prints = Number(metadata?.uniqueAfterCloseTxCount ?? metadata?.tradeCount ?? 0);
+  if (Number.isFinite(prints) && prints > 0) return `${prints} ${prints === 1 ? "print" : "prints"}`;
+  if (typeof metadata?.positionSource === "string" && metadata.positionSource.includes("fomo-reported")) return "Fomo-reported";
+  return null;
+}
+
+/** Identity plus one fact. The cosmic kind is carried by the body itself, not a "STAR ·" prefix. */
+function liveLabel(particle: FieldParticle): LiveLabel | null {
+  const kind = renderCosmicKind(particle);
+  if (kind === "dust") return null;
+  const tone = labelTone(particle);
+  if (kind === "galaxy") {
+    const name = labelText(particle.metadata?.name, 18);
+    const target = particle.metadata?.targetGalaxyId;
+    return { title: (name ?? cosmicLabel(kind)).toUpperCase(), fact: target === "fomo" ? "Memecoin traders" : target === "afterbell" ? "After-close xStocks" : null, tone };
+  }
+  if (kind === "star") {
+    const wallet = labelText(particle.metadata?.wallet, 64);
+    const title = labelText(particle.metadata?.displayName, 18) ?? labelText(particle.metadata?.name, 18) ?? (wallet ? `${wallet.slice(0, 4)}…${wallet.slice(-4)}` : "Public wallet");
+    return { title, fact: labelText(particle.metadata?.factLine, 28), tone };
+  }
+  if (kind === "comet") {
+    const side = labelText(particle.metadata?.side, 8)?.toUpperCase() ?? "PRINT";
+    const at = new Date(particle.observedAt);
+    const when = Number.isFinite(at.getTime()) ? at.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
+    return { title: side, fact: when, tone };
+  }
+  const symbol = labelText(particle.metadata?.symbol, 12);
+  const name = labelText(particle.metadata?.name, 16);
+  const address = particle.metadata?.mint ?? particle.metadata?.wallet;
+  const title = symbol ?? name ?? (typeof address === "string" ? `${address.slice(0, 4)}…${address.slice(-4)}` : cosmicLabel(kind));
+  return { title, fact: kind === "planet" ? planetFact(particle) : null, tone };
+}
+
+const LABEL_RIM: Record<LiveLabel["tone"], string> = {
+  fomo: "rgba(190,160,255,.62)",
+  afterbell: "rgba(236,218,170,.62)",
+  neutral: "rgba(226,232,244,.42)",
+};
+
+function createLabelSprite(label: LiveLabel, compact: boolean) {
+  const fact = compact ? null : label.fact;
   const canvas = document.createElement("canvas");
   canvas.width = 448;
-  canvas.height = 72;
+  canvas.height = fact ? 96 : 72;
   const context = canvas.getContext("2d");
   if (!context) return null;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.font = "700 25px sans-serif";
   context.textAlign = "center";
   context.textBaseline = "middle";
-  const boxWidth = Math.min(400, Math.max(132, Math.ceil(context.measureText(text).width) + 46));
+  const measure = (text: string, font: string) => {
+    context.font = font;
+    return context.measureText(text).width;
+  };
+  const titleWidth = measure(label.title, "650 26px system-ui, -apple-system, sans-serif");
+  const factWidth = fact ? measure(fact, "500 19px system-ui, -apple-system, sans-serif") : 0;
+  const boxWidth = Math.min(400, Math.max(132, Math.ceil(Math.max(titleWidth, factWidth)) + 44));
+  const boxHeight = fact ? 76 : 48;
   const boxLeft = (canvas.width - boxWidth) / 2;
-  context.fillStyle = "rgba(7,7,11,.78)";
-  context.strokeStyle = "rgba(199,240,95,.58)";
-  context.lineWidth = 2;
+  context.fillStyle = "rgba(11,12,16,.74)";
+  context.strokeStyle = LABEL_RIM[label.tone];
+  context.lineWidth = 1.5;
   context.beginPath();
-  context.roundRect(boxLeft, 12, boxWidth, 48, 20);
+  context.roundRect(boxLeft, 10, boxWidth, boxHeight, 14);
   context.fill();
   context.stroke();
-  context.fillStyle = "rgba(238,246,228,.96)";
-  context.fillText(text, 224, 37);
+  context.font = "650 26px system-ui, -apple-system, sans-serif";
+  context.fillStyle = "rgba(246,244,238,.97)";
+  context.fillText(label.title, canvas.width / 2, fact ? 34 : 34);
+  if (fact) {
+    context.font = "500 19px system-ui, -apple-system, sans-serif";
+    context.fillStyle = "rgba(214,212,206,.78)";
+    context.fillText(fact, canvas.width / 2, 64);
+  }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(
@@ -252,7 +306,7 @@ function createLabelSprite(text: string) {
       toneMapped: false,
     }),
   );
-  sprite.scale.set(25, 4.1, 1);
+  sprite.scale.set(25, fact ? 5.36 : 4.1, 1);
   sprite.renderOrder = 6;
   return sprite;
 }
@@ -262,6 +316,11 @@ function disposeLabelSprite(sprite: THREE.Sprite) {
   sprite.material.map?.dispose();
   sprite.material.dispose();
 }
+
+const FOMO_AMETHYST: [number, number, number] = [0.7, 0.5, 1.0];
+const FOMO_LILAC: [number, number, number] = [0.82, 0.7, 1.0];
+const AFTERBELL_ICE: [number, number, number] = [0.7, 0.84, 1.0];
+const AFTERBELL_CHAMPAGNE: [number, number, number] = [0.95, 0.85, 0.62];
 
 function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMaterial, limit: number) {
   const visible = snapshot.particles.slice(0, limit);
@@ -279,10 +338,14 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
     const targetGalaxy = typeof entity.metadata?.targetGalaxyId === "string" ? entity.metadata.targetGalaxyId : "";
     const color =
       targetGalaxy === "fomo" || entity.metadata?.fomoTrader === true
-        ? ([0.66, 0.31, 1.0] as [number, number, number])
+        ? FOMO_AMETHYST
         : targetGalaxy === "afterbell" || entity.metadata?.afterbellTrader === true
-          ? ([0.18, 0.68, 1.0] as [number, number, number])
-          : snapshot.galaxyId === "pons"
+          ? AFTERBELL_ICE
+          : entity.cosmicKind === "planet" && snapshot.galaxyId === "afterbell"
+            ? AFTERBELL_CHAMPAGNE
+            : entity.cosmicKind === "planet" && snapshot.galaxyId === "fomo"
+              ? FOMO_LILAC
+              : snapshot.galaxyId === "pons"
             ? ([
                 base[0] * 0.58 + 0.38,
                 base[1] * 0.62 + 0.34,
@@ -355,7 +418,7 @@ export class ParticleFieldRenderer {
   queryBlend = 0;
   queryTarget = 0;
   reducedMotion: boolean;
-  autoSpin = 0.00042;
+  autoSpin = 0.0003;
   destroyed = false;
   focused: FieldParticle | null = null;
   replayActive = false;
@@ -396,7 +459,7 @@ export class ParticleFieldRenderer {
       width: "100%",
       height: "100%",
       touchAction: "none",
-      background: "#030307",
+      background: "#0b0c10",
     });
     host.append(canvas);
 
@@ -412,7 +475,7 @@ export class ParticleFieldRenderer {
       premultipliedAlpha: true,
       preserveDrawingBuffer: false,
     });
-    this.renderer.setClearColor(0x030307, 1);
+    this.renderer.setClearColor(0x0b0c10, 1);
     this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, budget.dpr));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
@@ -589,7 +652,8 @@ export class ParticleFieldRenderer {
         const bWatch = this.watchMints.has(bMint) || b.metadata?.skyRole === "watch" ? 1000 : 0;
         const aTeach = a.metadata?.skyRole === "teaching" ? 500 : 0;
         const bTeach = b.metadata?.skyRole === "teaching" ? 500 : 0;
-        return bGalaxy + bWatch + bTeach + b.magnitudeBand - (aGalaxy + aWatch + aTeach + a.magnitudeBand);
+        const kindRank = (particle: FieldParticle) => (particle.cosmicKind === "planet" ? 300 : particle.cosmicKind === "star" ? 200 : 0);
+        return bGalaxy + bWatch + bTeach + kindRank(b) + b.magnitudeBand - (aGalaxy + aWatch + aTeach + kindRank(a) + a.magnitudeBand);
       });
     const candidates: FieldParticle[] = [];
     const seen = new Set<string>();
@@ -598,14 +662,17 @@ export class ParticleFieldRenderer {
       const mint = particleMint(particle);
       const key = target ? `galaxy:${target}` : mint ? `mint:${mintKey(mint)}` : `id:${particle.id}`;
       if (seen.has(key)) continue;
+      const [x, y, z] = particle.position;
+      if (candidates.some((other) => Math.abs(other.position[0] - x) < 22 && Math.abs(other.position[1] - y) < 7 && Math.abs(other.position[2] - z) < 30)) continue;
       seen.add(key);
       candidates.push(particle);
-      if (candidates.length >= 8) break;
+      if (candidates.length >= 6) break;
     }
+    const compact = hostSize(this.host).width < 560;
     for (const particle of candidates) {
       const label = liveLabel(particle);
       if (!label) continue;
-      const sprite = createLabelSprite(label);
+      const sprite = createLabelSprite(label, compact);
       if (!sprite) continue;
       const yOffset = Math.min(14, cosmicWorldSize(particle) + 2.4);
       sprite.position.set(particle.position[0], particle.position[1] + yOffset, particle.position[2]);
@@ -674,6 +741,11 @@ export class ParticleFieldRenderer {
       distance: clamp(Math.max(verticalDistance, horizontalDistance) * 1.04, 104, 205),
       target: [0, 3.5, 0],
     };
+  }
+
+  /** Ease the camera toward the current cameraState instead of cutting to it. */
+  beginFlight(ms = 820) {
+    this.#flightUntil = performance.now() + (this.reducedMotion ? 0 : ms);
   }
 
   snapshotCamera(): CameraState {
