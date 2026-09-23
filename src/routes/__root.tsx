@@ -21,7 +21,7 @@ export const Route = createRootRoute({
       { name: "theme-color", content: "#030307" },
       {
         name: "description",
-        content: "The blockchain is alive. Intelligence is visible. The future is particle.",
+        content: "Research only: explore public blockchain activity, replay evidence-backed trades, and create verifiable Cuts. No trade execution, signing, or custody. No synthetic candles; missing data stays unavailable.",
       },
     ],
     links: [
