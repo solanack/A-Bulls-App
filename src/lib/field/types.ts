@@ -34,10 +34,22 @@ export type UniverseSnapshot = { galaxyId: GalaxyId; windowStart: number; window
 export type CameraState = { yaw: number; pitch: number; distance: number; target: [number, number, number]; };
 export type IntelligenceResult = { ok: boolean; kind: EntityKind; query: string; shortId: string; coverage: Coverage; observedAt: string; label: string; facts: string[]; spokenText: string; disclosure: string | null; source: string | null; };
 
+export type AfterbellTraderDetail = {
+  rank: number | null;
+  uniqueAfterCloseTxCount: number;
+  displayNameSource: string | null;
+  windowLabel: string | null;
+  calendarCoverage: string | null;
+  holdingsCount: number;
+  mostTradedLabels: readonly string[];
+  latestTradeCount: number;
+  sourceLabels: readonly string[];
+};
+
 export type FieldSection =
   | { kind: "galaxy"; label: string; count: number }
   | { kind: "token-system"; label: string; mint: string; wallet?: string | null; chainKey?: string | null; count: number }
-  | { kind: "trader-system"; label: string; handle: string; wallet: string | null; count: number }
+  | { kind: "trader-system"; label: string; handle: string; wallet: string | null; count: number; afterbell?: AfterbellTraderDetail }
   | { kind: "wallet-system"; label: string; wallet: string; count: number }
   | { kind: "afterbell-system"; label: string; mint: string; count: number }
   | { kind: "observatory"; label: string; count: number }
