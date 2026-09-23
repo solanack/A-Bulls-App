@@ -30,7 +30,7 @@ test("Galaxy Zero exposes Fomo and Afterbell as sibling portals and public navig
   const snapshot=createUniverseMapSnapshot(800,861);
   const targets=[...new Set(snapshot.particles.map(particle=>particle.metadata?.targetGalaxyId).filter(Boolean))].sort();
   assert.deepEqual(targets,["afterbell","fomo"]);
-  assert.deepEqual(GALAXY_ORIGIN_CHIPS.map(item=>item.label),["ZERO","FOMO","AFTERBELL"]);
+  assert.deepEqual(GALAXY_ORIGIN_CHIPS.map(item=>item.label),["FIELD","FOMO","AFTERBELL"]);
   const afterbell=snapshot.particles.find(particle=>particle.metadata?.targetGalaxyId==="afterbell"&&particle.metadata?.galaxyRole==="core");
   assert.ok(afterbell,"Galaxy Zero is missing its Afterbell core portal");
   assert.equal(afterbell?.cosmicKind,"galaxy");

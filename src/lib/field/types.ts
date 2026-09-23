@@ -1,3 +1,5 @@
+import type { TraderSheetDetail } from "./trader-sheet.ts";
+
 export type FieldMode =
   | "explore"
   | "intelligence"
@@ -49,7 +51,7 @@ export type AfterbellTraderDetail = {
 export type FieldSection =
   | { kind: "galaxy"; label: string; count: number }
   | { kind: "token-system"; label: string; mint: string; wallet?: string | null; chainKey?: string | null; count: number }
-  | { kind: "trader-system"; label: string; handle: string; wallet: string | null; count: number; afterbell?: AfterbellTraderDetail }
+  | { kind: "trader-system"; label: string; handle: string; wallet: string | null; count: number; afterbell?: AfterbellTraderDetail; trader?: TraderSheetDetail }
   | { kind: "wallet-system"; label: string; wallet: string; count: number }
   | { kind: "afterbell-system"; label: string; mint: string; count: number }
   | { kind: "observatory"; label: string; count: number }
@@ -77,13 +79,13 @@ export const ADVANCED_MODES: { id: FieldMode; label: string }[] = [
 ];
 export const TOOL_TITLE: Partial<Record<FieldMode, string>> = {
   trickster: "Make a Cut",
-  replay: "Watch this trade on the chart",
+  replay: "Replay",
   evidence: "Receipts for this trade",
   compare: "Compare two traders side by side",
   "what-if": "What if you held instead?",
 };
 export const MODE_HINT: Record<FieldMode, string> = {
-  explore: "Return to the Field.",
+  explore: "Return to the Field · FOMO + AFTERBELL.",
   intelligence: "Inspect sourced activity. Evidence labels stay visible.",
   index: "Search the permanent research archive and jump between indexed evidence and the Field.",
   query: "Paste a public identifier. ASK wakes the Field.",
@@ -93,9 +95,9 @@ export const MODE_HINT: Record<FieldMode, string> = {
   "what-if": "What if you held instead?",
   sequences: "Discover bounded market sequences.",
   evidence: "Receipts for this trade",
-  replay: "Watch this trade on the chart",
+  replay: "Replay the trade on its indexed tape.",
   ghost: "See the indexed counterfactual portfolio. Estimates stay labeled.",
   social: "Follow evidence, creators, wallets, tokens, and galaxies without connecting a wallet.",
   observatory: "Study cached Fomo trader STARS alongside separately labeled provider and chain evidence. No copy trading.",
-  watchlist: "Your saved token planets and wallet stars. Local-first and read-only.",
+  watchlist: "Watch a trader or a token from the Field. Saved on this device.",
 };
