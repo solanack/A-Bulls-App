@@ -10,9 +10,10 @@ const closedTrades=readFileSync(new URL("../../components/fomo-closed-trades.tsx
 const trickster=readFileSync(new URL("../../components/trickster-director.tsx",import.meta.url),"utf8");
 const recorder=readFileSync(new URL("../trickster-cut-recorder.ts",import.meta.url),"utf8");
 
-test("Fomo trader comets and token planets open the selected wallet-token Replay",()=>{
-  assert.match(fieldOS,/fieldSection\.kind==="trader-system"&&\(particle\.cosmicKind==="comet"\|\|particle\.cosmicKind==="planet"\)&&mint/);
-  assert.match(fieldOS,/tradeReplaySelection\(particle,this\.fieldSection\.wallet\)/);
+test("trader COMETS open their print Replay; PLANETS select the token without leaving the system",()=>{
+  assert.match(fieldOS,/fieldSection\.kind==="trader-system"&&particle\.cosmicKind==="comet"&&mint\)\{this\.#openPrint\(particle,"replay"\)/);
+  assert.match(fieldOS,/fieldSection\.kind==="trader-system"&&particle\.cosmicKind==="planet"&&mint\)\{this\.#selectTraderPlanet\(particle,mint\);return;\}/);
+  assert.match(fieldOS,/tradeReplaySelection\(particle,section\.wallet\)/);
   assert.match(fieldOS,/saveResearchThread\(createResearchThreadContext\(\{\.\.\.selected/);
   assert.match(fieldOS,/this\.mode="replay"/);
 });
