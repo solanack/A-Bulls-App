@@ -28,7 +28,8 @@ async function enterStar(page){
 }
 async function selectPlanet(page,box){
   const candidates=[];
-  for(const r of [.22,.32,.42])for(let i=0;i<16;i++){const a=i/16*Math.PI*2;candidates.push([box.x+box.width/2+Math.cos(a)*Math.min(box.width,box.height)*r,box.y+box.height/2+Math.sin(a)*Math.min(box.width,box.height)*r]);}
+  await page.waitForTimeout(3000);
+  for(const r of [.1,.16,.22,.28,.34,.42])for(let i=0;i<24;i++){const a=i/24*Math.PI*2;candidates.push([box.x+box.width/2+Math.cos(a)*Math.min(box.width,box.height)*r,box.y+box.height/2+Math.sin(a)*Math.min(box.width,box.height)*r]);}
   const cometReceipts=[];
   for(const [x,y] of candidates){
     await pick(page,x,y);
