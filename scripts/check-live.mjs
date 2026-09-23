@@ -290,9 +290,10 @@ export async function runLiveChecks({
   assert.equal(release?.commit, expected, "The public domain is serving a different frontend release");
 
   const document = await (await get("/")).text();
-  assert.match(document, /Galaxy Zero|A Bulls/i, "Application HTML is missing");
-  const publicOrigins = [...document.matchAll(/aria-label="Open ([^"]+) galaxy"/g)].map(match => match[1]);
-  assert.deepEqual(publicOrigins, ["ZERO", "FOMO", "AFTERBELL"], "Public galaxy origins must remain ZERO + FOMO + AFTERBELL");
+  assert.match(document, /A Bulls/i, "Application HTML is missing");
+  assert.doesNotMatch(document, /Galaxy Zero/i, "Galaxy Zero must never appear in the public Field");
+  const publicOrigins = [...document.matchAll(/aria-label="Open (the Field|FOMO|AFTERBELL|My Sky)"/g)].map(match => match[1]);
+  assert.deepEqual(publicOrigins, ["the Field", "FOMO", "AFTERBELL", "My Sky"], "Public dock must remain FIELD + FOMO + AFTERBELL + MY SKY");
   const assets = [...new Set([...document.matchAll(/(?:src|href)="(\/assets\/[^"?]+\.js)(?:\?[^" ]*)?"/g)].map((match) => match[1]))];
   assert.ok(assets.length, "Application JavaScript references are missing");
   for (const path of assets) {const asset=await fetchWithDeployPropagationRetry({fetchImpl,url:`${origin}${path}`,sleep,attempts:8,delayMs:1500});assert.equal(asset.status,200,`${path}: HTTP ${asset.status} after deployment propagation retries`);assert.match(asset.headers.get("content-type") || "", /javascript/, "JavaScript has incorrect MIME type");}
