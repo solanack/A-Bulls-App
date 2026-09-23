@@ -5,7 +5,9 @@ import type { AfterbellTraderResponse } from "../universe-data/afterbell-traders
 
 function starPosition(wallet:string,rank:number):[number,number,number]{
   if(rank===1)return[0,14,0];
-  const inner=rank<=10,ring=inner?30:rank<=28?48:64,count=inner?9:18,start=inner?2:11;
+  // The narrow portrait frustum leaves less horizontal room than the desktop
+  // view. Reserve that room for the STAR label, not just the glowing point.
+  const inner=rank<=10,ring=inner?18:rank<=28?28:38,count=inner?9:18,start=inner?2:11;
   const rankAngle=((rank-start)/count)*Math.PI*2-Math.PI/2;
   // A small wallet-derived phase prevents rigid rows without allowing random
   // clustering to push the evidence STARS outside the mobile camera frame.
