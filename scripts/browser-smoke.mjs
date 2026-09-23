@@ -121,6 +121,13 @@ try {
       const el = document.documentElement;
       return el.scrollWidth > el.clientWidth + 1;
     });
+    const fieldState = await page.locator("main.field-shell").evaluate((el) => ({
+      galaxy: el.getAttribute("data-galaxy") || "",
+      section: el.getAttribute("data-field-section") || "",
+      count: Number(el.getAttribute("data-field-count") || "0"),
+      coverage: el.getAttribute("data-coverage") || "",
+      fallback: el.getAttribute("data-field-fallback") || "",
+    })).catch(() => null);
     await page.screenshot({ path: vp.screenshot, fullPage: false });
     await page.close();
 
@@ -134,6 +141,7 @@ try {
       bodyTextHash: normalizedBodyTextHash(bodyText),
       bodyTextPrefix: bodyTextPrefix(bodyText),
       horizontalOverflow,
+      fieldState,
       consoleErrors: errors.consoleErrors,
       pageErrors: errors.pageErrors,
       screenshot: vp.screenshot,
