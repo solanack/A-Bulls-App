@@ -128,7 +128,7 @@ describe("paste-proof wallet+mint deep-link", () => {
     assert.match(shell, /else if\(inboundPrefill\(\)\?\.mode==="replay"\)os\.setMode\("replay"\)/);
     assert.match(shell, /setMode\(inboundShareId\(\)\?"trickster":event\.mode\)/);
     assert.doesNotMatch(shell, /inboundPrefill\(\)\?\.mode\?\?event\.mode/);
-    assert.match(shell, /askMint=\{cutSubject\?\.mint\|\|searchPrefill\?\.mint\|\|askPrefill\|\|focusedMint\|\|""\}/);
+    assert.match(shell, /workspaceMint=cutSubject\?\.mint\|\|searchPrefill\?\.mint\|\|focusedMint/);\n    assert.match(shell, /askMint=\{workspaceMint\}/);\n    assert.doesNotMatch(shell, /workspaceMint=.*askPrefill/);
     assert.match(shell, /askWallet=\{cutSubject\?\.wallet\|\|searchPrefill\?\.wallet\|\|contextWallet\}/);
     assert.match(workspace, /subjectPrefillFromSearch/);
     assert.match(workspace, /inboundPrefill\?\.wallet/);
@@ -262,5 +262,18 @@ describe("trader-select holdings → Make a Cut climax", () => {
     assert.match(director, /setVisible/);
     assert.doesNotMatch(workspace, /mediabunny/i);
     assert.doesNotMatch(director, /WebCodecs/);
+  });
+});
+
+
+describe("Afterbell identity-first trader details", () => {
+  it("keeps rank separate from identity and requires an explicit mint for deep tools", () => {
+    assert.match(shell, /AfterbellTraderDetailSheet/);
+    assert.match(shell, /UNIQUE AFTER-CLOSE TX/);
+    assert.match(shell, /Identity source:/);
+    assert.match(shell, /Select an xStock PLANET or retained trade COMET/);
+    assert.match(shell, /No mint is guessed/);
+    assert.match(shell, /A Bulls App is not a broker/);
+    assert.doesNotMatch(shell, /AFTERBELL \#\$\{afterbellRank/);
   });
 });
