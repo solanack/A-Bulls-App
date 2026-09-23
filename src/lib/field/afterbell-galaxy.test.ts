@@ -17,7 +17,7 @@ test("Afterbell trader STARS use bounded rank rings that remain inside the mobil
   const items=Array.from({length:50},(_,index)=>({rank:index+1,wallet:`${String(index+1).padStart(32,"1")}`,transactionCount:1,eventCount:1,buyCount:1,sellCount:0,assetCount:1,mints:[mint],latestTrades:[],realizedPnlUsd:null,realizedPnlSol:null,lastObservedAt:1,sourceKind:"observed" as const,sources:["chain"]}));
   const snapshot=buildAfterbellGalaxySnapshot(markets,{ok:true,coverage:"fresh",mint:"",mints:[mint],window:{from:1,to:2,scheduledEnd:2,live:false,timezone:"America/New_York",label:"AFTER CLOSE",calendarCoverage:"weekday"},items,disclosure:"retained"});
   assert.equal(snapshot.particles.length,50);
-  for(const particle of snapshot.particles){const [x,y,z]=particle.position;assert.ok(Math.hypot(x,z)<=64.001);assert.ok(y>=-12&&y<=14,`STAR y=${y} escaped the camera-safe vertical band`);}
+  for(const particle of snapshot.particles){const [x,y,z]=particle.position;assert.ok(Math.hypot(x,z)<=38.001,"STAR escaped the portrait-safe label radius");assert.ok(Math.abs(x)<=38.001,"STAR x-position left insufficient horizontal label clearance");assert.ok(y>=-12&&y<=14,`STAR y=${y} escaped the camera-safe vertical band`);}
 });
 
 test("Afterbell pair selection rejects other chains and ranks exact-symbol Solana venues by liquidity",()=>{
