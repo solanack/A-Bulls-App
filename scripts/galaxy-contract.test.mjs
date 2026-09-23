@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { PerspectiveCamera, Vector3 } from 'three';
 import { GALAXIES, GALAXY_ORIGIN_CHIPS, COSMOLOGY_RULES, canonicalUniverseId, cosmicKindForEntity, getGalaxy, isPopulatedGalaxy, preserveLaunchOrigin, GALAXY_CONTENT } from "../src/lib/field/galaxies.ts";
 import { createGalaxySnapshot, GALAXY_ZERO_CAMERA_DISTANCE, GALAXY_ZERO_CENTERS } from "../src/lib/field/synthetic-universe.ts";
@@ -15,3 +16,16 @@ test("launch origin can be set once but never rewritten",()=>{assert.equal(prese
 test("wallet star identity remains stable while token planet identity preserves launch origin",()=>{assert.equal(canonicalUniverseId("star","WalletABC","solana-core"),canonicalUniverseId("star","WalletABC","pump-fun"));assert.notEqual(canonicalUniverseId("planet","MintABC","solana-core"),canonicalUniverseId("planet","MintABC","pump-fun"));assert.notEqual(canonicalUniverseId("planet","MintABC","pump-fun"),canonicalUniverseId("planet","MintABC","pons"));});
 
 test("volume sky knobs stay 5m-only, cap 120, Helius membership 10",async()=>{const sky=await import("../src/lib/field/volume-sky.ts");assert.equal(sky.SKY_CAP,120);assert.equal(sky.HELIUS_MEMBERSHIP_LIMIT,10);assert.equal(sky.LIQ_FLOOR_USD,10_000);assert.equal(sky.MAX_M5_VOL_TO_LIQ,8);});
+
+test("Field visual polish stays inside the known-good WebGL renderer",()=>{
+  const field=readFileSync(new URL("../src/lib/field/particle-field.ts",import.meta.url),"utf8");
+  assert.match(field,/layered spiral body/);
+  assert.match(field,/targetGalaxy === "fomo"/);
+  assert.match(field,/targetGalaxy === "afterbell"/);
+  assert.match(field,/#flightUntil/);
+  assert.match(field,/cinematicFlight/);
+  assert.match(field,/this\.cameraState = \{ yaw: 0\.4, pitch: 0\.18, distance: snapshot\.galaxyId === "galaxy-zero" \? GALAXY_ZERO_CAMERA_DISTANCE : 125, target: \[0, 0, 0\] \};/);
+  assert.doesNotMatch(field,/if \(galaxyChanged\) \{[^}]*#placeCamera\(\)/s);
+  assert.match(field,/new THREE\.WebGLRenderer/);
+  assert.doesNotMatch(field,/WebGPURenderer|CanvasRenderingContext2D|getContext\(["']2d["']\)/);
+});
