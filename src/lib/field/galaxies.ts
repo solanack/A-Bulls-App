@@ -17,8 +17,8 @@ export const GALAXY_CHAIN_LABEL: Record<GalaxyId, string> = {"galaxy-zero":"UNIV
 export const GALAXY_ORIGIN_CHIPS: readonly { id: GalaxyId; label: string }[] = [{id:"galaxy-zero",label:"ZERO"},{id:"fomo",label:"FOMO"},{id:"afterbell",label:"AFTERBELL"}];
 
 export const COSMOLOGY_RULES: Record<CosmicObjectKind,{readonly onChainMeaning:string;readonly visualRule:string}> = {
-  galaxy:{onChainMeaning:"Research ecosystem or launch-origin lens",visualRule:"Largest durable body; Fomo is a research lens while token planets retain their true launch origin"},
-  star:{onChainMeaning:"Public wallet / observed holder or trader",visualRule:"Bright sky body around token planets or inside Fomo; size follows observed/provider-ranked relationship only when disclosed"},
+  galaxy:{onChainMeaning:"Research ecosystem or launch-origin lens",visualRule:"Largest durable body; Fomo and Afterbell are research lenses while token PLANETS retain their true launch origin"},
+  star:{onChainMeaning:"Public wallet / observed holder or trader",visualRule:"Bright public-wallet body around token PLANETS or inside trader-first galaxies; size follows observed/provider-ranked relationship only when disclosed"},
   planet:{onChainMeaning:"Token or mint",visualRule:"Major navigable world; touch to inspect its local holder/trader sky"},
   moon:{onChainMeaning:"Related NFT collection",visualRule:"Small body orbiting the relevant token planet"},
   "asteroid-belt":{onChainMeaning:"Liquidity pools and LP positions",visualRule:"Wide ring around a token planet; radius/density follow observed liquidity depth"},
