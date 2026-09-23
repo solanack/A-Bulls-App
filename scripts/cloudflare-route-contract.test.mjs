@@ -30,6 +30,7 @@ test("the live release check waits for propagation and validates retained eviden
 test("Afterbell deep link bridges into the integrated Field galaxy", async () => {
   const route = await read("src/routes/afterbell.index.ts");
   assert.match(route, /createFileRoute\("\/afterbell\/"\)/);
-  assert.match(route, /\/\?galaxy=afterbell/);\n  assert.doesNotMatch(route, /\/afterbell\/index\.html/);
+  assert.match(route, /\/\?galaxy=afterbell/);
+  assert.doesNotMatch(route, /\/afterbell\/index\.html/);
   assert.match(route, /Response\.redirect/);
 });
