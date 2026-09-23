@@ -231,6 +231,10 @@ jobs:
           rm -rf production-browser-smoke
           mkdir -p production-browser-smoke
           cp /workspace/screenshots/production-field* /workspace/screenshots/production-afterbell* /workspace/screenshots/afterbell-live-journey.json production-browser-smoke/
+      - name: Verify golden Replay fixtures (FOMO + Afterbell)
+        run: |
+          set -o pipefail
+          node scripts/check-golden-fixtures.mjs https://www.abullsapp.com | tee golden-fixtures.json
       - name: Capture Replay history source health
         if: always()
         continue-on-error: true
@@ -261,5 +265,6 @@ jobs:
             replay-hydration-diagnostic.json
             replay-history-source-health.json
             production-browser-smoke
+            golden-fixtures.json
           if-no-files-found: warn
           retention-days: 14
