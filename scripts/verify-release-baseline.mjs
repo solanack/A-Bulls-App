@@ -35,8 +35,8 @@ const missingMasterPlanLocks=masterPlanLocks.filter(marker=>!normalizedMaster.in
 if(missingMasterPlanLocks.length){console.error("RELEASE BLOCKED: MASTER_PLAN.md lost locked product/architecture direction.");console.error(`Missing: ${missingMasterPlanLocks.join(" | ")}`);process.exit(1);}
 if(!agentRules.includes("MASTER_PLAN.md")||!agentRules.includes("highest-level product and architecture contract")){console.error("RELEASE BLOCKED: AGENTS.md no longer routes AI contributors through MASTER_PLAN.md.");process.exit(1);}
 
-const required=['const MENU_ITEMS','className="gz-menu-button"','className="gz-search"','className="gz-bottom"','aria-label="Galaxy Zero modes"','id:"watchlist"','label:"WATCHLIST"'];
-const forbidden=['className="field-shell__brand"','className="field-shell__galaxy-trigger"','className="field-shell__mode-tools"','className="field-shell__commands"','>A BULLS APP<','label:"TOP 50 TRADERS"','PONS TEACHING'];
+const required=['const MENU_ITEMS','className="gz-menu-button"','className="gz-search"','className="gz-bottom"','aria-label="Field modes"','id:"watchlist"','label:"My Sky"','<TraderSheet','<MySkyShelves'];
+const forbidden=['className="field-shell__brand"','className="field-shell__galaxy-trigger"','className="field-shell__mode-tools"','className="field-shell__commands"','>A BULLS APP<','label:"TOP 50 TRADERS"','PONS TEACHING','Galaxy Zero','GALAXY ZERO','RETURN TO GALAXY','HOW TO PLAY'];
 const compactSource=source.replace(/\s+/g,"");const missing=required.filter(marker=>!compactSource.includes(marker.replace(/\s+/g,""))),restored=forbidden.filter(marker=>source.includes(marker));
 if(missing.length||restored.length){console.error("RELEASE BLOCKED: the approved simplified Field interface has changed.");if(missing.length)console.error(`Missing: ${missing.join(", ")}`);if(restored.length)console.error(`Forbidden/restored: ${restored.join(", ")}`);process.exit(1);}
 

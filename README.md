@@ -32,9 +32,23 @@ If an older document conflicts with `MASTER_PLAN.md`, the master plan wins unles
 - Ghost = historical trace/evidence-backed echo
 - Dust = decoration only
 
-## Public Galaxy Zero
+## The Field
 
-The public Field exposes **ZERO + FOMO + AFTERBELL**. ZERO is the overview. **Fomo** is the trader-discovery lens for retained Fomo activity. **Afterbell** is the tokenized-stock research lens: it opens to ranked trader STARS observed trading supported Solana xStocks during the after-close window, then descends into their stock PLANETS and retained trade COMETS.
+The dock is **FIELD · FOMO · AFTERBELL · MY SKY**. FOMO and AFTERBELL are equal rooms. **FIELD** shows both rooms together. **FOMO** holds memecoin traders from retained Fomo activity (figures are provider-reported). **AFTERBELL** holds trader STARS observed trading supported Solana xStocks, which descend into their stock PLANETS and retained trade COMETS. **MY SKY** keeps watched traders and tokens on this device.
+
+Any trader opens the same sheet: REPLAY · WATCH TRADER · EVIDENCE. Replay is a full-frame tape of real candles (or an event tape marked "Candles unavailable") with a green bolt per observed buy and a red bolt per observed sell. Tapping a bolt opens its Evidence. SHARE copies a URL that reopens the exact Replay, and CUT renders a 1080×1920 or 1920×1080 video that ends on VERIFY plus that URL, with a manifest of wallet, mint, window, signatures, and candle source.
+
+See [`HACKATHON_DEMO.md`](./HACKATHON_DEMO.md) for the demo script and golden fixtures.
+
+## Run locally
+
+```bash
+npm install
+npm run dev   # http://localhost:8080
+npm test && npm run typecheck && npm run verify:release
+```
+
+A push to `main` runs `.github/workflows/deploy-cloudflare.yml`: tests, build, Worker dry-runs, D1 migrations, publish, then production checks including `scripts/check-golden-fixtures.mjs`.
 
 PonsFamily (`pons`) and pump.fun (`pump-fun`) are retired public galaxies.
 Their historical launch origins, applied migrations, and retained research
