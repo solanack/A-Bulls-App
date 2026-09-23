@@ -206,6 +206,7 @@ jobs:
           sudo chown -R "$USER":"$USER" /workspace
           node scripts/browser-smoke.mjs https://abullsapp.com/ /workspace/screenshots/production-field.png
           node scripts/browser-smoke.mjs "https://abullsapp.com/?galaxy=afterbell" /workspace/screenshots/production-afterbell.png
+          node scripts/browser-afterbell-live-journey.mjs https://abullsapp.com /workspace/screenshots/afterbell-live-journey.json
           node --input-type=module <<'NODE'
           import fs from "node:fs";
           const root=JSON.parse(fs.readFileSync("/workspace/screenshots/production-field.json","utf8"));
@@ -229,7 +230,7 @@ jobs:
           NODE
           rm -rf production-browser-smoke
           mkdir -p production-browser-smoke
-          cp /workspace/screenshots/production-field* /workspace/screenshots/production-afterbell* production-browser-smoke/
+          cp /workspace/screenshots/production-field* /workspace/screenshots/production-afterbell* /workspace/screenshots/afterbell-live-journey.json production-browser-smoke/
       - name: Capture Replay history source health
         if: always()
         continue-on-error: true
