@@ -40,14 +40,20 @@ async function selectPlanet(page,box){
 }
 async function openFreshPage(browser,vp){
   const page=await browser.newPage({viewport:{width:vp.width,height:vp.height}});
-  let traderPayload=null,traderUrl=null;
-  page.on("response",async response=>{if(response.url().includes("/api/intelligence/afterbell/traders")){traderUrl=response.url();try{traderPayload=await response.json();}catch{}}});
   const errors={console:[],page:[]};page.on("console",msg=>{if(msg.type()==="error")errors.console.push(msg.text());});page.on("pageerror",err=>errors.page.push(String(err?.message||err)));
   const response=await page.goto(`${origin}/?galaxy=afterbell`,{waitUntil:"domcontentloaded",timeout:45000});
   assert((response?.status()??0)===200,`${vp.name}: HTTP ${response?.status()??0}`);
   await page.waitForFunction(()=>{const el=document.querySelector("main.field-shell");return el?.getAttribute("data-galaxy")==="afterbell"&&Number(el.getAttribute("data-field-count")||0)>0;},null,{timeout:30000});
-  for(let i=0;i<50&&!traderPayload;i++)await page.waitForTimeout(100);
-  assert(traderPayload?.ok===true,`${vp.name}: live Afterbell trader payload unavailable`);
+  const api=await page.evaluate(async()=>{
+    const auditResponse=await fetch("/api/intelligence/afterbell/audit",{cache:"no-store"}),audit=await auditResponse.json();
+    const mints=[...new Set((Array.isArray(audit?.assets)?audit.assets:[]).map(row=>String(row?.mint||"").trim()).filter(Boolean))];
+    if(!auditResponse.ok||!audit?.ok||!mints.length)return{ok:false,status:auditResponse.status,audit,mints,traderUrl:null,traderPayload:null};
+    const traderPath="/api/intelligence/afterbell/traders?mints="+encodeURIComponent(mints.join(","))+"&limit=50";
+    const traderResponse=await fetch(traderPath,{cache:"no-store"}),traderPayload=await traderResponse.json();
+    return{ok:traderResponse.ok&&traderPayload?.ok===true,status:traderResponse.status,audit,mints,traderUrl:new URL(traderPath,location.origin).toString(),traderPayload};
+  });
+  const traderPayload=api.traderPayload,traderUrl=api.traderUrl;
+  assert(api.ok===true&&traderPayload?.ok===true&&traderUrl,`${vp.name}: live Afterbell trader payload unavailable`);
   const initial=await shellState(page);
   assert(initial.count===traderPayload.items.length,`${vp.name}: STAR count ${initial.count} != live API count ${traderPayload.items.length}`);
   for(let i=0;i<traderPayload.items.length;i++){
