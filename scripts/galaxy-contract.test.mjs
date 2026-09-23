@@ -27,5 +27,6 @@ test("Field visual polish stays inside the known-good WebGL renderer",()=>{
   assert.match(field,/this\.cameraState = \{ yaw: 0\.4, pitch: 0\.18, distance: snapshot\.galaxyId === "galaxy-zero" \? GALAXY_ZERO_CAMERA_DISTANCE : 125, target: \[0, 0, 0\] \};/);
   assert.doesNotMatch(field,/if \(galaxyChanged\) \{[^}]*#placeCamera\(\)/s);
   assert.match(field,/new THREE\.WebGLRenderer/);
-  assert.doesNotMatch(field,/WebGPURenderer|CanvasRenderingContext2D|getContext\(["']2d["']\)/);
+  assert.doesNotMatch(field,/WebGPURenderer|CanvasRenderer|field2d|renderer2d|fallback2d/i);
+  assert.match(field,/new THREE\.CanvasTexture\(canvas\)/);
 });
