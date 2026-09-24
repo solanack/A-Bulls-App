@@ -137,25 +137,142 @@ export function tapeEvents(value: unknown): TapeEvent[] {
     .sort((a, b) => a.timestamp - b.timestamp);
 }
 
+function candleIndexAt(candles: readonly TapeCandle[], timestampMs: number) {
+  const t = Math.floor(timestampMs / 1000);
+  let lo = 0, hi = candles.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (candles[mid].time <= t) lo = mid;
+    else hi = mid - 1;
+  }
+  return candles[lo].time <= t ? lo : 0;
+}
+
+/** Typical spacing between candles, in milliseconds. */
+export function candleBucketMs(candles: readonly TapeCandle[], fallbackMs = 60_000) {
+  if (candles.length < 2) return fallbackMs;
+  const gaps: number[] = [];
+  for (let i = 1; i < candles.length; i++) gaps.push(candles[i].timestamp - candles[i - 1].timestamp);
+  gaps.sort((a, b) => a - b);
+  return Math.max(1000, gaps[gaps.length >> 1]);
+}
+
 /**
- * Bolts sit on the candle whose bucket holds the print. Provider prices can be quoted on a different
- * scale than the candle series, so the anchor is the candle itself (low for buys, high for sells).
+ * Bolts sit on the candle whose bucket holds the print. A provider price is used only when it falls
+ * inside that candle's range; otherwise it may be quoted on another scale, so the bolt sits on the
+ * candle's low (buy) or high (sell).
  */
 export function anchorBolts(events: readonly TapeEvent[], candles: readonly TapeCandle[], startMs: number, endMs: number): TapeBolt[] {
   const range = Math.max(1, endMs - startMs);
   return events.map((event) => {
     const cursor = Math.min(1, Math.max(0, (event.timestamp - startMs) / range));
     if (!candles.length) return { ...event, candleTime: null, anchorPrice: null, cursor };
-    const t = Math.floor(event.timestamp / 1000);
-    let lo = 0, hi = candles.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (candles[mid].time <= t) lo = mid;
-      else hi = mid - 1;
-    }
-    const candle = candles[lo].time <= t ? candles[lo] : candles[0];
-    return { ...event, candleTime: candle.time, anchorPrice: event.side === "buy" ? candle.low : candle.high, cursor };
+    const candle = candles[candleIndexAt(candles, event.timestamp)];
+    const inRange = event.priceUsd != null && event.priceUsd >= candle.low && event.priceUsd <= candle.high;
+    return { ...event, candleTime: candle.time, anchorPrice: inRange ? event.priceUsd : event.side === "buy" ? candle.low : candle.high, cursor };
   });
+}
+
+export const PRINT_PAD_CANDLES = 10;
+
+/**
+ * The visible session: PRINT_PAD_CANDLES candles before the first print and after the last. One buy is
+ * that session, not weeks of empty tape. With no candles, the prints are padded by a tenth of their span.
+ */
+export function printWindow(candles: readonly TapeCandle[], events: readonly TapeEvent[], fallback: { start: number; end: number }, pad = PRINT_PAD_CANDLES) {
+  if (!events.length) return fallback;
+  const first = events[0].timestamp, last = events[events.length - 1].timestamp;
+  if (!candles.length) {
+    const margin = Math.max(30 * 60_000, (last - first) * 0.1);
+    return { start: Math.max(fallback.start, first - margin), end: Math.min(Math.max(fallback.end, last + 1), last + margin) };
+  }
+  const bucket = candleBucketMs(candles);
+  const i0 = candleIndexAt(candles, first), i1 = candleIndexAt(candles, last);
+  const start = Math.min(candles[Math.max(0, i0 - pad)].timestamp, first);
+  const end = Math.max(candles[Math.min(candles.length - 1, i1 + pad)].timestamp + bucket, last + bucket);
+  return { start, end: Math.max(end, start + 1) };
+}
+
+export type BoltGroup = { key: string; side: "buy" | "sell"; bolts: TapeBolt[]; lead: TapeBolt; count: number; cursor: number; notional: number | null };
+
+/** Several prints on one bar and side become one bolt with a count. Notional is amount × price when both are known. */
+export function groupBolts(bolts: readonly TapeBolt[]): BoltGroup[] {
+  const groups = new Map<string, BoltGroup>();
+  for (const bolt of bolts) {
+    const key = `${bolt.candleTime ?? `t${bolt.timestamp}`}:${bolt.side}`;
+    const value = bolt.amount != null && bolt.priceUsd != null ? bolt.amount * bolt.priceUsd : null;
+    const group = groups.get(key);
+    if (group) {
+      group.bolts.push(bolt);
+      group.count++;
+      group.cursor = Math.max(group.cursor, bolt.cursor);
+      if (value != null) group.notional = (group.notional ?? 0) + value;
+    } else groups.set(key, { key, side: bolt.side, bolts: [bolt], lead: bolt, count: 1, cursor: bolt.cursor, notional: value });
+  }
+  return [...groups.values()].sort((a, b) => a.cursor - b.cursor);
+}
+
+/** 1.0 for the smallest known notional up to 1.3 for the largest; 1.0 when notional is unknown. */
+export function notionalScale(group: BoltGroup, groups: readonly BoltGroup[]) {
+  if (group.notional == null || group.notional <= 0) return 1;
+  const values = groups.flatMap((row) => (row.notional != null && row.notional > 0 ? [Math.log10(row.notional)] : []));
+  const lo = Math.min(...values), hi = Math.max(...values);
+  return hi > lo ? 1 + 0.3 * ((Math.log10(group.notional) - lo) / (hi - lo)) : 1;
+}
+
+/** Right-axis price with 3 significant figures. Tiny prices use a subscript zero count: 0.0₄132. */
+export function priceAxisLabel(value: number) {
+  if (!Number.isFinite(value)) return "";
+  const abs = Math.abs(value), sign = value < 0 ? "-" : "";
+  if (abs === 0) return "0";
+  if (abs >= 1e9) return `${sign}${(abs / 1e9).toPrecision(3)}B`;
+  if (abs >= 1e6) return `${sign}${(abs / 1e6).toPrecision(3)}M`;
+  if (abs >= 1e4) return `${sign}${(abs / 1e3).toPrecision(3)}K`;
+  if (abs >= 0.001) return `${sign}${Number(abs.toPrecision(3))}`;
+  const zeros = Math.ceil(-Math.log10(abs)) - 1;
+  const digits = Math.min(999, Math.round(abs * 10 ** (zeros + 3))).toString().padStart(3, "0");
+  const sub = String(zeros).split("").map((d) => "₀₁₂₃₄₅₆₇₈₉"[Number(d)]).join("");
+  return `${sign}0.0${sub}${digits}`;
+}
+
+/**
+ * Playback hops bolt to bolt: travel, then dwell on each stop. `cursorAt(progress)` maps 0..1 of the
+ * playback clock to a tape cursor, and `arrivals` gives the progress at which each stop is reached.
+ */
+export function hopSchedule(boltCursors: readonly number[]) {
+  const stops = [...new Set(boltCursors.map((value) => Math.min(1, Math.max(0, value))))].sort((a, b) => a - b);
+  if (!stops.length || stops[stops.length - 1] < 1) stops.push(1);
+  const segments = stops.length, travel = 0.35;
+  const arrivals = stops.map((_, i) => (i + travel) / segments);
+  const ease = (x: number) => (x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2);
+  function cursorAt(progress: number) {
+    const p = Math.min(1, Math.max(0, progress));
+    if (p >= 1) return 1;
+    const i = Math.min(segments - 1, Math.floor(p * segments)), local = p * segments - i;
+    const from = i === 0 ? 0 : stops[i - 1], to = stops[i];
+    return local >= travel ? to : from + (to - from) * ease(local / travel);
+  }
+  /** Where playback resumes for a cursor: on a stop it keeps dwelling; between stops it travels from the previous one. */
+  function progressAt(cursor: number) {
+    const i = stops.findIndex((stop) => stop >= cursor - 1e-9);
+    if (i < 0) return 1;
+    return Math.abs(stops[i] - cursor) < 1e-6 ? arrivals[i] : i / segments;
+  }
+  return { stops, arrivals, cursorAt, progressAt };
+}
+
+export const STRIKE_MS = 200;
+
+/** Strike scale on playhead hit: 0.7 → 1.15 → 1.0 over STRIKE_MS, then steady. */
+export function strikeScale(ageMs: number | null) {
+  if (ageMs == null || ageMs < 0 || ageMs >= STRIKE_MS) return 1;
+  const peak = STRIKE_MS * 0.45;
+  return ageMs < peak ? 0.7 + 0.45 * (ageMs / peak) : 1.15 - 0.15 * ((ageMs - peak) / (STRIKE_MS - peak));
+}
+
+/** Price axis: FOMO memecoins read on a log scale; Afterbell xStocks stay linear. */
+export function tapeScaleFor(room: "fomo" | "afterbell" | null): "log" | "linear" {
+  return room === "afterbell" ? "linear" : "log";
 }
 
 export function tapeWindow(bundleWindow: unknown, candles: readonly TapeCandle[], events: readonly TapeEvent[], subject: ReplaySubject) {

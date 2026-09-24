@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anchorBolts, replayShareUrl, replaySubjectFrom, replayToolInput, tapeCandles, tapeEvents, toMs, WSOL_MINT } from "./replay-tape.ts";
+import { anchorBolts, groupBolts, hopSchedule, notionalScale, priceAxisLabel, printWindow, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, strikeScale, tapeCandles, tapeEvents, tapeScaleFor, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
 
 const AB_WALLET = "G39wywquKbHK8F2wZZZFX3fcsyG91VCCbbr6WEVp5axy";
 const AB_MINT = "XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1";
@@ -71,4 +71,66 @@ test("candle source shows a provider name on screen, never the API tier id", asy
   assert.equal(candleSourceLabel("geckoterminal-public:solana:pool"), "GeckoTerminal OHLC");
   assert.equal(candleSourceLabel(null), "indexed OHLC");
   assert.doesNotMatch(candleSourceLabel("coingecko-demo-onchain:x"), /demo/i);
+});
+
+const H = 3_600_000;
+const candleAt = (i: number, base = 1_790_000_000_000): TapeCandle => ({ time: (base + i * H) / 1000, timestamp: base + i * H, open: 1, high: 2, low: 0.5, close: 1.5 });
+const eventAt = (id: string, timestamp: number, side: "buy" | "sell" = "buy", extra: Partial<TapeEvent> = {}): TapeEvent => ({ id, side, timestamp, signature: null, amount: null, priceUsd: null, verification: "observed", sources: [], kind: "trade", ...extra });
+
+test("print window pads 10 candles either side of the first and last print", () => {
+  const candles = Array.from({ length: 100 }, (_, i) => candleAt(i));
+  const events = [eventAt("a", candles[40].timestamp + 60_000), eventAt("b", candles[50].timestamp + 60_000, "sell")];
+  const view = printWindow(candles, events, { start: candles[0].timestamp, end: candles[99].timestamp });
+  assert.equal(view.start, candles[30].timestamp);
+  assert.equal(view.end, candles[60].timestamp + H);
+  const short = printWindow(candles.slice(0, 45), [eventAt("a", candles[2].timestamp)], { start: 0, end: 1 });
+  assert.equal(short.start, candles[0].timestamp);
+});
+
+test("print window without candles keeps a margin around the prints", () => {
+  const view = printWindow([], [eventAt("a", 10 * H), eventAt("b", 20 * H)], { start: 0, end: 100 * H });
+  assert.ok(view.start < 10 * H && view.start >= 9 * H);
+  assert.ok(view.end > 20 * H && view.end <= 21 * H);
+});
+
+test("bolts anchor on the print candle and several prints on one bar become one counted bolt", () => {
+  const candles = Array.from({ length: 5 }, (_, i) => candleAt(i));
+  const events = [eventAt("a", candles[2].timestamp + 1, "buy", { amount: 10, priceUsd: 1 }), eventAt("b", candles[2].timestamp + 2, "buy", { amount: 100, priceUsd: 1.2 }), eventAt("c", candles[3].timestamp + 1, "sell")];
+  const bolts = anchorBolts(events, candles, candles[0].timestamp, candles[4].timestamp + H);
+  assert.equal(bolts[0].candleTime, candles[2].time);
+  assert.equal(bolts[1].anchorPrice, 1.2);
+  const groups = groupBolts(bolts);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].count, 2);
+  assert.equal(groups[0].notional, 130);
+  assert.equal(groups[0].cursor, bolts[1].cursor);
+  assert.equal(notionalScale(groups[0], groups), 1);
+});
+
+test("price axis reads 3 significant figures", () => {
+  assert.equal(priceAxisLabel(0.0000132), "0.0₄132");
+  assert.equal(priceAxisLabel(0.0132), "0.0132");
+  assert.equal(priceAxisLabel(212.456), "212");
+  assert.equal(priceAxisLabel(15_432), "15.4K");
+  assert.equal(priceAxisLabel(2_340_000), "2.34M");
+});
+
+test("playhead hops bolt to bolt and dwells on each stop", () => {
+  const schedule = hopSchedule([0.2, 0.5, 0.5]);
+  assert.deepEqual(schedule.stops, [0.2, 0.5, 1]);
+  assert.equal(schedule.cursorAt(0), 0);
+  assert.equal(schedule.cursorAt(schedule.arrivals[0]), 0.2);
+  assert.equal(schedule.cursorAt(0.3), 0.2);
+  assert.equal(schedule.cursorAt(1), 1);
+  assert.equal(schedule.progressAt(0.5), schedule.arrivals[1]);
+  for (let p = 0; p < 1; p += 0.01) assert.ok(schedule.cursorAt(p) <= schedule.cursorAt(p + 0.01) + 1e-9);
+});
+
+test("strike goes 0.7 → 1.15 → 1.0 once, and only FOMO uses a log scale", () => {
+  assert.equal(strikeScale(0), 0.7);
+  assert.ok(Math.abs(strikeScale(STRIKE_MS * 0.45) - 1.15) < 1e-9);
+  assert.equal(strikeScale(STRIKE_MS), 1);
+  assert.equal(strikeScale(null), 1);
+  assert.equal(tapeScaleFor("fomo"), "log");
+  assert.equal(tapeScaleFor("afterbell"), "linear");
 });

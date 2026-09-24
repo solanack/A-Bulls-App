@@ -1,6 +1,6 @@
 import { synthesizeCutNarration } from "@/lib/alien-voice";
-import { drawTape, TAPE_BG } from "@/lib/field/replay-tape-render";
-import { CUT_SIZE, type CutFormat, type TapeBolt, type TapeCandle } from "@/lib/field/replay-tape";
+import { BOLT, drawTape, TAPE_BG } from "@/lib/field/replay-tape-render";
+import { CUT_SIZE, groupBolts, hopSchedule, type BoltGroup, type CutFormat, type TapeBolt, type TapeCandle } from "@/lib/field/replay-tape";
 
 export type ReplayCutInput = {
   format: CutFormat;
@@ -10,6 +10,7 @@ export type ReplayCutInput = {
   bolts: readonly TapeBolt[];
   start: number;
   end: number;
+  scaleMode?: "log" | "linear";
   replayUrl: string;
   sourceLine: string;
   greyLine: string | null;
@@ -60,18 +61,41 @@ function drawVerify(ctx: CanvasRenderingContext2D, w: number, h: number, input: 
   ctx.restore();
 }
 
+/** Playhead timing for the Cut: the same bolt-to-bolt hops as the studio, stretched over TAPE_SECONDS. */
+export function cutTiming(bolts: readonly TapeBolt[]) {
+  const groups = groupBolts(bolts);
+  const schedule = hopSchedule(groups.map((group) => group.cursor));
+  const arrivalAt = new Map<string, number>();
+  for (const group of groups) {
+    const i = schedule.stops.findIndex((stop) => Math.abs(stop - Math.min(1, Math.max(0, group.cursor))) < 1e-9);
+    arrivalAt.set(group.key, (i < 0 ? group.cursor : schedule.arrivals[i]) * TAPE_SECONDS);
+  }
+  return { groups, schedule, arrivalAt };
+}
+const timingCache = new WeakMap<readonly TapeBolt[], ReturnType<typeof cutTiming>>();
+function timingFor(bolts: readonly TapeBolt[]) {
+  let timing = timingCache.get(bolts);
+  if (!timing) { timing = cutTiming(bolts); timingCache.set(bolts, timing); }
+  return timing;
+}
+function shortUrl(url: string) {
+  return url.replace(/^https?:\/\/(www\.)?/, "");
+}
+
 /** One Cut frame. t is seconds into the Cut. */
 export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInput, t: number) {
   const { width: w, height: h } = CUT_SIZE[input.format];
   const portrait = input.format === "portrait";
   const k = Math.min(w, h) / 1080;
-  const cursor = Math.min(1, Math.max(0, t / TAPE_SECONDS));
-  const chartTop = portrait ? 380 * k : 190 * k, chartBottom = portrait ? h - 520 * k : h - 250 * k;
+  const timing = timingFor(input.bolts);
+  const cursor = timing.schedule.cursorAt(Math.min(1, Math.max(0, t / TAPE_SECONDS)));
+  const strikeAge = (group: BoltGroup) => { const at = timing.arrivalAt.get(group.key); return at == null || t < at ? null : (t - at) * 1000; };
+  const chartTop = portrait ? 380 * k : 190 * k, chartBottom = portrait ? h - 520 * k : h - 280 * k;
   ctx.save();
   ctx.fillStyle = TAPE_BG;
   ctx.fillRect(0, 0, w, h);
   ctx.translate(0, chartTop);
-  drawTape(ctx, { width: w, height: chartBottom - chartTop, candles: input.candles, bolts: input.bolts, start: input.start, end: input.end, cursor, scale: portrait ? 3 : 2.4, pad: { top: 24 * k, right: (portrait ? 230 : 250) * k, bottom: 64 * k, left: 56 * k } });
+  drawTape(ctx, { width: w, height: chartBottom - chartTop, candles: input.candles, bolts: input.bolts, start: input.start, end: input.end, cursor, scaleMode: input.scaleMode ?? "log", boltPx: 20, strikeAge, scale: portrait ? 3 : 2.4, pad: { top: 24 * k, right: (portrait ? 230 : 250) * k, bottom: 64 * k, left: 56 * k } });
   ctx.restore();
 
   const left = 56 * k;
@@ -87,11 +111,11 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   const visible = input.bolts.filter((bolt) => bolt.cursor <= cursor);
   const latest = visible.at(-1);
   const buys = visible.filter((bolt) => bolt.side === "buy").length, sells = visible.length - buys;
-  const lowerTop = portrait ? h - 440 * k : h - 200 * k;
+  const lowerTop = portrait ? h - 440 * k : h - 236 * k;
   ctx.fillStyle = "rgba(255,255,255,.06)";
   ctx.fillRect(left, lowerTop - 30 * k, w - left * 2, 1.5 * k);
   if (latest) {
-    ctx.fillStyle = latest.side === "buy" ? "#3dffa2" : "#ff4d5e";
+    ctx.fillStyle = latest.side === "buy" ? BOLT.buy.fill : BOLT.sell.fill;
     ctx.font = `700 ${Math.round(40 * k)}px ui-sans-serif, system-ui, sans-serif`;
     const label = latest.side.toUpperCase();
     ctx.fillText(label, left, lowerTop + 22 * k);
@@ -107,6 +131,10 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   ctx.font = `500 ${Math.round(22 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   wrap(ctx, input.sourceLine, w - left * 2).slice(0, 2).forEach((line, i) => ctx.fillText(line, left, lowerTop + 132 * k + i * 32 * k));
 
+  ctx.fillStyle = "rgba(236,218,170,.62)";
+  ctx.font = `600 ${Math.round(20 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.fillText(`VERIFY · ${wrap(ctx, shortUrl(input.replayUrl), w - left * 2 - 150 * k)[0] ?? ""}`, left, h - (portrait ? 56 : 30) * k);
+
   const verifyStart = TAPE_SECONDS + HOLD_SECONDS;
   if (t >= verifyStart) drawVerify(ctx, w, h, input, Math.min(1, (t - verifyStart) / 0.35));
 }
@@ -114,10 +142,11 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
 function tickTimes(bolts: readonly TapeBolt[]) {
   const out: { at: number; side: "buy" | "sell" }[] = [];
   let last = -1;
-  for (const bolt of bolts) {
-    const at = bolt.cursor * TAPE_SECONDS;
+  const timing = timingFor(bolts);
+  for (const group of timing.groups) {
+    const at = timing.arrivalAt.get(group.key) ?? group.cursor * TAPE_SECONDS;
     if (at - last < 0.05) continue;
-    out.push({ at, side: bolt.side });
+    out.push({ at, side: group.side });
     last = at;
   }
   return out;
