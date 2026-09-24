@@ -243,8 +243,12 @@ export async function handleSocialIngestRequest(request,env={}){
   if(url.pathname===SOCIAL_QUEUE_PATH){
     if(!(await authorized(request,env)))return json({ok:false,error:'unauthorized'},401);
     const db=intelligenceDb(env);if(!db)return json({ok:false,error:'database_unavailable'},503);
-    const rows=(await db.prepare(`SELECT request_key,mint,chain_key,symbol,name,room,day0,state,provider,result_count,updated_at FROM social_fetch_requests WHERE state IN ('queued','empty','error') AND (provider IS NULL OR provider<>'agent-reach-twitter-cli') AND NOT (state='empty' AND provider LIKE 'agent-reach-%' AND updated_at>unixepoch()-21600) ORDER BY updated_at DESC LIMIT 25`).all().catch(()=>({results:[]})))?.results||[];
-    return json({ok:true,items:rows.map(row=>({...row,terms:socialQueryTerms(row),slices:socialSlices(row.day0)}))});
+    // A deploy-triggered Agent-Reach run may explicitly re-check recent empty rows after collector code changes.
+    // Scheduled runs keep the six-hour empty-result guard to avoid repeatedly hitting the search backend.
+    const retryEmpty=url.searchParams.get('retry_empty')==='1';
+    const emptyGuard=retryEmpty?'':`AND NOT (state='empty' AND provider LIKE 'agent-reach-%' AND updated_at>unixepoch()-21600)`;
+    const rows=(await db.prepare(`SELECT request_key,mint,chain_key,symbol,name,room,day0,state,provider,result_count,updated_at FROM social_fetch_requests WHERE state IN ('queued','empty','error') AND (provider IS NULL OR provider<>'agent-reach-twitter-cli') ${emptyGuard} ORDER BY updated_at DESC LIMIT 25`).all().catch(()=>({results:[]})))?.results||[];
+    return json({ok:true,retryEmpty,items:rows.map(row=>({...row,terms:socialQueryTerms(row),slices:socialSlices(row.day0)}))});
   }
   if(url.pathname===SOCIAL_INGEST_PATH){
     if(request.method!=='POST')return json({ok:false,error:'method_not_allowed'},405);
@@ -261,4 +265,4 @@ export async function handleSocialIngestRequest(request,env={}){
   return null;
 }
 
-export const __socialIngestContract=Object.freeze({requestPath:SOCIAL_REQUEST_PATH,ingestPath:SOCIAL_INGEST_PATH,queuePath:SOCIAL_QUEUE_PATH,sourceKind:'x-observed',hostPrimaryFlag:'SOCIAL_HOST_PRIMARY',hostGraceSeconds:HOST_GRACE_SECONDS,githubOidcAuth:true,githubOidcAudience:GITHUB_OIDC_AUDIENCE,workerFallback:'official-x-then-exa',cookiesInWorker:false,bareShortTickerQueried:false,linkedWalletOnlyFromSourcedLinks:true,causationClaimed:false});
+export const __socialIngestContract=Object.freeze({requestPath:SOCIAL_REQUEST_PATH,ingestPath:SOCIAL_INGEST_PATH,queuePath:SOCIAL_QUEUE_PATH,sourceKind:'x-observed',hostPrimaryFlag:'SOCIAL_HOST_PRIMARY',hostGraceSeconds:HOST_GRACE_SECONDS,githubOidcAuth:true,githubOidcAudience:GITHUB_OIDC_AUDIENCE,authenticatedRetryEmpty:true,workerFallback:'official-x-then-exa',cookiesInWorker:false,bareShortTickerQueried:false,linkedWalletOnlyFromSourcedLinks:true,causationClaimed:false});

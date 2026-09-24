@@ -117,7 +117,8 @@ def main():
         print("No Agent-Reach backend is ready (twitter-cli with a dedicated account, or mcporter for Exa).")
         return 2
 
-    queue = api("/api/intelligence/social/queue").get("items", [])
+    queue_path = "/api/intelligence/social/queue?retry_empty=1" if os.environ.get("SOCIAL_FORCE_EMPTY_RETRY") == "1" else "/api/intelligence/social/queue"
+    queue = api(queue_path).get("items", [])
     print(f"{len(queue)} That day requests queued; twitter-cli={'ready' if twitter_ready else 'off'}, exa={'ready' if exa_ready else 'off'}.")
     for item in queue:
         terms = item.get("terms")
