@@ -400,7 +400,7 @@ export function tapeMarkSummary(bolts: readonly TapeBolt[], candles: readonly Ta
   const markedUsd = remainingTokens * last.close;
   const boughtUsd = tapeUsdSummary(bolts).boughtUsd;
   const deltaUsd = boughtUsd != null ? markedUsd - boughtUsd : null;
-  const deltaPct = deltaUsd != null && boughtUsd > 0 ? deltaUsd / boughtUsd : null;
+  const deltaPct = boughtUsd != null && deltaUsd != null && boughtUsd > 0 ? deltaUsd / boughtUsd : null;
   return { markedUsd,deltaUsd,deltaPct,remainingTokens,lastClose:last.close };
 }
 
