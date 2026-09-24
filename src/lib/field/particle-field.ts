@@ -65,7 +65,8 @@ void main() {
   float s = sin(ang);
   vec3 d = p - origin;
   p = origin + vec3(d.x * c - d.z * s, d.y * (1.0 - ease * 0.38), d.x * s + d.z * c);
-  vColor = aColor * uIntensity * (1.0 + kin * 1.45);
+  float focusVisual = kin * (1.0 - step(abs(aCosmic - 2.0), 0.45));
+  vColor = aColor * uIntensity * (1.0 + focusVisual * 1.45);
   vLocal = position.xy;
   vCosmic = aCosmic;
   vPhase = aPhase;
@@ -74,7 +75,7 @@ void main() {
   if (abs(aCosmic - 1.0) < 0.45) pulse += sin(uTime * 1.8 + aPhase * 6.28318) * 0.055 * uMotion;
   if (abs(aCosmic - 7.0) < 0.45) pulse += sin(uTime * 2.7 + aPhase * 6.28318) * 0.09 * uMotion;
   if (abs(aCosmic - 9.0) < 0.45) pulse += sin(uTime * 0.9 + aPhase * 6.28318) * 0.045 * uMotion;
-  float size = pSize * pulse * mix(1.0, 0.28, ease) * (1.0 + kin * 1.6) * max(vReplayVisible, 0.04);
+  float size = pSize * pulse * mix(1.0, 0.28, ease) * (1.0 + focusVisual * 1.6) * max(vReplayVisible, 0.04);
   vec2 displayLocal = position.xy;
   if (abs(aCosmic - 5.0) < 0.45) displayLocal.x *= 2.25;
   mv.xy += displayLocal * size;
@@ -125,12 +126,11 @@ void main() {
     alpha = max(core, max(halo * 0.2, rays * 0.34));
     light = 0.9 + core * 0.65 + rays * 0.5;
   } else if (vCosmic < 2.5) {
-    // PLANET — solid holder body with a defined limb.
+    // PLANET — solid ocean-blue token body. No halo/bloom; selection is handled separately.
     if (d > 1.0) discard;
-    float disc = 1.0 - smoothstep(0.86, 1.0, d);
-    float limb = ring(d, 0.79, 0.18);
-    alpha = max(disc * 0.82, limb * 0.42);
-    light = 0.62 + (1.0 - d) * 0.45 + limb * 0.25;
+    float disc = 1.0 - smoothstep(0.94, 1.0, d);
+    alpha = disc * 0.98;
+    light = 0.76 + (1.0 - d) * 0.18;
   } else if (vCosmic < 3.5) {
     // MOON — smaller, crisp related collection.
     if (d > 1.0) discard;
@@ -318,9 +318,8 @@ function disposeLabelSprite(sprite: THREE.Sprite) {
 }
 
 const FOMO_AMETHYST: [number, number, number] = [0.7, 0.5, 1.0];
-const FOMO_LILAC: [number, number, number] = [0.82, 0.7, 1.0];
+const OCEAN_BLUE: [number, number, number] = [0.08, 0.48, 0.82];
 const AFTERBELL_ICE: [number, number, number] = [0.7, 0.84, 1.0];
-const AFTERBELL_CHAMPAGNE: [number, number, number] = [0.95, 0.85, 0.62];
 
 function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMaterial, limit: number) {
   const visible = snapshot.particles.slice(0, limit);
@@ -341,11 +340,9 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
         ? FOMO_AMETHYST
         : targetGalaxy === "afterbell" || entity.metadata?.afterbellTrader === true
           ? AFTERBELL_ICE
-          : entity.cosmicKind === "planet" && snapshot.galaxyId === "afterbell"
-            ? AFTERBELL_CHAMPAGNE
-            : entity.cosmicKind === "planet" && snapshot.galaxyId === "fomo"
-              ? FOMO_LILAC
-              : snapshot.galaxyId === "pons"
+          : renderCosmicKind(entity) === "planet"
+            ? OCEAN_BLUE
+            : snapshot.galaxyId === "pons"
             ? ([
                 base[0] * 0.58 + 0.38,
                 base[1] * 0.62 + 0.34,
@@ -646,7 +643,7 @@ export class ParticleFieldRenderer {
     if (!hit) return;
     this.focused = hit;
     this.material.uniforms.uFocus.value.set(hit.position[0], hit.position[1], hit.position[2]);
-    this.material.uniforms.uFocusAmt.value = renderCosmicKind(hit) === "planet" ? 0 : 1;
+    this.material.uniforms.uFocusAmt.value = 1;
     this.material.uniforms.uFocusCat.value = CATEGORY_INDEX[hit.category] ?? 6;
     this.onFocus?.(hit);
   }
@@ -805,7 +802,7 @@ export class ParticleFieldRenderer {
     }
     this.focused = hit;
     this.material.uniforms.uFocus.value.set(hit.position[0], hit.position[1], hit.position[2]);
-    this.material.uniforms.uFocusAmt.value = renderCosmicKind(hit) === "planet" ? 0 : 1;
+    this.material.uniforms.uFocusAmt.value = 1;
     this.material.uniforms.uFocusCat.value = CATEGORY_INDEX[hit.category] ?? 6;
     this.onFocus?.(hit);
   }

@@ -281,7 +281,10 @@ describe("shared identity-first trader sheet for both rooms", () => {
     assert.match(sheets, /COMETS · Research only\./);
     assert.doesNotMatch(sheets, /<p className="fs-selected">/);
     const field = readFileSync(new URL("./particle-field.ts", import.meta.url), "utf8");
-    assert.match(field, /renderCosmicKind\(hit\) === "planet" \? 0 : 1/);
+    assert.match(field, /const OCEAN_BLUE:/);
+    assert.match(field, /renderCosmicKind\(entity\) === "planet"/);
+    assert.match(field, /focusVisual = kin \* \(1\.0 - step\(abs\(aCosmic - 2\.0\), 0\.45\)\)/);
+    assert.doesNotMatch(field, /renderCosmicKind\(hit\) === "planet" \? 0 : 1/);
     assert.match(sheets, /Watch a trader or a token from the Field\./);
     assert.doesNotMatch(shell + sheets, /AFTERBELL #\$\{|Galaxy Zero/);
   });
