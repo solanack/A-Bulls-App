@@ -138,6 +138,8 @@ export class FieldOS {
     this.watchlist=saveWatchlist(toggleWatchItem(this.watchlist,{subjectKind:"wallet",subjectId:section.wallet,galaxyId:this.galaxy.id,name:trader?.identity??section.label,symbol:null,handle:room==="fomo"?section.handle:null,chainKey:null,lastPrint:trader?.latestPrint?{side:trader.latestPrint.side,at:trader.latestPrint.at,symbol:trader.latestPrint.symbol}:null}));
     this.#applyWatchChange();return isWatched(this.watchlist,"wallet",section.wallet);
   }
+  toggleWatchSubject(next:Parameters<typeof toggleWatchItem>[1]){this.watchlist=saveWatchlist(toggleWatchItem(this.watchlist,next));this.#applyWatchChange();return isWatched(this.watchlist,next.subjectKind,next.subjectId);}
+  setFieldSuspended(on:boolean){this.field.setSuspended(on);}
   isTraderWatched(){const section=this.#traderSection();return Boolean(section?.wallet&&isWatched(this.watchlist,"wallet",section.wallet));}
   removeWatch(item:Pick<WatchItem,"subjectKind"|"subjectId">){this.watchlist=saveWatchlist(removeWatchItem(this.watchlist,item.subjectKind,item.subjectId));this.#applyWatchChange();}
   #applyWatchChange(){this.field.setWatchlistMints(tokenWatchMints(this.watchlist));if(this.fieldSection.kind==="watchlist")this.enterWatchlist();this.#emit();}
