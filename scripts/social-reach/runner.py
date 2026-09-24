@@ -83,15 +83,15 @@ def exa_search(item, since, until):
     symbol = str(item.get("symbol") or "").lstrip("$")
     name = str(item.get("name") or "")
     mint = str(item.get("mint") or "")
-    aliases = ", ".join(part for part in (name, f"$"+"{symbol}" if symbol else "", f"mint "+"{mint}" if mint else "") if part)
-    query = f"X.com status posts about the token "+"{aliases}"+f" published between "+"{since}"+f" and "+"{until}"+ " site:x.com"
+    aliases = ", ".join(part for part in (name, f"${symbol}" if symbol else "", f"mint {mint}" if mint else "") if part)
+    query = f"X.com status posts about the token {aliases} published between {since} and {until} site:x.com"
     out = subprocess.run(
-        ["mcporter", "call", "exa.web_search_exa", f"query="+"{query}", "numResults=15", "--output", "text"],
+        ["mcporter", "call", "exa.web_search_exa", f"query={query}", "numResults=15", "--output", "text"],
         capture_output=True, text=True, timeout=120,
     )
     if out.returncode != 0:
         detail = (out.stderr or out.stdout or "").strip().splitlines()
-        raise RuntimeError(f"exa exit "+"{out.returncode}"+f": "+"{(detail[-1] if detail else 'no detail')[:180]}")
+        raise RuntimeError(f"exa exit {out.returncode}: {(detail[-1] if detail else 'no detail')[:180]}")
     posts = []
     for block in re.split(r"\n\s*-{3,}\s*\n", out.stdout):
         match = STATUS_URL.search(block)
