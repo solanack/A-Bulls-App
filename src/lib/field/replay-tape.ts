@@ -225,12 +225,71 @@ export function cohortTicks(items: unknown, candles: readonly TapeCandle[], star
 
 export type BoltGroup = { key: string; side: "buy" | "sell"; bolts: TapeBolt[]; lead: TapeBolt; count: number; cursor: number; notional: number | null };
 
+function observedUsdNotional(print: Pick<TapeEvent, "amount" | "priceUsd">): number | null {
+  const amount = print.amount, price = print.priceUsd;
+  return typeof amount === "number" && Number.isFinite(amount) && amount > 0 && typeof price === "number" && Number.isFinite(price) && price > 0
+    ? amount * price
+    : null;
+}
+
+/** Compact observed notional for bolt labels. Invalid/unknown values deliberately render nothing. */
+export function formatUsdNotional(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  if (value < 100) return `${Math.round(value).toLocaleString("en-US")}`;
+  if (value < 10_000) return `${Math.round(value).toLocaleString("en-US")}`;
+  if (value < 1_000_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+  return `${(value / 1_000_000).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1")}M`;
+}
+
+export type TapeUsdSummary = {
+  boughtUsd: number | null;
+  soldUsd: number | null;
+  avgBuyUsd: number | null;
+  avgSellUsd: number | null;
+  buyUsdCount: number;
+  buyTotal: number;
+  sellUsdCount: number;
+  sellTotal: number;
+};
+
+/** Observed USD only: amount × priceUsd. Missing amount or price never contributes a dollar. */
+export function tapeUsdSummary(bolts: readonly TapeBolt[]): TapeUsdSummary {
+  const side = (which: "buy" | "sell") => {
+    const prints = bolts.filter((bolt) => bolt.side === which);
+    let notional = 0, amount = 0, count = 0;
+    for (const bolt of prints) {
+      const value = observedUsdNotional(bolt);
+      if (value == null) continue;
+      notional += value;
+      amount += bolt.amount as number;
+      count++;
+    }
+    return {
+      usd: count ? notional : null,
+      avg: count && amount > 0 ? notional / amount : null,
+      count,
+      total: prints.length,
+    };
+  };
+  const buy = side("buy"), sell = side("sell");
+  return {
+    boughtUsd: buy.usd,
+    soldUsd: sell.usd,
+    avgBuyUsd: buy.avg,
+    avgSellUsd: sell.avg,
+    buyUsdCount: buy.count,
+    buyTotal: buy.total,
+    sellUsdCount: sell.count,
+    sellTotal: sell.total,
+  };
+}
+
 /** Several prints on one bar and side become one bolt with a count. Notional is amount × price when both are known. */
 export function groupBolts(bolts: readonly TapeBolt[]): BoltGroup[] {
   const groups = new Map<string, BoltGroup>();
   for (const bolt of bolts) {
     const key = `${bolt.candleTime ?? `t${bolt.timestamp}`}:${bolt.side}`;
-    const value = bolt.amount != null && bolt.priceUsd != null ? bolt.amount * bolt.priceUsd : null;
+    const value = observedUsdNotional(bolt);
     const group = groups.get(key);
     if (group) {
       group.bolts.push(bolt);

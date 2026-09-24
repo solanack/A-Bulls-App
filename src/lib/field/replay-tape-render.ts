@@ -1,4 +1,4 @@
-import { groupBolts, priceAxisLabel, strikePhase, tapeAxis, type BoltGroup, type CohortTick, type TapeBolt, type TapeCandle } from "./replay-tape.ts";
+import { formatUsdNotional, groupBolts, priceAxisLabel, strikePhase, tapeAxis, type BoltGroup, type CohortTick, type TapeBolt, type TapeCandle } from "./replay-tape.ts";
 
 export const TAPE_BG = "#0b0c10";
 /** Tape colours. Bolts never use these. */
@@ -126,6 +126,22 @@ function drawLightning(ctx: CanvasRenderingContext2D, key: string, side: "buy" |
   strokeLightning(ctx, [headOf(main, keep), ...alive], side, k, 0.35 + 0.65 * keep);
 }
 
+function drawNotional(ctx: CanvasRenderingContext2D, x: number, y: number, side: "buy" | "sell", notional: number | null, k: number) {
+  if (notional == null) return;
+  const label = formatUsdNotional(notional);
+  if (!label) return;
+  ctx.save();
+  ctx.font = `760 ${Math.round(10 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  const padX = 5 * k, h = 16 * k, w = ctx.measureText(label).width + padX * 2;
+  ctx.fillStyle = "rgba(5,6,9,.88)";
+  ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 4 * k); ctx.fill();
+  ctx.fillStyle = BOLT[side].fill;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, x, y + 0.25 * k);
+  ctx.restore();
+}
+
 function drawCount(ctx: CanvasRenderingContext2D, x: number, y: number, side: "buy" | "sell", count: number, k: number) {
   const label = `×${count}`;
   ctx.font = `750 ${Math.round(10 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
@@ -161,7 +177,7 @@ export function robustPriceRange(candles: readonly TapeCandle[], keep: readonly 
 export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltHit[] {
   const { width: w, height: h, candles, bolts, start, end, cursor } = frame;
   const k = frame.scale ?? 1, log = frame.scaleMode === "log";
-  const pad = frame.pad ?? { top: 28 * k, right: 64 * k, bottom: 30 * k, left: 18 * k };
+  const pad = frame.pad ?? { top: 44 * k, right: 64 * k, bottom: 30 * k, left: 18 * k };
   const plotW = Math.max(1, w - pad.left - pad.right), plotH = Math.max(1, h - pad.top - pad.bottom);
   const axis = tapeAxis(candles, start, end);
   const xAt = (frac: number) => pad.left + Math.min(1, Math.max(0, frac)) * plotW;
@@ -177,6 +193,7 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
   const scar = (frame.scarPx ?? 12) * k;
   const cohort = (frame.cohort ?? []).filter((tick) => tick.cursor <= cursor + 1e-9);
   const strikes: { group: BoltGroup; x: number; y: number; phase: { phase: "down" | "up"; progress: number } }[] = [];
+  const notionalLabels: { group: BoltGroup; x: number }[] = [];
   const placeBolt = (group: BoltGroup, x: number, y: number) => {
     const phase = strikePhase(frame.strikeAge?.(group) ?? null), selected = group.bolts.some((bolt) => bolt.id === frame.selectedId);
     if (phase.phase !== "scar") strikes.push({ group, x, y, phase });
@@ -184,6 +201,7 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
       drawScar(ctx, x, y, group.side, scar * (selected ? 1.12 : 1), k, selected);
       if (group.count > 1) drawCount(ctx, x + scar * 0.45, y - scar * 0.6, group.side, group.count, k);
     }
+    if (group.notional != null) notionalLabels.push({ group, x });
     hits.push({ id: (selected ? group.bolts.find((bolt) => bolt.id === frame.selectedId) : group.lead)?.id ?? group.lead.id, x, y, r: Math.max(16 * k, scar * 1.3) });
   };
   const placeTick = (tick: CohortTick, x: number, y: number) => {
@@ -263,7 +281,8 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
     for (const tick of cohort) placeTick(tick, xAt(tick.cursor), mid + scar);
     for (const group of groups) placeBolt(group, xAt(group.lead.cursor), mid + (group.side === "buy" ? 1 : -1) * scar * 0.9);
   }
-  for (const strike of strikes) drawLightning(ctx, strike.group.key, strike.group.side, strike.x, pad.top, strike.y, k, strike.phase);
+  for (const strike of strikes) drawLightning(ctx, strike.group.key, strike.group.side, strike.x, pad.top + 18 * k, strike.y, k, strike.phase);
+  for (const label of notionalLabels) drawNotional(ctx, label.x, pad.top + 7 * k, label.group.side, label.group.notional, k);
 
   if (cursor > 0 && cursor < 1) {
     ctx.strokeStyle = CHAMPAGNE;

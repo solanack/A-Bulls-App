@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anchorBolts, cohortTicks, fullTape, groupBolts, hopSchedule, notionalScale, priceAxisLabel, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeScaleFor, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
+import { anchorBolts, cohortTicks, formatUsdNotional, fullTape, groupBolts, hopSchedule, notionalScale, priceAxisLabel, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeScaleFor, tapeUsdSummary, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
 
 const AB_WALLET = "G39wywquKbHK8F2wZZZFX3fcsyG91VCCbbr6WEVp5axy";
 const AB_MINT = "XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1";
@@ -160,4 +160,52 @@ test("hero lightning strikes down, returns up, then leaves a scar; only FOMO use
   assert.deepEqual(strikePhase(null), { phase: "scar" });
   assert.equal(tapeScaleFor("fomo"), "log");
   assert.equal(tapeScaleFor("afterbell"), "linear");
+});
+
+
+test("USD notional labels use the requested compact rounding", () => {
+  assert.equal(formatUsdNotional(12.4), "$12");
+  assert.equal(formatUsdNotional(1_239.6), "$1,240");
+  assert.equal(formatUsdNotional(12_440), "$12.4k");
+  assert.equal(formatUsdNotional(1_240_000), "$1.24M");
+  assert.equal(formatUsdNotional(0), "");
+  assert.equal(formatUsdNotional(Number.NaN), "");
+});
+
+test("USD summary ignores prints without observed positive amount and priceUsd", () => {
+  const bolts=anchorBolts([
+    eventAt("b1",H,"buy",{amount:10,priceUsd:2}),
+    eventAt("b2",H+1,"buy",{amount:5,priceUsd:null}),
+    eventAt("s1",H+2,"sell",{amount:4,priceUsd:3}),
+    eventAt("s2",H+3,"sell",{amount:null,priceUsd:4}),
+    eventAt("b3",H+4,"buy",{amount:2,priceUsd:0}),
+  ],[],0,2*H);
+  assert.deepEqual(tapeUsdSummary(bolts),{boughtUsd:20,soldUsd:12,avgBuyUsd:2,avgSellUsd:3,buyUsdCount:1,buyTotal:3,sellUsdCount:1,sellTotal:2});
+});
+
+test("USD summary average is size-weighted by observed token amount", () => {
+  const bolts=anchorBolts([
+    eventAt("a",H,"buy",{amount:10,priceUsd:1}),
+    eventAt("b",H+1,"buy",{amount:30,priceUsd:3}),
+  ],[],0,2*H);
+  const summary=tapeUsdSummary(bolts);
+  assert.equal(summary.boughtUsd,100);
+  assert.equal(summary.avgBuyUsd,2.5);
+  assert.notEqual(summary.avgBuyUsd,(10+90)/2);
+});
+
+test("grouped bolt notional sums only qualifying observed USD prints and unknown never becomes zero", () => {
+  const candles=[candleAt(0)];
+  const bolts=anchorBolts([
+    eventAt("a",candles[0].timestamp+1,"buy",{amount:10,priceUsd:2}),
+    eventAt("b",candles[0].timestamp+2,"buy",{amount:5,priceUsd:3}),
+    eventAt("c",candles[0].timestamp+3,"buy",{amount:4,priceUsd:null}),
+    eventAt("d",candles[0].timestamp+4,"sell",{amount:null,priceUsd:null}),
+  ],candles,candles[0].timestamp,candles[0].timestamp+H);
+  const groups=groupBolts(bolts),buy=groups.find(group=>group.side==="buy"),sell=groups.find(group=>group.side==="sell");
+  assert.equal(buy?.notional,35);
+  assert.equal(sell?.notional,null);
+  const summary=tapeUsdSummary([bolts[3]]);
+  assert.equal(summary.soldUsd,null);
+  assert.equal(summary.avgSellUsd,null);
 });

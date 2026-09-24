@@ -99,7 +99,7 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   ctx.fillStyle = TAPE_BG;
   ctx.fillRect(0, 0, w, h);
   ctx.translate(0, chartTop);
-  drawTape(ctx, { width: w, height: chartBottom - chartTop, candles: input.candles, bolts: input.bolts, cohort: input.cohort?.length ? input.cohort : undefined, start: input.start, end: input.end, cursor, scaleMode: input.scaleMode ?? "log", scarPx: 13, strikeAge, scale: portrait ? 3 : 2.4, pad: { top: 24 * k, right: (portrait ? 190 : 210) * k, bottom: 64 * k, left: 24 * k } });
+  drawTape(ctx, { width: w, height: chartBottom - chartTop, candles: input.candles, bolts: input.bolts, cohort: input.cohort?.length ? input.cohort : undefined, start: input.start, end: input.end, cursor, scaleMode: input.scaleMode ?? "log", scarPx: 13, strikeAge, scale: portrait ? 3 : 2.4, pad: { top: 52 * k, right: (portrait ? 190 : 210) * k, bottom: 64 * k, left: 24 * k } });
   ctx.restore();
 
   const left = 56 * k;
