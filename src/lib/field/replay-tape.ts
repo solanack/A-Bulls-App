@@ -24,6 +24,8 @@ export type TapeEvent = {
   signature: string | null;
   amount: number | null;
   priceUsd: number | null;
+  /** Observed/provider-reported USD notional already present on the print, never inferred from candles. */
+  notionalUsd?: number | null;
   verification: string;
   sources: string[];
   kind: string;
@@ -32,11 +34,28 @@ export type TapeBolt = TapeEvent & { candleTime: number | null; anchorPrice: num
 
 type Row = Record<string, unknown>;
 const rows = (value: unknown): Row[] => (Array.isArray(value) ? value.filter((row): row is Row => Boolean(row) && typeof row === "object" && !Array.isArray(row)) : []);
+const row = (value: unknown): Row => (value && typeof value === "object" && !Array.isArray(value) ? value as Row : {});
 const str = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
 const finite = (value: unknown) => {
   const n = Number(value);
   return value != null && value !== "" && Number.isFinite(n) ? n : null;
 };
+const positive = (...values: unknown[]) => {
+  for (const value of values) { const n = finite(value); if (n != null && n > 0) return n; }
+  return null;
+};
+const absPositive = (...values: unknown[]) => {
+  for (const value of values) { const n = finite(value); if (n != null && Math.abs(n) > 0) return Math.abs(n); }
+  return null;
+};
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const usdcText = (value: unknown) => /^(?:USDC|USD COIN)$/i.test(str(value) ?? "");
+function quoteIsUsdc(record: Row, execution: Row) {
+  const quoteAsset = row(record.quoteAsset ?? record.quoteToken);
+  const mints = [record.quoteMint, record.quote_mint, record.quoteTokenMint, record.quote_token_mint, execution.quoteMint, execution.quote_mint, quoteAsset.mint];
+  if (mints.some((value) => (str(value) ?? "").startsWith("EPjFWdd5") || str(value) === USDC_MINT)) return true;
+  return [record.quoteSymbol, record.quote_symbol, record.quoteCurrency, record.quote_currency, execution.quoteSymbol, execution.quote_symbol, quoteAsset.symbol, record.quote].some(usdcText);
+}
 
 /** Seconds or milliseconds in, milliseconds out. */
 export function toMs(value: unknown): number | null {
@@ -120,15 +139,21 @@ export function tapeEvents(value: unknown): TapeEvent[] {
       const side = String(row.side ?? "").toLowerCase();
       const timestamp = toMs(row.timestamp);
       if ((side !== "buy" && side !== "sell") || !timestamp) return [];
-      const delta = finite(row.tokenDelta);
+      const execution = row(row.execution);
+      const amount = absPositive(row.tokenDelta, row.amount, row.token_delta, execution.baseAmount, row.baseAmount);
+      const priceUsd = positive(row.priceUsd, row.price_usd, row.avg_entry_price, row.avg_exit_price);
+      const readyNotional = positive(row.valueUsd, row.usdValue, row.notionalUsd, row.usd_notional)
+        ?? (quoteIsUsdc(row, execution) ? positive(execution.quoteAmount, row.quoteAmount) : null);
+      const notionalUsd = readyNotional ?? (amount != null && priceUsd != null ? amount * priceUsd : null);
       const sources = Array.isArray(row.sources) ? row.sources.map(String).filter(Boolean) : [];
       return [{
         id: str(row.id) ?? str(row.signature) ?? `${side}:${timestamp}`,
         side: side as "buy" | "sell",
         timestamp,
         signature: str(row.signature),
-        amount: delta != null ? Math.abs(delta) : null,
-        priceUsd: finite(row.priceUsd),
+        amount,
+        priceUsd,
+        notionalUsd,
         verification: str(row.verification) ?? str(row.sourceKind) ?? "observed",
         sources,
         kind: str(row.kind) ?? "trade",
@@ -225,7 +250,9 @@ export function cohortTicks(items: unknown, candles: readonly TapeCandle[], star
 
 export type BoltGroup = { key: string; side: "buy" | "sell"; bolts: TapeBolt[]; lead: TapeBolt; count: number; cursor: number; notional: number | null };
 
-function observedUsdNotional(print: Pick<TapeEvent, "amount" | "priceUsd">): number | null {
+function observedUsdNotional(print: Pick<TapeEvent, "amount" | "priceUsd" | "notionalUsd">): number | null {
+  const ready = print.notionalUsd;
+  if (typeof ready === "number" && Number.isFinite(ready) && ready > 0) return ready;
   const amount = print.amount, price = print.priceUsd;
   return typeof amount === "number" && Number.isFinite(amount) && amount > 0 && typeof price === "number" && Number.isFinite(price) && price > 0
     ? amount * price
@@ -256,18 +283,21 @@ export type TapeUsdSummary = {
 export function tapeUsdSummary(bolts: readonly TapeBolt[]): TapeUsdSummary {
   const side = (which: "buy" | "sell") => {
     const prints = bolts.filter((bolt) => bolt.side === which);
-    let notional = 0, amount = 0, count = 0;
+    let totalNotional = 0, pricedCount = 0, weightedNotional = 0, weightedAmount = 0;
     for (const bolt of prints) {
       const value = observedUsdNotional(bolt);
       if (value == null) continue;
-      notional += value;
-      amount += bolt.amount as number;
-      count++;
+      totalNotional += value;
+      pricedCount++;
+      if (typeof bolt.amount === "number" && Number.isFinite(bolt.amount) && bolt.amount > 0) {
+        weightedNotional += value;
+        weightedAmount += bolt.amount;
+      }
     }
     return {
-      usd: count ? notional : null,
-      avg: count && amount > 0 ? notional / amount : null,
-      count,
+      usd: pricedCount ? totalNotional : null,
+      avg: weightedAmount > 0 ? weightedNotional / weightedAmount : pricedCount ? totalNotional / pricedCount : null,
+      count: pricedCount,
       total: prints.length,
     };
   };
@@ -282,6 +312,18 @@ export function tapeUsdSummary(bolts: readonly TapeBolt[]): TapeUsdSummary {
     sellUsdCount: sell.count,
     sellTotal: sell.total,
   };
+}
+
+/** Quiet coverage copy for observed/provider USD only. A grouped one-priced-fill bar avoids a misleading fraction. */
+export function tapeUsdCoverage(bolts: readonly TapeBolt[], which: "buy" | "sell"): string | null {
+  const prints = bolts.filter((bolt) => bolt.side === which), total = prints.length;
+  if (!total) return null;
+  const priced = prints.filter((bolt) => observedUsdNotional(bolt) != null);
+  if (priced.length === total) return null;
+  if (!priced.length) return `No priced ${which === "buy" ? "buys" : "sells"}`;
+  const groups = groupBolts(prints);
+  if (priced.length === 1 && groups.length === 1 && groups[0].count === total) return "Size from 1 priced fill";
+  return `Size from ${priced.length} of ${total} priced ${which === "buy" ? "buys" : "sells"}`;
 }
 
 /** Several prints on one bar and side become one bolt with a count. Notional is amount × price when both are known. */
@@ -310,6 +352,10 @@ export function notionalScale(group: BoltGroup, groups: readonly BoltGroup[]) {
 }
 
 /** Right-axis price with 3 significant figures. Tiny prices use a subscript zero count: 0.0₄132. */
+export function formatUsdPrice(value: number | null): string {
+  return value != null && Number.isFinite(value) && value > 0 ? "$" + priceAxisLabel(value) : "—";
+}
+
 export function priceAxisLabel(value: number) {
   if (!Number.isFinite(value)) return "";
   const abs = Math.abs(value), sign = value < 0 ? "-" : "";
@@ -363,14 +409,14 @@ export function strikePhase(ageMs: number | null): StrikePhase {
 }
 
 /** Header counts over the whole tape: hero buys and sells, and how many cohort buys came after. */
+export function tapeEvidenceLine(bolts: readonly TapeBolt[]) {
+  const reported = bolts.filter((bolt) => bolt.verification === "provider-reported").length;
+  return !bolts.length ? null : reported === bolts.length ? "Fomo-reported" : reported ? "Observed + Fomo-reported" : "Observed on-chain";
+}
+
 export function tapeHeaderLine(input: { token: string; trader: string; bolts: readonly TapeBolt[]; cohortCount: number | null }) {
   const buys = input.bolts.filter((bolt) => bolt.side === "buy").length, sells = input.bolts.length - buys;
-  const reported = input.bolts.filter((bolt) => bolt.verification === "provider-reported").length;
-  const evidence = !input.bolts.length ? null : reported === input.bolts.length ? "Fomo-reported" : reported ? "Observed + Fomo-reported" : "Observed on-chain";
-  const parts = [input.token, `${input.trader} ${buys} ${buys === 1 ? "buy" : "buys"}`, `${sells} ${sells === 1 ? "sell" : "sells"}`];
-  if (input.cohortCount != null) parts.push(`${input.cohortCount} cohort ${input.cohortCount === 1 ? "buy" : "buys"} after this print`);
-  if (evidence) parts.push(evidence);
-  return parts.join(" · ");
+  return `${input.trader} · ${buys} ${buys === 1 ? "buy" : "buys"} · ${sells} ${sells === 1 ? "sell" : "sells"}`;
 }
 
 /** Price axis: FOMO memecoins read on a log scale; Afterbell xStocks stay linear. */

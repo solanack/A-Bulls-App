@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anchorBolts, cohortTicks, formatUsdNotional, fullTape, groupBolts, hopSchedule, notionalScale, priceAxisLabel, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeScaleFor, tapeUsdSummary, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
+import { anchorBolts, cohortTicks, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, notionalScale, priceAxisLabel, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
 
 const AB_WALLET = "G39wywquKbHK8F2wZZZFX3fcsyG91VCCbbr6WEVp5axy";
 const AB_MINT = "XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1";
@@ -113,7 +113,7 @@ test("cohort ticks sit on their candle slot and stay inside the tape", () => {
 test("header counts the hero and cohort without claiming a follow", () => {
   const bolts = anchorBolts([eventAt("a", H, "buy", { verification: "provider-reported" })], [], 0, 2 * H);
   const line = tapeHeaderLine({ token: "MarsCoin", trader: "Unipcs", bolts, cohortCount: 7 });
-  assert.equal(line, "MarsCoin · Unipcs 1 buy · 0 sells · 7 cohort buys after this print · Fomo-reported");
+  assert.equal(line, "Unipcs · 1 buy · 0 sells");
   assert.doesNotMatch(line, /follow|cop(y|ied)/i);
 });
 
@@ -168,6 +168,7 @@ test("USD notional labels use the requested compact rounding", () => {
   assert.equal(formatUsdNotional(1_239.6), "$1,240");
   assert.equal(formatUsdNotional(12_440), "$12.4k");
   assert.equal(formatUsdNotional(1_240_000), "$1.24M");
+  assert.equal(formatUsdNotional(107_000), "$107k");
   assert.equal(formatUsdNotional(0), "");
   assert.equal(formatUsdNotional(Number.NaN), "");
 });
@@ -208,4 +209,48 @@ test("grouped bolt notional sums only qualifying observed USD prints and unknown
   const summary=tapeUsdSummary([bolts[3]]);
   assert.equal(summary.soldUsd,null);
   assert.equal(summary.avgSellUsd,null);
+});
+
+
+test("tapeEvents maps alternate observed amount, execution size, and ready USD notional keys", () => {
+  const events=tapeEvents([
+    {id:"amount",side:"buy",timestamp:H,amount:12,avg_entry_price:2},
+    {id:"execution",side:"buy",timestamp:H+1,execution:{baseAmount:8},price_usd:3},
+    {id:"ready",side:"sell",timestamp:H+2,valueUsd:107000},
+  ]);
+  assert.equal(events[0].amount,12);
+  assert.equal(events[0].priceUsd,2);
+  assert.equal(events[0].notionalUsd,24);
+  assert.equal(events[1].amount,8);
+  assert.equal(events[1].notionalUsd,24);
+  assert.equal(events[2].amount,null);
+  assert.equal(events[2].notionalUsd,107000);
+});
+
+test("USDC quote amount becomes observed notionalUsd", () => {
+  const [event]=tapeEvents([{id:"u",side:"buy",timestamp:H,amount:4,quoteMint:"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",execution:{quoteAmount:250}}]);
+  assert.equal(event.notionalUsd,250);
+  assert.equal(tapeUsdSummary(anchorBolts([event],[],0,2*H)).boughtUsd,250);
+});
+
+test("USD summary ignores implied-only candle anchors", () => {
+  const candles=[candleAt(0)];
+  const [bolt]=anchorBolts([eventAt("implied",candles[0].timestamp+1,"buy",{amount:100,priceUsd:null,notionalUsd:null})],candles,candles[0].timestamp,candles[0].timestamp+H);
+  assert.ok(bolt.anchorPrice);
+  assert.equal(tapeUsdSummary([bolt]).boughtUsd,null);
+});
+
+test("coverage copy collapses one priced lead with unpriced siblings on the same bar", () => {
+  const candles=[candleAt(0)];
+  const bolts=anchorBolts([
+    eventAt("lead",candles[0].timestamp+1,"buy",{amount:100,priceUsd:2,notionalUsd:200}),
+    ...Array.from({length:7},(_,index)=>eventAt(`extra-${index}`,candles[0].timestamp+2+index,"buy",{amount:10,priceUsd:null,notionalUsd:null})),
+  ],candles,candles[0].timestamp,candles[0].timestamp+H);
+  assert.equal(groupBolts(bolts)[0].count,8);
+  assert.equal(tapeUsdCoverage(bolts,"buy"),"Size from 1 priced fill");
+});
+
+test("USD average label always includes a dollar sign and unknown stays an em dash", () => {
+  assert.equal(formatUsdPrice(0.00421),"$0.00421");
+  assert.equal(formatUsdPrice(null),"—");
 });

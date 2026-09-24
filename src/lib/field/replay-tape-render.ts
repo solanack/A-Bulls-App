@@ -81,7 +81,7 @@ export function boltPath(key: string, x: number, top: number, y: number, k: numb
   for (let j = 0; j < forkCount; j++) {
     const at = Math.min(main.length - 3, Math.max(1, Math.floor((0.25 + rand() * 0.45) * main.length))), origin = main[at];
     const dir = (j % 2 ? 1 : -1) * (rand() > 0.3 ? 1 : -1), points: Pt[] = [origin], segs = 2 + Math.floor(rand() * 2);
-    for (let s = 1; s <= segs; s++) { const prev = points[s - 1]; points.push([prev[0] + dir * (6 + rand() * 10) * k, prev[1] + (8 + rand() * 12) * k]); }
+    for (let s = 1; s <= segs; s++) { const prev = points[s - 1]; points.push([prev[0] + dir * (9 + rand() * 14) * k, prev[1] + (11 + rand() * 16) * k]); }
     forks.push({ at, points });
   }
   return { main, forks };
@@ -104,12 +104,28 @@ function strokeLightning(ctx: CanvasRenderingContext2D, paths: readonly Pt[][], 
   const palette = BOLT[side];
   ctx.save();
   ctx.lineJoin = "miter"; ctx.lineCap = "round";
-  ctx.globalAlpha = 0.4 * alpha; ctx.strokeStyle = palette.glow; ctx.lineWidth = 7 * k; ctx.shadowColor = palette.glow; ctx.shadowBlur = 14 * k;
+  ctx.globalAlpha = 0.46 * alpha; ctx.strokeStyle = palette.glow; ctx.lineWidth = 8.5 * k; ctx.shadowColor = palette.glow; ctx.shadowBlur = 18 * k;
   paths.forEach((path) => strokePath(ctx, path));
-  ctx.shadowBlur = 0; ctx.globalAlpha = alpha; ctx.strokeStyle = palette.fill; ctx.lineWidth = 2.4 * k;
+  ctx.shadowBlur = 0; ctx.globalAlpha = alpha; ctx.strokeStyle = palette.fill; ctx.lineWidth = 3 * k;
   paths.forEach((path) => strokePath(ctx, path));
-  ctx.strokeStyle = "rgba(255,255,255,.92)"; ctx.lineWidth = 0.9 * k;
+  ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.35 * k; ctx.shadowColor = "#ffffff"; ctx.shadowBlur = 4 * k;
   paths.forEach((path) => strokePath(ctx, path));
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawImpactBloom(ctx: CanvasRenderingContext2D, x: number, y: number, side: "buy" | "sell", k: number, alpha: number) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, alpha);
+  ctx.fillStyle = "#ffffff";
+  ctx.shadowColor = BOLT[side].glow;
+  ctx.shadowBlur = 22 * k;
+  ctx.beginPath(); ctx.arc(x, y, (4 + 7 * alpha) * k, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha *= 0.7;
+  ctx.strokeStyle = BOLT[side].fill;
+  ctx.lineWidth = 1.5 * k;
+  ctx.beginPath(); ctx.arc(x, y, (10 + 12 * alpha) * k, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
 }
 
@@ -118,12 +134,14 @@ function drawLightning(ctx: CanvasRenderingContext2D, key: string, side: "buy" |
   const { main, forks } = boltPath(key, x, top, y, k), segs = main.length - 1;
   if (phase.phase === "down") {
     const head = headOf(main, phase.progress), reached = phase.progress * segs;
-    const grown = forks.filter((fork) => fork.at <= reached).map((fork) => headOf(fork.points, Math.min(1, (reached - fork.at) / 2)));
+    const grown = forks.filter((fork) => fork.at <= reached).map((fork) => headOf(fork.points, Math.min(1, (reached - fork.at) / 1.35)));
     strokeLightning(ctx, [head, ...grown], side, k, 1);
+    drawImpactBloom(ctx, x, y, side, k, Math.max(0, (phase.progress - 0.78) / 0.22));
     return;
   }
   const keep = 1 - phase.progress, alive = forks.filter((fork) => fork.at <= keep * segs).map((fork) => fork.points);
   strokeLightning(ctx, [headOf(main, keep), ...alive], side, k, 0.35 + 0.65 * keep);
+  drawImpactBloom(ctx, x, y, side, k, Math.max(0, 1 - phase.progress * 2.2));
 }
 
 function drawNotional(ctx: CanvasRenderingContext2D, x: number, y: number, side: "buy" | "sell", notional: number | null, k: number) {
@@ -144,8 +162,8 @@ function drawNotional(ctx: CanvasRenderingContext2D, x: number, y: number, side:
 
 function drawCount(ctx: CanvasRenderingContext2D, x: number, y: number, side: "buy" | "sell", count: number, k: number) {
   const label = `×${count}`;
-  ctx.font = `750 ${Math.round(10 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  const w = ctx.measureText(label).width + 8 * k, h = 14 * k;
+  ctx.font = `750 ${Math.round(8 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  const w = ctx.measureText(label).width + 6 * k, h = 12 * k;
   ctx.fillStyle = "rgba(8,9,12,.9)";
   ctx.strokeStyle = BOLT[side].fill;
   ctx.lineWidth = Math.max(1, k);
@@ -177,7 +195,7 @@ export function robustPriceRange(candles: readonly TapeCandle[], keep: readonly 
 export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltHit[] {
   const { width: w, height: h, candles, bolts, start, end, cursor } = frame;
   const k = frame.scale ?? 1, log = frame.scaleMode === "log";
-  const pad = frame.pad ?? { top: 44 * k, right: 64 * k, bottom: 30 * k, left: 18 * k };
+  const pad = frame.pad ?? { top: 58 * k, right: 64 * k, bottom: 30 * k, left: 18 * k };
   const plotW = Math.max(1, w - pad.left - pad.right), plotH = Math.max(1, h - pad.top - pad.bottom);
   const axis = tapeAxis(candles, start, end);
   const xAt = (frac: number) => pad.left + Math.min(1, Math.max(0, frac)) * plotW;
@@ -281,8 +299,8 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
     for (const tick of cohort) placeTick(tick, xAt(tick.cursor), mid + scar);
     for (const group of groups) placeBolt(group, xAt(group.lead.cursor), mid + (group.side === "buy" ? 1 : -1) * scar * 0.9);
   }
-  for (const strike of strikes) drawLightning(ctx, strike.group.key, strike.group.side, strike.x, pad.top + 18 * k, strike.y, k, strike.phase);
-  for (const label of notionalLabels) drawNotional(ctx, label.x, pad.top + 7 * k, label.group.side, label.group.notional, k);
+  for (const strike of strikes) drawLightning(ctx, strike.group.key, strike.group.side, strike.x, pad.top, strike.y, k, strike.phase);
+  for (const label of notionalLabels) drawNotional(ctx, label.x, Math.max(10 * k, pad.top - 14 * k), label.group.side, label.group.notional, k);
 
   if (cursor > 0 && cursor < 1) {
     ctx.strokeStyle = CHAMPAGNE;
