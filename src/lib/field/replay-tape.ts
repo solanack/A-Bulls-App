@@ -235,10 +235,10 @@ function observedUsdNotional(print: Pick<TapeEvent, "amount" | "priceUsd">): num
 /** Compact observed notional for bolt labels. Invalid/unknown values deliberately render nothing. */
 export function formatUsdNotional(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "";
-  if (value < 100) return `${Math.round(value).toLocaleString("en-US")}`;
-  if (value < 10_000) return `${Math.round(value).toLocaleString("en-US")}`;
-  if (value < 1_000_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
-  return `${(value / 1_000_000).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1")}M`;
+  if (value < 100) return "$" + Math.round(value).toLocaleString("en-US");
+  if (value < 10_000) return "$" + Math.round(value).toLocaleString("en-US");
+  if (value < 1_000_000) return "$" + (value / 1_000).toFixed(1).replace(/\.0$/, "") + "k";
+  return "$" + (value / 1_000_000).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1") + "M";
 }
 
 export type TapeUsdSummary = {
