@@ -58,6 +58,9 @@ test('a request is cached by mint + day_0 and writes social_posts_retained', asy
   assert.equal(socialRequestDue({state:'empty',day0:'2026-07-28',updated_at:Math.floor(Date.now()/1000)}),false);
   assert.equal((await requestSocialFetch({INTELLIGENCE_DB:db},{mint:'not-a-mint',day0:'2026-07-28'})).ok,false);
   assert.equal(__socialIngestContract.cookiesInWorker,false);
+  const refused=await requestSocialFetch({INTELLIGENCE_DB:db},{...subject,day0:'2026-07-29',room:'fomo'},{fetchImpl:async()=>({ok:false,status:403,text:async()=>''})});
+  assert.equal(refused.state,'error');assert.equal(written.length,1);
+  assert.equal(socialRequestDue({state:'error',day0:'2026-07-29',updated_at:Math.floor(Date.now()/1000)-301}),true);
 });
 
 test('Agent-Reach, Exa, X credentials and cookies never appear in the client source', async () => {

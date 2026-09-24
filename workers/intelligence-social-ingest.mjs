@@ -137,7 +137,12 @@ export async function runSocialRequest(env,key,{fetchImpl=fetch}={}){
   const db=intelligenceDb(env);if(!db)return{state:'unavailable'};
   const row=await readRequest(db,key);if(!row)return{state:'missing'};
   await markRequest(db,key,'running');
-  try{const result=await fetchSocialPosts(env,row,{fetchImpl}),count=await retainSocialRows(db,result.rows);await markRequest(db,key,count?'done':'empty',{provider:result.provider,count,error:result.reason});return{state:count?'done':'empty',provider:result.provider,count};}
+  try{
+    const result=await fetchSocialPosts(env,row,{fetchImpl}),count=await retainSocialRows(db,result.rows);
+    // Every slice failing (e.g. Exa refusing Worker egress) is not an empty day: keep it retryable and in the host queue.
+    const state=count?'done':result.provider==='none'&&result.reason&&result.reason!=='no_safe_query'?'error':'empty';
+    await markRequest(db,key,state,{provider:result.provider,count,error:result.reason});return{state,provider:result.provider,count};
+  }
   catch(error){const code=s(error?.message||error)||'social_fetch_failed';await markRequest(db,key,'error',{error:code}).catch(()=>null);return{state:'error',error:code};}
 }
 
@@ -172,7 +177,7 @@ export async function handleSocialIngestRequest(request,env={}){
   if(url.pathname===SOCIAL_QUEUE_PATH){
     if(!authorized(request,env))return json({ok:false,error:'unauthorized'},401);
     const db=intelligenceDb(env);if(!db)return json({ok:false,error:'database_unavailable'},503);
-    const rows=(await db.prepare(`SELECT request_key,mint,chain_key,symbol,name,room,day0,state,provider,result_count,updated_at FROM social_fetch_requests WHERE state IN ('queued','empty','error') AND (provider IS NULL OR provider<>'agent-reach-twitter-cli') ORDER BY updated_at DESC LIMIT 25`).all().catch(()=>({results:[]})))?.results||[];
+    const rows=(await db.prepare(`SELECT request_key,mint,chain_key,symbol,name,room,day0,state,provider,result_count,updated_at FROM social_fetch_requests WHERE state IN ('queued','empty','error') AND (provider IS NULL OR provider<>'agent-reach-twitter-cli') AND NOT (state='empty' AND provider LIKE 'agent-reach-%' AND updated_at>unixepoch()-21600) ORDER BY updated_at DESC LIMIT 25`).all().catch(()=>({results:[]})))?.results||[];
     return json({ok:true,items:rows.map(row=>({...row,terms:socialQueryTerms(row),slices:socialSlices(row.day0)}))});
   }
   if(url.pathname===SOCIAL_INGEST_PATH){
