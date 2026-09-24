@@ -152,3 +152,18 @@ test('scheduled Fomo prewarm chooses bounded candle buckets instead of flooding 
   assert.equal(__replayMarketHydrationContract.prewarmSkipsReadyMarkets,true);
   assert.equal(__replayMarketHydrationContract.prewarmFailureCooldownHours,6);
 });
+
+test('EVM auto-quote Replay hydrates USD OHLC from the deepest pool, not a token-quoted pair',async()=>{
+  const { hydrateReplayMarketCandles, USD_QUOTE }=await import('./intelligence-replay-market-hydration.mjs');
+  const token='0xfe189e97832da1573e4e4ff034f4ffc3a15c7777',spcxb='0x1111111111111111111111111111111111111111',poolAddr='0x2222222222222222222222222222222222222222',written=[],urls=[];
+  const stmt=(sql)=>({bind:(...args)=>({sql,args,first:async()=>sql.includes('COUNT(*)')?{count:0}:null,run:async()=>({}),all:async()=>({results:[]})})});
+  const db={prepare:stmt,batch:async list=>{for(const item of list)if(item.sql.includes('intelligence_price_candles_v2'))written.push(item.args);}};
+  const fetchImpl=async url=>{urls.push(url);if(url.includes('/pools?'))return{ok:true,status:200,json:async()=>({data:[{id:`bsc_${poolAddr}`,attributes:{address:poolAddr,reserve_in_usd:'1700000'},relationships:{base_token:{data:{id:`bsc_${token}`}},quote_token:{data:{id:`bsc_${spcxb}`}}}}]})};return{ok:true,status:200,json:async()=>({data:{attributes:{ohlcv_list:[[1_785_000_000,0.11,0.12,0.1,0.111,5]]}}})};};
+  const result=await hydrateReplayMarketCandles({INTELLIGENCE_DB:db},{chain:'bsc',mint:token,from:1_784_900_000,to:1_785_100_000,bucketSeconds:3600},{fetchImpl});
+  assert.equal(result.state,'ready');
+  assert.equal(result.quoteMint,USD_QUOTE);
+  assert.ok(urls.some(url=>url.includes('/ohlcv/')&&url.includes('currency=usd')));
+  assert.equal(urls.some(url=>url.includes('currency=token')),false);
+  assert.equal(written[0][2],USD_QUOTE);
+  assert.equal(__replayMarketHydrationContract.evmAutoQuoteIsUsd,true);
+});
