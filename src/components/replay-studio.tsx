@@ -1,22 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { INTELLIGENCE_PUBLIC_ORIGIN } from "@/lib/app-origins";
-import { ArrowLeft, CalendarDays, Pause, Play, Share2, SkipBack, SkipForward, Star, Volume2, VolumeX, X } from "lucide-react";
+import { ArrowLeft, CalendarDays, Pause, Play, Share2, SkipBack, SkipForward, Star, Users, Volume2, VolumeX, X } from "lucide-react";
 import { callUniverseTool } from "@/lib/universe-intelligence";
 import { loadResearchThread, saveResearchThread } from "@/lib/research-thread-store";
 import { requestTradeResearchMode } from "@/lib/field/trade-research-navigation";
-import { anchorBolts, buildCutManifest, candleBucketMs, candleSource, candleSourceLabel, explorerUrl, groupBolts, hopSchedule, printWindow, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, tapeCandles, tapeEvents, tapeScaleFor, tapeWindow, type CutFormat, type ReplaySubject, type TapeBolt, type TapeCandle } from "@/lib/field/replay-tape";
+import { anchorBolts, buildCutManifest, candleSource, candleSourceLabel, cohortTicks, explorerUrl, fullTape, groupBolts, hopSchedule, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, tapeCandles, tapeEvents, tapeHeaderLine, tapeScaleFor, tapeWindow, type CohortTick, type CutFormat, type ReplaySubject, type TapeBolt, type TapeCandle } from "@/lib/field/replay-tape";
 import { drawTape, hitBolt, type BoltHit } from "@/lib/field/replay-tape-render";
 import { callsign } from "@/lib/field/trader-sheet";
 import { getAfterbellGalaxy, XSTOCK_REGISTRY } from "@/lib/universe-data/afterbell-client";
 import { isWatched, type WatchItem } from "@/lib/field/watchlist";
 import { socialDay0 } from "@/lib/field/social-window";
-import { ReplaySocialStrip } from "@/components/replay-social-strip";
+import { prefetchThatDay, ReplaySocialStrip } from "@/components/replay-social-strip";
+import { getReplayCohort } from "@/lib/universe-data/replay-cohort-client";
 
 type Data = Record<string, unknown>;
 type Status = "loading" | "building" | "ready" | "empty" | "error";
 const obj = (value: unknown): Data => (value && typeof value === "object" && !Array.isArray(value) ? (value as Data) : {});
 const MAX_HYDRATION_ATTEMPTS = 18;
 const TICKS_KEY = "abulls-replay-ticks";
+const COHORT_KEY = "abulls-replay-cohort";
 const SPEEDS = [0.5, 1, 2, 4] as const;
 const ROOM_CHIP = { fomo: "FOMO", afterbell: "AFTERBELL" } as const;
 const when = (ms: number) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -43,20 +45,24 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
   const [cutOpen, setCutOpen] = useState(false);
   const [socialOpen, setSocialOpen] = useState(false);
   const [ticksOn, setTicksOn] = useState(() => { try { return globalThis.localStorage?.getItem(TICKS_KEY) === "1"; } catch { return false; } });
-  const canvasRef = useRef<HTMLCanvasElement | null>(null), frameRef = useRef<HTMLDivElement | null>(null), hitsRef = useRef<BoltHit[]>([]), audioRef = useRef<{ ctx: AudioContext; tone: GainNode } | null>(null), lastTickRef = useRef(0), cursorRef = useRef(cursor), progressRef = useRef(0), strikesRef = useRef(new Map<string, number>()), drawRef = useRef<() => void>(() => {});
+  const [cohortOn, setCohortOn] = useState(() => { try { return globalThis.localStorage?.getItem(COHORT_KEY) !== "0"; } catch { return true; } });
+  const [cohortItems, setCohortItems] = useState<unknown[] | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null), frameRef = useRef<HTMLDivElement | null>(null), hitsRef = useRef<BoltHit[]>([]), audioRef = useRef<{ ctx: AudioContext; tone: GainNode } | null>(null), lastTickRef = useRef(0), cursorRef = useRef(cursor), progressRef = useRef(0), strikesRef = useRef(new Map<string, number>()), visitedRef = useRef(new Set<string>()), drawRef = useRef<() => void>(() => {});
   const audible = ticksOn && !muted;
   const [size, setSize] = useState({ w: 0, h: 0, dpr: 1 });
 
   const candles = useMemo(() => tapeCandles(bundle?.candles), [bundle]);
   const events = useMemo(() => tapeEvents(bundle?.events), [bundle]);
   const window_ = useMemo(() => (subject ? tapeWindow(bundle?.window, candles, events, subject) : { start: 0, end: 1 }), [bundle, candles, events, subject]);
-  const view = useMemo(() => printWindow(candles, events, window_), [candles, events, window_]);
-  const viewCandles = useMemo(() => { const bucket = candleBucketMs(candles); return candles.filter((row) => row.timestamp + bucket > view.start && row.timestamp < view.end); }, [candles, view]);
+  const view = useMemo(() => fullTape(candles, events, window_), [candles, events, window_]);
   const bolts = useMemo(() => anchorBolts(events, candles, view.start, view.end), [events, candles, view]);
+  const ticks = useMemo(() => cohortTicks(cohortItems, candles, view.start, view.end), [cohortItems, candles, view]);
+  const firstBuy = events.find((event) => event.side === "buy")?.timestamp ?? null;
   const groups = useMemo(() => groupBolts(bolts), [bolts]);
   const schedule = useMemo(() => hopSchedule(groups.map((group) => group.cursor)), [groups]);
   const playMs = Math.min(16_000, Math.max(4_000, schedule.stops.length * 900));
   const selected = bolts.find((bolt) => bolt.id === selectedId) ?? null;
+  const selectedTick = cohortOn ? ticks.find((tick) => tick.id === selectedId) ?? null : null;
   const visible = bolts.filter((bolt) => bolt.cursor <= cursor);
   const latest = visible.at(-1) ?? null;
   const source = candleSource(bundle?.candles);
@@ -73,6 +79,18 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
     void getAfterbellGalaxy().then((data) => { if (!cancelled && data.ok) setResolvedSymbol(data.planets.find((row) => row.mint === subject.mint)?.symbol ?? null); }).catch(() => {});
     return () => { cancelled = true; };
   }, [subject]);
+
+  useEffect(() => {
+    if (!subject || status !== "ready" || !events.length) return;
+    void prefetchThatDay({ mint: subject.mint, day0: socialDay0(events[0].timestamp), symbol: subject.symbol ?? resolvedSymbol, name: null, wallet: subject.wallet, room, chain: subject.chainKey }).catch(() => null);
+  }, [subject, status, events, resolvedSymbol, room]);
+
+  useEffect(() => {
+    if (!subject || !room || firstBuy == null || status !== "ready") return;
+    let cancelled = false;
+    void getReplayCohort({ data: { room, chain: subject.chainKey, mint: subject.mint, wallet: subject.wallet, after: firstBuy / 1000, to: view.end / 1000 } }).then((result) => { if (!cancelled) setCohortItems(result.ok ? result.items : []); }).catch(() => { if (!cancelled) setCohortItems([]); });
+    return () => { cancelled = true; };
+  }, [subject, room, firstBuy, status, view.end]);
 
   useEffect(() => {
     if (!subject) return;
@@ -120,10 +138,10 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
     if (canvas.width !== px || canvas.height !== py) { canvas.width = px; canvas.height = py; }
     ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
     const compact = size.w < 560, now = performance.now();
-    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles: viewCandles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, boltPx: compact ? 24 : 20, strikeAge: (group) => { const at = strikesRef.current.get(group.key); return at == null ? null : now - at; }, pad: { top: 22, right: compact ? 56 : 72, bottom: 28, left: compact ? 14 : 24 } });
+    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, cohort: cohortOn ? ticks : undefined, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 11 : 14, strikeAge: (group) => { const at = strikesRef.current.get(group.key); return at == null ? null : now - at; }, pad: { top: 22, right: compact ? 52 : 72, bottom: 28, left: compact ? 8 : 20 } });
   };
 
-  useEffect(() => { drawRef.current(); }, [size, viewCandles, bolts, view, cursor, selectedId, scaleMode]);
+  useEffect(() => { drawRef.current(); }, [size, candles, bolts, ticks, cohortOn, view, cursor, selectedId, scaleMode]);
 
   useEffect(() => {
     if (!playing) return;
@@ -143,9 +161,12 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
     const previous = cursorRef.current;
     cursorRef.current = cursor;
     if (cursor <= previous + 1e-9) return;
-    const crossed = groups.filter((group) => group.cursor > previous + 1e-9 && group.cursor <= cursor + 1e-9);
+    const crossed = groups.filter((group) => group.cursor >= previous - 1e-9 && group.cursor <= cursor + 1e-9);
     if (!crossed.length) return;
-    const struck = crossed[crossed.length - 1], now = performance.now();
+    const fresh = crossed.filter((group) => !visitedRef.current.has(group.key));
+    crossed.forEach((group) => visitedRef.current.add(group.key));
+    if (!fresh.length) return;
+    const struck = fresh[fresh.length - 1], now = performance.now();
     if (!globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
       strikesRef.current.set(struck.key, now);
       let raf = 0;
@@ -212,6 +233,12 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
     try { globalThis.localStorage?.setItem(TICKS_KEY, next ? "1" : "0"); } catch { /* optional */ }
     if (next && !muted && !audioRef.current) window.setTimeout(primeAudio, 0);
   }
+  function toggleCohort() {
+    const next = !cohortOn;
+    setCohortOn(next);
+    if (!next && selectedId?.startsWith("cohort:")) setSelectedId(null);
+    try { globalThis.localStorage?.setItem(COHORT_KEY, next ? "1" : "0"); } catch { /* optional */ }
+  }
   function watch(kind: "wallet" | "token") {
     if (!subject || !onToggleWatch) return;
     const last = bolts.at(-1);
@@ -220,7 +247,8 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
   function onCanvasPointer(event: React.PointerEvent<HTMLCanvasElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     const id = hitBolt(hitsRef.current, event.clientX - rect.left, event.clientY - rect.top);
-    if (id) { primeAudio(); setPlaying(false); setSelectedId(id); setSocialOpen(false); const bolt = bolts.find((row) => row.id === id); if (bolt && audioRef.current && audible) playTick(audioRef.current.ctx, bolt.side); }
+    if (id?.startsWith("cohort:")) { setPlaying(false); setSelectedId(id); setSocialOpen(false); }
+    else if (id) { primeAudio(); setPlaying(false); setSelectedId(id); setSocialOpen(false); const bolt = bolts.find((row) => row.id === id); if (bolt && audioRef.current && audible) playTick(audioRef.current.ctx, bolt.side); }
     else setSelectedId(null);
   }
   async function share() {
@@ -264,6 +292,8 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
   const day0 = events.length ? socialDay0(events[0].timestamp) : null;
   const traderWatched = isWatched(watchlist, "wallet", subject.wallet);
   const tokenWatched = isWatched(watchlist, "token", subject.mint);
+  const tokenLabel = subject.symbol ?? resolvedSymbol ?? callsign(subject.mint), traderLabel = subject.displayName ?? handle ?? callsign(subject.wallet);
+  const headerLine = status === "ready" ? tapeHeaderLine({ token: tokenLabel, trader: traderLabel, bolts, cohortCount: cohortItems ? ticks.length : null }) : null;
 
   return (
     <section className="rs" data-room={room ?? undefined} data-status={status} aria-label="Replay">
@@ -272,7 +302,10 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
         <button type="button" className="rs-icon" aria-label="Back to the Field" onClick={onBack}><ArrowLeft size={17} /></button>
         <div className="rs-title">
           {room ? <span className="rs-chip">{ROOM_CHIP[room]}</span> : null}
-          <h1>{title}</h1>
+          <div className="rs-title__text">
+            <h1>{title}</h1>
+            {headerLine ? <p className="rs-line" data-testid="replay-header-line">{headerLine}</p> : null}
+          </div>
         </div>
         <button type="button" className="rs-icon" aria-label={ticksOn ? "Turn tick sound off" : "Turn tick sound on"} aria-pressed={ticksOn} title={muted ? "Sound is muted in the Field" : undefined} onClick={toggleTicks}>{audible ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
       </header>
@@ -280,9 +313,10 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
         {onToggleWatch ? <button type="button" className="rs-act" aria-pressed={traderWatched} onClick={() => watch("wallet")}><Star size={12} fill={traderWatched ? "currentColor" : "none"} /> {traderWatched ? "WATCHING TRADER" : "WATCH TRADER"}</button> : null}
         {onToggleWatch ? <button type="button" className="rs-act" aria-pressed={tokenWatched} onClick={() => watch("token")}><Star size={12} fill={tokenWatched ? "currentColor" : "none"} /> {tokenWatched ? "WATCHING TOKEN" : "WATCH TOKEN"}</button> : null}
         <button type="button" className="rs-act" aria-pressed={socialOpen} disabled={!day0} onClick={() => { setSelectedId(null); setSocialOpen((value) => !value); }}><CalendarDays size={12} /> THAT DAY</button>
+        {room ? <button type="button" className="rs-act" aria-pressed={cohortOn} onClick={toggleCohort} title="Other wallets in this room buying this token after this print. Timing only."><Users size={12} /> COHORT{cohortItems ? ` ${ticks.length}` : ""}</button> : null}
       </nav>
 
-      <div className="rs-frame" ref={frameRef} data-scale={scaleMode} data-view-start={Math.round(view.start)} data-view-end={Math.round(view.end)} data-bolt-groups={groups.length}>
+      <div className="rs-frame" ref={frameRef} data-scale={scaleMode} data-view-start={Math.round(view.start)} data-view-end={Math.round(view.end)} data-candles={candles.length} data-bolt-groups={groups.length} data-cohort={cohortOn ? ticks.length : 0}>
         {status === "ready" ? <canvas ref={canvasRef} className="rs-canvas" onPointerDown={onCanvasPointer} aria-label={`${candles.length ? "Candles" : "Event tape"} with ${bolts.length} buy and sell bolts. Tap a bolt for its evidence.`} role="img" /> : null}
         {status === "loading" || status === "building" ? <div className="rs-state"><span className="rs-pulse" aria-hidden="true" /><p>{status === "building" ? "Indexing this wallet's prints. The tape starts on its own when they land." : "Reading the tape…"}</p></div> : null}
         {status === "empty" ? <div className="rs-state"><p>No retained buy or sell prints for this wallet and token in this window yet.</p><small>Nothing is drawn until a print is indexed.</small></div> : null}
@@ -290,7 +324,19 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
       </div>
 
       <footer className="rs-third">
-        {selected ? (
+        {selectedTick ? (
+          <div className="rs-evidence" role="dialog" aria-label="Cohort buy">
+            <div className="rs-evidence__row">
+              <b className="rs-cohort-chip">COHORT BUY</b>
+              <span>{selectedTick.callsign}</span>
+              <span>{when(selectedTick.time)}</span>
+              <button type="button" className="rs-icon rs-icon--small" aria-label="Close cohort buy" onClick={() => setSelectedId(null)}><X size={14} /></button>
+            </div>
+            <p className="rs-evidence__meta"><span className="rs-src">{selectedTick.sourceKind === "observed-fact" ? "Observed on-chain" : "Fomo-reported"} · {selectedTick.source}</span></p>
+            <p className="rs-evidence__meta">Same room, same token, after {traderLabel}'s first print. Timing only.</p>
+            {selectedTick.txId ? <p className="rs-evidence__sig">{explorerUrl(subject.chainKey, selectedTick.txId) ? <a href={explorerUrl(subject.chainKey, selectedTick.txId) ?? undefined} target="_blank" rel="noreferrer">{selectedTick.txId}</a> : selectedTick.txId}</p> : null}
+          </div>
+        ) : selected ? (
           <div className="rs-evidence" role="dialog" aria-label="Evidence for this print">
             <div className="rs-evidence__row">
               <b data-side={selected.side}>{selected.side.toUpperCase()}</b>
@@ -324,7 +370,7 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
           </>
         )}
       </footer>
-      {cutOpen && subject ? <CutPanel subject={{ ...subject, displayName: subject.displayName ?? handle, symbol: subject.symbol ?? resolvedSymbol }} title={title} room={room} bolts={bolts} candles={viewCandles} candleCount={candles.length} start={view.start} end={view.end} scaleMode={scaleMode} source={source} onClose={() => setCutOpen(false)} /> : null}
+      {cutOpen && subject ? <CutPanel subject={{ ...subject, displayName: subject.displayName ?? handle, symbol: subject.symbol ?? resolvedSymbol }} title={title} trader={traderLabel} room={room} bolts={bolts} cohort={cohortOn ? ticks : []} candles={candles} candleCount={candles.length} start={view.start} end={view.end} scaleMode={scaleMode} source={source} onClose={() => setCutOpen(false)} /> : null}
       {socialOpen && day0 ? <ReplaySocialStrip mint={subject.mint} symbol={subject.symbol ?? resolvedSymbol} name={null} wallet={subject.wallet} chain={subject.chainKey} room={room} day0={day0} onClose={() => setSocialOpen(false)} /> : null}
     </section>
   );
@@ -345,7 +391,7 @@ function playTick(ctx: AudioContext, side: "buy" | "sell") {
   } catch { /* sound is optional */ }
 }
 
-function CutPanel({ subject, title, room, bolts, candles, candleCount, start, end, scaleMode, source, onClose }: { subject: ReplaySubject; title: string; room: "fomo" | "afterbell" | null; bolts: TapeBolt[]; candles: TapeCandle[]; candleCount: number; start: number; end: number; scaleMode: "log" | "linear"; source: string | null; onClose: () => void }) {
+function CutPanel({ subject, title, trader, room, bolts, cohort, candles, candleCount, start, end, scaleMode, source, onClose }: { subject: ReplaySubject; title: string; trader: string; room: "fomo" | "afterbell" | null; bolts: TapeBolt[]; cohort: CohortTick[]; candles: TapeCandle[]; candleCount: number; start: number; end: number; scaleMode: "log" | "linear"; source: string | null; onClose: () => void }) {
   const [format, setFormat] = useState<CutFormat>("portrait");
   const [grey, setGrey] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -364,8 +410,8 @@ function CutPanel({ subject, title, room, bolts, candles, candleCount, start, en
     setBusy(true); setError(""); setResult(null);
     try {
       const { recordReplayCut } = await import("@/lib/replay-cut");
-      const cut = await recordReplayCut({ format, title, roomLabel: room ? ROOM_CHIP[room] : "FIELD", candles, bolts, start, end, scaleMode, replayUrl, sourceLine, greyLine: grey ? greyLine : null, onProgress: (value, label) => setProgress({ value, label }) });
-      const manifest = buildCutManifest({ subject, bolts, candleCount, candleSource: source, start, end, replayUrl, format, greyLine: grey && cut.greyIncluded ? greyLine : null });
+      const cut = await recordReplayCut({ format, title, roomLabel: room ? ROOM_CHIP[room] : "REPLAY", trader, candles, bolts, cohort, start, end, scaleMode, replayUrl, sourceLine, greyLine: grey ? greyLine : null, onProgress: (value, label) => setProgress({ value, label }) });
+      const manifest = buildCutManifest({ subject, bolts, cohortCount: cohort.length, candleCount, candleSource: source, start, end, replayUrl, format, greyLine: grey && cut.greyIncluded ? greyLine : null });
       setResult({ videoUrl: URL.createObjectURL(cut.blob), manifestUrl: URL.createObjectURL(new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" })), extension: cut.extension, greyIncluded: cut.greyIncluded });
     } catch (cause) {
       setError(cause instanceof Error && cause.message ? `The Cut could not be rendered here: ${cause.message}` : "The Cut could not be rendered in this browser.");
@@ -378,7 +424,7 @@ function CutPanel({ subject, title, room, bolts, candles, candleCount, start, en
     <div className="rs-cut" role="dialog" aria-label="Make a Cut">
       <div className="rs-cut__card">
         <header><b>Cut</b><button type="button" className="rs-icon rs-icon--small" aria-label="Close Cut" onClick={onClose}><X size={14} /></button></header>
-        <p className="rs-cut__lede">Exports this tape with its bolts. The last frame is VERIFY with the Replay link.</p>
+        <p className="rs-cut__lede">Exports the full tape with {trader}'s prints{cohort.length ? ` and ${cohort.length} cohort ${cohort.length === 1 ? "tick" : "ticks"}` : ""}. The last frame is VERIFY with the Replay link.</p>
         <div className="rs-seg" role="radiogroup" aria-label="Cut format">
           <button type="button" role="radio" aria-checked={format === "portrait"} onClick={() => setFormat("portrait")}>1080 × 1920</button>
           <button type="button" role="radio" aria-checked={format === "landscape"} onClick={() => setFormat("landscape")}>1920 × 1080</button>
@@ -406,5 +452,5 @@ function CutPanel({ subject, title, room, bolts, candles, candleCount, start, en
 }
 
 function ReplayStudioStyles() {
-  return <style>{`.rs{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;background:#0b0c10;color:#f4f2ec;--rs-rim:rgba(236,236,240,.12);--rs-ink:#eadcb4}.rs[data-room=fomo]{--rs-ink:#cdb8ff}.rs-head{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:max(12px,env(safe-area-inset-top)) 16px 6px}.rs-title{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:10px}.rs-title h1{margin:0;font:680 17px/1.2 var(--font-sans);letter-spacing:.005em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rs-chip{flex:0 0 auto;padding:4px 8px;border:1px solid color-mix(in oklab,var(--rs-ink) 45%,transparent);border-radius:999px;color:var(--rs-ink);font:700 8.5px/1 var(--font-display);letter-spacing:.14em}.rs-icon{flex:0 0 auto;width:40px;height:40px;display:grid;place-items:center;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.03);color:#f4f2ec;transition:border-color .15s,background .15s}.rs-icon:hover:not(:disabled),.rs-icon:focus-visible{border-color:rgba(236,236,240,.34);outline:none}.rs-icon:disabled{opacity:.35}.rs-icon--small{width:28px;height:28px}.rs-frame{position:relative;flex:1 1 auto;min-height:0;margin:0 6px}.rs-canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:manipulation;cursor:crosshair}.rs-state{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:10px;padding:24px;text-align:center}.rs-state p{margin:0;max-width:440px;font:540 14px/1.5 var(--font-sans);color:rgba(236,236,240,.82)}.rs-state small{color:rgba(236,236,240,.5)}.rs-state button,.rs-empty__actions button,.rs-actions button,.rs-actions a{min-height:38px;padding:0 16px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.04);color:#f4f2ec;font:700 9px/1 var(--font-display);letter-spacing:.14em;text-decoration:none}.rs-pulse{width:44px;height:2px;border-radius:2px;background:linear-gradient(90deg,transparent,var(--rs-ink),transparent);animation:rs-sweep 1.4s ease-in-out infinite}@keyframes rs-sweep{0%{transform:translateX(-30px);opacity:.2}50%{opacity:1}100%{transform:translateX(30px);opacity:.2}}.rs-third{flex:0 0 auto;min-height:clamp(132px,20vh,190px);display:flex;flex-direction:column;justify-content:flex-end;gap:8px;padding:10px 18px max(14px,env(safe-area-inset-bottom));border-top:1px solid rgba(236,236,240,.06);background:linear-gradient(180deg,rgba(11,12,16,0),rgba(16,17,22,.9))}.rs-now{display:flex;align-items:baseline;gap:10px;font:560 13px/1.3 var(--font-sans);color:rgba(236,236,240,.8)}.rs-now b,.rs-evidence__row b{font:750 12px/1 var(--font-display);letter-spacing:.14em}[data-side=buy]{color:#B8FF3C}[data-side=sell]{color:#FF2D55}.rs-acts{flex:0 0 auto;display:flex;gap:6px;flex-wrap:wrap;padding:2px 16px 6px 68px}.rs-act{height:30px;padding:0 11px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.03);color:rgba(236,236,240,.82);font:700 8.5px/1 var(--font-display);letter-spacing:.13em}.rs-act[aria-pressed=true]{border-color:color-mix(in oklab,var(--rs-ink) 60%,transparent);color:var(--rs-ink)}.rs-act:disabled{opacity:.35}.rs-count{margin-left:auto;font:500 11px/1 var(--font-mono);color:rgba(236,236,240,.5)}.rs-scrub{width:100%;accent-color:#eadcb4;height:22px}.rs-controls{display:flex;align-items:center;gap:8px}.rs-play{width:48px;height:48px;display:grid;place-items:center;border:1px solid color-mix(in oklab,var(--rs-ink) 50%,transparent);border-radius:999px;background:color-mix(in oklab,var(--rs-ink) 12%,transparent);color:#fff}.rs-play:disabled,.rs-pill:disabled{opacity:.35}.rs-speed{min-width:44px;height:34px;border:1px solid var(--rs-rim);border-radius:999px;background:transparent;color:rgba(236,236,240,.8);font:600 11px/1 var(--font-mono)}.rs-spacer{flex:1 1 auto}.rs-pill{height:36px;padding:0 14px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.035);color:#f4f2ec;font:700 9px/1 var(--font-display);letter-spacing:.14em}.rs-pill--cut{border-color:color-mix(in oklab,var(--rs-ink) 55%,transparent);color:var(--rs-ink)}.rs-source{margin:0;font:500 10px/1.3 var(--font-mono);color:rgba(236,236,240,.42);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rs-evidence{display:grid;gap:6px}.rs-evidence__row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font:560 13px/1.3 var(--font-sans)}.rs-evidence__row .rs-icon{margin-left:auto}.rs-evidence__meta{margin:0;font:500 11px/1.4 var(--font-sans);color:rgba(236,236,240,.6)}.rs-evidence__sig{margin:0;font:500 10.5px/1.4 var(--font-mono);word-break:break-all;color:rgba(236,236,240,.72)}.rs-evidence__sig a{color:inherit;text-decoration:underline;text-decoration-color:rgba(236,236,240,.3)}.rs-actions{display:flex;gap:8px;flex-wrap:wrap}.rs-empty{margin:auto;display:grid;gap:16px;justify-items:center;padding:24px;text-align:center}.rs-empty__title{margin:0;font:600 16px/1.45 var(--font-sans);max-width:380px}.rs-empty__actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}.rs-cut{position:absolute;inset:0;z-index:2;display:grid;place-items:center;padding:16px;background:rgba(5,6,9,.66);backdrop-filter:blur(10px)}.rs-cut__card{width:min(440px,100%);max-height:calc(100vh - 32px);overflow:auto;display:grid;gap:12px;padding:18px;border:1px solid var(--rs-rim);border-radius:20px;background:#111217;box-shadow:0 30px 90px rgba(0,0,0,.5)}.rs-cut__card header{display:flex;align-items:center;justify-content:space-between}.rs-cut__card header b{font:700 15px/1 var(--font-sans)}.rs-cut__lede,.rs-cut__fine,.rs-cut__grey{margin:0;font:500 12px/1.45 var(--font-sans);color:rgba(236,236,240,.7)}.rs-cut__fine{font-size:10.5px;color:rgba(236,236,240,.45)}.rs-cut__grey{font-style:italic}.rs-cut__error{margin:0;font:500 12px/1.4 var(--font-sans);color:#ffb3b3}.rs-seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}.rs-seg button{height:38px;border:1px solid var(--rs-rim);border-radius:12px;background:transparent;color:rgba(236,236,240,.75);font:600 11px/1 var(--font-mono)}.rs-seg button[aria-checked=true]{border-color:var(--rs-ink);color:#fff;background:color-mix(in oklab,var(--rs-ink) 10%,transparent)}.rs-toggle{display:flex;align-items:center;gap:8px;font:560 12.5px/1.2 var(--font-sans)}.rs-toggle small{color:rgba(236,236,240,.45)}.rs-progress{position:relative;height:30px;border-radius:10px;overflow:hidden;background:rgba(255,255,255,.04)}.rs-progress i{position:absolute;inset:0 auto 0 0;background:color-mix(in oklab,var(--rs-ink) 22%,transparent)}.rs-progress span{position:relative;display:block;padding:9px 10px;font:500 10.5px/1 var(--font-mono);color:rgba(236,236,240,.8)}.rs-cut__done{display:grid;gap:10px}.rs-cut__done video{width:100%;max-height:320px;border-radius:12px;background:#000}.rs-cut__done video.is-portrait{width:auto;justify-self:center}@media(max-width:560px){.rs-head{padding-left:10px;padding-right:10px}.rs-acts{padding-left:10px;padding-right:10px}.rs-title h1{font-size:15px}.rs-third{padding-left:12px;padding-right:12px}.rs-pill{padding:0 11px}}@media(prefers-reduced-motion:reduce){.rs-pulse{animation:none}}`}</style>;
+  return <style>{`.rs{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;background:#0b0c10;color:#f4f2ec;--rs-rim:rgba(236,236,240,.12);--rs-ink:#eadcb4}.rs[data-room=fomo]{--rs-ink:#cdb8ff}.rs-head{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:max(12px,env(safe-area-inset-top)) 16px 6px}.rs-title{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:10px}.rs-title__text{min-width:0;display:grid;gap:3px}.rs-line{margin:0;font:520 11px/1.3 var(--font-mono);color:rgba(236,236,240,.62);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rs-cohort-chip{color:rgba(214,220,200,.9)}.rs-src{display:inline-block;padding:2px 7px;border:1px solid var(--rs-rim);border-radius:999px;font:500 10px/1.3 var(--font-mono)}.rs-title h1{margin:0;font:680 17px/1.2 var(--font-sans);letter-spacing:.005em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rs-chip{flex:0 0 auto;padding:4px 8px;border:1px solid color-mix(in oklab,var(--rs-ink) 45%,transparent);border-radius:999px;color:var(--rs-ink);font:700 8.5px/1 var(--font-display);letter-spacing:.14em}.rs-icon{flex:0 0 auto;width:40px;height:40px;display:grid;place-items:center;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.03);color:#f4f2ec;transition:border-color .15s,background .15s}.rs-icon:hover:not(:disabled),.rs-icon:focus-visible{border-color:rgba(236,236,240,.34);outline:none}.rs-icon:disabled{opacity:.35}.rs-icon--small{width:28px;height:28px}.rs-frame{position:relative;flex:1 1 auto;min-height:0;margin:0}.rs-canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:manipulation;cursor:crosshair}.rs-state{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:10px;padding:24px;text-align:center}.rs-state p{margin:0;max-width:440px;font:540 14px/1.5 var(--font-sans);color:rgba(236,236,240,.82)}.rs-state small{color:rgba(236,236,240,.5)}.rs-state button,.rs-empty__actions button,.rs-actions button,.rs-actions a{min-height:38px;padding:0 16px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.04);color:#f4f2ec;font:700 9px/1 var(--font-display);letter-spacing:.14em;text-decoration:none}.rs-pulse{width:44px;height:2px;border-radius:2px;background:linear-gradient(90deg,transparent,var(--rs-ink),transparent);animation:rs-sweep 1.4s ease-in-out infinite}@keyframes rs-sweep{0%{transform:translateX(-30px);opacity:.2}50%{opacity:1}100%{transform:translateX(30px);opacity:.2}}.rs-third{flex:0 0 auto;min-height:clamp(132px,20vh,190px);display:flex;flex-direction:column;justify-content:flex-end;gap:8px;padding:10px 18px max(14px,env(safe-area-inset-bottom));border-top:1px solid rgba(236,236,240,.06);background:linear-gradient(180deg,rgba(11,12,16,0),rgba(16,17,22,.9))}.rs-now{display:flex;align-items:baseline;gap:10px;font:560 13px/1.3 var(--font-sans);color:rgba(236,236,240,.8)}.rs-now b,.rs-evidence__row b{font:750 12px/1 var(--font-display);letter-spacing:.14em}[data-side=buy]{color:#B8FF3C}[data-side=sell]{color:#FF2D55}.rs-acts{flex:0 0 auto;display:flex;gap:6px;flex-wrap:wrap;padding:2px 16px 6px 68px}.rs-act{height:30px;padding:0 11px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.03);color:rgba(236,236,240,.82);font:700 8.5px/1 var(--font-display);letter-spacing:.13em}.rs-act[aria-pressed=true]{border-color:color-mix(in oklab,var(--rs-ink) 60%,transparent);color:var(--rs-ink)}.rs-act:disabled{opacity:.35}.rs-count{margin-left:auto;font:500 11px/1 var(--font-mono);color:rgba(236,236,240,.5)}.rs-scrub{width:100%;accent-color:#eadcb4;height:22px}.rs-controls{display:flex;align-items:center;gap:8px}.rs-play{width:48px;height:48px;display:grid;place-items:center;border:1px solid color-mix(in oklab,var(--rs-ink) 50%,transparent);border-radius:999px;background:color-mix(in oklab,var(--rs-ink) 12%,transparent);color:#fff}.rs-play:disabled,.rs-pill:disabled{opacity:.35}.rs-speed{min-width:44px;height:34px;border:1px solid var(--rs-rim);border-radius:999px;background:transparent;color:rgba(236,236,240,.8);font:600 11px/1 var(--font-mono)}.rs-spacer{flex:1 1 auto}.rs-pill{height:36px;padding:0 14px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.035);color:#f4f2ec;font:700 9px/1 var(--font-display);letter-spacing:.14em}.rs-pill--cut{border-color:color-mix(in oklab,var(--rs-ink) 55%,transparent);color:var(--rs-ink)}.rs-source{margin:0;font:500 10px/1.3 var(--font-mono);color:rgba(236,236,240,.42);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rs-evidence{display:grid;gap:6px}.rs-evidence__row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font:560 13px/1.3 var(--font-sans)}.rs-evidence__row .rs-icon{margin-left:auto}.rs-evidence__meta{margin:0;font:500 11px/1.4 var(--font-sans);color:rgba(236,236,240,.6)}.rs-evidence__sig{margin:0;font:500 10.5px/1.4 var(--font-mono);word-break:break-all;color:rgba(236,236,240,.72)}.rs-evidence__sig a{color:inherit;text-decoration:underline;text-decoration-color:rgba(236,236,240,.3)}.rs-actions{display:flex;gap:8px;flex-wrap:wrap}.rs-empty{margin:auto;display:grid;gap:16px;justify-items:center;padding:24px;text-align:center}.rs-empty__title{margin:0;font:600 16px/1.45 var(--font-sans);max-width:380px}.rs-empty__actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}.rs-cut{position:absolute;inset:0;z-index:2;display:grid;place-items:center;padding:16px;background:rgba(5,6,9,.66);backdrop-filter:blur(10px)}.rs-cut__card{width:min(440px,100%);max-height:calc(100vh - 32px);overflow:auto;display:grid;gap:12px;padding:18px;border:1px solid var(--rs-rim);border-radius:20px;background:#111217;box-shadow:0 30px 90px rgba(0,0,0,.5)}.rs-cut__card header{display:flex;align-items:center;justify-content:space-between}.rs-cut__card header b{font:700 15px/1 var(--font-sans)}.rs-cut__lede,.rs-cut__fine,.rs-cut__grey{margin:0;font:500 12px/1.45 var(--font-sans);color:rgba(236,236,240,.7)}.rs-cut__fine{font-size:10.5px;color:rgba(236,236,240,.45)}.rs-cut__grey{font-style:italic}.rs-cut__error{margin:0;font:500 12px/1.4 var(--font-sans);color:#ffb3b3}.rs-seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}.rs-seg button{height:38px;border:1px solid var(--rs-rim);border-radius:12px;background:transparent;color:rgba(236,236,240,.75);font:600 11px/1 var(--font-mono)}.rs-seg button[aria-checked=true]{border-color:var(--rs-ink);color:#fff;background:color-mix(in oklab,var(--rs-ink) 10%,transparent)}.rs-toggle{display:flex;align-items:center;gap:8px;font:560 12.5px/1.2 var(--font-sans)}.rs-toggle small{color:rgba(236,236,240,.45)}.rs-progress{position:relative;height:30px;border-radius:10px;overflow:hidden;background:rgba(255,255,255,.04)}.rs-progress i{position:absolute;inset:0 auto 0 0;background:color-mix(in oklab,var(--rs-ink) 22%,transparent)}.rs-progress span{position:relative;display:block;padding:9px 10px;font:500 10.5px/1 var(--font-mono);color:rgba(236,236,240,.8)}.rs-cut__done{display:grid;gap:10px}.rs-cut__done video{width:100%;max-height:320px;border-radius:12px;background:#000}.rs-cut__done video.is-portrait{width:auto;justify-self:center}@media(max-width:560px){.rs-line{font-size:10px;white-space:normal}.rs-head{padding-left:10px;padding-right:10px}.rs-acts{padding-left:10px;padding-right:10px}.rs-title h1{font-size:15px}.rs-third{padding-left:12px;padding-right:12px}.rs-pill{padding:0 11px}}@media(prefers-reduced-motion:reduce){.rs-pulse{animation:none}}`}</style>;
 }
