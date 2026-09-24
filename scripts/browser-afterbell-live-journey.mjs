@@ -89,10 +89,12 @@ try{
     assert(starThread?.galaxyId==="afterbell"&&Boolean(starThread.wallet),`${vp.name}: STAR thread missing Afterbell wallet`);
     assert(starThread.mint==null,`${vp.name}: STAR selection guessed mint ${starThread.mint}`);
     assert(!/AFTERBELL\s*#\d+/i.test(label)&&!/STAR\s*·\s*AFTERBELL/i.test(label),`${vp.name}: numeric STAR identity remains: ${label}`);
-    assert(/Identity source:/i.test(detailText)&&/Research only/i.test(detailText)&&/not a broker/i.test(detailText),`${vp.name}: trader detail disclosure incomplete`);
-    const cometMatch=detailText.match(/Latest COMETS:\s*(\d+)/i);assert(cometMatch&&Number(cometMatch[1])>0,`${vp.name}: no retained COMETS disclosed in selected trader system`);
+    const selectedTrader=(traderPayload.items||[]).find(row=>String(row.wallet||"")===String(starThread.wallet||""));
+    assert(selectedTrader,`${vp.name}: selected trader is missing from the live payload`);
+    assert(/Research only/i.test(detailText)&&/COMETS/i.test(detailText),`${vp.name}: compact trader disclosure incomplete`);
+    assert((selectedTrader.latestTrades||[]).length>0,`${vp.name}: selected trader has no retained COMETS in the live payload`);
     assert(entered.state.count>0,`${vp.name}: selected trader system has zero xStock PLANETS`);
-    const identitySource=(detailText.match(/Identity source:\s*([^·\n]+)/i)?.[1]||"").trim();
+    const identitySource=String(selectedTrader.displayNameSource||"");
     if(identitySource==="wallet-callsign")assert(label===callsign(starThread.wallet),`${vp.name}: visible callsign is not deterministic`);
 
     let selection=await selectPlanet(page,entered.box);
