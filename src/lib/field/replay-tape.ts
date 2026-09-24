@@ -26,6 +26,8 @@ export type TapeEvent = {
   priceUsd: number | null;
   /** Observed/provider-reported USD notional already present on the print, never inferred from candles. */
   notionalUsd?: number | null;
+  /** Market cap supplied on this exact print, when present. Never inferred from price. */
+  marketCapUsd?: number | null;
   verification: string;
   sources: string[];
   kind: string;
@@ -154,6 +156,7 @@ export function tapeEvents(value: unknown): TapeEvent[] {
         amount,
         priceUsd,
         notionalUsd,
+        marketCapUsd: positive(row.marketCapUsd,row.marketCap,row.market_cap,row.mcap,row.mcapUsd,row.market_cap_usd),
         verification: str(row.verification) ?? str(row.sourceKind) ?? "observed",
         sources,
         kind: str(row.kind) ?? "trade",
@@ -279,6 +282,67 @@ export type TapeUsdSummary = {
   sellTotal: number;
 };
 
+export type TapeMarkSummary = {
+  markedUsd: number | null;
+  deltaUsd: number | null;
+  deltaPct: number | null;
+  remainingTokens: number | null;
+  lastClose: number | null;
+};
+
+export type TapeMarketCapPoint = { timestamp: number | null; marketCapUsd: number };
+
+const MARKET_CAP_KEYS = ["marketCapUsd","marketCap","market_cap","mcap","mcapUsd","market_cap_usd"] as const;
+function rowMarketCap(record: Row) {
+  for (const key of MARKET_CAP_KEYS) { const value = positive(record[key]); if (value != null) return value; }
+  return null;
+}
+function rowTimestamp(record: Row) {
+  const direct = toMs(record.timestamp ?? record.time ?? record.blockTime ?? record.observedAt);
+  if (direct != null) return direct;
+  const raw = record.createdAt ?? record.created_at ?? record.date;
+  if (typeof raw === "string") { const parsed = Date.parse(raw); if (Number.isFinite(parsed) && parsed > 0) return parsed; }
+  return null;
+}
+/** Only explicit market-cap fields are collected. Price/FDV is never converted into MC. */
+export function tapeMarketCapPoints(...values: unknown[]): TapeMarketCapPoint[] {
+  const out: TapeMarketCapPoint[] = [], seen = new Set<string>();
+  const visit = (value: unknown, depth: number) => {
+    if (depth > 2 || value == null) return;
+    if (Array.isArray(value)) { value.forEach((item) => visit(item, depth)); return; }
+    if (typeof value !== "object") return;
+    const record = value as Row, marketCapUsd = rowMarketCap(record);
+    if (marketCapUsd != null) {
+      const timestamp = rowTimestamp(record), key = `${timestamp ?? "static"}:${marketCapUsd}`;
+      if (!seen.has(key)) { seen.add(key); out.push({ timestamp, marketCapUsd }); }
+    }
+    for (const key of ["referenceSeries","marketCapSeries","market_cap_series","market","markets","points","series","data"]) {
+      if (record[key] != null) visit(record[key], depth + 1);
+    }
+  };
+  values.forEach((value) => visit(value, 0));
+  return out.sort((a,b)=>(a.timestamp??Number.MAX_SAFE_INTEGER)-(b.timestamp??Number.MAX_SAFE_INTEGER));
+}
+export function tapeMarketCapAt(points: readonly TapeMarketCapPoint[], atMs: number, allowStatic = false) {
+  const timed = points.filter((point)=>point.timestamp != null && point.timestamp <= atMs);
+  if (timed.length) return timed[timed.length - 1].marketCapUsd;
+  if (allowStatic) return points.find((point)=>point.timestamp == null)?.marketCapUsd ?? null;
+  return null;
+}
+export function tapeAvgEntryMarketCap(bolts: readonly TapeBolt[], points: readonly TapeMarketCapPoint[]) {
+  const buys = bolts.filter((bolt)=>bolt.side==="buy");
+  if (!buys.length) return null;
+  const entries = buys.map((bolt)=>bolt.marketCapUsd ?? tapeMarketCapAt(points,bolt.timestamp,false));
+  if (entries.some((value)=>value == null)) return null;
+  const amountsKnown = buys.every((bolt)=>typeof bolt.amount==="number" && Number.isFinite(bolt.amount) && bolt.amount>0);
+  if (amountsKnown) {
+    const totalAmount=buys.reduce((sum,bolt)=>sum+(bolt.amount as number),0);
+    return totalAmount>0?buys.reduce((sum,bolt,index)=>sum+(entries[index] as number)*(bolt.amount as number),0)/totalAmount:null;
+  }
+  return (entries as number[]).reduce((sum,value)=>sum+value,0)/entries.length;
+}
+
+
 /** Observed USD only: amount × priceUsd. Missing amount or price never contributes a dollar. */
 export function tapeUsdSummary(bolts: readonly TapeBolt[]): TapeUsdSummary {
   const side = (which: "buy" | "sell") => {
@@ -326,6 +390,21 @@ export function tapeUsdCoverage(bolts: readonly TapeBolt[], which: "buy" | "sell
   return `Size from ${priced.length} of ${total} priced ${which === "buy" ? "buys" : "sells"}`;
 }
 
+/** Mark-to-tape only. Every visible print must have an observed amount, and the last visible candle must have a real close. */
+export function tapeMarkSummary(bolts: readonly TapeBolt[], candles: readonly TapeCandle[]): TapeMarkSummary {
+  const last = candles.at(-1) ?? null;
+  if (!bolts.length || !last || !(last.close > 0) || !Number.isFinite(last.close)) return { markedUsd:null,deltaUsd:null,deltaPct:null,remainingTokens:null,lastClose:null };
+  if (bolts.some((bolt)=>typeof bolt.amount!=="number" || !Number.isFinite(bolt.amount) || bolt.amount<=0)) return { markedUsd:null,deltaUsd:null,deltaPct:null,remainingTokens:null,lastClose:last.close };
+  const remainingTokens = bolts.reduce((sum,bolt)=>sum+(bolt.side==="buy"?(bolt.amount as number):-(bolt.amount as number)),0);
+  if (!Number.isFinite(remainingTokens) || remainingTokens < 0) return { markedUsd:null,deltaUsd:null,deltaPct:null,remainingTokens:null,lastClose:last.close };
+  const markedUsd = remainingTokens * last.close;
+  const boughtUsd = tapeUsdSummary(bolts).boughtUsd;
+  const deltaUsd = boughtUsd != null ? markedUsd - boughtUsd : null;
+  const deltaPct = deltaUsd != null && boughtUsd > 0 ? deltaUsd / boughtUsd : null;
+  return { markedUsd,deltaUsd,deltaPct,remainingTokens,lastClose:last.close };
+}
+
+
 /** Several prints on one bar and side become one bolt with a count. Notional is amount × price when both are known. */
 export function groupBolts(bolts: readonly TapeBolt[]): BoltGroup[] {
   const groups = new Map<string, BoltGroup>();
@@ -342,6 +421,12 @@ export function groupBolts(bolts: readonly TapeBolt[]): BoltGroup[] {
   }
   return [...groups.values()].sort((a, b) => a.cursor - b.cursor);
 }
+
+/** Number of prints in this group that carry an observed/provider USD size. Unpriced siblings never become fake chips. */
+export function observedPricedPrintCount(group: BoltGroup) {
+  return group.bolts.filter((bolt)=>observedUsdNotional(bolt)!=null).length;
+}
+
 
 /** 1.0 for the smallest known notional up to 1.3 for the largest; 1.0 when notional is unknown. */
 export function notionalScale(group: BoltGroup, groups: readonly BoltGroup[]) {

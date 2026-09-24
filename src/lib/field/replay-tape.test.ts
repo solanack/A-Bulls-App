@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anchorBolts, cohortTicks, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, notionalScale, priceAxisLabel, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
+import { anchorBolts, cohortTicks, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, notionalScale, observedPricedPrintCount, priceAxisLabel, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeMarkSummary, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
+import { drawTape, tapeStackLayout } from "./replay-tape-render.ts";
 
 const AB_WALLET = "G39wywquKbHK8F2wZZZFX3fcsyG91VCCbbr6WEVp5axy";
 const AB_MINT = "XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1";
@@ -253,4 +254,53 @@ test("coverage copy collapses one priced lead with unpriced siblings on the same
 test("USD average label always includes a dollar sign and unknown stays an em dash", () => {
   assert.equal(formatUsdPrice(0.00421),"$0.00421");
   assert.equal(formatUsdPrice(null),"—");
+});
+
+
+test("stack label stays glued to stack x instead of plot origin",()=>{
+  const candles=[candleAt(0)],bolts=anchorBolts([eventAt("a",candles[0].timestamp+1,"buy",{amount:100,priceUsd:323,notionalUsd:32300})],candles,candles[0].timestamp,candles[0].timestamp+H),groups=groupBolts(bolts);
+  const layout=tapeStackLayout(groups[0],groups,300,1,210,220,58);
+  assert.equal(layout.labelX,210);
+  assert.notEqual(layout.labelX,18);
+  assert.equal(layout.chipCount,1);
+  assert.equal(formatUsdNotional(groups[0].notional!),"$32.3k");
+});
+
+test("unpriced siblings do not become fake equal-size stack chips",()=>{
+  const candles=[candleAt(0)],bolts=anchorBolts([
+    eventAt("priced",candles[0].timestamp+1,"buy",{amount:100,priceUsd:2,notionalUsd:200}),
+    ...Array.from({length:7},(_,i)=>eventAt(`u-${i}`,candles[0].timestamp+2+i,"buy",{amount:10,priceUsd:null,notionalUsd:null}))
+  ],candles,candles[0].timestamp,candles[0].timestamp+H),group=groupBolts(bolts)[0];
+  assert.equal(group.count,8);
+  assert.equal(observedPricedPrintCount(group),1);
+  assert.equal(tapeStackLayout(group,[group],300,1,100,220,58).chipCount,1);
+  assert.equal(group.notional,200);
+});
+
+test("mark is omitted when any visible print amount is missing",()=>{
+  const candles=[candleAt(0)],bolts=anchorBolts([
+    eventAt("known",candles[0].timestamp+1,"buy",{amount:100,priceUsd:2,notionalUsd:200}),
+    eventAt("unknown",candles[0].timestamp+2,"buy",{amount:null,priceUsd:2,notionalUsd:50}),
+  ],candles,candles[0].timestamp,candles[0].timestamp+H);
+  assert.equal(tapeMarkSummary(bolts,candles).markedUsd,null);
+});
+
+test("mark uses observed remaining token amount times indexed last close and is never named PnL",()=>{
+  const candles=[candleAt(0)],bolts=anchorBolts([
+    eventAt("buy",candles[0].timestamp+1,"buy",{amount:100,priceUsd:1,notionalUsd:100}),
+    eventAt("sell",candles[0].timestamp+2,"sell",{amount:25,priceUsd:1.2,notionalUsd:30}),
+  ],candles,candles[0].timestamp,candles[0].timestamp+H),mark=tapeMarkSummary(bolts,candles);
+  assert.equal(mark.remainingTokens,75);
+  assert.equal(mark.markedUsd,112.5);
+  assert.equal(mark.deltaUsd,12.5);
+});
+
+test("drawTape keeps a tappable bolt hit for a rendered stack",()=>{
+  const candles=[candleAt(0)],bolts=anchorBolts([eventAt("hero",candles[0].timestamp+1,"buy",{amount:100,priceUsd:2,notionalUsd:200})],candles,candles[0].timestamp,candles[0].timestamp+H);
+  const gradient={addColorStop(){}},noop=()=>{};
+  const ctx:any=new Proxy({measureText:(value:string)=>({width:value.length*6}),createRadialGradient:()=>gradient,createLinearGradient:()=>gradient},{get(target,key){if(key in target)return (target as any)[key];return noop;},set(target,key,value){(target as any)[key]=value;return true;}});
+  const hits=drawTape(ctx,{width:420,height:300,candles,bolts,start:candles[0].timestamp,end:candles[0].timestamp+H,cursor:1,heroGlyph:"CLAM"});
+  assert.equal(hits.length,1);
+  assert.equal(hits[0].id,"hero");
+  assert.ok(hits[0].r>0);
 });

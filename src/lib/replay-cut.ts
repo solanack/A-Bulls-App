@@ -1,6 +1,6 @@
 import { synthesizeCutNarration } from "@/lib/alien-voice";
 import { BOLT, drawTape, TAPE_BG } from "@/lib/field/replay-tape-render";
-import { CUT_SIZE, groupBolts, hopSchedule, type BoltGroup, type CohortTick, type CutFormat, type TapeBolt, type TapeCandle } from "@/lib/field/replay-tape";
+import { CUT_SIZE, formatUsdNotional, formatUsdPrice, groupBolts, hopSchedule, tapeAvgEntryMarketCap, tapeAxis, tapeMarketCapAt, tapeMarkSummary, tapeUsdSummary, type BoltGroup, type CohortTick, type CutFormat, type TapeBolt, type TapeCandle, type TapeMarketCapPoint, type TapeMarkSummary, type TapeUsdSummary } from "@/lib/field/replay-tape";
 
 export type ReplayCutInput = {
   format: CutFormat;
@@ -12,6 +12,9 @@ export type ReplayCutInput = {
   bolts: readonly TapeBolt[];
   /** Cohort ticks, only when the COHORT toggle was on. */
   cohort?: readonly CohortTick[];
+  marketCapPoints?: readonly TapeMarketCapPoint[];
+  evidenceLine?: string | null;
+  heroGlyph?: string | null;
   start: number;
   end: number;
   scaleMode?: "log" | "linear";
@@ -86,6 +89,23 @@ function shortUrl(url: string) {
   return url.replace(/^https?:\/\/(www\.)?/, "");
 }
 
+function cutMarkUsd(value:number|null){return value==null?"—":value===0?"$0":formatUsdNotional(value);}
+function cutPct(value:number|null){if(value==null||!Number.isFinite(value))return null;const pct=value*100;return `${pct>=0?"+":"−"}${Math.abs(pct)>=10?Math.abs(pct).toFixed(0):Math.abs(pct).toFixed(1)}%`;}
+function drawPositionCard(ctx:CanvasRenderingContext2D,x:number,y:number,w:number,k:number,summary:TapeUsdSummary,mark:TapeMarkSummary,avgEntryMc:number|null){
+  const rows:{label:string;value:string;tone?:"buy"|"sell"}[]=[
+    {label:"Bought · observed",value:summary.boughtUsd!=null?formatUsdNotional(summary.boughtUsd):"—",tone:"buy"},
+    {label:"Marked · tape mark",value:cutMarkUsd(mark.markedUsd)},
+  ];
+  const vs=cutPct(mark.deltaPct);if(vs)rows.push({label:"vs buy",value:vs,tone:mark.deltaPct!>=0?"buy":"sell"});
+  rows.push({label:"Avg buy",value:formatUsdPrice(summary.avgBuyUsd)});
+  if(avgEntryMc!=null)rows.push({label:"Avg entry MC",value:formatUsdNotional(avgEntryMc)});
+  if(summary.sellTotal>0){rows.push({label:"Sold",value:summary.soldUsd!=null?formatUsdNotional(summary.soldUsd):"—",tone:"sell"});rows.push({label:"Avg sell",value:formatUsdPrice(summary.avgSellUsd)});}
+  const rowH=34*k,h=rows.length*rowH+28*k;ctx.save();ctx.fillStyle="rgba(9,10,14,.82)";ctx.strokeStyle="rgba(236,236,240,.16)";ctx.lineWidth=1.2*k;ctx.beginPath();ctx.roundRect(x,y,w,h,16*k);ctx.fill();ctx.stroke();
+  rows.forEach((row,i)=>{const yy=y+22*k+i*rowH;ctx.textAlign="left";ctx.textBaseline="middle";ctx.font=`560 ${Math.round(22*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillStyle="rgba(236,236,240,.58)";ctx.fillText(row.label,x+18*k,yy);ctx.textAlign="right";ctx.font=`760 ${Math.round(24*k)}px ui-monospace,SFMono-Regular,Menlo,monospace`;ctx.fillStyle=row.tone==="buy"?BOLT.buy.fill:row.tone==="sell"?BOLT.sell.fill:"#eadcaa";ctx.fillText(row.value,x+w-18*k,yy);});
+  ctx.restore();return h;
+}
+
+
 /** One Cut frame. t is seconds into the Cut. */
 export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInput, t: number) {
   const { width: w, height: h } = CUT_SIZE[input.format];
@@ -93,13 +113,16 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   const k = Math.min(w, h) / 1080;
   const timing = timingFor(input.bolts);
   const cursor = timing.schedule.cursorAt(Math.min(1, Math.max(0, t / TAPE_SECONDS)));
+  const visible = input.bolts.filter((bolt) => bolt.cursor <= cursor);
+  const tapeTime=tapeAxis(input.candles,input.start,input.end).timeAt(cursor),visibleCandles=input.candles.filter((candle)=>candle.timestamp<=tapeTime);
+  const mark=tapeMarkSummary(visible,visibleCandles),summary=tapeUsdSummary(visible),marketCap=tapeMarketCapAt(input.marketCapPoints??[],tapeTime,cursor>=.999),avgEntryMc=tapeAvgEntryMarketCap(visible,input.marketCapPoints??[]);
   const strikeAge = (group: BoltGroup) => { const at = timing.arrivalAt.get(group.key); return at == null || t < at ? null : (t - at) * 1000; };
-  const chartTop = portrait ? 380 * k : 190 * k, chartBottom = portrait ? h - 520 * k : h - 280 * k;
+  const chartTop = portrait ? 330 * k : 170 * k, chartBottom = portrait ? h - 560 * k : h - 300 * k;
   ctx.save();
   ctx.fillStyle = TAPE_BG;
   ctx.fillRect(0, 0, w, h);
   ctx.translate(0, chartTop);
-  drawTape(ctx, { width: w, height: chartBottom - chartTop, candles: input.candles, bolts: input.bolts, cohort: input.cohort?.length ? input.cohort : undefined, start: input.start, end: input.end, cursor, scaleMode: input.scaleMode ?? "log", scarPx: 18, strikeAge, scale: portrait ? 3 : 2.4, pad: { top: 74 * k, right: (portrait ? 190 : 210) * k, bottom: 64 * k, left: 24 * k } });
+  drawTape(ctx, { width: w, height: chartBottom - chartTop, candles: input.candles, bolts: input.bolts, cohort: input.cohort?.length ? input.cohort : undefined, marketCapUsd:marketCap, mark, heroGlyph:input.heroGlyph??input.trader??null, start: input.start, end: input.end, cursor, scaleMode: input.scaleMode ?? "log", scarPx: 18, strikeAge, scale: portrait ? 3 : 2.4, pad: { top: 78 * k, right: (portrait ? 210 : 230) * k, bottom: 64 * k, left: 24 * k } });
   ctx.restore();
 
   const left = 56 * k;
@@ -112,36 +135,15 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   ctx.font = `680 ${Math.round((portrait ? 70 : 60) * k)}px ui-sans-serif, system-ui, sans-serif`;
   ctx.fillText(wrap(ctx, input.title, w - left * 2)[0] ?? input.title, left, (portrait ? 276 : 146) * k);
 
-  const visible = input.bolts.filter((bolt) => bolt.cursor <= cursor);
   const latest = visible.at(-1);
   const buys = visible.filter((bolt) => bolt.side === "buy").length, sells = visible.length - buys;
-  const lowerTop = portrait ? h - 440 * k : h - 236 * k;
-  ctx.fillStyle = "rgba(255,255,255,.06)";
-  ctx.fillRect(left, lowerTop - 30 * k, w - left * 2, 1.5 * k);
-  if (latest) {
-    ctx.fillStyle = latest.side === "buy" ? BOLT.buy.fill : BOLT.sell.fill;
-    ctx.font = `700 ${Math.round(40 * k)}px ui-sans-serif, system-ui, sans-serif`;
-    const label = latest.side.toUpperCase();
-    ctx.fillText(label, left, lowerTop + 22 * k);
-    const offset = ctx.measureText(label).width + 18 * k;
-    ctx.fillStyle = "#f4f2ec";
-    ctx.font = `560 ${Math.round(36 * k)}px ui-sans-serif, system-ui, sans-serif`;
-    ctx.fillText(`· ${when(latest.timestamp)}`, left + offset, lowerTop + 22 * k);
-  }
-  ctx.fillStyle = "rgba(236,236,240,.78)";
-  ctx.font = `560 ${Math.round(28 * k)}px ui-sans-serif, system-ui, sans-serif`;
-  ctx.fillText(`${input.trader ? `${input.trader} · ` : ""}${buys} ${buys === 1 ? "buy" : "buys"} · ${sells} ${sells === 1 ? "sell" : "sells"}`, left, lowerTop + 76 * k);
-  const cohort = (input.cohort ?? []).filter((tick) => tick.cursor <= cursor + 1e-9).length;
-  let next = lowerTop + 76 * k;
-  if (input.cohort?.length) {
-    next += 40 * k;
-    ctx.fillStyle = "rgba(214,220,200,.66)";
-    ctx.font = `500 ${Math.round(24 * k)}px ui-sans-serif, system-ui, sans-serif`;
-    ctx.fillText(`Cohort · ${cohort} ${cohort === 1 ? "buy" : "buys"} after this print · same room · timing only`, left, next);
-  }
-  ctx.fillStyle = "rgba(236,236,240,.44)";
-  ctx.font = `500 ${Math.round(22 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  wrap(ctx, input.sourceLine, w - left * 2).slice(0, 2).forEach((line, i) => ctx.fillText(line, left, next + 50 * k + i * 32 * k));
+  const lowerTop = portrait ? h - 500 * k : h - 274 * k;
+  const cardW=w-left*2,cardH=drawPositionCard(ctx,left,lowerTop,cardW,k,summary,mark,avgEntryMc);
+  let next=lowerTop+cardH+26*k;
+  if(input.evidenceLine){ctx.fillStyle="rgba(236,236,240,.52)";ctx.font=`500 ${Math.round(22*k)}px ui-monospace,SFMono-Regular,Menlo,monospace`;ctx.textAlign="left";ctx.fillText(input.evidenceLine,left,next);next+=34*k;}
+  ctx.fillStyle="rgba(236,236,240,.44)";
+  ctx.font = `500 ${Math.round(20 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  wrap(ctx, input.sourceLine, w - left * 2).slice(0, 2).forEach((line, i) => ctx.fillText(line, left, next + i * 28 * k));
 
   ctx.fillStyle = "rgba(236,218,170,.62)";
   ctx.font = `600 ${Math.round(20 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;

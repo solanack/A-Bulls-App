@@ -1,4 +1,4 @@
-import { formatUsdNotional, groupBolts, priceAxisLabel, strikePhase, tapeAxis, type BoltGroup, type CohortTick, type TapeBolt, type TapeCandle } from "./replay-tape.ts";
+import { formatUsdNotional, groupBolts, notionalScale, observedPricedPrintCount, priceAxisLabel, strikePhase, tapeAxis, type BoltGroup, type CohortTick, type TapeBolt, type TapeCandle, type TapeMarkSummary } from "./replay-tape.ts";
 
 export const TAPE_BG = "#0b0c10";
 /** Tape colours. Bolts never use these. */
@@ -33,6 +33,12 @@ export type TapeFrame = {
   scarPx?: number;
   /** Other wallets in the same room buying after the hero's first print. Omit to hide. */
   cohort?: readonly CohortTick[];
+  /** Explicit market cap from the bundle/reference series. Never inferred from price. */
+  marketCapUsd?: number | null;
+  /** Mark-to-tape summary derived from observed token amounts × the indexed last close. */
+  mark?: TapeMarkSummary | null;
+  /** Trader callsign/avatar fallback shown beside the hero stack. */
+  heroGlyph?: string | null;
   /** Milliseconds since the playhead struck this group, or null for a visited print (scar only). */
   strikeAge?: (group: BoltGroup) => number | null;
   pad?: { top: number; right: number; bottom: number; left: number };
@@ -174,6 +180,63 @@ function drawCount(ctx: CanvasRenderingContext2D, x: number, y: number, side: "b
   ctx.fillText(label, x + w / 2, y + 0.5 * k);
 }
 
+export type TapeStackLayout = { x:number; baseY:number; topY:number; labelX:number; labelY:number; width:number; chipHeight:number; gap:number; chipCount:number; stackHeight:number };
+/** Visual-only stack geometry. Chip count comes only from priced prints, never unpriced siblings. */
+export function tapeStackLayout(group:BoltGroup,groups:readonly BoltGroup[],plotH:number,k:number,x:number,y:number,topBoundary=0):TapeStackLayout {
+  const chipCount=Math.min(8,observedPricedPrintCount(group));
+  if(!chipCount || group.notional==null) return {x,baseY:y,topY:y,labelX:x,labelY:y,width:0,chipHeight:0,gap:0,chipCount:0,stackHeight:0};
+  const relative=notionalScale(group,groups),absolute=Math.min(1,Math.max(0,(Math.log10(Math.max(1,group.notional))-2)/4));
+  const ideal=(6.5+4.5*absolute)*relative*k,gap=chipCount>1?1.8*k:0;
+  const maxHeight=Math.max(4*k,Math.min(plotH*.30,Math.max(4*k,y-topBoundary-18*k)));
+  const chipHeight=Math.max(2*k,Math.min(ideal,(maxHeight-gap*(chipCount-1))/chipCount));
+  const stackHeight=chipHeight*chipCount+gap*(chipCount-1),topY=y-stackHeight,width=(24+6*absolute)*k;
+  return {x,baseY:y,topY,labelX:x,labelY:topY-8*k,width,chipHeight,gap,chipCount,stackHeight};
+}
+function drawStack(ctx:CanvasRenderingContext2D,layout:TapeStackLayout,side:"buy"|"sell",selected:boolean,k:number){
+  if(!layout.chipCount)return;
+  ctx.save();
+  for(let i=0;i<layout.chipCount;i++){
+    const y=layout.baseY-(i+1)*layout.chipHeight-i*layout.gap;
+    ctx.fillStyle="rgba(7,9,12,.92)";
+    ctx.strokeStyle=BOLT[side].fill;
+    ctx.lineWidth=Math.max(1,(selected?1.6:1.1)*k);
+    ctx.beginPath();ctx.roundRect(layout.x-layout.width/2,y,layout.width,layout.chipHeight,Math.min(layout.chipHeight/2,4*k));ctx.fill();ctx.stroke();
+    ctx.fillStyle=BOLT[side].fill;
+    ctx.globalAlpha=.28+.72*((i+1)/layout.chipCount);
+    ctx.fillRect(layout.x-layout.width/2+2*k,y+2*k,Math.max(1,layout.width-4*k),Math.max(1,layout.chipHeight-4*k));
+    ctx.globalAlpha=1;
+  }
+  ctx.restore();
+}
+function glyphText(value:string|null|undefined){
+  const clean=(value??"").replace(/^@/,"").trim();
+  return [...clean].slice(0,2).join("").toUpperCase()||"★";
+}
+function drawGlyph(ctx:CanvasRenderingContext2D,x:number,y:number,value:string|null|undefined,side:"buy"|"sell",k:number){
+  ctx.save();ctx.fillStyle="rgba(8,9,12,.96)";ctx.strokeStyle=BOLT[side].fill;ctx.lineWidth=Math.max(1,1.2*k);
+  ctx.beginPath();ctx.arc(x,y,8*k,0,Math.PI*2);ctx.fill();ctx.stroke();
+  ctx.fillStyle="#f4f2ec";ctx.font=`700 ${Math.round(7*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(glyphText(value),x,y+.3*k);ctx.restore();
+}
+function drawMarketCapChip(ctx:CanvasRenderingContext2D,rightX:number,y:number,value:number,k:number){
+  if(!(value>0)&&!Number.isFinite(value))return;
+  const label=value>=1e9?`MC ${(value/1e9).toFixed(value>=1e10?1:2).replace(/\.00$/,"").replace(/(\.\d)0$/,"$1")}B`:value>=1e6?`MC ${(value/1e6).toFixed(value>=1e7?1:2).replace(/\.00$/,"").replace(/(\.\d)0$/,"$1")}M`:`MC ${formatUsdNotional(value)}`;
+  ctx.save();ctx.font=`750 ${Math.round(9*k)}px ui-monospace,SFMono-Regular,Menlo,monospace`;const w=ctx.measureText(label).width+12*k,h=18*k;
+  ctx.fillStyle="rgba(38,24,7,.94)";ctx.strokeStyle="#FF9D2E";ctx.lineWidth=Math.max(1,k);ctx.beginPath();ctx.roundRect(rightX-w,y-h/2,w,h,7*k);ctx.fill();ctx.stroke();
+  ctx.fillStyle="#FFB45C";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(label,rightX-w/2,y+.2*k);ctx.restore();
+}
+function markUsd(value:number|null){return value==null?"":value===0?"$0":formatUsdNotional(value);}
+function drawMarkTag(ctx:CanvasRenderingContext2D,rightX:number,y:number,mark:TapeMarkSummary,k:number){
+  if(mark.markedUsd==null)return;
+  const top=`Marked ${markUsd(mark.markedUsd)}`,delta=mark.deltaUsd==null?"":`${mark.deltaUsd>=0?"+":"−"}${markUsd(Math.abs(mark.deltaUsd))}`;
+  ctx.save();ctx.font=`760 ${Math.round(9*k)}px ui-monospace,SFMono-Regular,Menlo,monospace`;
+  const w=Math.max(ctx.measureText(top).width,delta?ctx.measureText(delta).width:0,ctx.measureText("Marked on this tape").width)+14*k,h=(delta?39:29)*k;
+  ctx.fillStyle="rgba(8,9,12,.94)";ctx.strokeStyle="rgba(236,218,170,.62)";ctx.lineWidth=Math.max(1,k);ctx.beginPath();ctx.roundRect(rightX-w,y-h/2,w,h,8*k);ctx.fill();ctx.stroke();
+  ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillStyle="#f4f2ec";ctx.fillText(top,rightX-w+7*k,y-(delta?9:5)*k);
+  if(delta){ctx.fillStyle=mark.deltaUsd!>=0?BOLT.buy.fill:BOLT.sell.fill;ctx.fillText(delta,rightX-w+7*k,y+3*k);}
+  ctx.fillStyle="rgba(236,236,240,.46)";ctx.font=`600 ${Math.round(7*k)}px ui-monospace,SFMono-Regular,Menlo,monospace`;ctx.fillText("Marked on this tape",rightX-w+7*k,y+(delta?14:7)*k);ctx.restore();
+}
+
+
 const quantile = (values: number[], q: number) => {
   if (!values.length) return NaN;
   const sorted = [...values].sort((a, b) => a - b), pos = (sorted.length - 1) * q, lo = Math.floor(pos), hi = Math.ceil(pos);
@@ -211,23 +274,32 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
   const scar = (frame.scarPx ?? 12) * k;
   const cohort = (frame.cohort ?? []).filter((tick) => tick.cursor <= cursor + 1e-9);
   const strikes: { group: BoltGroup; x: number; y: number; phase: { phase: "down" | "up"; progress: number } }[] = [];
-  const notionalLabels: { group: BoltGroup; x: number }[] = [];
+  const heroKey=(groups.find((group)=>group.side==="buy")??groups[0])?.key??null;
   const placeBolt = (group: BoltGroup, x: number, y: number) => {
     const phase = strikePhase(frame.strikeAge?.(group) ?? null), selected = group.bolts.some((bolt) => bolt.id === frame.selectedId);
     if (phase.phase !== "scar") strikes.push({ group, x, y, phase });
+    let hitY=y,hitR=Math.max(16*k,scar*1.3);
     if (phase.phase !== "down") {
-      drawScar(ctx, x, y, group.side, scar * (selected ? 1.12 : 1), k, selected);
-      if (group.count > 1) drawCount(ctx, x + scar * 0.45, y - scar * 0.6, group.side, group.count, k);
+      const layout=tapeStackLayout(group,groups,plotH,k,x,y,pad.top);
+      if(layout.chipCount){
+        drawStack(ctx,layout,group.side,selected,k);
+        drawNotional(ctx,layout.labelX,layout.labelY,group.side,group.notional,k);
+        if(group.count>1)drawCount(ctx,x+layout.width/2+3*k,y-layout.chipHeight*.5,group.side,group.count,k);
+        if(group.key===heroKey)drawGlyph(ctx,x-layout.width/2-10*k,Math.max(pad.top+9*k,layout.topY+8*k),frame.heroGlyph,group.side,k);
+        hitY=layout.topY+layout.stackHeight/2;hitR=Math.max(hitR,layout.width*.7,layout.stackHeight*.55+8*k);
+      }else{
+        drawScar(ctx, x, y, group.side, scar * (selected ? 1.12 : 1), k, selected);
+        if (group.count > 1) drawCount(ctx, x + scar * 0.45, y - scar * 0.6, group.side, group.count, k);
+      }
     }
-    if (group.notional != null) notionalLabels.push({ group, x });
-    hits.push({ id: (selected ? group.bolts.find((bolt) => bolt.id === frame.selectedId) : group.lead)?.id ?? group.lead.id, x, y, r: Math.max(16 * k, scar * 1.3) });
+    hits.push({ id: (selected ? group.bolts.find((bolt) => bolt.id === frame.selectedId) : group.lead)?.id ?? group.lead.id, x, y:hitY, r:hitR });
   };
   const placeTick = (tick: CohortTick, x: number, y: number) => {
-    const selected = tick.id === frame.selectedId, len = 6 * k;
-    ctx.strokeStyle = selected ? COHORT_TICK_SELECTED : COHORT_TICK;
-    ctx.lineWidth = Math.max(1, (selected ? 2 : 1.3) * k);
-    ctx.beginPath(); ctx.moveTo(x, y + 3 * k); ctx.lineTo(x, y + 3 * k + len); ctx.stroke();
-    hits.push({ id: tick.id, x, y: y + 3 * k + len / 2, r: 10 * k });
+    const selected = tick.id === frame.selectedId,r=(selected?7:6)*k;
+    ctx.save();ctx.fillStyle=selected?"rgba(244,246,236,.22)":"rgba(214,220,200,.14)";ctx.strokeStyle=selected?COHORT_TICK_SELECTED:COHORT_TICK;ctx.lineWidth=Math.max(1,(selected?1.8:1.2)*k);
+    ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.fillStyle=selected?"rgba(244,246,236,.95)":"rgba(214,220,200,.72)";ctx.font=`700 ${Math.round(6*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(glyphText(tick.callsign).slice(0,1),x,y+.2*k);ctx.restore();
+    hits.push({ id: tick.id, x, y, r: 11*k });
   };
 
   if (candles.length) {
@@ -286,6 +358,10 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
       ctx.fillRect(x - fw / 2, top, fw, bh);
       ctx.shadowBlur = 0; ctx.globalAlpha = 1;
     }
+    const lastVisibleIndex=Math.min(candles.length-1,Math.max(0,Math.floor(Math.min(.999999,cursor)*candles.length)));
+    const lastVisible=candles[lastVisibleIndex],lastY=yOf(lastVisible.close),rightEdge=pad.left+plotW+Math.max(8*k,pad.right-4*k);
+    if(frame.marketCapUsd!=null)drawMarketCapChip(ctx,Math.min(w-4*k,rightEdge),lastY,frame.marketCapUsd,k);
+    if(frame.mark?.markedUsd!=null)drawMarkTag(ctx,pad.left+plotW-6*k,Math.max(pad.top+24*k,lastY-34*k),frame.mark,k);
   } else {
     const mid = pad.top + plotH / 2;
     ctx.strokeStyle = "rgba(236,236,240,.16)";
@@ -300,7 +376,6 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
     for (const group of groups) placeBolt(group, xAt(group.lead.cursor), mid + (group.side === "buy" ? 1 : -1) * scar * 0.9);
   }
   for (const strike of strikes) drawLightning(ctx, strike.group.key, strike.group.side, strike.x, pad.top, strike.y, k, strike.phase);
-  for (const label of notionalLabels) drawNotional(ctx, label.x, Math.max(10 * k, pad.top - 14 * k), label.group.side, label.group.notional, k);
 
   if (cursor > 0 && cursor < 1) {
     ctx.strokeStyle = CHAMPAGNE;
