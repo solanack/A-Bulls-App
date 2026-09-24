@@ -1,0 +1,51 @@
+name: That day social reach
+
+# Host-side Agent-Reach runner for the Replay "That day" strip. Nothing here ships to the browser.
+# Needs SOCIAL_INGEST_TOKEN (also set on the Intelligence Worker). TWITTER_AUTH_TOKEN / TWITTER_CT0
+# are optional and must belong to a dedicated account, never the owner's main X account.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: social-reach
+  cancel-in-progress: false
+
+jobs:
+  reach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SOCIAL_INGEST_TOKEN: ${{ secrets.SOCIAL_INGEST_TOKEN }}
+      TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
+      TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
+      INTELLIGENCE_ORIGIN: https://www.abullsapp.com
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip without an ingest token
+        id: gate
+        run: |
+          if [ -z "$SOCIAL_INGEST_TOKEN" ]; then echo "SOCIAL_INGEST_TOKEN is not configured; the Worker's own fetch path still runs."; echo "run=false" >> "$GITHUB_OUTPUT"; else echo "run=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: "22"
+      - name: Install Agent-Reach fork and backends
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          pip install --quiet "git+https://github.com/solanack/Agent-Reach"
+          if [ -n "$TWITTER_AUTH_TOKEN" ] && [ -n "$TWITTER_CT0" ]; then pip install --quiet twitter-cli; fi
+          npm install -g --silent mcporter
+          mcporter config add exa https://mcp.exa.ai/mcp --scope home || true
+      - name: Drain That day requests
+        if: steps.gate.outputs.run == 'true'
+        run: python scripts/social-reach/runner.py
