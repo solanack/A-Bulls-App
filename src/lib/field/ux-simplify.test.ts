@@ -277,7 +277,7 @@ describe("shared identity-first trader sheet for both rooms", () => {
     assert.match(sheets, /aria-label=\{`\$\{ROOM_NAME\[room\]\} trader details`\}/);
     assert.match(sheets, />REPLAY</);
     assert.match(sheets, />EVIDENCE</);
-    assert.match(sheets, />WATCH</);
+    assert.match(sheets, /"WATCH"/);
     assert.match(sheets, /COMETS · Research only\./);
     assert.doesNotMatch(sheets, /<p className="fs-selected">/);
     const field = readFileSync(new URL("./particle-field.ts", import.meta.url), "utf8");
