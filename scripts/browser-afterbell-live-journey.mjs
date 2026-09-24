@@ -122,7 +122,7 @@ try{
     const replayThread=await thread(rp);assert(Boolean(replayThread?.wallet)&&Boolean(replayThread?.mint),`${vp.name}: Replay missing wallet×mint thread context`);assert(!/Pick a trade first/i.test(await rp.locator("body").innerText()),`${vp.name}: Replay guessed/missed selected mint`);
     if(rpSelection.kind==="comet"){assert(Boolean(replayThread.entrySignature),`${vp.name}: COMET Replay did not retain receipt signature`);cometReceipt=cometReceipt||replayThread.entrySignature;}
 
-    results.viewports[vp.name]={initialStarCount:initial.count,apiStarCount:traderPayload.items.length,selectedLabel:label,identitySource,selectedWallet:starThread.wallet,planetCount:entered.state.count,latestComets:Number(cometMatch[1]),selectedMint:selectedThread.mint,replayMint:replayThread.mint,evidenceVerified:selection.kind==="planet",cometReceiptObserved:Boolean(cometReceipt||rpSelection.kind==="comet"),emptyCoverageDisclosure:emptyDisclosure,consoleErrors:errors.console,pageErrors:errors.page};
+    results.viewports[vp.name]={initialStarCount:initial.count,apiStarCount:traderPayload.items.length,selectedLabel:label,identitySource,selectedWallet:starThread.wallet,planetCount:entered.state.count,latestComets:(selectedTrader.latestTrades||[]).length,selectedMint:selectedThread.mint,replayMint:replayThread.mint,evidenceVerified:selection.kind==="planet",cometReceiptObserved:Boolean(cometReceipt||rpSelection.kind==="comet"),emptyCoverageDisclosure:emptyDisclosure,consoleErrors:errors.console,pageErrors:errors.page};
     await page.close();await rp.close();
   }
   results.ok=true;writeFileSync(out,JSON.stringify(results,null,2));console.log(JSON.stringify(results,null,2));
