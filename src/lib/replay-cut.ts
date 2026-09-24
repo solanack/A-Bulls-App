@@ -1,13 +1,17 @@
 import { synthesizeCutNarration } from "@/lib/alien-voice";
 import { BOLT, drawTape, TAPE_BG } from "@/lib/field/replay-tape-render";
-import { CUT_SIZE, groupBolts, hopSchedule, type BoltGroup, type CutFormat, type TapeBolt, type TapeCandle } from "@/lib/field/replay-tape";
+import { CUT_SIZE, groupBolts, hopSchedule, type BoltGroup, type CohortTick, type CutFormat, type TapeBolt, type TapeCandle } from "@/lib/field/replay-tape";
 
 export type ReplayCutInput = {
   format: CutFormat;
   title: string;
   roomLabel: string;
+  /** Hero trader label for the footer. */
+  trader?: string;
   candles: readonly TapeCandle[];
   bolts: readonly TapeBolt[];
+  /** Cohort ticks, only when the COHORT toggle was on. */
+  cohort?: readonly CohortTick[];
   start: number;
   end: number;
   scaleMode?: "log" | "linear";
@@ -95,7 +99,7 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   ctx.fillStyle = TAPE_BG;
   ctx.fillRect(0, 0, w, h);
   ctx.translate(0, chartTop);
-  drawTape(ctx, { width: w, height: chartBottom - chartTop, candles: input.candles, bolts: input.bolts, start: input.start, end: input.end, cursor, scaleMode: input.scaleMode ?? "log", boltPx: 20, strikeAge, scale: portrait ? 3 : 2.4, pad: { top: 24 * k, right: (portrait ? 230 : 250) * k, bottom: 64 * k, left: 56 * k } });
+  drawTape(ctx, { width: w, height: chartBottom - chartTop, candles: input.candles, bolts: input.bolts, cohort: input.cohort?.length ? input.cohort : undefined, start: input.start, end: input.end, cursor, scaleMode: input.scaleMode ?? "log", scarPx: 13, strikeAge, scale: portrait ? 3 : 2.4, pad: { top: 24 * k, right: (portrait ? 190 : 210) * k, bottom: 64 * k, left: 24 * k } });
   ctx.restore();
 
   const left = 56 * k;
@@ -124,12 +128,20 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
     ctx.font = `560 ${Math.round(36 * k)}px ui-sans-serif, system-ui, sans-serif`;
     ctx.fillText(`· ${when(latest.timestamp)}`, left + offset, lowerTop + 22 * k);
   }
-  ctx.fillStyle = "rgba(236,236,240,.7)";
-  ctx.font = `500 ${Math.round(28 * k)}px ui-sans-serif, system-ui, sans-serif`;
-  ctx.fillText(`${buys} ${buys === 1 ? "buy" : "buys"} · ${sells} ${sells === 1 ? "sell" : "sells"} on the tape`, left, lowerTop + 80 * k);
+  ctx.fillStyle = "rgba(236,236,240,.78)";
+  ctx.font = `560 ${Math.round(28 * k)}px ui-sans-serif, system-ui, sans-serif`;
+  ctx.fillText(`${input.trader ? `${input.trader} · ` : ""}${buys} ${buys === 1 ? "buy" : "buys"} · ${sells} ${sells === 1 ? "sell" : "sells"}`, left, lowerTop + 76 * k);
+  const cohort = (input.cohort ?? []).filter((tick) => tick.cursor <= cursor + 1e-9).length;
+  let next = lowerTop + 76 * k;
+  if (input.cohort?.length) {
+    next += 40 * k;
+    ctx.fillStyle = "rgba(214,220,200,.66)";
+    ctx.font = `500 ${Math.round(24 * k)}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.fillText(`Cohort · ${cohort} ${cohort === 1 ? "buy" : "buys"} after this print · same room · timing only`, left, next);
+  }
   ctx.fillStyle = "rgba(236,236,240,.44)";
   ctx.font = `500 ${Math.round(22 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  wrap(ctx, input.sourceLine, w - left * 2).slice(0, 2).forEach((line, i) => ctx.fillText(line, left, lowerTop + 132 * k + i * 32 * k));
+  wrap(ctx, input.sourceLine, w - left * 2).slice(0, 2).forEach((line, i) => ctx.fillText(line, left, next + 50 * k + i * 32 * k));
 
   ctx.fillStyle = "rgba(236,218,170,.62)";
   ctx.font = `600 ${Math.round(20 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;

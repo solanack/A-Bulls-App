@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anchorBolts, groupBolts, hopSchedule, notionalScale, priceAxisLabel, printWindow, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, strikeScale, tapeCandles, tapeEvents, tapeScaleFor, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
+import { anchorBolts, cohortTicks, fullTape, groupBolts, hopSchedule, notionalScale, priceAxisLabel, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeScaleFor, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
 
 const AB_WALLET = "G39wywquKbHK8F2wZZZFX3fcsyG91VCCbbr6WEVp5axy";
 const AB_MINT = "XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1";
@@ -77,20 +77,44 @@ const H = 3_600_000;
 const candleAt = (i: number, base = 1_790_000_000_000): TapeCandle => ({ time: (base + i * H) / 1000, timestamp: base + i * H, open: 1, high: 2, low: 0.5, close: 1.5 });
 const eventAt = (id: string, timestamp: number, side: "buy" | "sell" = "buy", extra: Partial<TapeEvent> = {}): TapeEvent => ({ id, side, timestamp, signature: null, amount: null, priceUsd: null, verification: "observed", sources: [], kind: "trade", ...extra });
 
-test("print window pads 10 candles either side of the first and last print", () => {
+test("full tape spans every retained candle, first to last, not a cropped scene around the print", () => {
   const candles = Array.from({ length: 100 }, (_, i) => candleAt(i));
   const events = [eventAt("a", candles[40].timestamp + 60_000), eventAt("b", candles[50].timestamp + 60_000, "sell")];
-  const view = printWindow(candles, events, { start: candles[0].timestamp, end: candles[99].timestamp });
-  assert.equal(view.start, candles[30].timestamp);
-  assert.equal(view.end, candles[60].timestamp + H);
-  const short = printWindow(candles.slice(0, 45), [eventAt("a", candles[2].timestamp)], { start: 0, end: 1 });
-  assert.equal(short.start, candles[0].timestamp);
+  const view = fullTape(candles, events, { start: candles[30].timestamp, end: candles[60].timestamp });
+  assert.equal(view.start, candles[0].timestamp);
+  assert.equal(view.end, candles[99].timestamp + H);
 });
 
-test("print window without candles keeps a margin around the prints", () => {
-  const view = printWindow([], [eventAt("a", 10 * H), eventAt("b", 20 * H)], { start: 0, end: 100 * H });
+test("tape axis packs candles into equal slots so a gap in the series leaves no empty tape", () => {
+  const candles = [candleAt(0), candleAt(1), candleAt(50), candleAt(51)];
+  const axis = tapeAxis(candles, candles[0].timestamp, candles[3].timestamp + H);
+  assert.equal(axis.frac(candles[0].timestamp), 0);
+  assert.equal(axis.frac(candles[2].timestamp), 0.5);
+  assert.equal(axis.center(3), 0.875);
+  assert.equal(axis.frac(candles[3].timestamp + H), 1);
+  assert.equal(axis.timeAt(0.5), candles[2].timestamp);
+});
+
+test("full tape without candles keeps a margin around the prints", () => {
+  const view = fullTape([], [eventAt("a", 10 * H), eventAt("b", 20 * H)], { start: 0, end: 100 * H });
   assert.ok(view.start < 10 * H && view.start >= 9 * H);
   assert.ok(view.end > 20 * H && view.end <= 21 * H);
+});
+
+test("cohort ticks sit on their candle slot and stay inside the tape", () => {
+  const candles = Array.from({ length: 4 }, (_, i) => candleAt(i));
+  const ticks = cohortTicks([{ id: "x", wallet: "0xabc0000000000000000000000000000000000def", callsign: "@bee", time: candles[2].timestamp + 1, source: "fomoapi.io/trades" }, { id: "late", wallet: "0xabc", time: candles[3].timestamp + 9 * H }], candles, candles[0].timestamp, candles[3].timestamp + H);
+  assert.equal(ticks.length, 1);
+  assert.equal(ticks[0].id, "cohort:x");
+  assert.equal(ticks[0].candleTime, candles[2].time);
+  assert.ok(Math.abs(ticks[0].cursor - 0.5) < 0.01);
+});
+
+test("header counts the hero and cohort without claiming a follow", () => {
+  const bolts = anchorBolts([eventAt("a", H, "buy", { verification: "provider-reported" })], [], 0, 2 * H);
+  const line = tapeHeaderLine({ token: "MarsCoin", trader: "Unipcs", bolts, cohortCount: 7 });
+  assert.equal(line, "MarsCoin · Unipcs 1 buy · 0 sells · 7 cohort buys after this print · Fomo-reported");
+  assert.doesNotMatch(line, /follow|cop(y|ied)/i);
 });
 
 test("bolts anchor on the print candle and several prints on one bar become one counted bolt", () => {
@@ -126,11 +150,14 @@ test("playhead hops bolt to bolt and dwells on each stop", () => {
   for (let p = 0; p < 1; p += 0.01) assert.ok(schedule.cursorAt(p) <= schedule.cursorAt(p + 0.01) + 1e-9);
 });
 
-test("strike goes 0.7 → 1.15 → 1.0 once, and only FOMO uses a log scale", () => {
-  assert.equal(strikeScale(0), 0.7);
-  assert.ok(Math.abs(strikeScale(STRIKE_MS * 0.45) - 1.15) < 1e-9);
-  assert.equal(strikeScale(STRIKE_MS), 1);
-  assert.equal(strikeScale(null), 1);
+test("hero lightning strikes down, returns up, then leaves a scar; only FOMO uses a log scale", () => {
+  assert.ok(STRIKE_DOWN_MS >= 120 && STRIKE_DOWN_MS <= 180);
+  assert.ok(STRIKE_UP_MS >= 80 && STRIKE_UP_MS <= 100);
+  assert.equal(STRIKE_MS, STRIKE_DOWN_MS + STRIKE_UP_MS);
+  assert.deepEqual(strikePhase(0), { phase: "down", progress: 0 });
+  assert.equal(strikePhase(STRIKE_DOWN_MS + STRIKE_UP_MS / 2).phase, "up");
+  assert.deepEqual(strikePhase(STRIKE_MS), { phase: "scar" });
+  assert.deepEqual(strikePhase(null), { phase: "scar" });
   assert.equal(tapeScaleFor("fomo"), "log");
   assert.equal(tapeScaleFor("afterbell"), "linear");
 });

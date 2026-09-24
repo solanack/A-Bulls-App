@@ -158,14 +158,37 @@ export function candleBucketMs(candles: readonly TapeCandle[], fallbackMs = 60_0
 }
 
 /**
+ * The tape's x-axis. With candles, every retained bar gets an equal slot across the full width, so gaps in
+ * the series never leave empty tape; a print sits inside its bar's slot by time. Without candles, time is linear.
+ */
+export function tapeAxis(candles: readonly TapeCandle[], startMs: number, endMs: number) {
+  const range = Math.max(1, endMs - startMs);
+  if (!candles.length) {
+    const frac = (ms: number) => Math.min(1, Math.max(0, (ms - startMs) / range));
+    return { slots: 0, frac, center: (_index: number) => 0, timeAt: (value: number) => startMs + Math.min(1, Math.max(0, value)) * range };
+  }
+  const n = candles.length, bucket = candleBucketMs(candles);
+  const frac = (ms: number) => {
+    if (ms < candles[0].timestamp) return 0;
+    const i = candleIndexAt(candles, ms), within = Math.min(1, Math.max(0, (ms - candles[i].timestamp) / bucket));
+    return Math.min(1, (i + within) / n);
+  };
+  const timeAt = (value: number) => {
+    const x = Math.min(1, Math.max(0, value)) * n, i = Math.min(n - 1, Math.floor(x));
+    return candles[i].timestamp + (x - i) * bucket;
+  };
+  return { slots: n, frac, center: (index: number) => (index + 0.5) / n, timeAt };
+}
+
+/**
  * Bolts sit on the candle whose bucket holds the print. A provider price is used only when it falls
  * inside that candle's range; otherwise it may be quoted on another scale, so the bolt sits on the
  * candle's low (buy) or high (sell).
  */
 export function anchorBolts(events: readonly TapeEvent[], candles: readonly TapeCandle[], startMs: number, endMs: number): TapeBolt[] {
-  const range = Math.max(1, endMs - startMs);
+  const axis = tapeAxis(candles, startMs, endMs);
   return events.map((event) => {
-    const cursor = Math.min(1, Math.max(0, (event.timestamp - startMs) / range));
+    const cursor = axis.frac(event.timestamp);
     if (!candles.length) return { ...event, candleTime: null, anchorPrice: null, cursor };
     const candle = candles[candleIndexAt(candles, event.timestamp)];
     const inRange = event.priceUsd != null && event.priceUsd >= candle.low && event.priceUsd <= candle.high;
@@ -173,24 +196,31 @@ export function anchorBolts(events: readonly TapeEvent[], candles: readonly Tape
   });
 }
 
-export const PRINT_PAD_CANDLES = 10;
-
-/**
- * The visible session: PRINT_PAD_CANDLES candles before the first print and after the last. One buy is
- * that session, not weeks of empty tape. With no candles, the prints are padded by a tenth of their span.
- */
-export function printWindow(candles: readonly TapeCandle[], events: readonly TapeEvent[], fallback: { start: number; end: number }, pad = PRINT_PAD_CANDLES) {
-  if (!events.length) return fallback;
-  const first = events[0].timestamp, last = events[events.length - 1].timestamp;
+/** The whole retained series for the mint, first candle to last, widened only to keep every print on the tape. */
+export function fullTape(candles: readonly TapeCandle[], events: readonly TapeEvent[], fallback: { start: number; end: number }) {
+  const first = events[0]?.timestamp, last = events.at(-1)?.timestamp;
   if (!candles.length) {
+    if (first == null || last == null) return fallback;
     const margin = Math.max(30 * 60_000, (last - first) * 0.1);
-    return { start: Math.max(fallback.start, first - margin), end: Math.min(Math.max(fallback.end, last + 1), last + margin) };
+    return { start: Math.max(fallback.start, first - margin), end: Math.max(Math.min(fallback.end, last + margin), last + 1) };
   }
   const bucket = candleBucketMs(candles);
-  const i0 = candleIndexAt(candles, first), i1 = candleIndexAt(candles, last);
-  const start = Math.min(candles[Math.max(0, i0 - pad)].timestamp, first);
-  const end = Math.max(candles[Math.min(candles.length - 1, i1 + pad)].timestamp + bucket, last + bucket);
+  const start = Math.min(candles[0].timestamp, first ?? Infinity);
+  const end = Math.max(candles[candles.length - 1].timestamp + bucket, last != null ? last + 1 : 0);
   return { start, end: Math.max(end, start + 1) };
+}
+
+/** Another wallet in the same room with a retained buy on this mint after the hero's first print. Timing only. */
+export type CohortTick = { id: string; wallet: string; callsign: string; time: number; priceUsd: number | null; source: string; sourceKind: string; txId: string | null; cursor: number; candleTime: number | null; anchorPrice: number | null };
+
+export function cohortTicks(items: unknown, candles: readonly TapeCandle[], startMs: number, endMs: number): CohortTick[] {
+  const axis = tapeAxis(candles, startMs, endMs);
+  return rows(items).flatMap((row) => {
+    const time = toMs(row.time), wallet = str(row.wallet);
+    if (!time || !wallet || time < startMs || time > endMs) return [];
+    const candle = candles.length ? candles[candleIndexAt(candles, time)] : null;
+    return [{ id: `cohort:${str(row.id) ?? `${wallet}:${time}`}`, wallet, callsign: str(row.callsign) ?? `${wallet.slice(0, 4)}…${wallet.slice(-4)}`, time, priceUsd: finite(row.priceUsd), source: str(row.source) ?? "retained", sourceKind: str(row.sourceKind) ?? "provider-reported", txId: str(row.txId), cursor: axis.frac(time), candleTime: candle?.time ?? null, anchorPrice: candle?.low ?? null }];
+  }).sort((a, b) => a.time - b.time);
 }
 
 export type BoltGroup = { key: string; side: "buy" | "sell"; bolts: TapeBolt[]; lead: TapeBolt; count: number; cursor: number; notional: number | null };
@@ -261,13 +291,27 @@ export function hopSchedule(boltCursors: readonly number[]) {
   return { stops, arrivals, cursorAt, progressAt };
 }
 
-export const STRIKE_MS = 200;
+/** Hero lightning: the bolt strikes down onto the candle, climbs back up, and leaves a scar. */
+export const STRIKE_DOWN_MS = 150;
+export const STRIKE_UP_MS = 90;
+export const STRIKE_MS = STRIKE_DOWN_MS + STRIKE_UP_MS;
 
-/** Strike scale on playhead hit: 0.7 → 1.15 → 1.0 over STRIKE_MS, then steady. */
-export function strikeScale(ageMs: number | null) {
-  if (ageMs == null || ageMs < 0 || ageMs >= STRIKE_MS) return 1;
-  const peak = STRIKE_MS * 0.45;
-  return ageMs < peak ? 0.7 + 0.45 * (ageMs / peak) : 1.15 - 0.15 * ((ageMs - peak) / (STRIKE_MS - peak));
+export type StrikePhase = { phase: "down"; progress: number } | { phase: "up"; progress: number } | { phase: "scar" };
+export function strikePhase(ageMs: number | null): StrikePhase {
+  if (ageMs == null || ageMs < 0 || ageMs >= STRIKE_MS) return { phase: "scar" };
+  if (ageMs < STRIKE_DOWN_MS) return { phase: "down", progress: ageMs / STRIKE_DOWN_MS };
+  return { phase: "up", progress: (ageMs - STRIKE_DOWN_MS) / STRIKE_UP_MS };
+}
+
+/** Header counts over the whole tape: hero buys and sells, and how many cohort buys came after. */
+export function tapeHeaderLine(input: { token: string; trader: string; bolts: readonly TapeBolt[]; cohortCount: number | null }) {
+  const buys = input.bolts.filter((bolt) => bolt.side === "buy").length, sells = input.bolts.length - buys;
+  const reported = input.bolts.filter((bolt) => bolt.verification === "provider-reported").length;
+  const evidence = !input.bolts.length ? null : reported === input.bolts.length ? "Fomo-reported" : reported ? "Observed + Fomo-reported" : "Observed on-chain";
+  const parts = [input.token, `${input.trader} ${buys} ${buys === 1 ? "buy" : "buys"}`, `${sells} ${sells === 1 ? "sell" : "sells"}`];
+  if (input.cohortCount != null) parts.push(`${input.cohortCount} cohort ${input.cohortCount === 1 ? "buy" : "buys"} after this print`);
+  if (evidence) parts.push(evidence);
+  return parts.join(" · ");
 }
 
 /** Price axis: FOMO memecoins read on a log scale; Afterbell xStocks stay linear. */
@@ -313,7 +357,7 @@ export type CutFormat = "portrait" | "landscape";
 export const CUT_SIZE: Record<CutFormat, { width: number; height: number }> = { portrait: { width: 1080, height: 1920 }, landscape: { width: 1920, height: 1080 } };
 
 /** The Cut manifest names exactly what the video shows so anyone can re-check it against the chain. */
-export function buildCutManifest(input: { subject: ReplaySubject; bolts: readonly TapeBolt[]; candleCount: number; candleSource: string | null; start: number; end: number; replayUrl: string; format: CutFormat; greyLine: string | null; generatedAt?: string }) {
+export function buildCutManifest(input: { subject: ReplaySubject; bolts: readonly TapeBolt[]; cohortCount?: number; candleCount: number; candleSource: string | null; start: number; end: number; replayUrl: string; format: CutFormat; greyLine: string | null; generatedAt?: string }) {
   const size = CUT_SIZE[input.format];
   return {
     kind: "a-bulls-replay-cut",
@@ -333,6 +377,7 @@ export function buildCutManifest(input: { subject: ReplaySubject; bolts: readonl
     signatures: input.bolts.flatMap((bolt) => (bolt.signature ? [bolt.signature] : [])),
     buyCount: input.bolts.filter((bolt) => bolt.side === "buy").length,
     sellCount: input.bolts.filter((bolt) => bolt.side === "sell").length,
+    cohortBuysAfterFirstPrint: input.cohortCount ?? 0,
     greyLine: input.greyLine,
     replayUrl: input.replayUrl,
     disclosure: "Research only. Every bolt is a retained buy or sell print. No price path was invented. A Bulls App is not a broker and executes no trades.",
