@@ -72,20 +72,37 @@ def twitter_search(terms, since, until, env):
     ]
 
 
-def exa_search(terms, since, until):
+def exa_search(item, since, until):
+    """Agent-Reach's zero-credential Exa route.
+
+    Exa is semantic rather than Boolean search, so describe the X status pages we want instead of
+    sending the Worker's OR-heavy provider query. Explicit text output keeps result blocks parseable.
+    """
     if not shutil.which("mcporter"):
         raise RuntimeError("mcporter unavailable")
-    query = f"{terms} site:x.com after:{since} before:{until}"
-    out = subprocess.run(["mcporter", "call", "exa.web_search_exa", f"query={query}", "numResults=10"], capture_output=True, text=True, timeout=120)
+    symbol = str(item.get("symbol") or "").lstrip("$")
+    name = str(item.get("name") or "")
+    mint = str(item.get("mint") or "")
+    aliases = ", ".join(part for part in (name, f"$"+"{symbol}" if symbol else "", f"mint "+"{mint}" if mint else "") if part)
+    query = f"X.com status posts about the token "+"{aliases}"+f" published between "+"{since}"+f" and "+"{until}"+ " site:x.com"
+    out = subprocess.run(
+        ["mcporter", "call", "exa.web_search_exa", f"query="+"{query}", "numResults=15", "--output", "text"],
+        capture_output=True, text=True, timeout=120,
+    )
     if out.returncode != 0:
         detail = (out.stderr or out.stdout or "").strip().splitlines()
-        raise RuntimeError(f"exa exit {out.returncode}: {(detail[-1] if detail else 'no detail')[:180]}")
-    posts, blocks = [], re.split(r"\n-{3,}\n", out.stdout)
-    for block in blocks:
+        raise RuntimeError(f"exa exit "+"{out.returncode}"+f": "+"{(detail[-1] if detail else 'no detail')[:180]}")
+    posts = []
+    for block in re.split(r"\n\s*-{3,}\s*\n", out.stdout):
         match = STATUS_URL.search(block)
-        if match:
-            highlights = block.split("Highlights:", 1)[-1]
-            posts.append({"id": match.group(2), "handle": match.group(1), "url": match.group(0), "text": " ".join(highlights.replace("...", " ").split())})
+        if not match:
+            continue
+        if "Highlights:" in block:
+            text = block.split("Highlights:", 1)[-1]
+        else:
+            text = block
+        text = " ".join(text.replace("...", " ").split())
+        posts.append({"id": match.group(2), "handle": match.group(1), "url": match.group(0), "text": text[:4000]})
     return posts
 
 
@@ -117,7 +134,7 @@ def main():
                     failures.append(f"{piece['bucket']}:twitter:{error}")
             if found is None and exa_ready:
                 try:
-                    found = exa_search(terms, piece["since"], piece["until"])
+                    found = exa_search(item, piece["since"], piece["until"])
                     used.add("exa")
                 except Exception as error:
                     failures.append(f"{piece['bucket']}:exa:{error}")
