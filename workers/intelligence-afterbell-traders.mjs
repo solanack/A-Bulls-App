@@ -42,7 +42,7 @@ export function afterbellWindow(nowMs=Date.now()){
 
 function walletCallsign(wallet){const value=s(wallet);return value.length>=8?`${value.slice(0,4)}…${value.slice(-4)}`:value||'PUBLIC WALLET';}
 function safeAlias(value){const alias=s(value).replace(/^@/,'').slice(0,80);return alias&&alias.toLowerCase()!=='unknown'?alias:null;}
-async function retainedIdentityMap(db,wallets=[]){
+export async function retainedIdentityMap(db,wallets=[]){
   const unique=[...new Set(wallets.map(s).filter(Boolean))];const map=new Map(unique.map(wallet=>[wallet,{displayName:walletCallsign(wallet),displayNameSource:'wallet-callsign'}]));
   if(!unique.length)return map;const placeholders=unique.map(()=>'?').join(',');
   const fomo=await all(db.prepare(`SELECT solana_wallet wallet,handle,display_name,captured_at FROM fomo_traders WHERE solana_wallet IN (${placeholders}) ORDER BY captured_at DESC,current_rank ASC`).bind(...unique));
