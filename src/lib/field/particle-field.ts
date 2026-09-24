@@ -582,6 +582,23 @@ export class ParticleFieldRenderer {
     console.info("[field-renderer] WebGL context restored");
   };
 
+  #suspended = false;
+  /** Replay owns the screen: detach the WebGL canvas and stop drawing until it closes. */
+  setSuspended(on: boolean) {
+    if (this.destroyed || on === this.#suspended) return;
+    this.#suspended = on;
+    const canvas = this.renderer.domElement;
+    if (on) {
+      canvas.remove();
+      this.host.dataset.fieldSuspended = "true";
+    } else {
+      if (!canvas.isConnected) this.host.prepend(canvas);
+      delete this.host.dataset.fieldSuspended;
+      this.#last = performance.now();
+      if (this.#pageVisible && !this.#contextLost) this.resize();
+    }
+  }
+
   #onVisibilityChange = () => {
     this.#pageVisible = document.visibilityState !== "hidden";
     this.#last = performance.now();
@@ -853,7 +870,7 @@ export class ParticleFieldRenderer {
 
   #frame = (now: number) => {
     if (this.destroyed) return;
-    if (!this.#pageVisible || this.#contextLost) {
+    if (!this.#pageVisible || this.#contextLost || this.#suspended) {
       this.#last = now;
       this.#raf = requestAnimationFrame(this.#frame);
       return;
