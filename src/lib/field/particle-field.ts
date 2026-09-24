@@ -126,11 +126,8 @@ void main() {
     alpha = max(core, max(halo * 0.2, rays * 0.34));
     light = 0.9 + core * 0.65 + rays * 0.5;
   } else if (vCosmic < 2.5) {
-    // PLANET — solid ocean-blue token body. No halo/bloom; selection is handled separately.
-    if (d > 1.0) discard;
-    float disc = 1.0 - smoothstep(0.94, 1.0, d);
-    alpha = disc * 0.98;
-    light = 0.76 + (1.0 - d) * 0.18;
+    // PLANET bodies render in the dedicated opaque instanced pass.
+    discard;
   } else if (vCosmic < 3.5) {
     // MOON — smaller, crisp related collection.
     if (d > 1.0) discard;
@@ -195,6 +192,68 @@ void main() {
 
   if (alpha < 0.012) discard;
   gl_FragColor = vec4(vColor * light, alpha);
+}
+`;
+
+const PLANET_VERT = /* glsl */ `
+attribute float aObserved;
+attribute vec3 aColor;
+uniform float uIntensity;
+uniform float uPull;
+uniform float uReplayActive;
+uniform float uReplayCursor;
+uniform vec3 uPlanetLight;
+varying vec3 vColor;
+varying float vReplayVisible;
+varying vec2 vLocal;
+varying vec3 vLightDir;
+void main() {
+  float replayVisible = 1.0 - step(uReplayCursor + 0.0005, aObserved);
+  vReplayVisible = mix(1.0, replayVisible, uReplayActive);
+  vec3 origin = vec3(0.0, 6.0, 0.0);
+  float t = uPull;
+  float ease = t * t * (3.0 - 2.0 * t);
+  vec3 center = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+  float pSize = length(vec3(instanceMatrix[0][0], instanceMatrix[1][0], instanceMatrix[2][0]));
+  vec3 p = mix(center, origin, ease * 0.9);
+  float ang = ease * (4.2 + center.y * 0.014);
+  float c = cos(ang);
+  float s = sin(ang);
+  vec3 delta = p - origin;
+  p = origin + vec3(delta.x * c - delta.z * s, delta.y * (1.0 - ease * 0.38), delta.x * s + delta.z * c);
+  vColor = aColor * uIntensity;
+  vLocal = position.xy;
+  vLightDir = normalize((viewMatrix * vec4(uPlanetLight - center, 0.0)).xyz);
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  float size = pSize * mix(1.0, 0.28, ease) * max(vReplayVisible, 0.04);
+  mv.xy += position.xy * size;
+  gl_Position = projectionMatrix * mv;
+}
+`;
+
+const PLANET_FRAG = /* glsl */ `
+varying vec3 vColor;
+varying float vReplayVisible;
+varying vec2 vLocal;
+varying vec3 vLightDir;
+void main() {
+  if (vReplayVisible < 0.5) discard;
+  float d2 = dot(vLocal, vLocal);
+  if (d2 > 1.0) discard;
+  float z = sqrt(max(0.0, 1.0 - d2));
+  vec3 normal = normalize(vec3(vLocal.x, vLocal.y, z));
+  vec3 lightDir = normalize(vLightDir);
+  float ndl = dot(normal, lightDir);
+  float terminator = smoothstep(-0.16, 0.28, ndl);
+  vec3 viewDir = vec3(0.0, 0.0, 1.0);
+  vec3 reflected = reflect(-lightDir, normal);
+  float specular = pow(max(dot(reflected, viewDir), 0.0), 30.0) * 0.42;
+  float rim = pow(clamp(1.0 - z, 0.0, 1.0), 5.0) * 0.22;
+  vec3 lit = vColor * (0.20 + terminator * 0.80);
+  lit += vec3(specular);
+  lit += vColor * rim;
+  float edge = 1.0 - smoothstep(0.965, 1.0, sqrt(d2));
+  gl_FragColor = vec4(lit, edge);
 }
 `;
 
@@ -318,8 +377,29 @@ function disposeLabelSprite(sprite: THREE.Sprite) {
 }
 
 const FOMO_AMETHYST: [number, number, number] = [0.7, 0.5, 1.0];
-const OCEAN_BLUE: [number, number, number] = [0.08, 0.48, 0.82];
 const AFTERBELL_ICE: [number, number, number] = [0.7, 0.84, 1.0];
+const COMET_VIOLET: [number, number, number] = [0.58, 0.28, 0.96];
+const PLANET_GOLD: [number, number, number] = [0.78, 0.56, 0.22];
+const PLANET_RUST: [number, number, number] = [0.64, 0.18, 0.08];
+const PLANET_MAGENTA: [number, number, number] = [0.60, 0.10, 0.58];
+const PLANET_DEEP_BLUE: [number, number, number] = [0.025, 0.20, 0.62];
+const PLANET_CYAN: [number, number, number] = [0.04, 0.55, 0.78];
+
+function namedCharacterToken(particle:FieldParticle){
+  const label=`${String(particle.metadata?.symbol??"")} ${String(particle.metadata?.name??"")}`.toLowerCase();
+  return /\\b(raycat|cat|doge?|pepe|frog|wojak|monkey|ape|shib|bonk|mog)\\b/.test(label);
+}
+function planetAlbedo(particle:FieldParticle):[number,number,number]{
+  const rank=Number(particle.metadata?.positionRank);
+  if(Number.isFinite(rank)&&rank===1)return PLANET_GOLD;
+  if(String(particle.metadata?.latestTradeSide??"").toLowerCase()==="sell")return PLANET_RUST;
+  if(namedCharacterToken(particle))return PLANET_MAGENTA;
+  return particle.magnitudeBand<.68?PLANET_CYAN:PLANET_DEEP_BLUE;
+}
+function focusedTraderLight(snapshot:UniverseSnapshot):[number,number,number]{
+  const star=snapshot.particles.find(item=>["focused-trader-star","focused-afterbell-trader-star"].includes(String(item.metadata?.systemRole??"")));
+  return star?.position??[0,6,0];
+}
 
 function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMaterial, limit: number) {
   const visible = snapshot.particles.slice(0, limit);
@@ -340,9 +420,11 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
         ? FOMO_AMETHYST
         : targetGalaxy === "afterbell" || entity.metadata?.afterbellTrader === true
           ? AFTERBELL_ICE
-          : renderCosmicKind(entity) === "planet"
-            ? OCEAN_BLUE
-            : snapshot.galaxyId === "pons"
+          : renderCosmicKind(entity) === "comet"
+            ? COMET_VIOLET
+            : renderCosmicKind(entity) === "planet"
+              ? planetAlbedo(entity)
+              : snapshot.galaxyId === "pons"
             ? ([
                 base[0] * 0.58 + 0.38,
                 base[1] * 0.62 + 0.34,
@@ -365,6 +447,36 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
   const mesh = new THREE.InstancedMesh(geometry, material, count);
   mesh.frustumCulled = false;
   mesh.renderOrder = 2;
+  visible.forEach((entity, i) => {
+    _dummy.position.set(entity.position[0], entity.position[1], entity.position[2]);
+    _dummy.scale.setScalar(cosmicWorldSize(entity));
+    _dummy.rotation.set(0, 0, 0);
+    _dummy.updateMatrix();
+    mesh.setMatrixAt(i, _dummy.matrix);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  return { mesh, positions, colors };
+}
+
+function buildPlanetMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMaterial, limit: number) {
+  const visible = snapshot.particles.slice(0, limit).filter(entity => renderCosmicKind(entity) === "planet");
+  const count = visible.length;
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const observed = new Float32Array(count);
+  const duration = Math.max(1, snapshot.windowEnd - snapshot.windowStart);
+  visible.forEach((entity, i) => {
+    positions.set(entity.position, i * 3);
+    colors.set(planetAlbedo(entity), i * 3);
+    observed[i] = clamp((entity.observedAt - snapshot.windowStart) / duration, 0, 1);
+  });
+  const geometry = new THREE.CircleGeometry(1, 24);
+  geometry.setAttribute("aObserved", new THREE.InstancedBufferAttribute(observed, 1));
+  geometry.setAttribute("aColor", new THREE.InstancedBufferAttribute(colors, 3));
+  geometry.userData.entities = visible;
+  const mesh = new THREE.InstancedMesh(geometry, material, count);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 3;
   visible.forEach((entity, i) => {
     _dummy.position.set(entity.position[0], entity.position[1], entity.position[2]);
     _dummy.scale.setScalar(cosmicWorldSize(entity));
@@ -405,9 +517,11 @@ export class ParticleFieldRenderer {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   points: THREE.InstancedMesh;
+  planets: THREE.InstancedMesh;
   stars: THREE.InstancedMesh;
   liveLabels: THREE.Sprite[] = [];
   material: THREE.ShaderMaterial;
+  planetMaterial: THREE.ShaderMaterial;
   starMaterial: THREE.MeshBasicMaterial;
   basePositions: Float32Array;
   colors: Float32Array;
@@ -504,11 +618,31 @@ export class ParticleFieldRenderer {
       fragmentShader: FIELD_FRAG,
     });
 
+    this.planetMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: true,
+      depthTest: true,
+      blending: THREE.NormalBlending,
+      toneMapped: false,
+      uniforms: {
+        uIntensity: { value: 1.15 },
+        uPull: { value: 0 },
+        uReplayActive: { value: 0 },
+        uReplayCursor: { value: 1 },
+        uPlanetLight: { value: new THREE.Vector3(...focusedTraderLight(snapshot)) },
+      },
+      vertexShader: PLANET_VERT,
+      fragmentShader: PLANET_FRAG,
+    });
+
     const fieldMesh = buildFieldMesh(snapshot, this.material, budget.field);
+    const planetMesh = buildPlanetMesh(snapshot, this.planetMaterial, budget.field);
     this.basePositions = new Float32Array(fieldMesh.positions);
     this.colors = fieldMesh.colors;
     this.points = fieldMesh.mesh;
+    this.planets = planetMesh.mesh;
     this.scene.add(this.points);
+    this.scene.add(this.planets);
     this.#rebuildLiveLabels();
 
     this.starMaterial = new THREE.MeshBasicMaterial({
@@ -610,7 +744,9 @@ export class ParticleFieldRenderer {
     if (this.destroyed) return;
     const galaxyChanged = snapshot.galaxyId !== this.snapshot.galaxyId;
     const fieldMesh = buildFieldMesh(snapshot, this.material, deviceBudget().field);
+    const planetMesh = buildPlanetMesh(snapshot, this.planetMaterial, deviceBudget().field);
     const previous = this.points;
+    const previousPlanets = this.planets;
     this.snapshot = snapshot;
     if (galaxyChanged) {
       this.cameraState = { yaw: 0.4, pitch: 0.18, distance: snapshot.galaxyId === "galaxy-zero" ? GALAXY_ZERO_CAMERA_DISTANCE : 125, target: [0, 0, 0] };
@@ -619,10 +755,16 @@ export class ParticleFieldRenderer {
     this.basePositions = new Float32Array(fieldMesh.positions);
     this.colors = fieldMesh.colors;
     this.points = fieldMesh.mesh;
+    this.planets = planetMesh.mesh;
+    this.planetMaterial.uniforms.uPlanetLight.value.set(...focusedTraderLight(snapshot));
     this.points.scale.set(1, snapshot.galaxyId === "pons" ? 0.72 : 1, 1);
+    this.planets.scale.copy(this.points.scale);
     this.scene.add(this.points);
+    this.scene.add(this.planets);
     previous.removeFromParent();
+    previousPlanets.removeFromParent();
     previous.geometry.dispose();
+    previousPlanets.geometry.dispose();
     this.renderer.domElement.setAttribute(
       "aria-label",
       `Interactive ${snapshot.galaxyId} activity field`,
@@ -709,6 +851,8 @@ export class ParticleFieldRenderer {
     this.replayPlaying = active && playing && this.replayCursor < 1;
     this.material.uniforms.uReplayActive.value = active ? 1 : 0;
     this.material.uniforms.uReplayCursor.value = this.replayCursor;
+    this.planetMaterial.uniforms.uReplayActive.value = active ? 1 : 0;
+    this.planetMaterial.uniforms.uReplayCursor.value = this.replayCursor;
   }
 
   getParentPositions() {
@@ -839,7 +983,9 @@ export class ParticleFieldRenderer {
       const z0 = pos[i * 3 + 2];
       this.#pick.set(x0, y0, z0);
       const focusCat = this.material.uniforms.uFocusCat.value;
-      if (this.focused && (CATEGORY_INDEX[entities[i].category] ?? 6) === focusCat) {
+      const systemRole=String(metadata?.systemRole??"");
+      const fixedOrbitPlanet=systemRole==="trader-position-planet"||systemRole==="afterbell-trader-position-planet";
+      if (this.focused && !fixedOrbitPlanet && (CATEGORY_INDEX[entities[i].category] ?? 6) === focusCat) {
         this.#pick.lerp(this.material.uniforms.uFocus.value, this.material.uniforms.uFocusAmt.value * 0.22);
       }
       this.#pick.applyMatrix4(this.points.matrixWorld).project(this.camera);
@@ -905,15 +1051,21 @@ export class ParticleFieldRenderer {
     if (!this.reducedMotion && !this.#gestures.interacting && this.queryBlend < 0.02) {
       this.cameraState.yaw += elapsed * this.autoSpin * 60;
       this.points.rotation.y += elapsed * 0.09;
+      this.planets.rotation.y = this.points.rotation.y;
       this.stars.rotation.y += elapsed * 0.05;
     }
 
     this.material.uniforms.uTime.value = now / 1000;
     this.material.uniforms.uIntensity.value = 1.15 - this.queryBlend * 0.96;
     this.material.uniforms.uPull.value = this.queryBlend;
+    this.planetMaterial.uniforms.uIntensity.value = 1.05 - this.queryBlend * 0.88;
+    this.planetMaterial.uniforms.uPull.value = this.queryBlend;
+    this.planetMaterial.uniforms.uReplayCursor.value = this.replayCursor;
     const fieldScale = 1 - this.queryBlend * 0.06;
     this.points.scale.set(fieldScale, fieldScale * (this.snapshot.galaxyId === "pons" ? 0.72 : 1), fieldScale);
+    this.planets.scale.copy(this.points.scale);
     this.points.visible = this.queryBlend < 0.97;
+    this.planets.visible = this.queryBlend < 0.97;
     this.starMaterial.opacity = 0.54 + this.queryBlend * 0.32;
 
     const c = this.cameraState;
@@ -956,10 +1108,12 @@ export class ParticleFieldRenderer {
     globalThis.visualViewport?.removeEventListener("resize", this.#onResize);
     document.removeEventListener("visibilitychange", this.#onVisibilityChange);
     this.points.geometry.dispose();
+    this.planets.geometry.dispose();
     for (const sprite of this.liveLabels) disposeLabelSprite(sprite);
     this.liveLabels = [];
     this.stars.geometry.dispose();
     this.material.dispose();
+    this.planetMaterial.dispose();
     this.starMaterial.dispose();
     this.renderer.domElement.removeEventListener("webglcontextlost", this.#onContextLost, false);
     this.renderer.domElement.removeEventListener("webglcontextrestored", this.#onContextRestored, false);

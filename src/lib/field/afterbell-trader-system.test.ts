@@ -18,6 +18,11 @@ test("Afterbell trader descent is holdings-first, then most-traded, deduped to t
  assert.equal(comets.length,3);
  assert.deepEqual(comets.map(item=>item.metadata?.signature),["sig-1","sig-2","sig-3"]);
  assert.equal(snapshot.samplingPolicy.includes("maximum 10"),true);
+ const star=snapshot.particles.find(item=>item.cosmicKind==="star");
+ assert.equal(star?.position[0],0);
+ assert.equal(star?.position[2],0);
+ for(const planet of planets)assert.ok(Math.hypot(planet.position[0],planet.position[2])>=40,`planet inside empty core: ${planet.position}`);
+ for(const comet of comets)assert.ok(Math.hypot(comet.position[0],comet.position[2])>=72,`comet left outer lane: ${comet.position}`);
 });
 
 test("Afterbell trader system remains honestly empty when retained activity is unavailable",()=>{

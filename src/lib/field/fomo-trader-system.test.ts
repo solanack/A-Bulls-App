@@ -49,3 +49,26 @@ test("numeric Fomo Solana network ids keep planets and comets on the Solana subj
   assert.equal(comet?.metadata?.chainKey,"solana");
   assert.equal(comet?.metadata?.wallet,solanaWallet);
 });
+
+
+test("Fomo trader system keeps the STAR at the core and every position PLANET outside radius 40",()=>{
+  const snapshot=buildFomoTraderSystemSnapshot(response()),star=snapshot.particles.find(item=>item.cosmicKind==="star"),planets=snapshot.particles.filter(item=>item.cosmicKind==="planet"),comets=snapshot.particles.filter(item=>item.cosmicKind==="comet");
+  assert.equal(star?.position[0],0);
+  assert.equal(star?.position[2],0);
+  for(const planet of planets)assert.ok(Math.hypot(planet.position[0],planet.position[2])>=40,`planet inside empty core: ${planet.position}`);
+  for(const comet of comets)assert.ok(Math.hypot(comet.position[0],comet.position[2])>=72,`comet left outer lane: ${comet.position}`);
+});
+
+test("Fomo ten-planet trader layout uses full-circle slots with wide same-ring separation",()=>{
+  const data=response();
+  data.positions=Array.from({length:10},(_,index)=>({rank:index+1,mint:`0x${String(index+1).padStart(40,"0")}`,symbol:`T${index+1}`,name:`Token ${index+1}`,chain:"base",networkId:"base",sourceKind:"fomo-reported",observedNetTokenFlow:null,tradeCount:null,eventCount:null,lastObservedAt:null}));
+  data.latestTrades=[];
+  const planets=buildFomoTraderSystemSnapshot(data).particles.filter(item=>item.cosmicKind==="planet");
+  assert.equal(planets.length,10);
+  const angles=planets.map(item=>({r:Math.hypot(item.position[0],item.position[2]),a:Math.atan2(item.position[2],item.position[0])}));
+  for(let i=0;i<angles.length;i++)for(let j=i+1;j<angles.length;j++){
+    if(Math.abs(angles[i].r-angles[j].r)>1e-6)continue;
+    let delta=Math.abs(angles[i].a-angles[j].a);delta=Math.min(delta,Math.PI*2-delta);
+    assert.ok(delta>=28*Math.PI/180,`same-ring PLANETS too close: ${delta*180/Math.PI}deg`);
+  }
+});

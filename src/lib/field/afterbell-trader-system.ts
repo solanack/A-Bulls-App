@@ -6,7 +6,19 @@ type HoldingMeta={mint:string;observedNetAmount:number;lastObservedAt:number;sou
 type MostTradedMeta={mint:string;uniqueAfterCloseTxCount:number;eventCount:number;lastObservedAt:number;symbol?:string|null;name?:string|null;cashSymbol?:string|null};
 type TradeMeta={mint:string;txId?:string|null;side:string;amount:number;blockTime:number;priceUsd?:number|null;priceSol?:number|null;source?:string;sourceKind?:string};
 const arr=<T>(value:unknown):T[]=>Array.isArray(value)?value as T[]:[];
-function planetPos(index:number,count:number):[number,number,number]{const angle=index/Math.max(1,count)*Math.PI*2-Math.PI/2,ring=index<5?29:48;return[Math.cos(angle)*ring,2+Math.sin(angle*2)*5,Math.sin(angle)*ring];}
+const PLANET_COLLISION_DISTANCE=18;
+function planetPos(index:number,count:number,occupied:readonly [number,number,number][]):[number,number,number]{
+  const n=Math.max(1,count),angle=index/n*Math.PI*2-Math.PI/2+.21;
+  let ring=n<=3?52:index%2===0?44:60;
+  const point=(radius:number):[number,number,number]=>[Math.cos(angle)*radius,8+Math.sin(angle*2)*3.5,Math.sin(angle)*radius];
+  let position=point(ring);
+  while(occupied.some(other=>Math.hypot(other[0]-position[0],other[2]-position[2])<PLANET_COLLISION_DISTANCE)){ring+=16;position=point(ring);}
+  return position;
+}
+function cometPos(index:number,side:string,target:[number,number,number]|null):[number,number,number]{
+  const fallback=index/3*Math.PI*2-Math.PI/2+.45,base=target?Math.atan2(target[2],target[0]):fallback,angle=base+(side==="sell"?.28:-.28),ring=78+index*8;
+  return[Math.cos(angle)*ring,18+Math.sin(angle*2)*4,Math.sin(angle)*ring];
+}
 
 export function buildAfterbellTraderSystemSnapshot(traderStar:FieldParticle):UniverseSnapshot{
   const wallet=typeof traderStar.metadata?.wallet==="string"?traderStar.metadata.wallet.trim():"";
@@ -23,19 +35,21 @@ export function buildAfterbellTraderSystemSnapshot(traderStar:FieldParticle):Uni
   const uniqueMints=orderedMints.slice(0,10);
   const particles:FieldParticle[]=[{...traderStar,id:canonicalUniverseId("star",wallet||traderStar.id,"afterbell"),position:[0,28,0],magnitudeBand:1,metadata:{...(traderStar.metadata??{}),systemRole:"focused-afterbell-trader-star"}}];
 
+  const planetPositions:[number,number,number][]=[];
   for(const [index,mint] of uniqueMints.entries()){
     const asset=assetMap.get(mint),holding=holdingMap.get(mint),traded=tradedMap.get(mint),mintTrades=trades.filter(item=>item.mint===mint);
     const last=Math.max(holding?.lastObservedAt??0,traded?.lastObservedAt??0,...mintTrades.map(item=>item.blockTime*1000),traderStar.observedAt);
     const sourceKind=holding?"observed":mintTrades.some(item=>item.sourceKind==="observed-fact")?"observed":"provider-reported";
     particles.push({
       id:`afterbell-planet:${mint.toLowerCase()}`,kind:"token",cosmicKind:"planet",originGalaxyId:"solana-core",verificationState:sourceKind,observedAt:last,category:"swap",
-      magnitudeBand:.9-index*.05,position:planetPos(index,uniqueMints.length),source:mintTrades[0]?.source??traderStar.source??null,
-      metadata:{mint,symbol:holding?.symbol??traded?.symbol??asset?.symbol??asset?.cashSymbol??null,name:holding?.name??traded?.name??asset?.name??null,cashSymbol:holding?.cashSymbol??traded?.cashSymbol??asset?.cashSymbol??null,chain:"solana",chainKey:"solana",wallet,traderWallet:wallet,afterbellEquity:true,positionBasis:holding?"retained-holding":"most-traded",observedNetAmount:holding?.observedNetAmount??null,holdingSourceKind:holding?.sourceKind??null,uniqueAfterCloseTxCount:traded?.uniqueAfterCloseTxCount??0,eventCount:traded?.eventCount??0,tradeCount:mintTrades.length,systemRole:"afterbell-trader-position-planet"}
+      magnitudeBand:.9-index*.05,position:planetPos(index,uniqueMints.length,planetPositions),source:mintTrades[0]?.source??traderStar.source??null,
+      metadata:{mint,symbol:holding?.symbol??traded?.symbol??asset?.symbol??asset?.cashSymbol??null,name:holding?.name??traded?.name??asset?.name??null,cashSymbol:holding?.cashSymbol??traded?.cashSymbol??asset?.cashSymbol??null,chain:"solana",chainKey:"solana",wallet,traderWallet:wallet,afterbellEquity:true,positionRank:index+1,latestTradeSide:mintTrades[0]?.side??null,positionBasis:holding?"retained-holding":"most-traded",observedNetAmount:holding?.observedNetAmount??null,holdingSourceKind:holding?.sourceKind??null,uniqueAfterCloseTxCount:traded?.uniqueAfterCloseTxCount??0,eventCount:traded?.eventCount??0,tradeCount:mintTrades.length,systemRole:"afterbell-trader-position-planet"}
     });
+    planetPositions.push(particles.at(-1)!.position);
   }
 
   for(const [index,trade] of trades.entries()){
-    const target=particles.find(p=>p.cosmicKind==="planet"&&p.metadata?.mint===trade.mint),end=(target?.position??[20-index*4,-6,18]) as [number,number,number],position:[number,number,number]=trade.side==="buy"?[end[0]*.55,end[1]+14,end[2]*.55]:[end[0]*1.45,end[1]+13,end[2]*1.45],observedAt=trade.blockTime*1000;
+    const target=particles.find(p=>p.cosmicKind==="planet"&&p.metadata?.mint===trade.mint),end=(target?.position??null) as [number,number,number]|null,position=cometPos(index,trade.side,end),observedAt=trade.blockTime*1000;
     particles.push({id:`afterbell-comet:${trade.txId??`${wallet}:${trade.blockTime}:${index}`}`,eventId:trade.txId??`afterbell:${wallet}:${trade.blockTime}:${index}`,kind:"trade",cosmicKind:"comet",originGalaxyId:"afterbell",verificationState:trade.sourceKind==="observed-fact"?"observed":"provider-reported",observedAt,category:"swap",magnitudeBand:.94-index*.055,position,source:trade.source??null,metadata:{signature:trade.txId??null,wallet,traderWallet:wallet,mint:trade.mint,chain:"solana",chainKey:"solana",side:trade.side,tokenAmount:trade.amount,priceUsd:trade.priceUsd??null,priceSol:trade.priceSol??null,entryTs:observedAt,sourceKind:trade.sourceKind??null,tradeOrder:index+1,systemRole:"afterbell-trade-comet"}});
   }
 
