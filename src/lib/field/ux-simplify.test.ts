@@ -275,12 +275,13 @@ describe("shared identity-first trader sheet for both rooms", () => {
     assert.match(shell, /openTraderResearch\(next\)/);
     assert.doesNotMatch(shell, /AfterbellTraderDetailSheet/);
     assert.match(sheets, /aria-label=\{`\$\{ROOM_NAME\[room\]\} trader details`\}/);
-    assert.match(sheets, /Identity source:/);
     assert.match(sheets, />REPLAY</);
     assert.match(sheets, />EVIDENCE</);
-    assert.match(sheets, /WATCH TRADER/);
-    assert.match(sheets, /WATCH TOKEN/);
-    assert.match(sheets, /A Bulls App is not a broker/);
+    assert.match(sheets, />WATCH</);
+    assert.match(sheets, /COMETS · Research only\./);
+    assert.doesNotMatch(sheets, /<p className="fs-selected">/);
+    const field = readFileSync(new URL("./particle-field.ts", import.meta.url), "utf8");
+    assert.match(field, /renderCosmicKind\(hit\) === "planet" \? 0 : 1/);
     assert.match(sheets, /Watch a trader or a token from the Field\./);
     assert.doesNotMatch(shell + sheets, /AFTERBELL #\$\{|Galaxy Zero/);
   });
