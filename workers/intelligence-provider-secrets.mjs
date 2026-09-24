@@ -15,7 +15,9 @@ export const PROVIDER_SECRET_REQUIREMENTS=Object.freeze([
   Object.freeze({id:'pons-bitquery',label:'Retired Pons Bitquery enrichment',anyOf:Object.freeze(['PONS_BITQUERY_TOKEN','BITQUERY_API_TOKEN']),requiredWhen:()=>false,note:'Retained historical/maintenance compatibility; PonsFamily is retired as a public galaxy.'}),
   Object.freeze({id:'pons-blockscout',label:'Retired Pons Blockscout enrichment',anyOf:Object.freeze(['PONS_BLOCKSCOUT_API_KEY','BLOCKSCOUT_API_KEY']),requiredWhen:()=>false,note:'Retained historical/maintenance compatibility; either alias is sufficient.'}),
   Object.freeze({id:'pons-index-auth',label:'Retired Pons index refresh authentication',anyOf:Object.freeze(['PONS_INDEX_SECRET']),requiredWhen:()=>false,note:'Retained for historical maintenance endpoints; not required by the current public production path.'}),
-  Object.freeze({id:'pump-ingest-auth',label:'Legacy pump ingest authentication',anyOf:Object.freeze(['PUMP_INGEST_SECRET']),requiredWhen:()=>false,note:'pump.fun is retired as a public galaxy; this secret can also satisfy the active Helius webhook-auth requirement above.'})
+  Object.freeze({id:'pump-ingest-auth',label:'Legacy pump ingest authentication',anyOf:Object.freeze(['PUMP_INGEST_SECRET']),requiredWhen:()=>false,note:'pump.fun is retired as a public galaxy; this secret can also satisfy the active Helius webhook-auth requirement above.'}),
+  Object.freeze({id:'x-social-search',label:'Optional official X search for the Replay That day strip',anyOf:Object.freeze(['X_BEARER_TOKEN']),requiredWhen:()=>false,note:'Optional; without it the Worker uses the credential-free Exa route and empty windows keep the contract copy.'}),
+  Object.freeze({id:'social-ingest-auth',label:'Host-side Agent-Reach That day ingest authentication',anyOf:Object.freeze(['SOCIAL_INGEST_TOKEN']),requiredWhen:()=>false,note:'Optional; only the scheduled host runner uses this bearer to post dated X posts for Worker re-validation.'})
 ]);
 
 export const PROVIDER_SECRET_NAMES=Object.freeze([...new Set(PROVIDER_SECRET_REQUIREMENTS.flatMap(row=>row.anyOf))].sort());
