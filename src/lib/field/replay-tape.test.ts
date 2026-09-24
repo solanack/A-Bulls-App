@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { anchorBolts, cohortTicks, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, notionalScale, observedPricedPrintCount, priceAxisLabel, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeMarkSummary, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
-import { drawTape, tapeStackLayout } from "./replay-tape-render.ts";
+import { drawTape, tapePrintLabelLayouts } from "./replay-tape-render.ts";
 
 const AB_WALLET = "G39wywquKbHK8F2wZZZFX3fcsyG91VCCbbr6WEVp5axy";
 const AB_MINT = "XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1";
@@ -257,24 +257,34 @@ test("USD average label always includes a dollar sign and unknown stays an em da
 });
 
 
-test("stack label stays glued to stack x instead of plot origin",()=>{
-  const candles=[candleAt(0)],bolts=anchorBolts([eventAt("a",candles[0].timestamp+1,"buy",{amount:100,priceUsd:323,notionalUsd:32300})],candles,candles[0].timestamp,candles[0].timestamp+H),groups=groupBolts(bolts);
-  const layout=tapeStackLayout(groups[0],groups,300,1,210,220,58);
-  assert.equal(layout.labelX,210);
-  assert.notEqual(layout.labelX,18);
-  assert.equal(layout.chipCount,1);
-  assert.equal(formatUsdNotional(groups[0].notional!),"$32.3k");
+test("two buys on different candles get two USD labels at two candle x positions",()=>{
+  const candles=[candleAt(0),candleAt(1)],bolts=anchorBolts([
+    eventAt("a",candles[0].timestamp+1,"buy",{amount:10,priceUsd:10,notionalUsd:100}),
+    eventAt("b",candles[1].timestamp+1,"buy",{amount:20,priceUsd:10,notionalUsd:200}),
+  ],candles,candles[0].timestamp,candles[1].timestamp+H),groups=groupBolts(bolts);
+  const first=tapePrintLabelLayouts(groups[0],100,220,1,300,58),second=tapePrintLabelLayouts(groups[1],260,220,1,300,58);
+  assert.equal(first.labels.length,1);assert.equal(second.labels.length,1);
+  assert.equal(first.labels[0].x,100);assert.equal(second.labels[0].x,260);assert.notEqual(first.labels[0].x,second.labels[0].x);
 });
 
-test("unpriced siblings do not become fake equal-size stack chips",()=>{
+test("two priced buys on one candle get two stacked USD labels, not one combined sum",()=>{
   const candles=[candleAt(0)],bolts=anchorBolts([
-    eventAt("priced",candles[0].timestamp+1,"buy",{amount:100,priceUsd:2,notionalUsd:200}),
-    ...Array.from({length:7},(_,i)=>eventAt(`u-${i}`,candles[0].timestamp+2+i,"buy",{amount:10,priceUsd:null,notionalUsd:null}))
-  ],candles,candles[0].timestamp,candles[0].timestamp+H),group=groupBolts(bolts)[0];
-  assert.equal(group.count,8);
-  assert.equal(observedPricedPrintCount(group),1);
-  assert.equal(tapeStackLayout(group,[group],300,1,100,220,58).chipCount,1);
-  assert.equal(group.notional,200);
+    eventAt("a",candles[0].timestamp+1,"buy",{amount:10,priceUsd:10,notionalUsd:100}),
+    eventAt("b",candles[0].timestamp+2,"buy",{amount:20,priceUsd:10,notionalUsd:200}),
+  ],candles,candles[0].timestamp,candles[0].timestamp+H),group=groupBolts(bolts)[0],layout=tapePrintLabelLayouts(group,210,220,1,300,58);
+  assert.equal(group.notional,300);
+  assert.deepEqual(layout.labels.map((row)=>row.notional),[100,200]);
+  assert.equal(layout.labels.length,2);assert.equal(layout.labels[0].x,210);assert.equal(layout.labels[1].x,210);assert.notEqual(layout.labels[0].y,layout.labels[1].y);
+});
+
+test("unpriced print gets no USD label",()=>{
+  const candles=[candleAt(0)],bolts=anchorBolts([eventAt("u",candles[0].timestamp+1,"buy",{amount:10,priceUsd:null,notionalUsd:null})],candles,candles[0].timestamp,candles[0].timestamp+H),group=groupBolts(bolts)[0],layout=tapePrintLabelLayouts(group,190,220,1,300,58);
+  assert.equal(layout.labels.length,0);assert.equal(layout.unpriced.length,1);
+});
+
+test("USD label x equals the print candle x, never pad.left",()=>{
+  const candles=[candleAt(0)],bolts=anchorBolts([eventAt("a",candles[0].timestamp+1,"buy",{amount:100,priceUsd:323,notionalUsd:32300})],candles,candles[0].timestamp,candles[0].timestamp+H),group=groupBolts(bolts)[0],layout=tapePrintLabelLayouts(group,210,220,1,300,58);
+  assert.equal(layout.labels[0].x,210);assert.notEqual(layout.labels[0].x,18);assert.equal(formatUsdNotional(layout.labels[0].notional),"$32.3k");
 });
 
 test("mark is omitted when any visible print amount is missing",()=>{
@@ -303,4 +313,9 @@ test("drawTape keeps a tappable bolt hit for a rendered stack",()=>{
   assert.equal(hits.length,1);
   assert.equal(hits[0].id,"hero");
   assert.ok(hits[0].r>0);
+});
+
+test("same-bar priced labels cap at six with overflow count only",()=>{
+  const candles=[candleAt(0)],bolts=anchorBolts(Array.from({length:8},(_,i)=>eventAt(`p-${i}`,candles[0].timestamp+1+i,"buy",{amount:1,priceUsd:10+i,notionalUsd:10+i})),candles,candles[0].timestamp,candles[0].timestamp+H),layout=tapePrintLabelLayouts(groupBolts(bolts)[0],200,220,1,300,58);
+  assert.equal(layout.labels.length,6);assert.equal(layout.overflow,2);
 });

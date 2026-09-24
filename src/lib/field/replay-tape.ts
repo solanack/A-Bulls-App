@@ -142,11 +142,12 @@ export function tapeEvents(value: unknown): TapeEvent[] {
       const timestamp = toMs(row.timestamp);
       if ((side !== "buy" && side !== "sell") || !timestamp) return [];
       const execution = asRow(row.execution);
-      const amount = absPositive(row.tokenDelta, row.amount, row.token_delta, execution.baseAmount, row.baseAmount);
+      const amount = absPositive(row.tokenDelta, row.amount, row.token_delta, execution.baseAmount);
       const priceUsd = positive(row.priceUsd, row.price_usd, row.avg_entry_price, row.avg_exit_price);
-      const readyNotional = positive(row.valueUsd, row.usdValue, row.notionalUsd, row.usd_notional)
-        ?? (quoteIsUsdc(row, execution) ? positive(execution.quoteAmount, row.quoteAmount) : null);
-      const notionalUsd = readyNotional ?? (amount != null && priceUsd != null ? amount * priceUsd : null);
+      const readyNotional = positive(row.valueUsd, row.usdValue, row.notionalUsd, row.usd_notional);
+      const computedNotional = amount != null && priceUsd != null ? amount * priceUsd : null;
+      const quoteNotional = quoteIsUsdc(row, execution) ? positive(execution.quoteAmount, row.quoteAmount) : null;
+      const notionalUsd = readyNotional ?? computedNotional ?? quoteNotional;
       const sources = Array.isArray(row.sources) ? row.sources.map(String).filter(Boolean) : [];
       return [{
         id: str(row.id) ?? str(row.signature) ?? `${side}:${timestamp}`,
