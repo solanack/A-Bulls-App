@@ -646,7 +646,7 @@ export class ParticleFieldRenderer {
     if (!hit) return;
     this.focused = hit;
     this.material.uniforms.uFocus.value.set(hit.position[0], hit.position[1], hit.position[2]);
-    this.material.uniforms.uFocusAmt.value = 1;
+    this.material.uniforms.uFocusAmt.value = renderCosmicKind(hit) === "planet" ? 0 : 1;
     this.material.uniforms.uFocusCat.value = CATEGORY_INDEX[hit.category] ?? 6;
     this.onFocus?.(hit);
   }
@@ -805,7 +805,7 @@ export class ParticleFieldRenderer {
     }
     this.focused = hit;
     this.material.uniforms.uFocus.value.set(hit.position[0], hit.position[1], hit.position[2]);
-    this.material.uniforms.uFocusAmt.value = 1;
+    this.material.uniforms.uFocusAmt.value = renderCosmicKind(hit) === "planet" ? 0 : 1;
     this.material.uniforms.uFocusCat.value = CATEGORY_INDEX[hit.category] ?? 6;
     this.onFocus?.(hit);
   }
