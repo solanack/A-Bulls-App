@@ -34,7 +34,7 @@ export type TapeBolt = TapeEvent & { candleTime: number | null; anchorPrice: num
 
 type Row = Record<string, unknown>;
 const rows = (value: unknown): Row[] => (Array.isArray(value) ? value.filter((row): row is Row => Boolean(row) && typeof row === "object" && !Array.isArray(row)) : []);
-const row = (value: unknown): Row => (value && typeof value === "object" && !Array.isArray(value) ? value as Row : {});
+const asRow = (value: unknown): Row => (value && typeof value === "object" && !Array.isArray(value) ? value as Row : {});
 const str = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
 const finite = (value: unknown) => {
   const n = Number(value);
@@ -51,7 +51,7 @@ const absPositive = (...values: unknown[]) => {
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const usdcText = (value: unknown) => /^(?:USDC|USD COIN)$/i.test(str(value) ?? "");
 function quoteIsUsdc(record: Row, execution: Row) {
-  const quoteAsset = row(record.quoteAsset ?? record.quoteToken);
+  const quoteAsset = asRow(record.quoteAsset ?? record.quoteToken);
   const mints = [record.quoteMint, record.quote_mint, record.quoteTokenMint, record.quote_token_mint, execution.quoteMint, execution.quote_mint, quoteAsset.mint];
   if (mints.some((value) => (str(value) ?? "").startsWith("EPjFWdd5") || str(value) === USDC_MINT)) return true;
   return [record.quoteSymbol, record.quote_symbol, record.quoteCurrency, record.quote_currency, execution.quoteSymbol, execution.quote_symbol, quoteAsset.symbol, record.quote].some(usdcText);
@@ -139,7 +139,7 @@ export function tapeEvents(value: unknown): TapeEvent[] {
       const side = String(row.side ?? "").toLowerCase();
       const timestamp = toMs(row.timestamp);
       if ((side !== "buy" && side !== "sell") || !timestamp) return [];
-      const execution = row(row.execution);
+      const execution = asRow(row.execution);
       const amount = absPositive(row.tokenDelta, row.amount, row.token_delta, execution.baseAmount, row.baseAmount);
       const priceUsd = positive(row.priceUsd, row.price_usd, row.avg_entry_price, row.avg_exit_price);
       const readyNotional = positive(row.valueUsd, row.usdValue, row.notionalUsd, row.usd_notional)
