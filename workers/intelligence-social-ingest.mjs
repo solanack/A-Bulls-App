@@ -1,11 +1,11 @@
-/* That day ingest. Opening That day (or Replay) queues one fetch per mint + day_0; this Worker then
- * searches X for posts that mention the token around that date and retains them in
+/* That day ingest. Opening That day (or Replay) queues one fetch per mint + day_0. In production the
+ * host-side solanack/Agent-Reach runner is primary: it drains queued work, searches historical/current X
+ * context, then posts candidates back here. This Worker validates every candidate before retention in
  * social_posts_retained as source_kind='x-observed'. Reads stay on /api/intelligence/social/window.
  *
- * Paths, in order: official X search when X_BEARER_TOKEN is configured; otherwise the Exa route that
- * Agent-Reach uses (no cookies, no account). A host runner using the Agent-Reach fork (twitter-cli with a
- * dedicated account) can post rows through the token-gated ingest. X cookies never reach this Worker or
- * the frontend. A post is dated context, never the claimed reason for a print.
+ * The host authenticates with a short-lived GitHub Actions OIDC token (or the legacy SOCIAL_INGEST_TOKEN).
+ * X cookies never reach this Worker or the frontend. The Worker's own official-X/Exa path is retained only
+ * as a bounded fallback after the host grace period. A post is dated context, never the claimed reason for a print.
  */
 import { intelligenceDb } from './intelligence-indexer.mjs';
 import { day0Seconds, mentionsToken } from './intelligence-social-window.mjs';
@@ -18,7 +18,15 @@ const DONE_TTL_SECONDS=12*3600;
 const EMPTY_TTL_SECONDS=6*3600;
 const RUNNING_LEASE_SECONDS=90;
 const MAX_POSTS=120;
+const HOST_GRACE_SECONDS=45*60;
 const EXA_MCP_URL='https://mcp.exa.ai/mcp';
+const GITHUB_OIDC_ISSUER='https://token.actions.githubusercontent.com';
+const GITHUB_OIDC_JWKS_URL='https://token.actions.githubusercontent.com/.well-known/jwks';
+const GITHUB_OIDC_AUDIENCE='abullsapp-social-ingest';
+const GITHUB_OIDC_REPOSITORY='solanack/A-Bulls-App';
+const GITHUB_OIDC_REPOSITORY_ID='1337204238';
+const GITHUB_OIDC_WORKFLOW_REF='solanack/A-Bulls-App/.github/workflows/social-reach.yml@refs/heads/main';
+const GITHUB_OIDC_EVENTS=new Set(['schedule','workflow_dispatch','workflow_run']);
 const X_EPOCH_MS=1288834974657n;
 const STATUS_URL=/^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status(?:es)?\/(\d{6,25})/i;
 const RESERVED_HANDLES=new Set(['i','home','search','explore','intent','share','hashtag']);
@@ -27,6 +35,47 @@ const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const nowSec=()=>Math.floor(Date.now()/1000);
 const quote=value=>`"${s(value).replace(/"/g,'')}"`;
+const hostPrimaryEnabled=env=>s(env?.SOCIAL_HOST_PRIMARY).toLowerCase()==='true';
+const audienceIncludes=(value,expected)=>Array.isArray(value)?value.includes(expected):value===expected;
+const b64urlBytes=value=>{
+  try{
+    const normalized=s(value).replace(/-/g,'+').replace(/_/g,'/'),padded=normalized+'='.repeat((4-normalized.length%4)%4),binary=atob(padded);
+    return Uint8Array.from(binary,char=>char.charCodeAt(0));
+  }catch{return null;}
+};
+const decodeJwtJson=value=>{
+  const bytes=b64urlBytes(value);if(!bytes)return null;
+  try{return JSON.parse(new TextDecoder().decode(bytes));}catch{return null;}
+};
+
+/** Verify the short-lived identity GitHub Actions issues only to the social-reach workflow. */
+export async function verifyGitHubOidc(token,{fetchImpl=fetch,now=nowSec()}={}){
+  const parts=s(token).split('.');if(parts.length!==3)return false;
+  const header=decodeJwtJson(parts[0]);if(header?.alg!=='RS256'||!s(header?.kid))return false;
+  let response,body;
+  try{response=await fetchImpl(GITHUB_OIDC_JWKS_URL,{headers:{accept:'application/json'}});if(!response?.ok)return false;body=await response.json();}catch{return false;}
+  const jwk=(Array.isArray(body?.keys)?body.keys:[]).find(key=>s(key?.kid)===s(header.kid)&&key?.kty==='RSA');if(!jwk)return false;
+  const signature=b64urlBytes(parts[2]);if(!signature)return false;
+  let verified=false;
+  try{
+    const key=await crypto.subtle.importKey('jwk',jwk,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
+    verified=await crypto.subtle.verify({name:'RSASSA-PKCS1-v1_5'},key,signature,new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
+  }catch{return false;}
+  if(!verified)return false;
+  const claims=decodeJwtJson(parts[1]);if(!claims)return false;
+  const ts=Math.trunc(n(now)),iat=Math.trunc(n(claims.iat)),nbf=Math.trunc(n(claims.nbf??claims.iat)),exp=Math.trunc(n(claims.exp));
+  return s(claims.iss)===GITHUB_OIDC_ISSUER
+    && audienceIncludes(claims.aud,GITHUB_OIDC_AUDIENCE)
+    && s(claims.repository)===GITHUB_OIDC_REPOSITORY
+    && s(claims.repository_id)===GITHUB_OIDC_REPOSITORY_ID
+    && s(claims.workflow_ref)===GITHUB_OIDC_WORKFLOW_REF
+    && s(claims.ref)==='refs/heads/main'
+    && GITHUB_OIDC_EVENTS.has(s(claims.event_name))
+    && exp>=ts-30
+    && nbf<=ts+30
+    && iat>=ts-600
+    && iat<=ts+30;
+}
 
 export function socialRequestKey(mint,day0){return`${s(mint).toLowerCase()}|${s(day0)}`;}
 
@@ -157,14 +206,31 @@ export async function requestSocialFetch(env={},input={},{fetchImpl=fetch,waitUn
   const db=intelligenceDb(env);if(!db)return{ok:true,state:'unavailable'};
   const key=socialRequestKey(request.mint,request.day0);
   await db.prepare(`INSERT INTO social_fetch_requests(request_key,mint,chain_key,symbol,name,room,day0,state) VALUES(?,?,?,?,?,?,?,'queued') ON CONFLICT(request_key) DO UPDATE SET symbol=COALESCE(social_fetch_requests.symbol,excluded.symbol),name=COALESCE(social_fetch_requests.name,excluded.name),chain_key=COALESCE(social_fetch_requests.chain_key,excluded.chain_key)`).bind(key,request.mint,request.chain,request.symbol,request.name,request.room,request.day0).run();
-  const row=await readRequest(db,key);
+  let row=await readRequest(db,key);
   if(!socialRequestDue(row))return{ok:true,state:s(row?.state)||'queued',provider:s(row?.provider)||null,count:Math.trunc(n(row?.result_count)),cached:true};
+  if(hostPrimaryEnabled(env)){
+    const age=nowSec()-Math.trunc(n(row?.updated_at));
+    // Give the Agent-Reach host first chance. If GitHub Actions has not drained a queued request within
+    // the grace window, preserve the Worker's bounded official-X/Exa path as an availability fallback.
+    if(s(row?.state)!=='queued'){
+      await markRequest(db,key,'queued',{provider:row?.provider??null,count:row?.result_count??null,error:null});
+      row=await readRequest(db,key);
+      return{ok:true,state:'queued',provider:s(row?.provider)||null,count:Math.trunc(n(row?.result_count)),cached:false,collector:'agent-reach'};
+    }
+    if(age<=HOST_GRACE_SECONDS)return{ok:true,state:'queued',provider:s(row?.provider)||null,count:Math.trunc(n(row?.result_count)),cached:false,collector:'agent-reach'};
+  }
   const job=runSocialRequest(env,key,{fetchImpl});
   if(waitUntil){waitUntil(job.catch(()=>null));return{ok:true,state:'running',cached:false};}
   const result=await job;return{ok:true,...result,cached:false};
 }
 
-function authorized(request,env){const token=s(env.SOCIAL_INGEST_TOKEN),header=s(request.headers.get('authorization'));return Boolean(token)&&header===`Bearer ${token}`;}
+async function authorized(request,env,{fetchImpl=fetch}={}){
+  const configured=s(env.SOCIAL_INGEST_TOKEN),header=s(request.headers.get('authorization'));
+  if(!header.startsWith('Bearer '))return false;
+  const bearer=header.slice(7).trim();
+  if(configured&&bearer===configured)return true;
+  return bearer.split('.').length===3&&await verifyGitHubOidc(bearer,{fetchImpl});
+}
 
 export async function handleSocialIngestRequest(request,env={}){
   const url=new URL(request.url);
@@ -175,14 +241,14 @@ export async function handleSocialIngestRequest(request,env={}){
     return json(result,result.ok?200:400);
   }
   if(url.pathname===SOCIAL_QUEUE_PATH){
-    if(!authorized(request,env))return json({ok:false,error:'unauthorized'},401);
+    if(!(await authorized(request,env)))return json({ok:false,error:'unauthorized'},401);
     const db=intelligenceDb(env);if(!db)return json({ok:false,error:'database_unavailable'},503);
     const rows=(await db.prepare(`SELECT request_key,mint,chain_key,symbol,name,room,day0,state,provider,result_count,updated_at FROM social_fetch_requests WHERE state IN ('queued','empty','error') AND (provider IS NULL OR provider<>'agent-reach-twitter-cli') AND NOT (state='empty' AND provider LIKE 'agent-reach-%' AND updated_at>unixepoch()-21600) ORDER BY updated_at DESC LIMIT 25`).all().catch(()=>({results:[]})))?.results||[];
     return json({ok:true,items:rows.map(row=>({...row,terms:socialQueryTerms(row),slices:socialSlices(row.day0)}))});
   }
   if(url.pathname===SOCIAL_INGEST_PATH){
     if(request.method!=='POST')return json({ok:false,error:'method_not_allowed'},405);
-    if(!authorized(request,env))return json({ok:false,error:'unauthorized'},401);
+    if(!(await authorized(request,env)))return json({ok:false,error:'unauthorized'},401);
     let body;try{body=await request.json();}catch{return json({ok:false,error:'invalid_json'},400);}
     const subject=validRequest(body||{});if(!subject)return json({ok:false,error:'invalid_social_request'},400);
     const db=intelligenceDb(env);if(!db)return json({ok:false,error:'database_unavailable'},503);
@@ -195,4 +261,4 @@ export async function handleSocialIngestRequest(request,env={}){
   return null;
 }
 
-export const __socialIngestContract=Object.freeze({requestPath:SOCIAL_REQUEST_PATH,ingestPath:SOCIAL_INGEST_PATH,queuePath:SOCIAL_QUEUE_PATH,sourceKind:'x-observed',officialFirst:true,zeroCredentialFallback:'agent-reach-exa',cookiesInWorker:false,bareShortTickerQueried:false,linkedWalletOnlyFromSourcedLinks:true,causationClaimed:false});
+export const __socialIngestContract=Object.freeze({requestPath:SOCIAL_REQUEST_PATH,ingestPath:SOCIAL_INGEST_PATH,queuePath:SOCIAL_QUEUE_PATH,sourceKind:'x-observed',hostPrimaryFlag:'SOCIAL_HOST_PRIMARY',hostGraceSeconds:HOST_GRACE_SECONDS,githubOidcAuth:true,githubOidcAudience:GITHUB_OIDC_AUDIENCE,workerFallback:'official-x-then-exa',cookiesInWorker:false,bareShortTickerQueried:false,linkedWalletOnlyFromSourcedLinks:true,causationClaimed:false});

@@ -15,6 +15,10 @@ FIELD_COMPAT_ENABLED = "true"
 FIELD_V0_ENABLED = "true"
 FIELD_QUERY_CACHE_TTL_SECONDS = "60"
 
+# Replay social context: the host-side solanack/Agent-Reach workflow is the primary collector.
+# The Worker queues requests for it and only uses its own bounded provider path after a 45-minute grace.
+SOCIAL_HOST_PRIMARY = "true"
+
 # Shared provider transport defaults. Each provider may override these with
 # <PROVIDER>_FETCH_TIMEOUT_MS / _FETCH_RETRIES / _FETCH_BACKOFF_MS without code changes.
 # One retry means two total attempts and applies only to transient network errors,

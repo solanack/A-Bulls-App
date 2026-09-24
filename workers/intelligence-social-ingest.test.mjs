@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchSocialPosts, normalizeSocialPost, parseExaResults, requestSocialFetch, socialQueryTerms, socialRequestDue, socialSlices, statusIdTime, __socialIngestContract } from './intelligence-social-ingest.mjs';
+import { fetchSocialPosts, normalizeSocialPost, parseExaResults, requestSocialFetch, socialQueryTerms, socialRequestDue, socialSlices, statusIdTime, verifyGitHubOidc, __socialIngestContract } from './intelligence-social-ingest.mjs';
 
 const MINT='0xfe189e97832da1573e4e4ff034f4ffc3a15c7777',subject={mint:MINT,chain:'bsc',symbol:'MarsCoin',name:'MarsCoin',day0:'2026-07-28'};
 // Snowflake for 2026-07-28T12:00:00Z.
@@ -71,4 +71,32 @@ test('Agent-Reach, Exa, X credentials and cookies never appear in the client sou
     const text = await readFile(file, 'utf8');
     assert.doesNotMatch(text, /agent[-_]reach|mcp\.exa\.ai|api\.x\.com|TWITTER_AUTH_TOKEN|TWITTER_CT0|X_BEARER_TOKEN|SOCIAL_INGEST_TOKEN|auth_token=/i, file);
   }
+});
+
+
+test('production host-primary queues Agent-Reach instead of scraping from the request Worker', async () => {
+  const state=new Map();let fetches=0;
+  const db={prepare:sql=>({bind:(...args)=>({run:async()=>{
+    if(sql.startsWith('INSERT INTO social_fetch_requests')&&!state.has(args[0]))state.set(args[0],{request_key:args[0],mint:args[1],chain_key:args[2],symbol:args[3],name:args[4],room:args[5],day0:args[6],state:'queued',updated_at:Math.floor(Date.now()/1000)});
+    if(sql.startsWith('UPDATE social_fetch_requests')){const row=state.get(args[5]);row.state=args[0];row.provider=args[1]??row.provider;row.result_count=args[2]??row.result_count;row.updated_at=Math.floor(Date.now()/1000);}
+    return{};
+  },first:async()=>state.get(args[0])??null,all:async()=>({results:[]})})}),batch:async()=>{}};
+  const result=await requestSocialFetch({INTELLIGENCE_DB:db,SOCIAL_HOST_PRIMARY:'true'},{...subject,room:'fomo'},{fetchImpl:async()=>{fetches+=1;return{ok:false,status:500,text:async()=>''};}});
+  assert.equal(result.state,'queued');assert.equal(result.collector,'agent-reach');assert.equal(fetches,0);
+  assert.equal(__socialIngestContract.githubOidcAuth,true);assert.equal(__socialIngestContract.hostPrimaryFlag,'SOCIAL_HOST_PRIMARY');
+});
+
+test('GitHub OIDC ingest auth accepts only the A-Bulls social-reach workflow identity', async () => {
+  const now=Math.floor(Date.now()/1000),pair=await globalThis.crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
+  const jwk=await globalThis.crypto.subtle.exportKey('jwk',pair.publicKey),kid='test-key';
+  const encode=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
+  const sign=async claims=>{
+    const head=encode({alg:'RS256',typ:'JWT',kid}),body=encode(claims),input=`${head}.${body}`,signature=await globalThis.crypto.subtle.sign({name:'RSASSA-PKCS1-v1_5'},pair.privateKey,new TextEncoder().encode(input));
+    return `${input}.${Buffer.from(signature).toString('base64url')}`;
+  };
+  const base={iss:'https://token.actions.githubusercontent.com',aud:'abullsapp-social-ingest',repository:'solanack/A-Bulls-App',repository_id:'1337204238',workflow_ref:'solanack/A-Bulls-App/.github/workflows/social-reach.yml@refs/heads/main',ref:'refs/heads/main',event_name:'workflow_dispatch',iat:now,nbf:now-5,exp:now+300};
+  const fetchImpl=async()=>({ok:true,json:async()=>({keys:[{...jwk,kid,alg:'RS256',use:'sig'}]})});
+  assert.equal(await verifyGitHubOidc(await sign(base),{fetchImpl,now}),true);
+  assert.equal(await verifyGitHubOidc(await sign({...base,repository:'someone/else'}),{fetchImpl,now}),false);
+  assert.equal(await verifyGitHubOidc(await sign({...base,event_name:'pull_request'}),{fetchImpl,now}),false);
 });
