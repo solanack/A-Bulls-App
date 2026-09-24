@@ -1,11 +1,34 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, X } from "lucide-react";
-import { getSocialWindow } from "@/lib/universe-data/social-window-client";
+import { getSocialWindow, requestSocialFetch } from "@/lib/universe-data/social-window-client";
 import { emptySocialWindow, SOCIAL_AFTER_CHIPS, SOCIAL_EMPTY_LINE, SOCIAL_THAT_DAY_MAX, socialCountLine, socialRailCopy, socialSourceChip, type SocialBucket, type SocialPost, type SocialWindow } from "@/lib/field/social-window";
 
 type Props = { mint: string; symbol: string | null; name: string | null; wallet: string; chain: string; room: "fomo" | "afterbell" | null; day0: string; onClose: () => void };
 
 const cache = new Map<string, SocialWindow>();
+const requested = new Map<string, Promise<unknown>>();
+const SETTLED = new Set(["done", "empty", "error", "unavailable", "invalid"]);
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+type FetchInput = { mint: string; day0: string; symbol: string | null; name: string | null; wallet?: string | null; room: "fomo" | "afterbell" | null; chain: string };
+
+/** One fetch per mint + day_0 per session: the Worker searches X and retains what it finds, then we read. */
+export function prefetchThatDay(input: FetchInput) {
+  const key = `${input.mint.toLowerCase()}|${input.day0}`;
+  let job = requested.get(key);
+  if (!job) {
+    job = (async () => {
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const result = await requestSocialFetch({ data: input }).catch(() => ({ state: "unavailable" }));
+        if (SETTLED.has(result.state)) return result;
+        await sleep(attempt === 0 ? 2500 : 3500);
+      }
+      return null;
+    })();
+    requested.set(key, job);
+  }
+  return job;
+}
 const time = (ms: number) => new Date(ms).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" });
 
 function PostRow({ post }: { post: SocialPost }) {
@@ -39,13 +62,20 @@ export function ReplaySocialStrip({ mint, symbol, name, wallet, chain, room, day
   const key = `${mint}:${day0}:${room ?? ""}`;
   const [window_, setWindow] = useState<SocialWindow | null>(() => cache.get(key) ?? null);
   const [chip, setChip] = useState<Exclude<SocialBucket, "day0">>("plus1");
+  const [searching, setSearching] = useState(false);
   useEffect(() => {
     if (cache.has(key)) { setWindow(cache.get(key) ?? null); return; }
     let cancelled = false;
     setWindow(null);
-    void getSocialWindow({ data: { mint, day0, symbol, name, wallet, room, chain } })
-      .catch(() => emptySocialWindow({ symbol, name, mint }, day0))
-      .then((next) => { cache.set(key, next); if (!cancelled) setWindow(next); });
+    setSearching(true);
+    void (async () => {
+      await prefetchThatDay({ mint, day0, symbol, name, wallet, room, chain }).catch(() => null);
+      if (cancelled) return;
+      setSearching(false);
+      const next = await getSocialWindow({ data: { mint, day0, symbol, name, wallet, room, chain } }).catch(() => emptySocialWindow({ symbol, name, mint }, day0));
+      cache.set(key, next);
+      if (!cancelled) setWindow(next);
+    })();
     return () => { cancelled = true; };
   }, [key, mint, day0, symbol, name, wallet, room, chain]);
 
@@ -57,7 +87,7 @@ export function ReplaySocialStrip({ mint, symbol, name, wallet, chain, room, day
     <aside className="rss" role="dialog" aria-label="That day: dated public posts" data-social-source={shown.source} data-social-total={shown.total}>
       <SocialStripStyles />
       <header className="rss-head">
-        <div><span className="rss-kicker">EVIDENCE · THAT DAY</span><b>{window_ ? socialCountLine(shown) : "Reading retained posts…"}</b></div>
+        <div><span className="rss-kicker">EVIDENCE · THAT DAY</span><b>{window_ ? socialCountLine(shown) : searching ? `Searching X for posts that mention ${symbol ?? name ?? "this token"}…` : "Reading retained posts…"}</b></div>
         <button type="button" className="rs-icon rs-icon--small" aria-label="Close That day" onClick={onClose}><X size={14} /></button>
       </header>
       <p className="rss-rail">{rail}<br />{sourceLine}</p>
