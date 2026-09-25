@@ -105,7 +105,7 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
     const delay = attempts === 0 ? 0 : 5000;
     const timer = window.setTimeout(async () => {
       try {
-        const response = obj(await callUniverseTool({ data: { tool: "replay", input: replayToolInput(subject) } }));
+        const response = obj(await callUniverseTool({ data: { tool: "replay", input: replayToolInput({ ...subject, room }) } }));
         if (cancelled) return;
         if (response.ok === false) throw new Error(String(response.error ?? "Replay is unavailable right now."));
         const next = obj(response.bundle), indexing = obj(next.indexing), market = obj(next.marketHydration);
