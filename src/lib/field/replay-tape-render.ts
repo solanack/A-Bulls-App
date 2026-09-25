@@ -39,8 +39,8 @@ export type TapeFrame = {
   mark?: TapeMarkSummary | null;
   /** Trader callsign/avatar fallback shown beside the hero stack. */
   heroGlyph?: string | null;
-  /** Milliseconds since the playhead struck this group, or null for a visited print (scar only). */
-  strikeAge?: (group: BoltGroup) => number | null;
+  /** Milliseconds since this individual fill was struck, or null for its static scar. */
+  strikeAge?: (bolt: TapeBolt) => number | null;
   pad?: { top: number; right: number; bottom: number; left: number };
 };
 
@@ -246,24 +246,27 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
   const groups = groupBolts(visible);
   const scar = (frame.scarPx ?? 12) * k;
 
-  const strikes: { group: BoltGroup; x: number; y: number; phase: { phase: "down" | "up"; progress: number } }[] = [];
-  const placeBolt = (group: BoltGroup, x: number, y: number) => {
-    const phase = strikePhase(frame.strikeAge?.(group) ?? null);
-    if (phase.phase !== "scar") strikes.push({ group, x, y, phase });
-    const stack=tapePrintLabelLayouts(group,x,y,k,plotH,pad.top);
-    if (phase.phase !== "down") {
-      for(const label of stack.labels) drawNotional(ctx,label.x,label.y,label.side,label.notional,k);
-      stack.unpriced.forEach((bolt,index)=>drawUnpricedTick(ctx,x,y,bolt.side,index,k));
-      if(stack.overflow>0){
-        const top=stack.labels.at(-1)?.y ?? y-10*k;
-        drawOverflow(ctx,x,top-18*k,stack.overflow,group.side,k);
-      }
+  // One strike per transaction, even when the layout stacks several labels on one candle.
+  const strikes: { bolt: TapeBolt; x: number; y: number; phase: { phase: "down" | "up"; progress: number } }[] = [];
+  // Draw labels last so lightning and candle flashes cannot erase the dollar at impact.
+  const overlays: (() => void)[] = [];
+  const placeBolt = (group: BoltGroup, x: number, y: number, boltY: (bolt: TapeBolt) => number = () => y) => {
+    const stack = tapePrintLabelLayouts(group, x, y, k, plotH, pad.top);
+    for (const bolt of group.bolts) {
+      const by = boltY(bolt);
+      const label = stack.labels.find((row) => row.id === bolt.id);
+      const unpricedIndex = stack.unpriced.findIndex((row) => row.id === bolt.id);
+      const phase = strikePhase(frame.strikeAge?.(bolt) ?? null);
+      if (phase.phase !== "scar") strikes.push({ bolt, x, y: by, phase });
+      else if (label) drawScar(ctx, x, by, bolt.side, scar, k, frame.selectedId === bolt.id);
+      const hitY = label?.y ?? (y + 5 * k + Math.max(0, unpricedIndex) * 3 * k);
+      hits.push({ id: bolt.id, x, y: hitY, r: Math.max(12 * k, scar) });
     }
-    for(const bolt of group.bolts){
-      const label=stack.labels.find((row)=>row.id===bolt.id);
-      const unpricedIndex=stack.unpriced.findIndex((row)=>row.id===bolt.id);
-      const hitY=label?.y ?? (y+5*k+Math.max(0,unpricedIndex)*3*k);
-      hits.push({id:bolt.id,x,y:hitY,r:Math.max(12*k,scar)});
+    for (const label of stack.labels) overlays.push(() => drawNotional(ctx, label.x, label.y, label.side, label.notional, k));
+    stack.unpriced.forEach((bolt, index) => overlays.push(() => drawUnpricedTick(ctx, x, y, bolt.side, index, k)));
+    if (stack.overflow > 0) {
+      const top = stack.labels.at(-1)?.y ?? y - 10 * k;
+      overlays.push(() => drawOverflow(ctx, x, top - 18 * k, stack.overflow, group.side, k));
     }
   };
   if (candles.length) {
@@ -312,9 +315,12 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
     for (const group of groups) {
       const lead = group.lead;
       if (lead.anchorPrice == null || lead.candleTime == null) continue;
-      placeBolt(group, centerOf(lead.candleTime), yOf(lead.anchorPrice));
-      const last = strikes.at(-1);
-      if (last?.group === group) flashes.set(lead.candleTime, last.phase.phase === "down" ? Math.max(0, (last.phase.progress - 0.8) / 0.2) : 1 - last.phase.progress);
+      placeBolt(group, centerOf(lead.candleTime), yOf(lead.anchorPrice), (bolt) => yOf(bolt.anchorPrice ?? lead.anchorPrice!));
+      const active = strikes.filter((strike) => group.bolts.includes(strike.bolt));
+      for (const strike of active) {
+        const glow = strike.phase.phase === "down" ? Math.max(0, (strike.phase.progress - 0.8) / 0.2) : 1 - strike.phase.progress;
+        flashes.set(lead.candleTime, Math.max(flashes.get(lead.candleTime) ?? 0, glow));
+      }
     }
     for (const [time, glow] of flashes) {
       const c = candles[indexOf.get(time) ?? 0], x = centerOf(time), top = yOf(Math.max(c.open, c.close)), bh = Math.max(1.5 * k, yOf(Math.min(c.open, c.close)) - top), fw = Math.max(bodyW, 4 * k);
@@ -336,7 +342,8 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
     // No cohort overlay on the event-only tape.
     for (const group of groups) placeBolt(group, xAt(group.lead.cursor), mid + (group.side === "buy" ? 1 : -1) * scar * 0.9);
   }
-  for (const strike of strikes) drawLightning(ctx, strike.group.key, strike.group.side, strike.x, pad.top, strike.y, k, strike.phase);
+  for (const strike of strikes) drawLightning(ctx, strike.bolt.id, strike.bolt.side, strike.x, pad.top, strike.y, k, strike.phase);
+  for (const draw of overlays) draw();
 
   if (cursor > 0 && cursor < 1) {
     ctx.strokeStyle = CHAMPAGNE;

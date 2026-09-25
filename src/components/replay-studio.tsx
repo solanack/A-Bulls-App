@@ -52,14 +52,14 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
   const [size, setSize] = useState({ w: 0, h: 0, dpr: 1 });
 
   const candles = useMemo(() => tapeCandles(bundle?.candles), [bundle]);
-  const events = useMemo(() => tapeEvents(bundle?.events), [bundle]);
+  const events = useMemo(() => tapeEvents(bundle?.events, obj(bundle?.subject).quoteMint), [bundle]);
   const window_ = useMemo(() => (subject ? tapeWindow(bundle?.window, candles, events, subject) : { start: 0, end: 1 }), [bundle, candles, events, subject]);
   const view = useMemo(() => fullTape(candles, events, window_), [candles, events, window_]);
   const bolts = useMemo(() => anchorBolts(events, candles, view.start, view.end), [events, candles, view]);
   const ticks = useMemo(() => cohortTicks(cohortItems, candles, view.start, view.end), [cohortItems, candles, view]);
   const firstBuy = events.find((event) => event.side === "buy")?.timestamp ?? null;
   const groups = useMemo(() => groupBolts(bolts), [bolts]);
-  const schedule = useMemo(() => hopSchedule(groups.map((group) => group.cursor)), [groups]);
+  const schedule = useMemo(() => hopSchedule(bolts.map((bolt) => bolt.cursor)), [bolts]);
   const playMs = Math.min(16_000, Math.max(4_000, schedule.stops.length * 900));
   const selected = bolts.find((bolt) => bolt.id === selectedId) ?? null;
   const selectedTick = cohortOn ? ticks.find((tick) => tick.id === selectedId) ?? null : null;
@@ -105,12 +105,12 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
     const delay = attempts === 0 ? 0 : 5000;
     const timer = window.setTimeout(async () => {
       try {
-        const response = obj(await callUniverseTool({ data: { tool: "replay", input: replayToolInput(subject) } }));
+        const response = obj(await callUniverseTool({ data: { tool: "replay", input: replayToolInput({ ...subject, room }) } }));
         if (cancelled) return;
         if (response.ok === false) throw new Error(String(response.error ?? "Replay is unavailable right now."));
         const next = obj(response.bundle), indexing = obj(next.indexing), market = obj(next.marketHydration);
         const pending = Boolean(indexing.requested) || ["queued", "running", "queued-or-running"].includes(String(indexing.state)) || Boolean(market.pending) || ["queued", "running"].includes(String(market.state));
-        const hasEvents = tapeEvents(next.events).length > 0;
+        const hasEvents = tapeEvents(next.events, obj(next.subject).quoteMint).length > 0;
         setBundle(next);
         if (!hasEvents && pending && attempts < MAX_HYDRATION_ATTEMPTS) { setStatus("building"); setAttempts((value) => value + 1); return; }
         if (hasEvents && pending && tapeCandles(next.candles).length === 0 && attempts < MAX_HYDRATION_ATTEMPTS) setAttempts((value) => value + 1);
@@ -145,7 +145,7 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
     if (canvas.width !== px || canvas.height !== py) { canvas.width = px; canvas.height = py; }
     ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
     const compact = size.w < 560, now = performance.now();
-    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 17 : 18, strikeAge: (group) => { const at = strikesRef.current.get(group.key); return at == null ? null : now - at; }, pad: { top: compact ? 68 : 72, right: compact ? 58 : 72, bottom: 28, left: compact ? 8 : 20 } });
+    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 17 : 18, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 68 : 72, right: compact ? 58 : 72, bottom: 28, left: compact ? 8 : 20 } });
   };
 
   useEffect(() => { drawRef.current(); }, [size, candles, bolts, ticks, cohortOn, view, cursor, selectedId, scaleMode,marketCapUsd,mark,subject,handle]);
@@ -167,23 +167,32 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
   useEffect(() => {
     const previous = cursorRef.current;
     cursorRef.current = cursor;
+    if (cursor < previous - 1e-9) {
+      // A rewind must let each individual receipt strike again on the next pass.
+      for (const bolt of bolts) if (bolt.cursor >= cursor - 1e-9) visitedRef.current.delete(bolt.id);
+      strikesRef.current.clear();
+      return;
+    }
     if (cursor <= previous + 1e-9) return;
-    const crossed = groups.filter((group) => group.cursor >= previous - 1e-9 && group.cursor <= cursor + 1e-9);
-    if (!crossed.length) return;
-    const fresh = crossed.filter((group) => !visitedRef.current.has(group.key));
-    crossed.forEach((group) => visitedRef.current.add(group.key));
+    const crossed = bolts.filter((bolt) => bolt.cursor >= previous - 1e-9 && bolt.cursor <= cursor + 1e-9);
+    const fresh = crossed.filter((bolt) => !visitedRef.current.has(bolt.id));
+    crossed.forEach((bolt) => visitedRef.current.add(bolt.id));
     if (!fresh.length) return;
     const struck = fresh[fresh.length - 1], now = performance.now();
     if (!globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      strikesRef.current.set(struck.key, now);
+      for (const bolt of fresh) strikesRef.current.set(bolt.id, now);
       let raf = 0;
-      const animate = (t: number) => { drawRef.current(); if (t - now < STRIKE_MS + 40) raf = requestAnimationFrame(animate); else strikesRef.current.delete(struck.key); };
+      const animate = (t: number) => {
+        drawRef.current();
+        if (t - now < STRIKE_MS + 40) raf = requestAnimationFrame(animate);
+        else for (const bolt of fresh) strikesRef.current.delete(bolt.id);
+      };
       raf = requestAnimationFrame(animate);
       window.setTimeout(() => cancelAnimationFrame(raf), STRIKE_MS + 400);
     }
     const audio = audioRef.current;
     if (audible && audio && now - lastTickRef.current >= 55) { lastTickRef.current = now; playTick(audio.ctx, struck.side); }
-  }, [cursor, groups, audible]);
+  }, [cursor, bolts, audible]);
 
   useEffect(() => {
     const audio = audioRef.current;

@@ -51,12 +51,15 @@ const absPositive = (...values: unknown[]) => {
   return null;
 };
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const usdcText = (value: unknown) => /^(?:USDC|USD COIN)$/i.test(str(value) ?? "");
-function quoteIsUsdc(record: Row, execution: Row) {
+const USDT_MINT = "Es9vMFrzaCERmJfrF4H2FYDqfCMx1j8dYKVKJQmuayNX";
+/** A quote leg is USD only when its exact stablecoin mint is known, not from an inferred ticker. */
+function quoteIsStableUsd(record: Row, execution: Row, subjectQuoteMint: unknown) {
   const quoteAsset = asRow(record.quoteAsset ?? record.quoteToken);
-  const mints = [record.quoteMint, record.quote_mint, record.quoteTokenMint, record.quote_token_mint, execution.quoteMint, execution.quote_mint, quoteAsset.mint];
-  if (mints.some((value) => (str(value) ?? "").startsWith("EPjFWdd5") || str(value) === USDC_MINT)) return true;
-  return [record.quoteSymbol, record.quote_symbol, record.quoteCurrency, record.quote_currency, execution.quoteSymbol, execution.quote_symbol, quoteAsset.symbol, record.quote].some(usdcText);
+  // The execution belongs to this transaction; the bundle subject is only a last resort.
+  const mint = str(execution.quoteMint) ?? str(execution.quote_mint) ??
+    str(record.quoteMint) ?? str(record.quote_mint) ?? str(record.quoteTokenMint) ??
+    str(record.quote_token_mint) ?? str(quoteAsset.mint) ?? str(subjectQuoteMint);
+  return mint === USDC_MINT || mint === USDT_MINT;
 }
 
 /** Seconds or milliseconds in, milliseconds out. */
@@ -116,7 +119,8 @@ export function replayToolInput(subject: ReplaySubject) {
     mint: subject.mint,
     chainKey: subject.chainKey,
     bucketSeconds,
-    ...(evm ? {} : { quoteMint: WSOL_MINT }),
+    // Afterbell swaps may be quoted in USDC, USDT or SOL; resolve their actual retained route, not WSOL by default.
+    ...(evm || subject.room === "afterbell" ? {} : { quoteMint: WSOL_MINT }),
     ...(subject.fromTs ? { from: Math.floor(subject.fromTs / 1000) } : {}),
     ...(subject.toTs ? { to: Math.ceil(subject.toTs / 1000) } : {}),
   };
@@ -135,7 +139,7 @@ export function tapeCandles(value: unknown): TapeCandle[] {
 }
 
 /** Only observed or provider-labelled buys and sells become bolts. Transfers and unknown sides stay off the tape. */
-export function tapeEvents(value: unknown): TapeEvent[] {
+export function tapeEvents(value: unknown, subjectQuoteMint: unknown = null): TapeEvent[] {
   return rows(value)
     .flatMap((row) => {
       const side = String(row.side ?? "").toLowerCase();
@@ -143,11 +147,13 @@ export function tapeEvents(value: unknown): TapeEvent[] {
       if ((side !== "buy" && side !== "sell") || !timestamp) return [];
       const execution = asRow(row.execution);
       const amount = absPositive(row.tokenDelta, row.amount, row.token_delta, execution.baseAmount);
-      const priceUsd = positive(row.priceUsd, row.price_usd, row.avg_entry_price, row.avg_exit_price);
+      const quoteAmount = absPositive(execution.quoteAmount, row.quoteAmount, execution.quote_amount, row.quote_amount);
+      const priceUsd = positive(row.priceUsd, row.price_usd);
       const readyNotional = positive(row.valueUsd, row.usdValue, row.notionalUsd, row.usd_notional);
+      const quoteNotional = quoteIsStableUsd(row, execution, subjectQuoteMint) ? quoteAmount : null;
       const computedNotional = amount != null && priceUsd != null ? amount * priceUsd : null;
-      const quoteNotional = quoteIsUsdc(row, execution) ? positive(execution.quoteAmount, row.quoteAmount) : null;
-      const notionalUsd = readyNotional ?? computedNotional ?? quoteNotional;
+      // Quote is the exact stablecoin paid (buy) or received (sell). Do not use candle prices.
+      const notionalUsd = readyNotional ?? quoteNotional ?? computedNotional;
       const sources = Array.isArray(row.sources) ? row.sources.map(String).filter(Boolean) : [];
       return [{
         id: str(row.id) ?? str(row.signature) ?? `${side}:${timestamp}`,
@@ -266,6 +272,8 @@ function observedUsdNotional(print: Pick<TapeEvent, "amount" | "priceUsd" | "not
 /** Compact observed notional for bolt labels. Invalid/unknown values deliberately render nothing. */
 export function formatUsdNotional(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "";
+  if (value < 0.0001) return "<$0.0001";
+  if (value < 1) return "$" + value.toFixed(value < 0.01 ? 4 : 2);
   if (value < 100) return "$" + Math.round(value).toLocaleString("en-US");
   if (value < 10_000) return "$" + Math.round(value).toLocaleString("en-US");
   if (value < 1_000_000) return "$" + (value / 1_000).toFixed(1).replace(/\.0$/, "") + "k";

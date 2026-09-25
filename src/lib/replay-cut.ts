@@ -1,6 +1,6 @@
 import { synthesizeCutNarration } from "@/lib/alien-voice";
 import { BOLT, drawTape, TAPE_BG } from "@/lib/field/replay-tape-render";
-import { CUT_SIZE, formatUsdNotional, formatUsdPrice, groupBolts, hopSchedule, tapeAvgEntryMarketCap, tapeAxis, tapeMarketCapAt, tapeMarkSummary, tapeUsdSummary, type BoltGroup, type CohortTick, type CutFormat, type TapeBolt, type TapeCandle, type TapeMarketCapPoint, type TapeMarkSummary, type TapeUsdSummary } from "@/lib/field/replay-tape";
+import { CUT_SIZE, formatUsdNotional, formatUsdPrice, groupBolts, hopSchedule, tapeAvgEntryMarketCap, tapeAxis, tapeMarketCapAt, tapeMarkSummary, tapeUsdSummary, type CohortTick, type CutFormat, type TapeBolt, type TapeCandle, type TapeMarketCapPoint, type TapeMarkSummary, type TapeUsdSummary } from "@/lib/field/replay-tape";
 
 export type ReplayCutInput = {
   format: CutFormat;
@@ -71,11 +71,11 @@ function drawVerify(ctx: CanvasRenderingContext2D, w: number, h: number, input: 
 /** Playhead timing for the Cut: the same bolt-to-bolt hops as the studio, stretched over TAPE_SECONDS. */
 export function cutTiming(bolts: readonly TapeBolt[]) {
   const groups = groupBolts(bolts);
-  const schedule = hopSchedule(groups.map((group) => group.cursor));
+  const schedule = hopSchedule(bolts.map((bolt) => bolt.cursor));
   const arrivalAt = new Map<string, number>();
-  for (const group of groups) {
-    const i = schedule.stops.findIndex((stop) => Math.abs(stop - Math.min(1, Math.max(0, group.cursor))) < 1e-9);
-    arrivalAt.set(group.key, (i < 0 ? group.cursor : schedule.arrivals[i]) * TAPE_SECONDS);
+  for (const bolt of bolts) {
+    const i = schedule.stops.findIndex((stop) => Math.abs(stop - Math.min(1, Math.max(0, bolt.cursor))) < 1e-9);
+    arrivalAt.set(bolt.id, (i < 0 ? bolt.cursor : schedule.arrivals[i]) * TAPE_SECONDS);
   }
   return { groups, schedule, arrivalAt };
 }
@@ -116,7 +116,7 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   const visible = input.bolts.filter((bolt) => bolt.cursor <= cursor);
   const tapeTime=tapeAxis(input.candles,input.start,input.end).timeAt(cursor),visibleCandles=input.candles.filter((candle)=>candle.timestamp<=tapeTime);
   const mark=tapeMarkSummary(visible,visibleCandles),summary=tapeUsdSummary(visible),marketCap=tapeMarketCapAt(input.marketCapPoints??[],tapeTime,cursor>=.999),avgEntryMc=tapeAvgEntryMarketCap(visible,input.marketCapPoints??[]);
-  const strikeAge = (group: BoltGroup) => { const at = timing.arrivalAt.get(group.key); return at == null || t < at ? null : (t - at) * 1000; };
+  const strikeAge = (bolt: TapeBolt) => { const at = timing.arrivalAt.get(bolt.id); return at == null || t < at ? null : (t - at) * 1000; };
   const chartTop = portrait ? 330 * k : 170 * k, chartBottom = portrait ? h - 560 * k : h - 300 * k;
   ctx.save();
   ctx.fillStyle = TAPE_BG;
