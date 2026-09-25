@@ -234,6 +234,68 @@ test("USDC quote amount becomes observed notionalUsd", () => {
   assert.equal(tapeUsdSummary(anchorBolts([event],[],0,2*H)).boughtUsd,250);
 });
 
+test("Afterbell USDC swap legs provide exact per-fill dollars before conflicting base times price", () => {
+  const USDC="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+  const [buy,sell]=tapeEvents([
+    {id:"tsla-buy",side:"buy",timestamp:H,tokenDelta:4,priceUsd:40,execution:{baseAmount:4,quoteAmount:200,quoteMint:USDC}},
+    {id:"tsla-sell",side:"sell",timestamp:H+1,tokenDelta:-4,priceUsd:40,execution:{baseAmount:4,quoteAmount:215,quoteMint:USDC}},
+  ]);
+  assert.equal(buy.amount,4);
+  assert.equal(buy.notionalUsd,200);
+  assert.equal(formatUsdNotional(buy.notionalUsd!),"$200");
+  assert.equal(sell.notionalUsd,215);
+  assert.equal(tapeUsdSummary(anchorBolts([buy,sell],[],0,2*H)).soldUsd,215);
+});
+
+test("explicit USD value wins; USDT quote and bundle subject only provide a fallback when the mint is known", () => {
+  const USDC="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+  const USDT="Es9vMFrzaCERmJfrF4H2FYDqfCMx1j8dYKVKJQmuayNX";
+  const [explicit,usdt,fromSubject,nonUsd]=tapeEvents([
+    {id:"explicit",side:"buy",timestamp:H,valueUsd:209,quoteMint:USDC,execution:{quoteAmount:200}},
+    {id:"usdt",side:"sell",timestamp:H+1,execution:{quoteMint:USDT,quoteAmount:-34}},
+    {id:"subject",side:"buy",timestamp:H+2,execution:{baseAmount:2,quoteAmount:50}},
+    {id:"non-usd",side:"buy",timestamp:H+3,quoteMint:WSOL_MINT,execution:{quoteAmount:2,baseAmount:5}},
+  ],USDC);
+  assert.equal(explicit.notionalUsd,209);
+  assert.equal(usdt.notionalUsd,34);
+  assert.equal(fromSubject.notionalUsd,50);
+  assert.equal(nonUsd.notionalUsd,null);
+});
+
+test("missing USD and price never fabricate a zero or infer size from candles", () => {
+  const [missing]=tapeEvents([{id:"no-price",side:"buy",timestamp:H,tokenDelta:42,execution:{quoteAmount:200,quoteMint:WSOL_MINT}}]);
+  assert.equal(missing.notionalUsd,null);
+  const candles=[candleAt(0)];
+  const [bolt]=anchorBolts([missing],candles,candles[0].timestamp,candles[0].timestamp+H);
+  assert.equal(bolt.notionalUsd,null);
+  assert.equal(tapePrintLabelLayouts(groupBolts([bolt])[0],187,230,1,300,58).labels.length,0);
+  assert.notEqual(formatUsdNotional(0.1),"$0");
+});
+
+test("on the lightning impact frame, distinct same-bar buys and sells paint their own dollar at the candle x", () => {
+  const USDC="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+  const candles=[candleAt(0)];
+  const bolts=anchorBolts(tapeEvents([
+    {id:"one",side:"buy",timestamp:candles[0].timestamp+1,execution:{baseAmount:2,quoteAmount:200,quoteMint:USDC}},
+    {id:"two",side:"buy",timestamp:candles[0].timestamp+2,execution:{baseAmount:3,quoteAmount:300,quoteMint:USDC}},
+    {id:"three",side:"sell",timestamp:candles[0].timestamp+3,execution:{baseAmount:1,quoteAmount:120,quoteMint:USDC}},
+  ]),candles,candles[0].timestamp,candles[0].timestamp+H);
+  const prints:{label:string;x:number;color:unknown}[]=[],struck:string[]=[];
+  const noop=()=>{};
+  const ctx:any=new Proxy({measureText:(value:string)=>({width:value.length*6}),fillText(label:string,x:number){prints.push({label,x,color:this.fillStyle});}},{
+    get(target,key){return key in target?(target as any)[key]:noop;},
+    set(target,key,value){(target as any)[key]=value;return true;}
+  });
+  const hits=drawTape(ctx,{width:420,height:300,candles,bolts,start:candles[0].timestamp,end:candles[0].timestamp+H,cursor:1,strikeAge:(bolt)=>{struck.push(bolt.id);return 0;}});
+  assert.deepEqual(struck,["one","two","three"]);
+  assert.equal(hits.length,3);
+  const dollars=prints.filter(print=>print.label.startsWith("$"));
+  assert.deepEqual(dollars.map(print=>print.label),["$200","$300","$120"]);
+  assert.deepEqual(dollars.map(print=>print.x),[187,187,187]); // first bar's center, not pad.left=18
+  assert.equal(dollars[0].color,"#B8FF3C");
+  assert.equal(dollars[2].color,"#FF2D55");
+});
+
 test("USD summary ignores implied-only candle anchors", () => {
   const candles=[candleAt(0)];
   const [bolt]=anchorBolts([eventAt("implied",candles[0].timestamp+1,"buy",{amount:100,priceUsd:null,notionalUsd:null})],candles,candles[0].timestamp,candles[0].timestamp+H);
