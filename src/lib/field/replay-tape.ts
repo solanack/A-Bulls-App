@@ -148,7 +148,7 @@ export function tapeEvents(value: unknown, subjectQuoteMint: unknown = null): Ta
       const execution = asRow(row.execution);
       const amount = absPositive(row.tokenDelta, row.amount, row.token_delta, execution.baseAmount);
       const quoteAmount = absPositive(execution.quoteAmount, row.quoteAmount, execution.quote_amount, row.quote_amount);
-      const priceUsd = positive(row.priceUsd, row.price_usd, row.avg_entry_price, row.avg_exit_price);
+      const priceUsd = positive(row.priceUsd, row.price_usd);
       const readyNotional = positive(row.valueUsd, row.usdValue, row.notionalUsd, row.usd_notional);
       const quoteNotional = quoteIsStableUsd(row, execution, subjectQuoteMint) ? quoteAmount : null;
       const computedNotional = amount != null && priceUsd != null ? amount * priceUsd : null;
