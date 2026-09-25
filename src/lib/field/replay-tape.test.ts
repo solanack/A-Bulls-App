@@ -215,7 +215,7 @@ test("grouped bolt notional sums only qualifying observed USD prints and unknown
 
 test("tapeEvents maps alternate observed amount, execution size, and ready USD notional keys", () => {
   const events=tapeEvents([
-    {id:"amount",side:"buy",timestamp:H,amount:12,avg_entry_price:2},
+    {id:"amount",side:"buy",timestamp:H,amount:12,priceUsd:2},
     {id:"execution",side:"buy",timestamp:H+1,execution:{baseAmount:8},price_usd:3},
     {id:"ready",side:"sell",timestamp:H+2,valueUsd:107000},
   ]);
