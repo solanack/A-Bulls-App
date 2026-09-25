@@ -282,7 +282,7 @@ test("on the lightning impact frame, distinct same-bar buys and sells paint thei
   ]),candles,candles[0].timestamp,candles[0].timestamp+H);
   const prints:{label:string;x:number;color:unknown}[]=[],struck:string[]=[];
   const noop=()=>{};
-  const ctx:any=new Proxy({measureText:(value:string)=>({width:value.length*6}),fillText(label:string,x:number){prints.push({label,x,color:this.fillStyle});}},{
+  const ctx:any=new Proxy({measureText:(value:string)=>({width:value.length*6}),fillText(label:string,x:number){prints.push({label,x,color:(this as {fillStyle?:unknown}).fillStyle});}},{
     get(target,key){return key in target?(target as any)[key]:noop;},
     set(target,key,value){(target as any)[key]=value;return true;}
   });
