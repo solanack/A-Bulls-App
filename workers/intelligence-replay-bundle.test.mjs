@@ -6,8 +6,9 @@ const walletA='11111111111111111111111111111111';
 const walletB='22222222222222222222222222222222';
 const mint='33333333333333333333333333333333';
 const quote='44444444444444444444444444444444';
+const USDC='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
-function mockDb({coverageComplete=true,completedWindowJob=false}={}){
+function mockDb({coverageComplete=true,completedWindowJob=false,routeQuote=quote}={}){
   return {
     prepare(sql){
       const state={sql,args:[]};
@@ -25,10 +26,10 @@ function mockDb({coverageComplete=true,completedWindowJob=false}={}){
           if(state.sql.includes('FROM intelligence_trade_routes')){
             const wallet=state.args[0];
             return {results:[wallet===walletA?{
-              signature:'sig-11',wallet,hop_index:0,venue:'Jupiter',pool:'pool-a',input_mint:quote,output_mint:mint,
+              signature:'sig-11',wallet,hop_index:0,venue:'Jupiter',pool:'pool-a',input_mint:routeQuote,output_mint:mint,
               input_amount:20,output_amount:10,block_time:150,source:'route-index',confidence:.97
             }:{
-              signature:'sig-22',wallet,hop_index:0,venue:'Jupiter',pool:'pool-b',input_mint:mint,output_mint:quote,
+              signature:'sig-22',wallet,hop_index:0,venue:'Jupiter',pool:'pool-b',input_mint:mint,output_mint:routeQuote,
               input_amount:4,output_amount:12,block_time:150,source:'route-index',confidence:.96
             }]};
           }
@@ -68,12 +69,17 @@ test('builds a synchronized two-wallet chain-qualified Solana replay with route-
   assert.equal(bundle.verification.verified,2);
 });
 
-test('does not invent execution prices without a quote mint',async()=>{
-  const bundle=await buildReplayBundle(env(),{wallet:walletA,mint,from:100,to:200});
+test('without a requested quote, Afterbell can retain only actual matching route legs',async()=>{
+  const bundle=await buildReplayBundle(env({routeQuote:USDC}),{wallets:[walletA,walletB],mint,from:100,to:200});
   assert.equal(bundle.events[0].side,'buy');
-  assert.equal(bundle.events[0].price,null);
+  assert.equal(bundle.events[0].execution.quoteMint,USDC);
+  assert.equal(bundle.events[0].execution.quoteAmount,20);
+  assert.equal(bundle.events[0].execution.baseAmount,10);
+  assert.equal(bundle.events[1].side,'sell');
+  assert.equal(bundle.events[1].execution.quoteMint,USDC);
+  assert.equal(bundle.events[1].execution.quoteAmount,12);
   assert.equal(bundle.candles.length,0);
-  assert.match(bundle.caveats.join(' '),/not inferred/i);
+  assert.match(bundle.caveats.join(' '),/retained direct swap leg/i);
 });
 
 test('aggregates retained finer candles into the adaptive Replay bucket without inventing OHLC',()=>{
