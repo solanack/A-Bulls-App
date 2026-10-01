@@ -1,9 +1,14 @@
+import { cutDuration, cutTapeSeconds, cutTiming, type CutSoundtrack } from "@/lib/field/replay-director";
 import { synthesizeCutNarration } from "@/lib/alien-voice";
 import { BOLT, drawTape, TAPE_BG } from "@/lib/field/replay-tape-render";
-import { CUT_SIZE, formatUsdNotional, formatUsdPrice, groupBolts, hopSchedule, tapeAvgEntryMarketCap, tapeAxis, tapeMarketCapAt, tapeMarkSummary, tapeUsdSummary, type CohortTick, type CutFormat, type TapeBolt, type TapeCandle, type TapeMarketCapPoint, type TapeMarkSummary, type TapeUsdSummary } from "@/lib/field/replay-tape";
+import { CUT_SIZE, formatUsdNotional, formatUsdPrice, tapeAvgEntryMarketCap, tapeAxis, tapeMarketCapAt, tapeMarkSummary, tapeUsdSummary, type CohortTick, type CutFormat, type TapeBolt, type TapeCandle, type TapeMarketCapPoint, type TapeMarkSummary, type TapeUsdSummary } from "@/lib/field/replay-tape";
+
+export { cutTiming } from "@/lib/field/replay-director";
 
 export type ReplayCutInput = {
   format: CutFormat;
+  tapeSeconds?: number;
+  soundtrack?: CutSoundtrack;
   title: string;
   roomLabel: string;
   /** Hero trader label for the footer. */
@@ -57,7 +62,7 @@ function drawVerify(ctx: CanvasRenderingContext2D, w: number, h: number, input: 
   ctx.fillText("VERIFY", w / 2, h * 0.36);
   ctx.fillStyle = "rgba(244,242,236,.82)";
   ctx.font = `500 ${Math.round(34 * k)}px ui-sans-serif, system-ui, sans-serif`;
-  ctx.fillText("Every bolt is a retained print. Open the link to check it.", w / 2, h * 0.36 + 120 * k);
+  ctx.fillText("Sources, timestamps, and receipts. Open the Replay.", w / 2, h * 0.36 + 120 * k);
   ctx.fillStyle = "rgba(236,236,240,.9)";
   ctx.font = `500 ${Math.round(26 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   const lines = wrap(ctx, input.replayUrl, w * 0.84);
@@ -68,21 +73,13 @@ function drawVerify(ctx: CanvasRenderingContext2D, w: number, h: number, input: 
   ctx.restore();
 }
 
-/** Playhead timing for the Cut: the same bolt-to-bolt hops as the studio, stretched over TAPE_SECONDS. */
-export function cutTiming(bolts: readonly TapeBolt[]) {
-  const groups = groupBolts(bolts);
-  const schedule = hopSchedule(bolts.map((bolt) => bolt.cursor));
-  const arrivalAt = new Map<string, number>();
-  for (const bolt of bolts) {
-    const i = schedule.stops.findIndex((stop) => Math.abs(stop - Math.min(1, Math.max(0, bolt.cursor))) < 1e-9);
-    arrivalAt.set(bolt.id, (i < 0 ? bolt.cursor : schedule.arrivals[i]) * TAPE_SECONDS);
-  }
-  return { groups, schedule, arrivalAt };
-}
-const timingCache = new WeakMap<readonly TapeBolt[], ReturnType<typeof cutTiming>>();
-function timingFor(bolts: readonly TapeBolt[]) {
-  let timing = timingCache.get(bolts);
-  if (!timing) { timing = cutTiming(bolts); timingCache.set(bolts, timing); }
+const timingCache = new WeakMap<readonly TapeBolt[], Map<number, ReturnType<typeof cutTiming>>>();
+function timingFor(bolts: readonly TapeBolt[], tapeSeconds = TAPE_SECONDS) {
+  const seconds = cutTapeSeconds(tapeSeconds);
+  let byPace = timingCache.get(bolts);
+  if (!byPace) { byPace = new Map(); timingCache.set(bolts, byPace); }
+  let timing = byPace.get(seconds);
+  if (!timing) { timing = cutTiming(bolts, seconds); byPace.set(seconds, timing); }
   return timing;
 }
 function shortUrl(url: string) {
@@ -93,15 +90,16 @@ function cutMarkUsd(value:number|null){return value==null?"—":value===0?"$0":f
 function cutPct(value:number|null){if(value==null||!Number.isFinite(value))return null;const pct=value*100;return `${pct>=0?"+":"−"}${Math.abs(pct)>=10?Math.abs(pct).toFixed(0):Math.abs(pct).toFixed(1)}%`;}
 function drawPositionCard(ctx:CanvasRenderingContext2D,x:number,y:number,w:number,k:number,summary:TapeUsdSummary,mark:TapeMarkSummary,avgEntryMc:number|null){
   const rows:{label:string;value:string;tone?:"buy"|"sell"}[]=[
-    {label:"Bought · observed",value:summary.boughtUsd!=null?formatUsdNotional(summary.boughtUsd):"—",tone:"buy"},
+    {label:"Bought · retained fills",value:summary.boughtUsd!=null?formatUsdNotional(summary.boughtUsd):"—",tone:"buy"},
     {label:"Marked · tape mark",value:cutMarkUsd(mark.markedUsd)},
   ];
   const vs=cutPct(mark.deltaPct);if(vs)rows.push({label:"vs buy",value:vs,tone:mark.deltaPct!>=0?"buy":"sell"});
   rows.push({label:"Avg buy",value:formatUsdPrice(summary.avgBuyUsd)});
   if(avgEntryMc!=null)rows.push({label:"Avg entry MC",value:formatUsdNotional(avgEntryMc)});
   if(summary.sellTotal>0){rows.push({label:"Sold",value:summary.soldUsd!=null?formatUsdNotional(summary.soldUsd):"—",tone:"sell"});rows.push({label:"Avg sell",value:formatUsdPrice(summary.avgSellUsd)});}
-  const rowH=34*k,h=rows.length*rowH+28*k;ctx.save();ctx.fillStyle="rgba(9,10,14,.82)";ctx.strokeStyle="rgba(236,236,240,.16)";ctx.lineWidth=1.2*k;ctx.beginPath();ctx.roundRect(x,y,w,h,16*k);ctx.fill();ctx.stroke();
-  rows.forEach((row,i)=>{const yy=y+22*k+i*rowH;ctx.textAlign="left";ctx.textBaseline="middle";ctx.font=`560 ${Math.round(22*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillStyle="rgba(236,236,240,.58)";ctx.fillText(row.label,x+18*k,yy);ctx.textAlign="right";ctx.font=`760 ${Math.round(24*k)}px ui-monospace,SFMono-Regular,Menlo,monospace`;ctx.fillStyle=row.tone==="buy"?BOLT.buy.fill:row.tone==="sell"?BOLT.sell.fill:"#eadcaa";ctx.fillText(row.value,x+w-18*k,yy);});
+  const columns = w > 1200 * k ? 2 : 1, perColumn = Math.ceil(rows.length / columns), columnW = w / columns;
+  const rowH=34*k,h=perColumn*rowH+28*k;ctx.save();ctx.fillStyle="rgba(9,10,14,.82)";ctx.strokeStyle="rgba(236,236,240,.16)";ctx.lineWidth=1.2*k;ctx.beginPath();ctx.roundRect(x,y,w,h,16*k);ctx.fill();ctx.stroke();
+  rows.forEach((row,i)=>{const yy=y+22*k+(i % perColumn)*rowH, xx=x+Math.floor(i / perColumn)*columnW;ctx.textAlign="left";ctx.textBaseline="middle";ctx.font=`560 ${Math.round(22*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillStyle="rgba(236,236,240,.58)";ctx.fillText(row.label,xx+18*k,yy);ctx.textAlign="right";ctx.font=`760 ${Math.round(24*k)}px ui-monospace,SFMono-Regular,Menlo,monospace`;ctx.fillStyle=row.tone==="buy"?BOLT.buy.fill:row.tone==="sell"?BOLT.sell.fill:"#eadcaa";ctx.fillText(row.value,xx+columnW-18*k,yy);});
   ctx.restore();return h;
 }
 
@@ -111,8 +109,9 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   const { width: w, height: h } = CUT_SIZE[input.format];
   const portrait = input.format === "portrait";
   const k = Math.min(w, h) / 1080;
-  const timing = timingFor(input.bolts);
-  const cursor = timing.schedule.cursorAt(Math.min(1, Math.max(0, t / TAPE_SECONDS)));
+  const tapeSeconds = cutTapeSeconds(input.tapeSeconds);
+  const timing = timingFor(input.bolts, tapeSeconds);
+  const cursor = timing.schedule.cursorAt(Math.min(1, Math.max(0, t / tapeSeconds)));
   const visible = input.bolts.filter((bolt) => bolt.cursor <= cursor);
   const tapeTime=tapeAxis(input.candles,input.start,input.end).timeAt(cursor),visibleCandles=input.candles.filter((candle)=>candle.timestamp<=tapeTime);
   const mark=tapeMarkSummary(visible,visibleCandles),summary=tapeUsdSummary(visible),marketCap=tapeMarketCapAt(input.marketCapPoints??[],tapeTime,cursor>=.999),avgEntryMc=tapeAvgEntryMarketCap(visible,input.marketCapPoints??[]);
@@ -149,21 +148,21 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   ctx.font = `600 ${Math.round(20 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   ctx.fillText(`VERIFY · ${wrap(ctx, shortUrl(input.replayUrl), w - left * 2 - 150 * k)[0] ?? ""}`, left, h - (portrait ? 56 : 30) * k);
 
-  const verifyStart = TAPE_SECONDS + HOLD_SECONDS;
+  const verifyStart = tapeSeconds + HOLD_SECONDS;
   if (t >= verifyStart) drawVerify(ctx, w, h, input, Math.min(1, (t - verifyStart) / 0.35));
 }
 
-function tickTimes(bolts: readonly TapeBolt[]) {
-  const out: { at: number; side: "buy" | "sell" }[] = [];
-  let last = -1;
-  const timing = timingFor(bolts);
-  for (const group of timing.groups) {
-    const at = timing.arrivalAt.get(group.key) ?? group.cursor * TAPE_SECONDS;
-    if (at - last < 0.05) continue;
-    out.push({ at, side: group.side });
-    last = at;
-  }
-  return out;
+function tickTimes(bolts: readonly TapeBolt[], tapeSeconds: number) {
+  const timing = timingFor(bolts, tapeSeconds);
+  const seen = new Set<string>();
+  return bolts.flatMap(bolt => {
+    if (bolt.eventScope === "position-summary") return [];
+    const at = timing.arrivalAt.get(bolt.id) ?? bolt.cursor * tapeSeconds;
+    const key = `${Math.round(at * 1000)}:${bolt.side}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ at, side: bolt.side }];
+  });
 }
 
 async function greyBuffer(context: BaseAudioContext, line: string | null) {
@@ -181,16 +180,19 @@ async function greyBuffer(context: BaseAudioContext, line: string | null) {
 
 /** Near-silent room tone, one soft tick per bolt, optional Grey line. */
 async function renderCutAudio(input: ReplayCutInput) {
-  const sampleRate = 48_000, context = new OfflineAudioContext(2, Math.ceil((CUT_SECONDS + 0.1) * sampleRate), sampleRate);
+  const tapeSeconds = cutTapeSeconds(input.tapeSeconds), seconds = cutDuration(tapeSeconds);
+  const soundtrack = input.soundtrack ?? "minimal";
+  const sampleRate = 48_000, context = new OfflineAudioContext(2, Math.ceil(seconds * sampleRate), sampleRate);
+  if (soundtrack !== "silent") {
   const tone = context.createOscillator(), toneGain = context.createGain();
   tone.type = "sine"; tone.frequency.value = 55;
   toneGain.gain.setValueAtTime(0.0001, 0);
   toneGain.gain.linearRampToValueAtTime(0.006, 0.6);
-  toneGain.gain.setValueAtTime(0.006, CUT_SECONDS - 0.6);
-  toneGain.gain.linearRampToValueAtTime(0.0001, CUT_SECONDS);
+  toneGain.gain.setValueAtTime(0.006, seconds - 0.6);
+  toneGain.gain.linearRampToValueAtTime(0.0001, seconds);
   tone.connect(toneGain).connect(context.destination);
-  tone.start(0); tone.stop(CUT_SECONDS);
-  for (const tick of tickTimes(input.bolts)) {
+  tone.start(0); tone.stop(seconds);
+  for (const tick of tickTimes(input.bolts, tapeSeconds)) {
     const osc = context.createOscillator(), gain = context.createGain(), at = tick.at + 0.02;
     osc.type = "sine";
     osc.frequency.setValueAtTime(tick.side === "buy" ? 1480 : 980, at);
@@ -201,12 +203,25 @@ async function renderCutAudio(input: ReplayCutInput) {
     osc.connect(gain).connect(context.destination);
     osc.start(at); osc.stop(at + 0.06);
   }
-  const grey = await greyBuffer(context, input.greyLine);
+  if (soundtrack === "pulse") {
+    // Original synthesized bed; no remote music or licensing dependency.
+    const notes = [110, 164.81, 146.83, 130.81];
+    for (let beat = 0; beat * 0.6 < tapeSeconds; beat++) {
+      const at = beat * 0.6, osc = context.createOscillator(), gain = context.createGain();
+      osc.type = "sine"; osc.frequency.value = notes[Math.floor(beat / 4) % notes.length];
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(input.greyLine ? 0.014 : 0.026, at + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.48);
+      osc.connect(gain).connect(context.destination); osc.start(at); osc.stop(at + 0.5);
+    }
+  }
+  }
+  const grey = await greyBuffer(context, soundtrack === "silent" ? null : input.greyLine);
   if (grey) {
     const source = context.createBufferSource(), gain = context.createGain();
     source.buffer = grey; gain.gain.value = 0.9;
     source.connect(gain).connect(context.destination);
-    source.start(0.5, 0, Math.min(grey.duration, TAPE_SECONDS));
+    source.start(0.5, 0, Math.min(grey.duration, tapeSeconds));
   }
   return { buffer: await context.startRendering(), greyIncluded: Boolean(grey) };
 }
@@ -220,7 +235,8 @@ export async function recordReplayCut(input: ReplayCutInput): Promise<ReplayCutR
   if (!ctx) throw new Error("Canvas unavailable in this browser.");
   progress(0.02, input.greyLine ? "Preparing sound and the Grey line" : "Preparing sound");
   const audio = await renderCutAudio(input);
-  const totalFrames = Math.ceil(CUT_SECONDS * FPS);
+  const seconds = cutDuration(input.tapeSeconds);
+  const totalFrames = Math.ceil(seconds * FPS);
   try {
     const media = await import("mediabunny");
     const videoQuality = new media.Quality({ bitrate: 8_000_000 }), audioQuality = new media.Quality({ bitrate: 128_000 });
@@ -259,9 +275,9 @@ export async function recordReplayCut(input: ReplayCutInput): Promise<ReplayCutR
     await new Promise<void>((resolve) => {
       const draw = () => {
         const t = (performance.now() - began) / 1000;
-        drawCutFrame(ctx, input, Math.min(CUT_SECONDS, t));
-        progress(0.08 + 0.9 * Math.min(1, t / CUT_SECONDS), "Recording in real time");
-        if (t >= CUT_SECONDS) resolve(); else requestAnimationFrame(draw);
+        drawCutFrame(ctx, input, Math.min(seconds, t));
+        progress(0.08 + 0.9 * Math.min(1, t / seconds), "Recording in real time");
+        if (t >= seconds) resolve(); else requestAnimationFrame(draw);
       };
       requestAnimationFrame(draw);
     });

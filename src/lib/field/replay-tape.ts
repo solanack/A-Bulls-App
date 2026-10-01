@@ -16,8 +16,10 @@ export type ReplaySubject = {
   cursor: number | null;
 };
 
-export type TapeCandle = { time: number; timestamp: number; open: number; high: number; low: number; close: number };
+export type TapeCandle = { bucketSeconds?: number; time: number; timestamp: number; open: number; high: number; low: number; close: number };
 export type TapeEvent = {
+  /** Provider position lifecycle records are not individual executions. */
+  eventScope?: "fill" | "position-summary";
   id: string;
   side: "buy" | "sell";
   timestamp: number;
@@ -131,7 +133,7 @@ export function tapeCandles(value: unknown): TapeCandle[] {
   return rows(value)
     .map((row) => {
       const timestamp = toMs(row.timestamp) ?? 0;
-      return { time: Math.floor(timestamp / 1000), timestamp, open: finite(row.open) ?? 0, high: finite(row.high) ?? 0, low: finite(row.low) ?? 0, close: finite(row.close) ?? 0 };
+      return { bucketSeconds: positive(row.bucketSeconds) ?? undefined, time: Math.floor(timestamp / 1000), timestamp, open: finite(row.open) ?? 0, high: finite(row.high) ?? 0, low: finite(row.low) ?? 0, close: finite(row.close) ?? 0 };
     })
     .filter((row) => row.timestamp > 0 && row.high > 0 && row.low > 0 && row.close > 0)
     .sort((a, b) => a.time - b.time)
@@ -146,17 +148,21 @@ export function tapeEvents(value: unknown, subjectQuoteMint: unknown = null): Ta
       const timestamp = toMs(row.timestamp);
       if ((side !== "buy" && side !== "sell") || !timestamp) return [];
       const execution = asRow(row.execution);
-      const amount = absPositive(row.tokenDelta, row.amount, row.token_delta, execution.baseAmount);
+      const positionSummary = String(row.id ?? "").startsWith("fomo-provider:") || String(row.kind ?? row.eventClass ?? "").startsWith("fomo-position-") || row.eventScope === "position-summary";
+      // A closed position's remaining balance and average entry/exit prices do not
+      // establish the size of either fill. Keep lifecycle timing, never invent size.
+      const amount = positionSummary ? null : absPositive(row.tokenDelta, row.amount, row.token_delta, execution.baseAmount);
       const quoteAmount = absPositive(execution.quoteAmount, row.quoteAmount, execution.quote_amount, row.quote_amount);
       const priceUsd = positive(row.priceUsd, row.price_usd);
       const readyNotional = positive(row.valueUsd, row.usdValue, row.notionalUsd, row.usd_notional);
       const quoteNotional = quoteIsStableUsd(row, execution, subjectQuoteMint) ? quoteAmount : null;
       const computedNotional = amount != null && priceUsd != null ? amount * priceUsd : null;
       // Quote is the exact stablecoin paid (buy) or received (sell). Do not use candle prices.
-      const notionalUsd = readyNotional ?? quoteNotional ?? computedNotional;
+      const notionalUsd = positionSummary ? null : readyNotional ?? quoteNotional ?? computedNotional;
       const sources = Array.isArray(row.sources) ? row.sources.map(String).filter(Boolean) : [];
       return [{
         id: str(row.id) ?? str(row.signature) ?? `${side}:${timestamp}`,
+        eventScope: positionSummary ? "position-summary" as const : "fill" as const,
         side: side as "buy" | "sell",
         timestamp,
         signature: str(row.signature),
@@ -164,7 +170,7 @@ export function tapeEvents(value: unknown, subjectQuoteMint: unknown = null): Ta
         priceUsd,
         notionalUsd,
         marketCapUsd: positive(row.marketCapUsd,row.marketCap,row.market_cap,row.mcap,row.mcapUsd,row.market_cap_usd),
-        verification: str(row.verification) ?? str(row.sourceKind) ?? "observed",
+        verification: positionSummary ? "provider-reported" : str(row.verification) ?? str(row.sourceKind) ?? "unverified",
         sources,
         kind: str(row.kind) ?? "trade",
       }];
@@ -260,7 +266,8 @@ export function cohortTicks(items: unknown, candles: readonly TapeCandle[], star
 
 export type BoltGroup = { key: string; side: "buy" | "sell"; bolts: TapeBolt[]; lead: TapeBolt; count: number; cursor: number; notional: number | null };
 
-function observedUsdNotional(print: Pick<TapeEvent, "amount" | "priceUsd" | "notionalUsd">): number | null {
+export function observedUsdNotional(print: Pick<TapeEvent, "amount" | "priceUsd" | "notionalUsd" | "eventScope">): number | null {
+  if (print.eventScope === "position-summary") return null;
   const ready = print.notionalUsd;
   if (typeof ready === "number" && Number.isFinite(ready) && ready > 0) return ready;
   const amount = print.amount, price = print.priceUsd;
@@ -504,12 +511,18 @@ export function strikePhase(ageMs: number | null): StrikePhase {
 
 /** Header counts over the whole tape: hero buys and sells, and how many cohort buys came after. */
 export function tapeEvidenceLine(bolts: readonly TapeBolt[]) {
-  const reported = bolts.filter((bolt) => bolt.verification === "provider-reported").length;
-  return !bolts.length ? null : reported === bolts.length ? "Fomo-reported" : reported ? "Observed + Fomo-reported" : "Observed on-chain";
+  if (!bolts.length) return null;
+  const reported = bolts.filter((bolt) => /provider|fomo/i.test(bolt.verification)).length;
+  const observed = bolts.filter((bolt) => ["observed", "observed-fact", "verified"].includes(bolt.verification)).length;
+  if (observed + reported < bolts.length) return [observed ? "Chain observations" : "", reported ? "Provider-reported" : "", "Unverified sources"].filter(Boolean).join(" · ");
+  return reported === bolts.length ? "Fomo-reported" : reported ? "Observed + Fomo-reported" : "Observed on-chain";
 }
 
 export function tapeHeaderLine(input: { token: string; trader: string; bolts: readonly TapeBolt[]; cohortCount: number | null }) {
-  const buys = input.bolts.filter((bolt) => bolt.side === "buy").length, sells = input.bolts.length - buys;
+  const summaries = input.bolts.filter(bolt => bolt.eventScope === "position-summary").length;
+  const fills = input.bolts.filter(bolt => bolt.eventScope !== "position-summary");
+  const buys = fills.filter((bolt) => bolt.side === "buy").length, sells = fills.length - buys;
+  if (summaries) return `${input.trader} · ${fills.length} fills · ${summaries} position summaries`;
   return `${input.trader} · ${buys} ${buys === 1 ? "buy" : "buys"} · ${sells} ${sells === 1 ? "sell" : "sells"}`;
 }
 
@@ -556,11 +569,11 @@ export type CutFormat = "portrait" | "landscape";
 export const CUT_SIZE: Record<CutFormat, { width: number; height: number }> = { portrait: { width: 1080, height: 1920 }, landscape: { width: 1920, height: 1080 } };
 
 /** The Cut manifest names exactly what the video shows so anyone can re-check it against the chain. */
-export function buildCutManifest(input: { subject: ReplaySubject; bolts: readonly TapeBolt[]; cohortCount?: number; candleCount: number; candleSource: string | null; start: number; end: number; replayUrl: string; format: CutFormat; greyLine: string | null; generatedAt?: string }) {
+export function buildCutManifest(input: { subject: ReplaySubject; bolts: readonly TapeBolt[]; cohortCount?: number; candleCount: number; candleSource: string | null; start: number; end: number; replayUrl: string; format: CutFormat; greyLine: string | null; tapeSeconds?: number; soundtrack?: "minimal" | "pulse" | "silent"; generatedAt?: string }) {
   const size = CUT_SIZE[input.format];
   return {
     kind: "a-bulls-replay-cut",
-    version: 1,
+    version: 2,
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     wallet: input.subject.wallet,
     mint: input.subject.mint,
@@ -569,16 +582,17 @@ export function buildCutManifest(input: { subject: ReplaySubject; bolts: readonl
     title: [input.subject.displayName, input.subject.symbol].filter(Boolean).join(" · ") || null,
     window: { from: new Date(input.start).toISOString(), to: new Date(input.end).toISOString(), fromUnix: Math.floor(input.start / 1000), toUnix: Math.ceil(input.end / 1000) },
     format: { orientation: input.format, width: size.width, height: size.height },
+    director: { tapeSeconds: input.tapeSeconds ?? 12, durationSeconds: (input.tapeSeconds ?? 12) + 3.8, soundtrack: input.soundtrack ?? "minimal" },
     candleSource: input.candleCount ? input.candleSource : null,
     candleCount: input.candleCount,
     candles: input.candleCount ? "indexed OHLC" : "unavailable · event tape only",
-    prints: input.bolts.map((bolt) => ({ side: bolt.side, at: new Date(bolt.timestamp).toISOString(), signature: bolt.signature, verification: bolt.verification })),
+    prints: input.bolts.map((bolt) => ({ eventScope: bolt.eventScope ?? "fill", notionalUsd: observedUsdNotional(bolt), sources: bolt.sources, side: bolt.side, at: new Date(bolt.timestamp).toISOString(), signature: bolt.signature, verification: bolt.verification })),
     signatures: input.bolts.flatMap((bolt) => (bolt.signature ? [bolt.signature] : [])),
     buyCount: input.bolts.filter((bolt) => bolt.side === "buy").length,
     sellCount: input.bolts.filter((bolt) => bolt.side === "sell").length,
     cohortBuysAfterFirstPrint: input.cohortCount ?? 0,
     greyLine: input.greyLine,
     replayUrl: input.replayUrl,
-    disclosure: "Research only. Every bolt is a retained buy or sell print. No price path was invented. A Bulls App is not a broker and executes no trades.",
+    disclosure: "Research only. Events may include provider-reported position summaries; these are not individual fills. Source labels and receipts do not establish trader skill. No price path was invented. A Bulls App is not a broker and executes no trades.",
   };
 }
