@@ -1,10 +1,14 @@
+import { ReplayCutPanel as CutPanel } from "@/components/replay-cut-panel";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ReplayLedger } from "@/components/replay-ledger";
+import { printLabel, printSource, replayCandleCoverage } from "@/lib/field/replay-director";
+import "@/components/replay-director.css";
 import { INTELLIGENCE_PUBLIC_ORIGIN } from "@/lib/app-origins";
-import { ArrowLeft, CalendarDays, Pause, Play, Share2, SkipBack, SkipForward, Star, Users, Volume2, VolumeX, X } from "lucide-react";
+import { ArrowLeft, Clapperboard, List, CalendarDays, Pause, Play, Share2, SkipBack, SkipForward, Star, Users, Volume2, VolumeX, X } from "lucide-react";
 import { callUniverseTool } from "@/lib/universe-intelligence";
 import { loadResearchThread, saveResearchThread } from "@/lib/research-thread-store";
 import { requestTradeResearchMode } from "@/lib/field/trade-research-navigation";
-import { anchorBolts, buildCutManifest, candleSource, candleSourceLabel, cohortTicks, explorerUrl, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, tapeAvgEntryMarketCap, tapeAxis, tapeCandles, tapeEvents, tapeEvidenceLine, tapeHeaderLine, tapeMarketCapAt, tapeMarketCapPoints, tapeMarkSummary, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, tapeWindow, type CohortTick, type CutFormat, type ReplaySubject, type TapeBolt, type TapeCandle, type TapeMarkSummary, type TapeMarketCapPoint, type TapeUsdSummary } from "@/lib/field/replay-tape";
+import { observedUsdNotional, anchorBolts, candleSource, candleSourceLabel, cohortTicks, explorerUrl, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, tapeAvgEntryMarketCap, tapeAxis, tapeCandles, tapeEvents, tapeEvidenceLine, tapeHeaderLine, tapeMarketCapAt, tapeMarketCapPoints, tapeMarkSummary, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, tapeWindow, type CohortTick, type ReplaySubject, type TapeBolt, type TapeCandle, type TapeMarkSummary, type TapeMarketCapPoint, type TapeUsdSummary } from "@/lib/field/replay-tape";
 import { drawTape, hitBolt, type BoltHit } from "@/lib/field/replay-tape-render";
 import { callsign } from "@/lib/field/trader-sheet";
 import { getAfterbellGalaxy, XSTOCK_REGISTRY } from "@/lib/universe-data/afterbell-client";
@@ -31,7 +35,7 @@ function initialSubject() {
 
 export type ReplayWatchRequest = { kind: "wallet" | "token"; wallet: string; mint: string; chainKey: string; room: "fomo" | "afterbell" | null; name: string | null; handle: string | null; symbol: string | null; lastPrint: { side: string; at: number; symbol: string | null } | null };
 
-export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onToggleWatch }: { muted: boolean; onToggleMute?: () => void; onBack: () => void; onOpenRoom: (room: "fomo" | "afterbell") => void; watchlist?: readonly WatchItem[]; onToggleWatch?: (request: ReplayWatchRequest) => void }) {
+export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlist = [], onToggleWatch }: { muted: boolean; onToggleMute?: () => void; onBack: () => void; onOpenRoom: (room: "fomo" | "afterbell") => void; watchlist?: readonly WatchItem[]; onToggleWatch?: (request: ReplayWatchRequest) => void }) {
   const [subject] = useState<ReplaySubject | null>(initialSubject);
   const [bundle, setBundle] = useState<Data | null>(null);
   const [status, setStatus] = useState<Status>(subject ? "loading" : "empty");
@@ -42,6 +46,7 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [shareNote, setShareNote] = useState("");
+  const [ledgerOpen, setLedgerOpen] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1000);
   const [cutOpen, setCutOpen] = useState(false);
   const [socialOpen, setSocialOpen] = useState(false);
   const [ticksOn, setTicksOn] = useState(() => { try { return globalThis.localStorage?.getItem(TICKS_KEY) === "1"; } catch { return false; } });
@@ -51,8 +56,10 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
   const audible = ticksOn && !muted;
   const [size, setSize] = useState({ w: 0, h: 0, dpr: 1 });
 
-  const candles = useMemo(() => tapeCandles(bundle?.candles), [bundle]);
+  const retainedCandles = useMemo(() => tapeCandles(bundle?.candles), [bundle]);
   const events = useMemo(() => tapeEvents(bundle?.events, obj(bundle?.subject).quoteMint), [bundle]);
+  const candleCoverage = useMemo(() => replayCandleCoverage(retainedCandles, events), [retainedCandles, events]);
+  const candles = useMemo(() => candleCoverage.usable ? retainedCandles : [], [candleCoverage.usable, retainedCandles]);
   const window_ = useMemo(() => (subject ? tapeWindow(bundle?.window, candles, events, subject) : { start: 0, end: 1 }), [bundle, candles, events, subject]);
   const view = useMemo(() => fullTape(candles, events, window_), [candles, events, window_]);
   const bolts = useMemo(() => anchorBolts(events, candles, view.start, view.end), [events, candles, view]);
@@ -210,18 +217,26 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.target as HTMLElement | null)?.closest("input,select,textarea")) return;
+      if ((event.target as HTMLElement | null)?.closest("input,select,textarea,button,a,[contenteditable=true]")) return;
+      if (cutOpen) return;
       if (event.key === " ") { event.preventDefault(); toggle(); }
-      else if (event.key === "ArrowRight") step(1);
-      else if (event.key === "ArrowLeft") step(-1);
+      else if (event.key === "ArrowRight") { event.preventDefault(); step(1); }
+      else if (event.key === "ArrowLeft") { event.preventDefault(); step(-1); }
       else if (event.key === "Escape") { if (selectedId) setSelectedId(null); else if (socialOpen) setSocialOpen(false); else if (cutOpen) setCutOpen(false); else onBack(); }
     };
     globalThis.addEventListener("keydown", onKey);
     return () => globalThis.removeEventListener("keydown", onKey);
   });
 
-  function primeAudio() {
-    if (audioRef.current || !ticksOn || muted) return;
+  useEffect(() => {
+    const pauseHidden = () => { if (document.hidden) setPlaying(false); };
+    document.addEventListener("visibilitychange", pauseHidden);
+    return () => document.removeEventListener("visibilitychange", pauseHidden);
+  }, []);
+
+  function primeAudio(explicit = false) {
+    if (audioRef.current) { void audioRef.current.ctx.resume().catch(() => {}); return; }
+    if (!explicit && (!ticksOn || muted)) return;
     try {
       const Ctor = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return;
@@ -244,10 +259,10 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
     setSelectedId(null);
   }
   function toggleTicks() {
-    const next = !ticksOn;
+    const next = !audible;
     setTicksOn(next);
     try { globalThis.localStorage?.setItem(TICKS_KEY, next ? "1" : "0"); } catch { /* optional */ }
-    if (next && !muted && !audioRef.current) window.setTimeout(primeAudio, 0);
+    if (next) { if (muted) onToggleMute?.(); primeAudio(true); }
   }
   function toggleCohort() {
     const next = !cohortOn;
@@ -267,17 +282,20 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
     else if (id) { primeAudio(); setPlaying(false); setSelectedId(id); setSocialOpen(false); const bolt = bolts.find((row) => row.id === id); if (bolt && audioRef.current && audible) playTick(audioRef.current.ctx, bolt.side); }
     else setSelectedId(null);
   }
+  function selectPrint(bolt: TapeBolt) {
+    setPlaying(false); setCursor(bolt.cursor); setSelectedId(bolt.id); setSocialOpen(false);
+  }
   async function share() {
     if (!subject) return;
-    const url = replayShareUrl(window.location.origin, { ...subject, displayName: subject.displayName ?? handle, symbol: subject.symbol ?? resolvedSymbol }, cursor);
+    const url = replayShareUrl(window.location.origin, { ...subject, fromTs: view.start, toTs: view.end, displayName: subject.displayName ?? handle, symbol: subject.symbol ?? resolvedSymbol }, cursor);
     try {
       if (typeof navigator.share === "function" && window.innerWidth < 760) { await navigator.share({ title: `A Bulls App · ${title}`, url }); setShareNote("Shared"); return; }
       await navigator.clipboard.writeText(url);
       setShareNote("Link copied");
-    } catch {
+    } catch (cause) {
+      if (cause instanceof Error && cause.name === "AbortError") return;
       setShareNote(url);
     }
-    window.setTimeout(() => setShareNote(""), 2400);
   }
   function openEvidence(bolt: TapeBolt) {
     if (!subject) return;
@@ -301,7 +319,7 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
       </section>
     );
 
-  const verifyNote = selected ? (selected.signature ? "Observed on-chain" : selected.verification === "provider-reported" ? "Fomo-reported · no transaction receipt attached" : selected.verification) : "";
+  const verifyNote = selected ? `${printSource(selected)} · ${selected.signature ? "transaction reference attached" : "no receipt attached"}` : "";
   const explorer = selected ? explorerUrl(subject.chainKey, selected.signature) : null;
   const buys = visible.filter((bolt) => bolt.side === "buy").length;
   const selectedGroup = selected ? groups.find((group) => group.bolts.some((bolt) => bolt.id === selected.id)) ?? null : null;
@@ -314,7 +332,7 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
   const buyCoverage = tapeUsdCoverage(visible, "buy"), sellCoverage = tapeUsdCoverage(visible, "sell");
 
   return (
-    <section className="rs" data-room={room ?? undefined} data-status={status} aria-label="Replay">
+    <section className="rs" data-ledger={ledgerOpen} data-room={room ?? undefined} data-status={status} aria-label="Replay">
       <ReplayStudioStyles />
       <header className="rs-head">
         <button type="button" className="rs-icon" aria-label="Back to the Field" onClick={onBack}><ArrowLeft size={17} /></button>
@@ -326,10 +344,20 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
           </div>
         </div>
         {status === "ready" ? <div className="rs-usd-stack"><ReplayUsdTotals summary={usdSummary} buyCoverage={buyCoverage} sellCoverage={sellCoverage}/></div> : null}
-        <button type="button" className="rs-icon" aria-label={ticksOn ? "Turn tick sound off" : "Turn tick sound on"} aria-pressed={ticksOn} title={muted ? "Sound is muted in the Field" : undefined} onClick={toggleTicks}>{audible ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
+        <button type="button" className="rs-icon" aria-label={audible ? "Turn tick sound off" : "Turn tick sound on"} aria-pressed={audible} title={muted ? "Sound is muted in the Field" : undefined} onClick={toggleTicks}>{audible ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
       </header>
 
 
+      <div className="rs-director-bar">
+        <div className="rs-view-switch" aria-label="Replay view">
+          <button type="button" aria-pressed={!ledgerOpen} onClick={() => setLedgerOpen(false)}><Clapperboard size={15}/> Cinema</button>
+          <button type="button" aria-pressed={ledgerOpen} onClick={() => setLedgerOpen(true)}><List size={15}/> Trade log</button>
+        </div>
+        <span className="rs-director-status">{status === "ready" ? `${candles.length ? "CANDLE TAPE" : "EVENT TAPE"} · ${subject.chainKey.toUpperCase()}` : "READING EVIDENCE"}</span>
+        {onToggleWatch ? <button type="button" className="rs-watch" aria-pressed={traderWatched} onClick={() => watch("wallet")}><Star size={15}/>{traderWatched ? "Saved trader" : "Watch trader"}</button> : null}
+      </div>
+      {status === "ready" && !candleCoverage.usable && retainedCandles.length > 0 ? <p className="rs-coverage-warning">Cached candles cover {candleCoverage.covered} of {candleCoverage.total} events. Showing their actual timestamps on an event tape; no event is placed on an unrelated candle.</p> : null}
+      <div className="rs-body">
       <div className="rs-frame" ref={frameRef} data-scale={scaleMode} data-view-start={Math.round(view.start)} data-view-end={Math.round(view.end)} data-candles={candles.length} data-bolt-groups={groups.length} data-cohort={cohortOn ? ticks.length : 0}>
         {status === "ready" ? <canvas ref={canvasRef} className="rs-canvas" onPointerDown={onCanvasPointer} aria-label={`${candles.length ? "Candles" : "Event tape"} with ${bolts.length} buy and sell bolts. Tap a bolt for its evidence.`} role="img" /> : null}
         {status === "loading" || status === "building" ? <div className="rs-state"><span className="rs-pulse" aria-hidden="true" /><p>{status === "building" ? "Indexing this wallet's prints. The tape starts on its own when they land." : "Reading the tape…"}</p></div> : null}
@@ -337,6 +365,8 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
         {status === "error" ? <div className="rs-state"><p>{error}</p><button type="button" onClick={() => { setStatus("loading"); setAttempts((value) => value + 1); }}>TRY AGAIN</button></div> : null}
       </div>
 
+      {ledgerOpen && status === "ready" ? <ReplayLedger bolts={bolts} cursor={cursor} selectedId={selectedId} onSelect={selectPrint} onClose={() => setLedgerOpen(false)}/> : null}
+      </div>
       <footer className="rs-third">
         {selectedTick ? (
           <div className="rs-evidence" role="dialog" aria-label="Cohort buy">
@@ -353,8 +383,9 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
         ) : selected ? (
           <div className="rs-evidence" role="dialog" aria-label="Evidence for this print">
             <div className="rs-evidence__row">
-              <b data-side={selected.side}>{selected.side.toUpperCase()}</b>
+              <b data-side={selected.side}>{printLabel(selected).toUpperCase()}</b>
               <span>{when(selected.timestamp)}</span>
+              <strong data-side={selected.side}>{observedUsdNotional(selected) == null ? "Fill USD unavailable" : formatUsdNotional(observedUsdNotional(selected)!)}</strong>
               {amountLabel(selected.amount) ? <span>{amountLabel(selected.amount)} {subject.symbol ?? resolvedSymbol ?? "tokens"}</span> : null}
               {selected.verification === "provider-reported" && selected.priceUsd ? <span>Fomo-reported ${selected.priceUsd.toPrecision(3)}</span> : null}
               <button type="button" className="rs-icon rs-icon--small" aria-label="Close evidence" onClick={() => setSelectedId(null)}><X size={14} /></button>
@@ -364,12 +395,12 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
             {selected.signature ? <p className="rs-evidence__sig">{explorer ? <a href={explorer} target="_blank" rel="noreferrer">{selected.signature}</a> : selected.signature}</p> : null}
             <div className="rs-actions"><button type="button" onClick={() => openEvidence(selected)}>ALL RECEIPTS</button></div>
           </div>
-        ) : (
+        ) : null}
           <>
-            <div className="rs-now">
-              {latest ? <><b data-side={latest.side}>{latest.side.toUpperCase()}</b><span>{when(latest.timestamp)}</span></> : <span>{status === "ready" ? "Press play. Each bolt is a retained print." : "\u00a0"}</span>}
-              <span className="rs-count">{buys} {buys === 1 ? "buy" : "buys"} · {visible.length - buys} {visible.length - buys === 1 ? "sell" : "sells"}</span>
-            </div>
+            {!selected && !selectedTick ? <div className="rs-now">
+              {latest ? <><b data-side={latest.side}>{printLabel(latest).toUpperCase()}</b><span>{when(latest.timestamp)}</span></> : <span>{status === "ready" ? "Press play. Each marker is a retained event." : "\u00a0"}</span>}
+              <span className="rs-count">{buys} entries · {visible.length - buys} exits</span>
+            </div> : null}
             <input className="rs-scrub" type="range" min={0} max={1000} value={Math.round(cursor * 1000)} aria-label="Replay position" disabled={status !== "ready"} onChange={(event) => { setPlaying(false); setCursor(Number(event.target.value) / 1000); }} />
             <div className="rs-controls">
               <button type="button" className="rs-icon" aria-label="Previous print" disabled={status !== "ready"} onClick={() => step(-1)}><SkipBack size={15} /></button>
@@ -380,9 +411,9 @@ export function ReplayStudio({ muted, onBack, onOpenRoom, watchlist = [], onTogg
               <button type="button" className="rs-pill" onClick={() => void share()} aria-label="Copy a link to this Replay"><Share2 size={13} /> {shareNote && shareNote.length < 20 ? shareNote : "SHARE"}</button>
               <button type="button" className="rs-pill rs-pill--cut" disabled={status !== "ready"} onClick={() => { setPlaying(false); setCutOpen(true); }}>CUT</button>
             </div>
-            <p className="rs-source">{candles.length ? `Candles · ${candleSourceLabel(source)}` : status === "ready" ? "Candles unavailable · event tape only · no price path drawn" : ""}{status === "ready" ? ` · ${bolts.length} prints${events.some((row) => row.verification === "provider-reported") ? " · Fomo-reported" : ""}` : ""}</p>
+            <p className="rs-source">{candles.length ? `Candles · ${candleSourceLabel(source)}` : status === "ready" ? "Candles unavailable · event tape only · no price path drawn" : ""}{status === "ready" ? ` · ${bolts.length} events${events.some((row) => row.verification === "provider-reported") ? " · Fomo-reported" : ""}` : ""}</p>
           </>
-        )}
+        {shareNote ? <p className="rs-share-status" role="status">{shareNote.startsWith("http") ? <>Copy this Replay link: <a href={shareNote}>{shareNote}</a></> : shareNote}</p> : null}
       </footer>
       {cutOpen && subject ? <CutPanel subject={{ ...subject, displayName: subject.displayName ?? handle, symbol: subject.symbol ?? resolvedSymbol }} title={title} trader={traderLabel} room={room} bolts={bolts} cohort={cohortOn && ticks.length ? ticks : []} candles={candles} marketCapPoints={marketCapPoints} candleCount={candles.length} start={view.start} end={view.end} scaleMode={scaleMode} source={source} evidenceLine={evidenceLine} onClose={() => setCutOpen(false)} /> : null}
       {socialOpen && day0 ? <ReplaySocialStrip mint={subject.mint} symbol={subject.symbol ?? resolvedSymbol} name={null} wallet={subject.wallet} chain={subject.chainKey} room={room} day0={day0} onClose={() => setSocialOpen(false)} /> : null}
@@ -405,67 +436,7 @@ function playTick(ctx: AudioContext, side: "buy" | "sell") {
   } catch { /* sound is optional */ }
 }
 
-function CutPanel({ subject, title, trader, room, bolts, cohort, candles, marketCapPoints, candleCount, start, end, scaleMode, source, evidenceLine, onClose }: { subject: ReplaySubject; title: string; trader: string; room: "fomo" | "afterbell" | null; bolts: TapeBolt[]; cohort: CohortTick[]; candles: TapeCandle[]; marketCapPoints: readonly TapeMarketCapPoint[]; candleCount: number; start: number; end: number; scaleMode: "log" | "linear"; source: string | null; evidenceLine: string|null; onClose: () => void }) {
-  const [format, setFormat] = useState<CutFormat>("portrait");
-  const [grey, setGrey] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState({ value: 0, label: "" });
-  const [result, setResult] = useState<{ videoUrl: string; manifestUrl: string; extension: string; greyIncluded: boolean } | null>(null);
-  const [error, setError] = useState("");
-  const replayUrl = replayShareUrl(typeof window === "undefined" ? INTELLIGENCE_PUBLIC_ORIGIN : window.location.origin, subject);
-  const buys = bolts.filter((bolt) => bolt.side === "buy").length, sells = bolts.length - buys;
-  const greyLine = `${subject.displayName ?? "This wallet"} printed ${buys} buys and ${sells} sells of ${subject.symbol ?? "this token"} in this window. Every one is on the tape.`;
-  const sourceLine = `${candleCount ? `Candles: ${candleSourceLabel(source)}` : "Candles unavailable: event tape only"} · ${bolts.length} prints · ${subject.chainKey}`;
-  const slug = `abulls-replay-${(subject.symbol ?? subject.mint.slice(0, 6)).replace(/[^a-z0-9]+/gi, "").toLowerCase()}-${format}`;
-
-  useEffect(() => () => { if (result) { URL.revokeObjectURL(result.videoUrl); URL.revokeObjectURL(result.manifestUrl); } }, [result]);
-
-  async function render() {
-    setBusy(true); setError(""); setResult(null);
-    try {
-      const { recordReplayCut } = await import("@/lib/replay-cut");
-      const cut = await recordReplayCut({ format, title, roomLabel: room ? ROOM_CHIP[room] : "REPLAY", trader, heroGlyph:trader, candles, bolts, cohort, marketCapPoints, evidenceLine, start, end, scaleMode, replayUrl, sourceLine, greyLine: grey ? greyLine : null, onProgress: (value, label) => setProgress({ value, label }) });
-      const manifest = buildCutManifest({ subject, bolts, cohortCount: cohort.length, candleCount, candleSource: source, start, end, replayUrl, format, greyLine: grey && cut.greyIncluded ? greyLine : null });
-      setResult({ videoUrl: URL.createObjectURL(cut.blob), manifestUrl: URL.createObjectURL(new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" })), extension: cut.extension, greyIncluded: cut.greyIncluded });
-    } catch (cause) {
-      setError(cause instanceof Error && cause.message ? `The Cut could not be rendered here: ${cause.message}` : "The Cut could not be rendered in this browser.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="rs-cut" role="dialog" aria-label="Make a Cut">
-      <div className="rs-cut__card">
-        <header><b>Cut</b><button type="button" className="rs-icon rs-icon--small" aria-label="Close Cut" onClick={onClose}><X size={14} /></button></header>
-        <p className="rs-cut__lede">Exports the full tape with {trader}'s prints{cohort.length ? ` and ${cohort.length} cohort ${cohort.length === 1 ? "tick" : "ticks"}` : ""}. The last frame is VERIFY with the Replay link.</p>
-        <div className="rs-seg" role="radiogroup" aria-label="Cut format">
-          <button type="button" role="radio" aria-checked={format === "portrait"} onClick={() => setFormat("portrait")}>1080 × 1920</button>
-          <button type="button" role="radio" aria-checked={format === "landscape"} onClick={() => setFormat("landscape")}>1920 × 1080</button>
-        </div>
-        <label className="rs-toggle"><input type="checkbox" checked={grey} onChange={(event) => setGrey(event.target.checked)} /> Add the Grey line <small>off by default</small></label>
-        {grey ? <p className="rs-cut__grey">“{greyLine}”</p> : null}
-        {busy ? <div className="rs-progress" aria-live="polite"><i style={{ width: `${Math.round(progress.value * 100)}%` }} /><span>{progress.label}</span></div> : null}
-        {error ? <p className="rs-cut__error">{error}</p> : null}
-        {result ? (
-          <div className="rs-cut__done">
-            <video src={result.videoUrl} controls playsInline muted className={format === "portrait" ? "is-portrait" : ""} />
-            <div className="rs-actions">
-              <a href={result.videoUrl} download={`${slug}.${result.extension}`}>DOWNLOAD VIDEO</a>
-              <a href={result.manifestUrl} download={`${slug}.manifest.json`}>MANIFEST</a>
-            </div>
-            {grey && !result.greyIncluded ? <p className="rs-cut__error">Grey is unavailable right now, so this Cut has ticks only.</p> : null}
-          </div>
-        ) : (
-          <div className="rs-actions"><button type="button" disabled={busy} onClick={() => void render()}>{busy ? "RENDERING…" : "RENDER CUT"}</button></div>
-        )}
-        <p className="rs-cut__fine">Manifest lists wallet, mint, window, every signature and the candle source.</p>
-      </div>
-    </div>
-  );
-}
-
-function ReplayUsdTotals({summary,buyCoverage,sellCoverage}:{summary:TapeUsdSummary;buyCoverage:string|null;sellCoverage:string|null}){return <div className="rs-usd" aria-label="Observed USD trade sizes"><div><span>Bought</span><b data-tone="buy">{summary.boughtUsd!=null?formatUsdNotional(summary.boughtUsd):"—"}</b></div><div><span>Sold</span><b data-tone="sell">{summary.soldUsd!=null?formatUsdNotional(summary.soldUsd):"—"}</b></div><div><span>Avg buy</span><b>{formatUsdPrice(summary.avgBuyUsd)}</b></div><div><span>Avg sell</span><b>{formatUsdPrice(summary.avgSellUsd)}</b></div>{buyCoverage?<small>{buyCoverage}</small>:null}{sellCoverage?<small>{sellCoverage}</small>:null}</div>}
+function ReplayUsdTotals({summary,buyCoverage,sellCoverage}:{summary:TapeUsdSummary;buyCoverage:string|null;sellCoverage:string|null}){return <div className="rs-usd" aria-label="Retained fill USD sizes"><div><span>Bought</span><b data-tone="buy">{summary.boughtUsd!=null?formatUsdNotional(summary.boughtUsd):"—"}</b></div><div><span>Sold</span><b data-tone="sell">{summary.soldUsd!=null?formatUsdNotional(summary.soldUsd):"—"}</b></div><div><span>Avg buy</span><b>{formatUsdPrice(summary.avgBuyUsd)}</b></div><div><span>Avg sell</span><b>{formatUsdPrice(summary.avgSellUsd)}</b></div>{buyCoverage?<small>{buyCoverage}</small>:null}{sellCoverage?<small>{sellCoverage}</small>:null}</div>}
 
 function ReplayStudioStyles() {
   return <style>{`.rs{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;background:#0b0c10;color:#f4f2ec;--rs-rim:rgba(236,236,240,.12);--rs-ink:#eadcb4}.rs[data-room=fomo]{--rs-ink:#cdb8ff}.rs-head{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:max(12px,env(safe-area-inset-top)) 16px 6px}.rs-title{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:10px}.rs-title__text{min-width:0;display:grid;gap:3px}.rs-line{margin:0;font:520 11px/1.3 var(--font-mono);color:rgba(236,236,240,.62);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rs-cohort-chip{color:rgba(214,220,200,.9)}.rs-src{display:inline-block;padding:2px 7px;border:1px solid var(--rs-rim);border-radius:999px;font:500 10px/1.3 var(--font-mono)}.rs-usd-stack{flex:0 0 auto;display:grid;gap:4px}.rs-usd{display:grid;grid-template-columns:auto auto;gap:5px 14px;padding:9px 11px;border:1px solid rgba(236,236,240,.16);border-radius:12px;background:rgba(9,10,14,.72);backdrop-filter:blur(14px);box-shadow:0 12px 34px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.035);font:650 10px/1.2 var(--font-mono)}.rs-usd div{display:contents}.rs-usd span,.rs-usd small{color:rgba(236,236,240,.58)}.rs-usd b{text-align:right;color:#eadcaa;font-size:11px}.rs-usd b[data-tone=buy]{color:#B8FF3C}.rs-usd b[data-tone=sell]{color:#FF2D55}.rs-usd small{grid-column:1/-1;font-size:8px;line-height:1.25}.rs-evidence-line{font:500 11px/1.2 var(--font-mono);color:rgba(236,236,240,.48);text-align:right}.rs-title h1{margin:0;font:680 17px/1.2 var(--font-sans);letter-spacing:.005em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rs-chip{flex:0 0 auto;padding:4px 8px;border:1px solid color-mix(in oklab,var(--rs-ink) 45%,transparent);border-radius:999px;color:var(--rs-ink);font:700 8.5px/1 var(--font-display);letter-spacing:.14em}.rs-icon{flex:0 0 auto;width:40px;height:40px;display:grid;place-items:center;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.03);color:#f4f2ec;transition:border-color .15s,background .15s}.rs-icon:hover:not(:disabled),.rs-icon:focus-visible{border-color:rgba(236,236,240,.34);outline:none}.rs-icon:disabled{opacity:.35}.rs-icon--small{width:28px;height:28px}.rs-frame{position:relative;flex:1 1 auto;min-height:0;margin:0}.rs-canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:manipulation;cursor:crosshair}.rs-state{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:10px;padding:24px;text-align:center}.rs-state p{margin:0;max-width:440px;font:540 14px/1.5 var(--font-sans);color:rgba(236,236,240,.82)}.rs-state small{color:rgba(236,236,240,.5)}.rs-state button,.rs-empty__actions button,.rs-actions button,.rs-actions a{min-height:38px;padding:0 16px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.04);color:#f4f2ec;font:700 9px/1 var(--font-display);letter-spacing:.14em;text-decoration:none}.rs-pulse{width:44px;height:2px;border-radius:2px;background:linear-gradient(90deg,transparent,var(--rs-ink),transparent);animation:rs-sweep 1.4s ease-in-out infinite}@keyframes rs-sweep{0%{transform:translateX(-30px);opacity:.2}50%{opacity:1}100%{transform:translateX(30px);opacity:.2}}.rs-third{flex:0 0 auto;min-height:clamp(132px,20vh,190px);display:flex;flex-direction:column;justify-content:flex-end;gap:8px;padding:10px 18px max(14px,env(safe-area-inset-bottom));border-top:1px solid rgba(236,236,240,.06);background:linear-gradient(180deg,rgba(11,12,16,0),rgba(16,17,22,.9))}.rs-now{display:flex;align-items:baseline;gap:10px;font:560 13px/1.3 var(--font-sans);color:rgba(236,236,240,.8)}.rs-now b,.rs-evidence__row b{font:750 12px/1 var(--font-display);letter-spacing:.14em}[data-side=buy]{color:#B8FF3C}[data-side=sell]{color:#FF2D55}.rs-acts{position:relative;flex:0 0 auto;display:flex;justify-content:flex-end;gap:6px;padding:2px 16px 6px 68px}.rs-act--cohort{margin-right:auto}.rs-overflow{position:relative}.rs-overflow summary{list-style:none;width:34px;height:30px;display:grid;place-items:center;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.03);color:rgba(236,236,240,.82);font:800 14px/1 var(--font-mono);cursor:pointer}.rs-overflow summary::-webkit-details-marker{display:none}.rs-overflow__menu{position:absolute;right:0;top:36px;z-index:5;display:flex;gap:6px;padding:7px;border:1px solid var(--rs-rim);border-radius:12px;background:rgba(10,11,15,.96);box-shadow:0 16px 40px rgba(0,0,0,.4);backdrop-filter:blur(14px)}.rs-act{height:30px;padding:0 11px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.03);color:rgba(236,236,240,.82);font:700 8.5px/1 var(--font-display);letter-spacing:.13em}.rs-act[aria-pressed=true]{border-color:color-mix(in oklab,var(--rs-ink) 60%,transparent);color:var(--rs-ink)}.rs-act:disabled{opacity:.35}.rs-count{margin-left:auto;font:500 11px/1 var(--font-mono);color:rgba(236,236,240,.5)}.rs-scrub{width:100%;accent-color:#eadcb4;height:22px}.rs-controls{display:flex;align-items:center;gap:8px}.rs-play{width:48px;height:48px;display:grid;place-items:center;border:1px solid color-mix(in oklab,var(--rs-ink) 50%,transparent);border-radius:999px;background:color-mix(in oklab,var(--rs-ink) 12%,transparent);color:#fff}.rs-play:disabled,.rs-pill:disabled{opacity:.35}.rs-speed{min-width:44px;height:34px;border:1px solid var(--rs-rim);border-radius:999px;background:transparent;color:rgba(236,236,240,.8);font:600 11px/1 var(--font-mono)}.rs-spacer{flex:1 1 auto}.rs-pill{height:36px;padding:0 14px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.035);color:#f4f2ec;font:700 9px/1 var(--font-display);letter-spacing:.14em}.rs-pill--cut{border-color:color-mix(in oklab,var(--rs-ink) 55%,transparent);color:var(--rs-ink)}.rs-source{margin:0;font:500 10px/1.3 var(--font-mono);color:rgba(236,236,240,.42);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rs-evidence{display:grid;gap:6px}.rs-evidence__row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font:560 13px/1.3 var(--font-sans)}.rs-evidence__row .rs-icon{margin-left:auto}.rs-evidence__meta{margin:0;font:500 11px/1.4 var(--font-sans);color:rgba(236,236,240,.6)}.rs-evidence__sig{margin:0;font:500 10.5px/1.4 var(--font-mono);word-break:break-all;color:rgba(236,236,240,.72)}.rs-evidence__sig a{color:inherit;text-decoration:underline;text-decoration-color:rgba(236,236,240,.3)}.rs-actions{display:flex;gap:8px;flex-wrap:wrap}.rs-empty{margin:auto;display:grid;gap:16px;justify-items:center;padding:24px;text-align:center}.rs-empty__title{margin:0;font:600 16px/1.45 var(--font-sans);max-width:380px}.rs-empty__actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}.rs-cut{position:absolute;inset:0;z-index:2;display:grid;place-items:center;padding:16px;background:rgba(5,6,9,.66);backdrop-filter:blur(10px)}.rs-cut__card{width:min(440px,100%);max-height:calc(100vh - 32px);overflow:auto;display:grid;gap:12px;padding:18px;border:1px solid var(--rs-rim);border-radius:20px;background:#111217;box-shadow:0 30px 90px rgba(0,0,0,.5)}.rs-cut__card header{display:flex;align-items:center;justify-content:space-between}.rs-cut__card header b{font:700 15px/1 var(--font-sans)}.rs-cut__lede,.rs-cut__fine,.rs-cut__grey{margin:0;font:500 12px/1.45 var(--font-sans);color:rgba(236,236,240,.7)}.rs-cut__fine{font-size:10.5px;color:rgba(236,236,240,.45)}.rs-cut__grey{font-style:italic}.rs-cut__error{margin:0;font:500 12px/1.4 var(--font-sans);color:#ffb3b3}.rs-seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}.rs-seg button{height:38px;border:1px solid var(--rs-rim);border-radius:12px;background:transparent;color:rgba(236,236,240,.75);font:600 11px/1 var(--font-mono)}.rs-seg button[aria-checked=true]{border-color:var(--rs-ink);color:#fff;background:color-mix(in oklab,var(--rs-ink) 10%,transparent)}.rs-toggle{display:flex;align-items:center;gap:8px;font:560 12.5px/1.2 var(--font-sans)}.rs-toggle small{color:rgba(236,236,240,.45)}.rs-progress{position:relative;height:30px;border-radius:10px;overflow:hidden;background:rgba(255,255,255,.04)}.rs-progress i{position:absolute;inset:0 auto 0 0;background:color-mix(in oklab,var(--rs-ink) 22%,transparent)}.rs-progress span{position:relative;display:block;padding:9px 10px;font:500 10.5px/1 var(--font-mono);color:rgba(236,236,240,.8)}.rs-cut__done{display:grid;gap:10px}.rs-cut__done video{width:100%;max-height:320px;border-radius:12px;background:#000}.rs-cut__done video.is-portrait{width:auto;justify-self:center}@media(max-width:560px){.rs-head{flex-wrap:wrap}.rs-usd-stack{order:3;width:100%}.rs-usd{width:100%;grid-template-columns:1fr auto}.rs-evidence-line{text-align:left}.rs-line{font-size:10px;white-space:normal}.rs-head{padding-left:10px;padding-right:10px}.rs-acts{padding-left:10px;padding-right:10px}.rs-title h1{font-size:15px}.rs-third{padding-left:12px;padding-right:12px}.rs-pill{padding:0 11px}}@media(prefers-reduced-motion:reduce){.rs-pulse{animation:none}}`}</style>;
