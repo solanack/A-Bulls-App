@@ -84,29 +84,30 @@ describe("duelBarRatio + extractDuelFields", () => {
     assert.deepEqual(duelBarRatio(4, null), { aPct: 0, bPct: 0, leading: "gap" });
   });
 
-  it("scales bars from retained magnitudes only", () => {
+  it("scales bars while leading follows the higher signed value", () => {
     assert.deepEqual(duelBarRatio(10, 5), { aPct: 100, bPct: 50, leading: "a" });
     const ratio = duelBarRatio(3, 9);
     assert.equal(ratio.leading, "b");
     assert.equal(ratio.bPct, 100);
     assert.ok(Math.abs(ratio.aPct - 100 / 3) < 1e-9);
     assert.deepEqual(duelBarRatio(0, 0), { aPct: 0, bPct: 0, leading: "tie" });
+    assert.equal(duelBarRatio(-10, 5).leading, "b");
   });
 
   it("extracts only present comparable fields", () => {
     const fields = extractDuelFields(
-      { tx_count: 12, mint_count: 4, swap_events: 8, fees_sol: null },
-      { tx_count: 7, mint_count: 4, fees_sol: 1 },
+      { realized_sol: 12, win_rate_pct: 60, profit_factor: null, median_roi_pct: 18 },
+      { realized_sol: 7, win_rate_pct: 40, profit_factor: 2.1 },
     );
     assert.equal(fields.length, 4);
-    const fees = fields.find((f) => f.key === "fees_sol");
-    assert.equal(fees?.a, null);
-    assert.equal(fees?.b, 1);
-    assert.equal(duelBarRatio(fees!.a, fees!.b).leading, "gap");
-    const swaps = fields.find((f) => f.key === "swap_events");
-    assert.equal(swaps?.a, 8);
-    assert.equal(swaps?.b, null);
-    assert.equal(duelBarRatio(swaps!.a, swaps!.b).leading, "gap");
+    const factor = fields.find((f) => f.key === "profit_factor");
+    assert.equal(factor?.a, null);
+    assert.equal(factor?.b, 2.1);
+    assert.equal(duelBarRatio(factor!.a, factor!.b).leading, "gap");
+    const roi = fields.find((f) => f.key === "median_roi_pct");
+    assert.equal(roi?.a, 18);
+    assert.equal(roi?.b, null);
+    assert.equal(duelBarRatio(roi!.a, roi!.b).leading, "gap");
   });
 });
 
