@@ -24,6 +24,9 @@ test("Replay reads the stored thread when the URL carries no subject, so the men
   assert.ok(subject);
   assert.equal(subject.chainKey, "robinhood");
   assert.equal(subject.displayName, "LP1111");
+  assert.equal(subject.fromTs, null);
+  assert.equal(subject.toTs, null);
+  assert.equal(replayToolInput(subject).historyMode, "full");
   assert.equal(replaySubjectFrom("", {}), null);
 });
 
@@ -32,8 +35,10 @@ test("tool input keeps EVM subjects off the WSOL quote and passes the selected w
   assert.equal("quoteMint" in evm, false);
   assert.equal(evm.from, 1784685328);
   assert.equal(evm.bucketSeconds, 3600);
+  assert.equal(evm.historyMode, "window");
   const sol = replayToolInput({ wallet: AB_WALLET, mint: AB_MINT, chainKey: "solana", fromTs: null, toTs: null, room: null, displayName: null, symbol: null, cursor: null });
   assert.equal(sol.quoteMint, WSOL_MINT);
+  assert.equal(sol.historyMode, "full");
 });
 
 test("bolts anchor to the candle holding each print; unknown sides never become bolts", () => {
