@@ -1108,7 +1108,7 @@ export class ParticleFieldRenderer {
   #applyDynamicQuality() {
     const entities = this.points.geometry.userData.entities as FieldParticle[];
     let liveFloor = 0;
-    for (let i = 0; i < entities.length; i++) if (renderCosmicKind(entities[i]) !== "dust" || entities[i].metadata?.interactive !== false) liveFloor = i + 1;
+    for (let i = 0; i < entities.length; i++) if (renderCosmicKind(entities[i]) !== "dust") liveFloor = i + 1;
     const fieldFraction = 0.42 + this.#qualityScale * 0.58;
     this.points.count = Math.min(this.#fieldMax, Math.max(liveFloor, Math.floor(this.#fieldMax * fieldFraction)));
     this.stars.count = Math.min(this.#starMax, Math.max(180, Math.floor(this.#starMax * fieldFraction)));
