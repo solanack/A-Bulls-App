@@ -16,6 +16,7 @@ import { isWatched, type WatchItem } from "@/lib/field/watchlist";
 import { socialDay0 } from "@/lib/field/social-window";
 import { prefetchThatDay, ReplaySocialStrip } from "@/components/replay-social-strip";
 import { getReplayCohort } from "@/lib/universe-data/replay-cohort-client";
+import { TraderSigil } from "@/components/trader-sigil";
 
 type Data = Record<string, unknown>;
 type Status = "loading" | "building" | "ready" | "empty" | "error";
@@ -28,6 +29,15 @@ const ROOM_CHIP = { fomo: "FOMO", afterbell: "AFTERBELL" } as const;
 const when = (ms: number) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 const amountLabel = (value: number | null) => (value == null ? null : value >= 1000 ? value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : value >= 1 ? value.toFixed(2) : value.toPrecision(3));
 const signedUsd = (value: number | null) => value == null || !Number.isFinite(value) ? "—" : value === 0 ? "$0" : `${value > 0 ? "+" : "−"}${formatUsdNotional(Math.abs(value))}`;
+
+export function replayImpactStrength(bolt: TapeBolt, bolts: readonly TapeBolt[]) {
+  const value = observedUsdNotional(bolt);
+  if (value == null || value <= 0) return 0.36;
+  const known = bolts.flatMap((row) => { const v = observedUsdNotional(row); return v != null && v > 0 ? [Math.log10(v)] : []; });
+  if (!known.length) return 0.5;
+  const lo = Math.min(...known), hi = Math.max(...known), unit = hi > lo ? (Math.log10(value) - lo) / (hi - lo) : 0.5;
+  return Math.max(0.32, Math.min(1, 0.38 + unit * 0.62));
+}
 
 function initialSubject() {
   if (typeof window === "undefined") return null;
@@ -50,10 +60,12 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [cutOpen, setCutOpen] = useState(false);
   const [socialOpen, setSocialOpen] = useState(false);
+  const [whatIf, setWhatIf] = useState(false);
+  const [versusOpen, setVersusOpen] = useState(false);
   const [ticksOn, setTicksOn] = useState(() => { try { return globalThis.localStorage?.getItem(TICKS_KEY) === "1"; } catch { return false; } });
   const [cohortOn, setCohortOn] = useState(() => { try { return globalThis.localStorage?.getItem(COHORT_KEY) !== "0"; } catch { return true; } });
   const [cohortItems, setCohortItems] = useState<unknown[] | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null), frameRef = useRef<HTMLDivElement | null>(null), hitsRef = useRef<BoltHit[]>([]), audioRef = useRef<{ ctx: AudioContext; tone: GainNode } | null>(null), lastTickRef = useRef(0), cursorRef = useRef(cursor), progressRef = useRef(0), strikesRef = useRef(new Map<string, number>()), visitedRef = useRef(new Set<string>()), drawRef = useRef<() => void>(() => {});
+  const canvasRef = useRef<HTMLCanvasElement | null>(null), frameRef = useRef<HTMLDivElement | null>(null), hitsRef = useRef<BoltHit[]>([]), audioRef = useRef<{ ctx: AudioContext; tone: GainNode } | null>(null), lastTickRef = useRef(0), cursorRef = useRef(cursor), progressRef = useRef(0), strikesRef = useRef(new Map<string, number>()), visitedRef = useRef(new Set<string>()), drawRef = useRef<() => void>(() => {}), hitStopUntilRef = useRef(0), impactRef = useRef({ started: 0, until: 0, strength: 0 }), scrubbingRef = useRef(false), lastHapticRef = useRef(-1);
   const audible = ticksOn && !muted;
   const [size, setSize] = useState({ w: 0, h: 0, dpr: 1 });
 
@@ -159,17 +171,28 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
     const px = Math.round(size.w * size.dpr), py = Math.round(size.h * size.dpr);
     if (canvas.width !== px || canvas.height !== py) { canvas.width = px; canvas.height = py; }
     ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
-    const compact = size.w < 560, now = performance.now();
-    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 17 : 18, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 68 : 72, right: compact ? 58 : 72, bottom: 28, left: compact ? 8 : 20 } });
+    const compact = size.w < 560, now = performance.now(), impact = impactRef.current;
+    const activeImpact = !globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches && now < impact.until;
+    ctx.save();
+    if (activeImpact) {
+      const life = Math.max(0, Math.min(1, (impact.until - now) / Math.max(1, impact.until - impact.started)));
+      const shake = impact.strength * life * 7;
+      const sx = Math.sin(now * 0.19) * shake, sy = Math.cos(now * 0.23) * shake * 0.55;
+      const push = 1 + impact.strength * life * 0.018;
+      ctx.translate(size.w / 2 + sx, size.h / 2 + sy); ctx.scale(push, push); ctx.translate(-size.w / 2, -size.h / 2);
+    }
+    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 17 : 18, hypothetical: whatIf ? { cursor, side: latest?.side === "buy" ? "sell" : "buy", label: "HYPOTHETICAL" } : null, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 68 : 72, right: compact ? 58 : 72, bottom: 28, left: compact ? 8 : 20 } });
+    ctx.restore();
   };
 
-  useEffect(() => { drawRef.current(); }, [size, candles, bolts, ticks, cohortOn, view, cursor, selectedId, scaleMode,marketCapUsd,mark,subject,handle]);
+  useEffect(() => { drawRef.current(); }, [size, candles, bolts, ticks, cohortOn, view, cursor, selectedId, scaleMode,marketCapUsd,mark,subject,handle,whatIf,latest]);
 
   useEffect(() => {
     if (!playing) return;
     let raf = 0, last = performance.now();
     const tick = (now: number) => {
       const dt = now - last; last = now;
+      if (now < hitStopUntilRef.current) { raf = requestAnimationFrame(tick); return; }
       progressRef.current = Math.min(1, progressRef.current + (dt * speed) / playMs);
       setCursor(schedule.cursorAt(progressRef.current));
       if (progressRef.current >= 1) { setPlaying(false); return; }
@@ -193,8 +216,11 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
     const fresh = crossed.filter((bolt) => !visitedRef.current.has(bolt.id));
     crossed.forEach((bolt) => visitedRef.current.add(bolt.id));
     if (!fresh.length) return;
-    const struck = fresh[fresh.length - 1], now = performance.now();
+    const struck = fresh[fresh.length - 1], now = performance.now(), strength = replayImpactStrength(struck, bolts);
     if (!globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      const freezeMs = 24 + Math.round(strength * 56);
+      hitStopUntilRef.current = Math.max(hitStopUntilRef.current, now + freezeMs);
+      impactRef.current = { started: now, until: now + 150 + strength * 150, strength };
       for (const bolt of fresh) strikesRef.current.set(bolt.id, now);
       let raf = 0;
       const animate = (t: number) => {
@@ -206,7 +232,8 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
       window.setTimeout(() => cancelAnimationFrame(raf), STRIKE_MS + 400);
     }
     const audio = audioRef.current;
-    if (audible && audio && now - lastTickRef.current >= 55) { lastTickRef.current = now; playTick(audio.ctx, struck.side); }
+    if (audible && audio && now - lastTickRef.current >= 55) { lastTickRef.current = now; playTick(audio.ctx, struck.side, strength); }
+    if (typeof navigator.vibrate === "function") navigator.vibrate(Math.round(8 + strength * 18));
   }, [cursor, bolts, audible]);
 
   useEffect(() => {
@@ -287,7 +314,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
     const rect = event.currentTarget.getBoundingClientRect();
     const id = hitBolt(hitsRef.current, event.clientX - rect.left, event.clientY - rect.top);
     if (id?.startsWith("cohort:")) { setPlaying(false); setSelectedId(id); setSocialOpen(false); }
-    else if (id) { primeAudio(); setPlaying(false); setSelectedId(id); setSocialOpen(false); const bolt = bolts.find((row) => row.id === id); if (bolt && audioRef.current && audible) playTick(audioRef.current.ctx, bolt.side); }
+    else if (id) { primeAudio(); setPlaying(false); setSelectedId(id); setSocialOpen(false); const bolt = bolts.find((row) => row.id === id); if (bolt && audioRef.current && audible) playTick(audioRef.current.ctx, bolt.side, replayImpactStrength(bolt, bolts)); }
     else setSelectedId(null);
   }
   function selectPrint(bolt: TapeBolt) {
@@ -436,15 +463,15 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
   );
 }
 
-function playTick(ctx: AudioContext, side: "buy" | "sell") {
+function playTick(ctx: AudioContext, side: "buy" | "sell", strength = 0.5) {
   try {
     if (ctx.state === "suspended") void ctx.resume();
-    const now = ctx.currentTime, osc = ctx.createOscillator(), gain = ctx.createGain();
+    const now = ctx.currentTime, osc = ctx.createOscillator(), gain = ctx.createGain(), pitch = 0.86 + Math.max(0, Math.min(1, strength)) * 0.46;
     osc.type = "sine";
-    osc.frequency.setValueAtTime(side === "buy" ? 1480 : 980, now);
-    osc.frequency.exponentialRampToValueAtTime(side === "buy" ? 1180 : 760, now + 0.045);
+    osc.frequency.setValueAtTime((side === "buy" ? 1480 : 980) * pitch, now);
+    osc.frequency.exponentialRampToValueAtTime((side === "buy" ? 1180 : 760) * pitch, now + 0.045);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.04, now + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.025 + strength * 0.035, now + 0.004);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
     osc.connect(gain).connect(ctx.destination);
     osc.start(now); osc.stop(now + 0.06);
