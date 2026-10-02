@@ -41,6 +41,22 @@ test("tool input keeps EVM subjects off the WSOL quote and passes the selected w
   assert.equal(sol.historyMode, "full");
 });
 
+test("partial candle coverage keeps valid chart anchors and leaves uncovered prints time-only", () => {
+  const candles = tapeCandles([
+    { timestamp: 1790107200000, bucketSeconds: 60, open: 1, high: 2, low: 0.5, close: 1.5 },
+    { timestamp: 1790107260000, bucketSeconds: 60, open: 1.5, high: 3, low: 1, close: 2 },
+  ]);
+  const events = tapeEvents([
+    { id: "covered", side: "buy", timestamp: 1790107230000, tokenDelta: 2 },
+    { id: "uncovered", side: "sell", timestamp: 1790107500000, tokenDelta: -1 },
+  ]);
+  const bolts = anchorBolts(events, candles, 1790107200000, 1790107560000);
+  assert.equal(bolts[0].candleTime, 1790107200);
+  assert.equal(bolts[0].anchorPrice, 0.5);
+  assert.equal(bolts[1].candleTime, null);
+  assert.equal(bolts[1].anchorPrice, null);
+});
+
 test("bolts anchor to the candle holding each print; unknown sides never become bolts", () => {
   const candles = tapeCandles([{ timestamp: 1790107200000, open: 1, high: 2, low: 0.5, close: 1.5 }, { timestamp: 1790107260000, open: 1.5, high: 3, low: 1, close: 2 }]);
   const events = tapeEvents([{ id: "a", side: "buy", timestamp: 1790107230000, tokenDelta: -2, priceUsd: 0.0004 }, { id: "b", side: "sell", timestamp: 1790107270000 }, { id: "c", side: null, timestamp: 1790107240000 }]);
