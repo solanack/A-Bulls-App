@@ -8,7 +8,7 @@ import { ArrowLeft, Clapperboard, List, CalendarDays, Pause, Play, Share2, SkipB
 import { callUniverseTool } from "@/lib/universe-intelligence";
 import { loadResearchThread, saveResearchThread } from "@/lib/research-thread-store";
 import { requestTradeResearchMode } from "@/lib/field/trade-research-navigation";
-import { observedUsdNotional, anchorBolts, candleSource, candleSourceLabel, cohortTicks, explorerUrl, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, tapeAvgEntryMarketCap, tapeAxis, tapeCandles, tapeEvents, tapeEvidenceLine, tapeHeaderLine, tapeMarketCapAt, tapeMarketCapPoints, tapeMarkSummary, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, tapeWindow, type CohortTick, type ReplaySubject, type TapeBolt, type TapeCandle, type TapeMarkSummary, type TapeMarketCapPoint, type TapeUsdSummary } from "@/lib/field/replay-tape";
+import { observedUsdNotional, reportedPositionUsd, anchorBolts, candleSource, candleSourceLabel, cohortTicks, explorerUrl, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, tapeAvgEntryMarketCap, tapeAxis, tapeCandles, tapeEvents, tapeEvidenceLine, tapeHeaderLine, tapeMarketCapAt, tapeMarketCapPoints, tapeMarkSummary, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, tapeWindow, type CohortTick, type ReplaySubject, type TapeBolt, type TapeCandle, type TapeMarkSummary, type TapeMarketCapPoint, type TapeUsdSummary } from "@/lib/field/replay-tape";
 import { drawTape, hitBolt, type BoltHit } from "@/lib/field/replay-tape-render";
 import { callsign } from "@/lib/field/trader-sheet";
 import { getAfterbellGalaxy, XSTOCK_REGISTRY } from "@/lib/universe-data/afterbell-client";
@@ -396,7 +396,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
             <div className="rs-evidence__row">
               <b data-side={selected.side}>{printLabel(selected).toUpperCase()}</b>
               <span>{when(selected.timestamp)}</span>
-              <strong data-side={selected.side}>{observedUsdNotional(selected) == null ? "Fill USD unavailable" : formatUsdNotional(observedUsdNotional(selected)!)}</strong>
+              <strong data-side={selected.side}>{observedUsdNotional(selected) != null ? formatUsdNotional(observedUsdNotional(selected)!) : reportedPositionUsd(selected) != null ? `${formatUsdNotional(reportedPositionUsd(selected)!)} · reported position` : "Fill USD unavailable"}</strong>
               {amountLabel(selected.amount) ? <span>{amountLabel(selected.amount)} {subject.symbol ?? resolvedSymbol ?? "tokens"}</span> : null}
               {selected.verification === "provider-reported" && selected.priceUsd ? <span>Fomo-reported ${selected.priceUsd.toPrecision(3)}</span> : null}
               <button type="button" className="rs-icon rs-icon--small" aria-label="Close evidence" onClick={() => setSelectedId(null)}><X size={14} /></button>

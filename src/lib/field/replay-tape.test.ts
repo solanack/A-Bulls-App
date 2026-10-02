@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anchorBolts, cohortTicks, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, notionalScale, observedPricedPrintCount, priceAxisLabel, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeMarkSummary, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
+import { anchorBolts, cohortTicks, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, notionalScale, observedPricedPrintCount, observedUsdNotional, priceAxisLabel, reportedPositionUsd, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeMarkSummary, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
 import { drawTape, tapePrintLabelLayouts } from "./replay-tape-render.ts";
 
 const AB_WALLET = "G39wywquKbHK8F2wZZZFX3fcsyG91VCCbbr6WEVp5axy";
@@ -231,6 +231,25 @@ test("tapeEvents maps alternate observed amount, execution size, and ready USD n
   assert.equal(events[1].notionalUsd,24);
   assert.equal(events[2].amount,null);
   assert.equal(events[2].notionalUsd,107000);
+});
+
+test("provider position USD is visible context but never counted as fill USD", () => {
+  const [summary]=tapeEvents([{
+    id:"fomo-provider:solana:trader:position-1:entry",
+    side:"buy",
+    timestamp:H,
+    tokenDelta:250,
+    priceUsd:2,
+    positionNotionalUsd:500,
+    verification:"provider-reported",
+  }]);
+  assert.equal(summary.eventScope,"position-summary");
+  assert.equal(summary.amount,null);
+  assert.equal(summary.notionalUsd,null);
+  assert.equal(observedUsdNotional(summary),null);
+  assert.equal(reportedPositionUsd(summary),500);
+  const bolts=anchorBolts([summary],[],0,2*H);
+  assert.equal(tapeUsdSummary(bolts).boughtUsd,null);
 });
 
 test("USDC quote amount becomes observed notionalUsd", () => {

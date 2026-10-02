@@ -25,10 +25,10 @@ test('provider reservation happens before Helius history requests',async()=>{
   assert.ok(archivalRequest>=0,'bounded Helius archival request exists');
   assert.ok(archivalReservation<archivalRequest,'provider credits are reserved before the bounded Helius archival RPC');
 
-  const standardStart=source.indexOf("if(source.name==='helius-standard-rpc')");
+  const standardStart=source.indexOf("if(activeSource.name==='helius-standard-rpc')");
   const standard=source.slice(standardStart);
   const standardReservation=standard.indexOf('await reserveProviderCredits');
-  const standardRequest=standard.indexOf("await historyRpcRequest(source,'getSignaturesForAddress'");
+  const standardRequest=standard.indexOf("await historyRpcRequest(activeSource,'getSignaturesForAddress'");
   assert.ok(standardStart>=0,'standard Helius history path exists');
   assert.ok(standardReservation>=0,'standard Helius history path reserves provider credits');
   assert.ok(standardRequest>=0,'standard Helius history request exists');

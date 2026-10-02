@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { __replayBundleContract, adaptiveReplayBucketSeconds, aggregateReplayCandleRows, buildReplayBundle, handleReplayBundleRequest, providerReportedFomoTradeEvents } from './intelligence-replay-bundle.mjs';
+import { __replayBundleContract, adaptiveReplayBucketSeconds, aggregateReplayCandleRows, buildReplayBundle, executionFromRpcReceipt, handleReplayBundleRequest, providerReportedFomoTradeEvents } from './intelligence-replay-bundle.mjs';
 
 const walletA='11111111111111111111111111111111';
 const walletB='22222222222222222222222222222222';
@@ -83,6 +83,32 @@ test('without a requested quote, Afterbell can retain only actual matching route
   assert.match(bundle.caveats.join(' '),/retained direct swap leg/i);
 });
 
+test('recovers exact USDC fill execution from one Solana receipt',()=>{
+  const tx={
+    slot:77,blockTime:150,
+    meta:{
+      preTokenBalances:[
+        {accountIndex:1,mint,owner:walletA,uiTokenAmount:{uiAmountString:'1'}},
+        {accountIndex:2,mint:USDC,owner:walletA,uiTokenAmount:{uiAmountString:'500'}},
+      ],
+      postTokenBalances:[
+        {accountIndex:1,mint,owner:walletA,uiTokenAmount:{uiAmountString:'3'}},
+        {accountIndex:2,mint:USDC,owner:walletA,uiTokenAmount:{uiAmountString:'300'}},
+      ]
+    }
+  };
+  const execution=executionFromRpcReceipt(tx,walletA,mint,'');
+  assert.ok(execution);
+  assert.equal(execution.side,'buy');
+  assert.equal(execution.baseAmount,2);
+  assert.equal(execution.quoteAmount,200);
+  assert.equal(execution.quoteMint,USDC);
+  assert.equal(execution.price,100);
+  assert.equal(execution.source,'solana-public-rpc-receipt');
+  assert.equal(__replayBundleContract.receiptExecutionHydration,true);
+  assert.equal(__replayBundleContract.maxReceiptExecutionHydration,24);
+});
+
 test('aggregates retained finer candles into the adaptive Replay bucket without inventing OHLC',()=>{
   const rows=[
     {bucket_start:0,bucket_seconds:60,open:1,high:2,low:.8,close:1.5,volume_base:10,volume_quote:20,swap_count:2,wallet_count:2,confidence:.9,source_set_json:'["rpc-a"]'},
@@ -148,6 +174,7 @@ test('provider-reported closed Fomo trades expose both entry and exit price poin
   assert.equal(events.length,2);
   assert.deepEqual(events.map(event=>event.side),['buy','sell']);
   assert.deepEqual(events.map(event=>event.priceUsd),[1.25,2.5]);
+  assert.deepEqual(events.map(event=>event.positionNotionalUsd),[5,10]);
   assert.ok(events.every(event=>event.signature===null&&event.verification==='provider-reported'&&event.price===null));
 });
 

@@ -1,12 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeRpcWalletTx, isValidHistorySolanaPublicKey, resolveHistoryRpc } from './intelligence-history-engine.mjs';
+import { decodeRpcWalletTx, historyRepairSource, isValidHistorySolanaPublicKey, resolveHistoryRpc } from './intelligence-history-engine.mjs';
 
 test('history engine prefers configured or Helius RPC and does not silently depend on the public archival endpoint', () => {
   assert.equal(resolveHistoryRpc({ INTELLIGENCE_RPC_URL:'https://rpc.example' }).name, 'configured-rpc');
   assert.equal(resolveHistoryRpc({ HELIUS_API_KEY:'abc' }).name, 'helius-standard-rpc');
   assert.equal(resolveHistoryRpc({}).name, 'history-rpc-unavailable');
   assert.equal(resolveHistoryRpc({ INTELLIGENCE_ALLOW_PUBLIC_RPC_FALLBACK:'true' }).name, 'solana-public-rpc');
+});
+
+test('failed Helius history repairs through the public read-only Solana RPC', () => {
+  assert.deepEqual(historyRepairSource({name:'helius-standard-rpc',kind:'rpc',url:'https://mainnet.helius-rpc.com/?api-key=x'}), {
+    name:'solana-public-rpc',kind:'rpc',url:'https://api.mainnet-beta.solana.com'
+  });
+  assert.equal(historyRepairSource({name:'configured-rpc',kind:'rpc',url:'https://rpc.example'}),null);
 });
 
 test('history provider boundary requires an actual 32-byte Solana public key', () => {
