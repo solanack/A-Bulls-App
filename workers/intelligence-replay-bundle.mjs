@@ -13,7 +13,11 @@ import { canonicalChainAddress,chainQualifiedId,normalizeChainKey,resolveChain }
 const SOLANA_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const USD_STABLE_MINTS=new Set(['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYDqfCMx1j8dYKVKJQmuayNX']);
 const WSOL_MINT='So11111111111111111111111111111111111111112';
-const PUBLIC_SOLANA_RPC='https://solana-rpc.publicnode.com';
+const PUBLIC_SOLANA_RPCS=Object.freeze([
+  Object.freeze({name:'solana-tracker-public',url:'https://rpc.solanatracker.io/public'}),
+  Object.freeze({name:'nodeflare-public',url:'https://rpc.nodeflare.app/solana/public'}),
+  Object.freeze({name:'publicnode',url:'https://solana-rpc.publicnode.com'}),
+]);
 const MAX_RECEIPT_EXECUTION_HYDRATION=16;
 const MAX_INTERACTIVE_RECEIPT_REPAIR_EVENTS=32;
 const MAX_INDEXED_SIBLING_EXECUTION_LOOKUPS=600;
@@ -102,9 +106,24 @@ function executionFromTokenDeltas(deltas=[],mint='',quoteMint='',meta={}){
   return Object.freeze({side:direction>0?'buy':'sell',price:quoteAmount/baseAmount,baseAmount,quoteAmount,quoteMint:s(selected.mint),confidence:clamp(meta.confidence??.97,0,1),venue:s(meta.venue),pool:s(meta.pool),source:s(meta.source)||'same-transaction-token-balances',slot:nullable(meta.slot),blockTime:nullable(meta.blockTime)});
 }
 
-export function executionFromRpcReceipt(tx={},wallet='',mint='',quoteMint=''){
+export function executionFromRpcReceipt(tx={},wallet='',mint='',quoteMint='',source='solana-public-rpc-receipt'){
   if(!tx||!wallet||!mint)return null;
-  return executionFromTokenDeltas(rpcOwnerTokenDeltas(tx,wallet),mint,quoteMint,{confidence:.98,source:'solana-public-rpc-receipt',slot:tx?.slot,blockTime:tx?.blockTime});
+  return executionFromTokenDeltas(rpcOwnerTokenDeltas(tx,wallet),mint,quoteMint,{confidence:.98,source,slot:tx?.slot,blockTime:tx?.blockTime});
+}
+
+async function fetchPublicReceipt(signature,fetchImpl=fetch){
+  const body=JSON.stringify({jsonrpc:'2.0',id:1,method:'getTransaction',params:[signature,{commitment:'confirmed',maxSupportedTransactionVersion:1,encoding:'jsonParsed'}]});
+  const attempts=await Promise.allSettled(PUBLIC_SOLANA_RPCS.map(async source=>{
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4500);
+    try{
+      const response=await fetchImpl(source.url,{method:'POST',headers:{'content-type':'application/json'},body,signal:controller.signal});
+      if(!response.ok)throw new Error(`http_${response.status}`);
+      const json=await response.json();if(json?.error||!json?.result)throw new Error(json?.error?.message||'missing_transaction');
+      return{source:source.name,tx:json.result};
+    }finally{clearTimeout(timer)}
+  }));
+  for(const attempt of attempts)if(attempt.status==='fulfilled'&&attempt.value?.tx)return attempt.value;
+  return null;
 }
 
 async function siblingExecutions(db,wallet,rows,mint,quoteMint){
@@ -134,8 +153,9 @@ async function hydrateReceiptExecutions(db,wallet,rows,mint,quoteMint,fetchImpl=
     const batch=missing.slice(offset,offset+4);
     const results=await Promise.all(batch.map(async signature=>{
       try{
-        const response=await fetchImpl(PUBLIC_SOLANA_RPC,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'getTransaction',params:[signature,{commitment:'confirmed',maxSupportedTransactionVersion:0,encoding:'jsonParsed'}]})});
-        if(!response.ok)return null;const body=await response.json(),execution=executionFromRpcReceipt(body?.result,wallet,mint,quoteMint);return execution?{signature,execution}:null;
+        const receipt=await fetchPublicReceipt(signature,fetchImpl);if(!receipt)return null;
+        const execution=executionFromRpcReceipt(receipt.tx,wallet,mint,quoteMint,`solana-rpc-receipt:${receipt.source}`);
+        return execution?{signature,execution}:null;
       }catch{return null}
     }));
     for(const item of results){if(!item)continue;out.set(item.signature,item.execution);recovered.push(item);}
@@ -374,4 +394,4 @@ export async function handleReplayBundleRequest(request,env={}){
   }catch(error){const code=String(error?.message||error),status=code==='intelligence_db_unavailable'?503:400;return json({ok:false,error:code},status);}
 }
 
-export const __replayBundleContract=Object.freeze({chainQualified:true,solanaHistorySchedulerOnlyForSolana:true,fullHistoryDefault:true,explicitShareWindows:true,pagedReplayEvents:true,maxReplayEvents:MAX_REPLAY_EVENTS,receiptExecutionHydration:true,maxReceiptExecutionHydration:MAX_RECEIPT_EXECUTION_HYDRATION,maxInteractiveReceiptRepairEvents:MAX_INTERACTIVE_RECEIPT_REPAIR_EVENTS,adaptiveHistoricalWindow:true,sevenDayPreEntryContext:true,sevenDayPreEntryContextForFallback:true,targetReplayCandles:TARGET_REPLAY_CANDLES,noArbitraryLookback:true,maxWindowYears:15,noSyntheticData:true,providerReportedLifecycleFallback:true,observedExecutionContext:true,exactPoolPreferred:true,robinhoodReferenceSeries:true});
+export const __replayBundleContract=Object.freeze({chainQualified:true,solanaHistorySchedulerOnlyForSolana:true,fullHistoryDefault:true,explicitShareWindows:true,pagedReplayEvents:true,maxReplayEvents:MAX_REPLAY_EVENTS,receiptExecutionHydration:true,maxReceiptExecutionHydration:MAX_RECEIPT_EXECUTION_HYDRATION,maxInteractiveReceiptRepairEvents:MAX_INTERACTIVE_RECEIPT_REPAIR_EVENTS,publicReceiptRpcCount:PUBLIC_SOLANA_RPCS.length,adaptiveHistoricalWindow:true,sevenDayPreEntryContext:true,sevenDayPreEntryContextForFallback:true,targetReplayCandles:TARGET_REPLAY_CANDLES,noArbitraryLookback:true,maxWindowYears:15,noSyntheticData:true,providerReportedLifecycleFallback:true,observedExecutionContext:true,exactPoolPreferred:true,robinhoodReferenceSeries:true});
