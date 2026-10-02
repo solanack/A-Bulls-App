@@ -92,8 +92,10 @@ export function replaySubjectFrom(search: string, thread: Partial<ResearchThread
     wallet,
     mint,
     chainKey: chainKey.toLowerCase(),
-    fromTs: (fromUrl ? toMs(params.get("from")) : null) ?? (sameThread ? toMs(thread.fromTs) : null),
-    toTs: (fromUrl ? toMs(params.get("to")) : null) ?? (sameThread ? toMs(thread.toTs) : null),
+    // Normal in-app Replay always asks for the full retained wallet×token history.
+    // Only an explicit shared URL pins a bounded evidence window.
+    fromTs: fromUrl ? toMs(params.get("from")) : null,
+    toTs: fromUrl ? toMs(params.get("to")) : null,
     room: roomRaw === "fomo" || roomRaw === "afterbell" ? roomRaw : null,
     displayName: (fromUrl ? str(params.get("name")) : null) ?? (sameThread ? str(thread.displayName) : null),
     symbol: (fromUrl ? str(params.get("symbol")) : null) ?? (sameThread ? str(thread.symbol) : null),
@@ -116,6 +118,7 @@ export function replayToolInput(subject: ReplaySubject) {
   const evm = EVM.test(subject.wallet) && EVM.test(subject.mint);
   const bucketSeconds = subject.fromTs && subject.toTs && subject.toTs - subject.fromTs > 7 * 86_400_000 ? 3600 : 60;
   return {
+    historyMode: subject.fromTs != null || subject.toTs != null ? "window" : "full",
     wallets: [subject.wallet],
     wallet: subject.wallet,
     mint: subject.mint,
@@ -300,6 +303,11 @@ export type TapeUsdSummary = {
 
 export type TapeMarkSummary = {
   markedUsd: number | null;
+  /** FIFO realized PnL from priced observed fills only. */
+  realizedUsd: number | null;
+  /** FIFO acquisition basis still attached to remaining inventory. */
+  remainingBasisUsd: number | null;
+  /** Unrealized PnL on remaining inventory at the tape mark. */
   deltaUsd: number | null;
   deltaPct: number | null;
   remainingTokens: number | null;
@@ -406,20 +414,41 @@ export function tapeUsdCoverage(bolts: readonly TapeBolt[], which: "buy" | "sell
   return `Size from ${priced.length} of ${total} priced ${which === "buy" ? "buys" : "sells"}`;
 }
 
-/** Mark-to-tape only. Every visible print must have an observed amount, and the last visible candle must have a real close. */
+/** FIFO accounting over visible fills. Unknown basis/proceeds stay unknown; remaining value is never compared with all historical buys. */
 export function tapeMarkSummary(bolts: readonly TapeBolt[], candles: readonly TapeCandle[]): TapeMarkSummary {
   const last = candles.at(-1) ?? null;
-  if (!bolts.length || !last || !(last.close > 0) || !Number.isFinite(last.close)) return { markedUsd:null,deltaUsd:null,deltaPct:null,remainingTokens:null,lastClose:null };
-  if (bolts.some((bolt)=>typeof bolt.amount!=="number" || !Number.isFinite(bolt.amount) || bolt.amount<=0)) return { markedUsd:null,deltaUsd:null,deltaPct:null,remainingTokens:null,lastClose:last.close };
-  const remainingTokens = bolts.reduce((sum,bolt)=>sum+(bolt.side==="buy"?(bolt.amount as number):-(bolt.amount as number)),0);
-  if (!Number.isFinite(remainingTokens) || remainingTokens < 0) return { markedUsd:null,deltaUsd:null,deltaPct:null,remainingTokens:null,lastClose:last.close };
-  const markedUsd = remainingTokens * last.close;
-  const boughtUsd = tapeUsdSummary(bolts).boughtUsd;
-  const deltaUsd = boughtUsd != null ? markedUsd - boughtUsd : null;
-  const deltaPct = boughtUsd != null && deltaUsd != null && boughtUsd > 0 ? deltaUsd / boughtUsd : null;
-  return { markedUsd,deltaUsd,deltaPct,remainingTokens,lastClose:last.close };
+  const empty = (lastClose: number | null) => ({ markedUsd:null,realizedUsd:null,remainingBasisUsd:null,deltaUsd:null,deltaPct:null,remainingTokens:null,lastClose });
+  if (!bolts.length || !last || !(last.close > 0) || !Number.isFinite(last.close)) return empty(null);
+  if (bolts.some((bolt)=>typeof bolt.amount!=="number" || !Number.isFinite(bolt.amount) || bolt.amount<=0)) return empty(last.close);
+  const lots:{qty:number;unitBasis:number|null}[]=[];
+  let realizedUsd=0,realizedKnown=true,hadSell=false;
+  for (const bolt of bolts) {
+    const amount=bolt.amount as number,notional=observedUsdNotional(bolt);
+    if (bolt.side==="buy") {
+      lots.push({qty:amount,unitBasis:notional!=null?notional/amount:null});
+      continue;
+    }
+    hadSell=true;
+    let remaining=amount;
+    const unitProceeds=notional!=null?notional/amount:null;
+    if(unitProceeds==null)realizedKnown=false;
+    while(remaining>1e-12&&lots.length){
+      const lot=lots[0],matched=Math.min(remaining,lot.qty);
+      if(unitProceeds==null||lot.unitBasis==null)realizedKnown=false;
+      else realizedUsd+=(unitProceeds-lot.unitBasis)*matched;
+      lot.qty-=matched;remaining-=matched;
+      if(lot.qty<=1e-12)lots.shift();
+    }
+    if(remaining>1e-12)return empty(last.close);
+  }
+  const remainingTokens=lots.reduce((sum,lot)=>sum+lot.qty,0);
+  const basisKnown=lots.every((lot)=>lot.unitBasis!=null);
+  const remainingBasisUsd=basisKnown?lots.reduce((sum,lot)=>sum+lot.qty*(lot.unitBasis as number),0):null;
+  const markedUsd=remainingTokens*last.close;
+  const deltaUsd=remainingBasisUsd!=null?markedUsd-remainingBasisUsd:null;
+  const deltaPct=remainingBasisUsd!=null&&remainingBasisUsd>0&&deltaUsd!=null?deltaUsd/remainingBasisUsd:null;
+  return {markedUsd,realizedUsd:hadSell?(realizedKnown?realizedUsd:null):0,remainingBasisUsd,deltaUsd,deltaPct,remainingTokens,lastClose:last.close};
 }
-
 
 /** Several prints on one bar and side become one bolt with a count. Notional is amount × price when both are known. */
 export function groupBolts(bolts: readonly TapeBolt[]): BoltGroup[] {

@@ -45,6 +45,18 @@ test('Afterbell ranks unique transactions and computes only defensible FIFO PnL'
   assert.equal(ranked[1].realizedPnlUsd,8);
 });
 
+test('Afterbell consumes already-sold pre-window inventory before in-window FIFO PnL',()=>{
+  const mint='Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh';
+  const rows=[
+    {wallet:A,mint,txId:'old-buy',side:'buy',amount:10,priceUsd:1,blockTime:100,source:'chain',sourceKind:'observed-fact'},
+    {wallet:A,mint,txId:'old-sell',side:'sell',amount:10,priceUsd:2,blockTime:150,source:'chain',sourceKind:'observed-fact'},
+    {wallet:A,mint,txId:'new-buy',side:'buy',amount:10,priceUsd:3,blockTime:180,source:'chain',sourceKind:'observed-fact'},
+    {wallet:A,mint,txId:'window-sell',side:'sell',amount:10,priceUsd:4,blockTime:220,source:'chain',sourceKind:'observed-fact'},
+  ];
+  const [ranked]=rankAfterbellTraders(rows,{from:200,to:400,limit:50});
+  assert.equal(ranked.realizedPnlUsd,10);
+});
+
 test('Afterbell dedupes duplicate transaction evidence without losing observed provenance',()=>{
   const rows=normalizeAfterbellEvents([
     {wallet:A,mint:'Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh',txId:'same',side:'buy',amount:1,priceUsd:2,blockTime:300,source:'provider',sourceKind:'provider-reported'},

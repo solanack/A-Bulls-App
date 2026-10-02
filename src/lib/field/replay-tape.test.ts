@@ -24,6 +24,9 @@ test("Replay reads the stored thread when the URL carries no subject, so the men
   assert.ok(subject);
   assert.equal(subject.chainKey, "robinhood");
   assert.equal(subject.displayName, "LP1111");
+  assert.equal(subject.fromTs, null);
+  assert.equal(subject.toTs, null);
+  assert.equal(replayToolInput(subject).historyMode, "full");
   assert.equal(replaySubjectFrom("", {}), null);
 });
 
@@ -32,8 +35,10 @@ test("tool input keeps EVM subjects off the WSOL quote and passes the selected w
   assert.equal("quoteMint" in evm, false);
   assert.equal(evm.from, 1784685328);
   assert.equal(evm.bucketSeconds, 3600);
+  assert.equal(evm.historyMode, "window");
   const sol = replayToolInput({ wallet: AB_WALLET, mint: AB_MINT, chainKey: "solana", fromTs: null, toTs: null, room: null, displayName: null, symbol: null, cursor: null });
   assert.equal(sol.quoteMint, WSOL_MINT);
+  assert.equal(sol.historyMode, "full");
 });
 
 test("bolts anchor to the candle holding each print; unknown sides never become bolts", () => {
@@ -357,14 +362,30 @@ test("mark is omitted when any visible print amount is missing",()=>{
   assert.equal(tapeMarkSummary(bolts,candles).markedUsd,null);
 });
 
-test("mark uses observed remaining token amount times indexed last close and is never named PnL",()=>{
+test("mark separates realized FIFO PnL from remaining-basis unrealized PnL",()=>{
   const candles=[candleAt(0)],bolts=anchorBolts([
     eventAt("buy",candles[0].timestamp+1,"buy",{amount:100,priceUsd:1,notionalUsd:100}),
     eventAt("sell",candles[0].timestamp+2,"sell",{amount:25,priceUsd:1.2,notionalUsd:30}),
   ],candles,candles[0].timestamp,candles[0].timestamp+H),mark=tapeMarkSummary(bolts,candles);
   assert.equal(mark.remainingTokens,75);
+  assert.equal(mark.remainingBasisUsd,75);
   assert.equal(mark.markedUsd,112.5);
-  assert.equal(mark.deltaUsd,12.5);
+  assert.ok(Math.abs((mark.realizedUsd??0)-5)<1e-9);
+  assert.equal(mark.deltaUsd,37.5);
+  assert.equal(mark.deltaPct,.5);
+});
+
+test("profitable full exit never becomes minus one hundred percent versus historical buys",()=>{
+  const candles=[candleAt(0)],bolts=anchorBolts([
+    eventAt("buy",candles[0].timestamp+1,"buy",{amount:10,priceUsd:10,notionalUsd:100}),
+    eventAt("sell",candles[0].timestamp+2,"sell",{amount:10,priceUsd:20,notionalUsd:200}),
+  ],candles,candles[0].timestamp,candles[0].timestamp+H),mark=tapeMarkSummary(bolts,candles);
+  assert.equal(mark.realizedUsd,100);
+  assert.equal(mark.remainingTokens,0);
+  assert.equal(mark.remainingBasisUsd,0);
+  assert.equal(mark.markedUsd,0);
+  assert.equal(mark.deltaUsd,0);
+  assert.equal(mark.deltaPct,null);
 });
 
 test("drawTape keeps a tappable bolt hit for a rendered stack",()=>{

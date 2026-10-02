@@ -28,6 +28,15 @@ test('weekly observatory excludes unmatched sells instead of inventing cost basi
   assert.deepEqual(ranked,[]);
 });
 
+test('weekly observatory never turns unknown acquisition cost into apparent profit',()=>{
+  const rows=[
+    t(W1,'buy',100,null,0),
+    t(W1,'sell',100,5,1000),
+  ];
+  const ranked=rankWeeklyTraders(rows,{windowStartMs:now-1,windowEndMs:now+10_000});
+  assert.deepEqual(ranked,[]);
+});
+
 test('weekly observatory ignores trades outside the seven-day input window',()=>{
   const ranked=rankWeeklyTraders([t(W1,'buy',100,1,-20_000),t(W1,'sell',100,10,1000)],{windowStartMs:now,windowEndMs:now+10_000});
   assert.deepEqual(ranked,[]);

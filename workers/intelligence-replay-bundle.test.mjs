@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { adaptiveReplayBucketSeconds, aggregateReplayCandleRows, buildReplayBundle, handleReplayBundleRequest, providerReportedFomoTradeEvents } from './intelligence-replay-bundle.mjs';
+import { __replayBundleContract, adaptiveReplayBucketSeconds, aggregateReplayCandleRows, buildReplayBundle, handleReplayBundleRequest, providerReportedFomoTradeEvents } from './intelligence-replay-bundle.mjs';
 
 const walletA='11111111111111111111111111111111';
 const walletB='22222222222222222222222222222222';
@@ -8,7 +8,7 @@ const mint='33333333333333333333333333333333';
 const quote='44444444444444444444444444444444';
 const USDC='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
-function mockDb({coverageComplete=true,completedWindowJob=false,routeQuote=quote}={}){
+function mockDb({coverageComplete=true,completedWindowJob=false,routeQuote=quote,earliestTime=null}={}){
   return {
     prepare(sql){
       const state={sql,args:[]};
@@ -39,6 +39,7 @@ function mockDb({coverageComplete=true,completedWindowJob=false,routeQuote=quote
           return {results:[]};
         },
         async first(){
+          if(state.sql.includes('SELECT MIN(block_time)')&&state.sql.includes('FROM bull_wallet_events'))return earliestTime==null?null:{first_time:earliestTime};
           if(state.sql.includes('FROM intelligence_index_coverage'))return {wallet:state.args[0],complete_to_genesis:coverageComplete?1:0,status:coverageComplete?'complete':'bounded-window-complete',indexed_events:100,indexed_transactions:80,source_set_json:'["rpc-a"]'};
           if(state.sql.includes("state IN ('queued','running','waiting-external')"))return null;
           if(state.sql.includes("state='complete'")&&state.sql.includes('FROM intelligence_index_jobs')&&completedWindowJob)return {id:9,state:'complete',requested_from:100,requested_to:200};
@@ -97,6 +98,17 @@ test('aggregates retained finer candles into the adaptive Replay bucket without 
   assert.equal(candles[0].volume_base,25);
   assert.equal(candles[0].swap_count,5);
   assert.deepEqual(JSON.parse(candles[0].source_set_json),['rpc-a','rpc-b']);
+});
+
+test('full-history mode starts at the earliest retained wallet-token evidence',async()=>{
+  const bundle=await buildReplayBundle(env({earliestTime:100}),{wallet:walletA,mint,quoteMint:quote,to:200,historyMode:'full'});
+  assert.equal(bundle.window.historyMode,'full');
+  assert.equal(bundle.window.from,100);
+  assert.equal(bundle.window.to,200);
+  assert.equal(bundle.events.length,1);
+  assert.match(bundle.coverage.statement,/Full retained wallet history/i);
+  assert.equal(__replayBundleContract.fullHistoryDefault,true);
+  assert.equal(__replayBundleContract.pagedReplayEvents,true);
 });
 
 test('adaptive Replay buckets preserve detail for short windows and bound long histories',()=>{

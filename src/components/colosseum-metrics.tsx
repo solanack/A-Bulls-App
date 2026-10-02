@@ -144,6 +144,18 @@ export function CompareDuel({
 }) {
   const fields = useMemo(() => extractDuelFields(summaryA, summaryB), [summaryA, summaryB]);
   const short = (v: string) => (v.length > 18 ? `${v.slice(0, 8)}…${v.slice(-6)}` : v || "—");
+  const metricValue=(key:string,value:number|null)=>{
+    if(value==null)return"—";
+    if(key==="win_rate_pct"||key==="median_roi_pct")return `${value.toFixed(Math.abs(value)>=10?0:1)}%`;
+    if(key==="realized_sol")return `${value>=0?"+":""}${value.toFixed(Math.abs(value)>=100?1:3)} SOL`;
+    if(key==="profit_factor")return value.toFixed(value>=10?1:2);
+    return String(value);
+  };
+  const sample=(summary:Data)=>{
+    const eligible=Number(summary.eligible_cycles),closed=Number(summary.closed_cycles),excluded=Number(summary.excluded_cycles);
+    if(!Number.isFinite(closed)||closed<=0)return"No eligible closed cycles";
+    return `${Number.isFinite(eligible)?eligible:0} eligible / ${closed} closed${Number.isFinite(excluded)&&excluded>0?` · ${excluded} excluded`:""}`;
+  };
 
   return (
     <section className="colosseum-duel" aria-label="Observed wallet comparison">
@@ -151,10 +163,12 @@ export function CompareDuel({
         <article className="colosseum-duel__card">
           <span>WALLET A · OBSERVED</span>
           <b>{short(walletA)}</b>
+          <small>{sample(summaryA)}</small>
         </article>
         <article className="colosseum-duel__card">
           <span>WALLET B · OBSERVED</span>
           <b>{short(walletB)}</b>
+          <small>{sample(summaryB)}</small>
         </article>
       </div>
       {fields.length ? (
@@ -179,10 +193,10 @@ export function CompareDuel({
                   ) : (
                     <>
                       <div className={`colosseum-duel__bar is-a${ratio.leading === "a" ? " is-lead" : ""}`} style={{ width: `${ratio.aPct}%` }}>
-                        <em>{field.a}</em>
+                        <em>{metricValue(field.key,field.a)}</em>
                       </div>
                       <div className={`colosseum-duel__bar is-b${ratio.leading === "b" ? " is-lead" : ""}`} style={{ width: `${ratio.bPct}%` }}>
-                        <em>{field.b}</em>
+                        <em>{metricValue(field.key,field.b)}</em>
                       </div>
                     </>
                   )}
@@ -195,7 +209,7 @@ export function CompareDuel({
         <p className="universe-empty">No comparable numeric fields retained on both wallet summaries. Bars not invented.</p>
       )}
       {Object.keys(comparison).length ? (
-        <p className="colosseum-duel__diff-note">Difference fields shown as observed deltas only — not a skill or ownership rank.</p>
+        <p className="colosseum-duel__diff-note">Same-period matched-round signals only — not a skill, ownership, copy-trading, or future-return rank.</p>
       ) : null}
       {disclaimer ? <p className="universe-disclosure">{disclaimer}</p> : null}
     </section>

@@ -87,13 +87,15 @@ function shortUrl(url: string) {
 }
 
 function cutMarkUsd(value:number|null){return value==null?"—":value===0?"$0":formatUsdNotional(value);}
+function cutSignedUsd(value:number|null){if(value==null||!Number.isFinite(value))return"—";if(value===0)return"$0";return `${value>0?"+":"−"}${formatUsdNotional(Math.abs(value))}`;}
 function cutPct(value:number|null){if(value==null||!Number.isFinite(value))return null;const pct=value*100;return `${pct>=0?"+":"−"}${Math.abs(pct)>=10?Math.abs(pct).toFixed(0):Math.abs(pct).toFixed(1)}%`;}
 function drawPositionCard(ctx:CanvasRenderingContext2D,x:number,y:number,w:number,k:number,summary:TapeUsdSummary,mark:TapeMarkSummary,avgEntryMc:number|null){
   const rows:{label:string;value:string;tone?:"buy"|"sell"}[]=[
     {label:"Bought · retained fills",value:summary.boughtUsd!=null?formatUsdNotional(summary.boughtUsd):"—",tone:"buy"},
-    {label:"Marked · tape mark",value:cutMarkUsd(mark.markedUsd)},
+    {label:"Marked · current tape",value:cutMarkUsd(mark.markedUsd)},
   ];
-  const vs=cutPct(mark.deltaPct);if(vs)rows.push({label:"vs buy",value:vs,tone:mark.deltaPct!>=0?"buy":"sell"});
+  if(mark.realizedUsd!=null)rows.push({label:"Realized PnL",value:cutSignedUsd(mark.realizedUsd),tone:mark.realizedUsd>=0?"buy":"sell"});
+  const unrealizedPct=cutPct(mark.deltaPct);if(mark.deltaUsd!=null)rows.push({label:"Unrealized PnL",value:`${cutSignedUsd(mark.deltaUsd)}${unrealizedPct?` · ${unrealizedPct}`:""}`,tone:mark.deltaUsd>=0?"buy":"sell"});
   rows.push({label:"Avg buy",value:formatUsdPrice(summary.avgBuyUsd)});
   if(avgEntryMc!=null)rows.push({label:"Avg entry MC",value:formatUsdNotional(avgEntryMc)});
   if(summary.sellTotal>0){rows.push({label:"Sold",value:summary.soldUsd!=null?formatUsdNotional(summary.soldUsd):"—",tone:"sell"});rows.push({label:"Avg sell",value:formatUsdPrice(summary.avgSellUsd)});}

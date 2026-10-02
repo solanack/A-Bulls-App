@@ -5,6 +5,7 @@ const obj = (value: unknown): Data =>
 const arr = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 const text = (value: unknown) => (value == null ? "" : String(value));
 const finite = (value: unknown): number | null => {
+  if (value == null || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 };
@@ -68,8 +69,8 @@ export function extractDivergeSeries(simulation: Data): {
 
   const points: { t: number; actual: number; hold: number }[] = [];
   for (const row of outcomes) {
-    const t = finite(row.blockTime ?? row.block_time ?? row.observedAt ?? row.timestamp);
-    const actual = finite(row.entryValueQuote ?? row.hypotheticalHoldValueAtEntry ?? row.entryValue);
+    const t = finite(row.targetBlockTime ?? row.targetTime ?? row.outcomeBlockTime ?? row.outcomeTime);
+    const actual = finite(row.actualValueQuote ?? row.actualEquityQuote ?? row.actualResultQuote);
     const hold = finite(
       row.counterfactualValueQuote ??
         row.hypotheticalHoldValueAtLatestIndexedCandle ??
@@ -89,7 +90,7 @@ export function extractDivergeSeries(simulation: Data): {
       timeLabel,
       emptyReason:
         points.length === 0
-          ? "No comparable actual-vs-hold series in this simulation payload. Chart not invented."
+          ? "No time-aligned actual-vs-hold equity series is available. Acquisition spending is not plotted as actual performance."
           : "Only one comparable point retained — diverge chart needs at least two observed points.",
     };
   }
@@ -115,10 +116,10 @@ export type DuelField = {
 };
 
 const DUEL_FIELDS: { key: string; alt?: string[]; label: string }[] = [
-  { key: "tx_count", alt: ["txCount"], label: "TX COUNT" },
-  { key: "mint_count", alt: ["mintCount"], label: "MINT BREADTH" },
-  { key: "swap_events", alt: ["swapEvents"], label: "SWAP EVENTS" },
-  { key: "fees_sol", alt: ["feesSol"], label: "FEES SOL" },
+  { key: "realized_sol", alt: ["realizedSol"], label: "REALIZED SOL · GROSS" },
+  { key: "win_rate_pct", alt: ["winRatePct"], label: "WIN RATE" },
+  { key: "profit_factor", alt: ["profitFactor"], label: "PROFIT FACTOR" },
+  { key: "median_roi_pct", alt: ["medianRoiPct"], label: "MEDIAN TRADE ROI" },
 ];
 
 function pickNum(row: Data, key: string, alt: string[] = []): number | null {
@@ -143,7 +144,7 @@ export function extractDuelFields(a: Data, b: Data): DuelField[] {
 
 /**
  * Bar ratios from retained numbers only. Missing side → gap (not zero-filled).
- * leading is observed magnitude only — not skill/ownership ranking.
+ * leading is the numerically higher observed performance value only — not a skill, ownership, or future-return ranking.
  */
 export function duelBarRatio(
   a: number | null,
@@ -152,12 +153,9 @@ export function duelBarRatio(
   if (a == null || b == null || !Number.isFinite(a) || !Number.isFinite(b)) {
     return { aPct: 0, bPct: 0, leading: "gap" };
   }
-  const absA = Math.abs(a);
-  const absB = Math.abs(b);
-  const max = Math.max(absA, absB);
-  if (max === 0) return { aPct: 0, bPct: 0, leading: "tie" };
-  const aPct = (absA / max) * 100;
-  const bPct = (absB / max) * 100;
-  if (absA === absB) return { aPct, bPct, leading: "tie" };
-  return { aPct, bPct, leading: absA > absB ? "a" : "b" };
+  if (a === b) return { aPct: a === 0 ? 0 : 100, bPct: b === 0 ? 0 : 100, leading: "tie" };
+  const maxAbs = Math.max(Math.abs(a), Math.abs(b), 1e-12);
+  const aPct = (Math.abs(a) / maxAbs) * 100;
+  const bPct = (Math.abs(b) / maxAbs) * 100;
+  return { aPct, bPct, leading: a > b ? "a" : "b" };
 }

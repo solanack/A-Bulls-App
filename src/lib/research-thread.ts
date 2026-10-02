@@ -2,7 +2,7 @@ export type ResearchVisibility = "private" | "unlisted" | "public";
 export type ResearchObjectKind = "planet" | "star" | "trade" | "matched_round" | "research_thread" | "replay" | "evidence" | "cut" | "thesis" | "resolution" | "ghost" | "sequence" | "comparison";
 export type EvidenceEpistemicKind = "observed" | "provider-reported" | "derived" | "user-claim" | "unavailable";
 export type ResearchJson = string | number | boolean | null | ResearchJson[] | { [key: string]: ResearchJson };
-export type ReplaySpeed = 0.5 | 1 | 2 | 4;
+export type ReplaySpeed = 0.5 | 1 | 2 | 10;
 
 export type ResearchThreadContext = {
   id: string | null;
@@ -73,7 +73,7 @@ const finiteMs=(value:unknown):number|null=>{const n=Number(value);return Number
 const text=(value:unknown):string|null=>{const v=String(value??"").trim();return v||null;};
 const refs=(value:unknown):readonly string[]=>Object.freeze((Array.isArray(value)?value:[]).map(item=>String(item??"").trim()).filter(Boolean).slice(0,100));
 const cursor=(value:unknown):number=>{const n=Number(value);return Math.min(1,Math.max(0,Number.isFinite(n)?n:0));};
-const speed=(value:unknown):ReplaySpeed=>{const n=Number(value);return n===0.5||n===2||n===4?n:1;};
+const speed=(value:unknown):ReplaySpeed=>{const n=Number(value);return n===0.5||n===2||n===10?n:1;};
 
 export function createResearchThreadContext(input:Partial<ResearchThreadContext>={}):ResearchThreadContext{
   const fromTs=finiteMs(input.fromTs),toTs=finiteMs(input.toTs);
