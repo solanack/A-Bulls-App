@@ -70,3 +70,11 @@
 .first-touch button{min-height:40px;padding:0 16px;border:1px solid var(--glass-line);border-radius:999px;background:rgba(255,255,255,.05);color:var(--color-fg);font:760 11px/1 var(--font-display);letter-spacing:.12em}
 @keyframes first-touch-point{from{transform:translate(-12px,-8px) rotate(-8deg)}to{transform:translate(9px,10px) rotate(5deg)}}
 @media(prefers-reduced-motion:reduce){.field-shell[data-galaxy=fomo]::before,.first-touch svg{animation:none}}
+
+/* Type contract: readable body everywhere, display face for quantities, mono only for hashes/receipts. */
+.field-shell :where(button,input,select,textarea,label,summary,p,span,small,b,strong,li),
+.rs :where(button,input,select,textarea,label,summary,p,span,small,b,strong,li){font-size:max(var(--type-min),1em)!important;font-family:var(--font-body)!important}
+.field-shell :where([data-number=true],.metric-number,.score-number),
+.rs :where([data-number=true],.metric-number,.score-number,.rs-usd b,.rs-hud__metric strong){font-family:var(--font-number)!important;font-variant-numeric:tabular-nums}
+.field-shell :where(.hash,.tx-hash,.receipt-hash,[data-hash=true]),
+.rs :where(.hash,.tx-hash,.receipt-hash,.rs-evidence__sig,[data-hash=true]){font-family:var(--font-hash)!important}
