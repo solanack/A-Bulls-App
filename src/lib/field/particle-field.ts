@@ -102,6 +102,7 @@ void main() {
   float a = atan(vLocal.y, vLocal.x);
   float alpha = 0.0;
   float light = 1.0;
+  vec3 surfaceColor = vColor;
 
   if (vCosmic < 0.5) {
     // GALAXY — layered spiral body: luminous core, rotating arms, dust lanes and a faint halo.
@@ -117,6 +118,9 @@ void main() {
     float knots = pow(max(0.0, sin(a * 9.0 + d * 24.0 + vPhase * 6.28318)), 18.0) * arms;
     alpha = max(core, max(arms * 0.66, halo));
     light = 0.76 + core * 1.05 + arms * 0.42 + knots * 0.58;
+    vec3 coolArms = vColor * vec3(0.70, 0.92, 1.24);
+    vec3 warmCore = vec3(1.0, 0.74, 0.46);
+    surfaceColor = mix(coolArms, warmCore, core * 0.62);
   } else if (vCosmic < 1.5) {
     // STAR — bright token body with short rays.
     if (d > 1.0) discard;
@@ -125,6 +129,7 @@ void main() {
     float rays = pow(abs(cos(a * 4.0)), 12.0) * (1.0 - smoothstep(0.18, 0.92, d));
     alpha = max(core, max(halo * 0.2, rays * 0.34));
     light = 0.9 + core * 0.65 + rays * 0.5;
+    surfaceColor = mix(vColor, vec3(1.0, 0.985, 0.94), core * 0.72);
   } else if (vCosmic < 2.5) {
     // PLANET bodies render in the dedicated opaque instanced pass.
     discard;
@@ -191,7 +196,7 @@ void main() {
   }
 
   if (alpha < 0.012) discard;
-  gl_FragColor = vec4(vColor * light, alpha);
+  gl_FragColor = vec4(surfaceColor * light, alpha);
 }
 `;
 
@@ -244,15 +249,34 @@ void main() {
   vec3 normal = normalize(vec3(vLocal.x, vLocal.y, z));
   vec3 lightDir = normalize(vLightDir);
   float ndl = dot(normal, lightDir);
-  float terminator = smoothstep(-0.16, 0.28, ndl);
+  float terminator = smoothstep(-0.20, 0.32, ndl);
+
+  // Procedural albedo adds continent/band structure without textures or extra draw calls.
+  float longitude = atan(normal.x, normal.z);
+  float latitude = normal.y;
+  float terrainSignal = sin(longitude * 5.0 + sin(latitude * 8.0) * 1.7)
+    + sin(longitude * 11.0 - latitude * 13.0) * 0.42
+    + sin(longitude * 19.0 + latitude * 7.0) * 0.18;
+  float terrain = smoothstep(-0.18, 0.42, terrainSignal);
+  float polar = smoothstep(0.72, 0.96, abs(latitude));
+  vec3 darkSurface = vColor * 0.52;
+  vec3 brightSurface = min(vec3(1.0), vColor * 1.24 + vec3(0.10, 0.075, 0.035));
+  vec3 surface = mix(darkSurface, brightSurface, terrain);
+  surface = mix(surface, vec3(0.82, 0.91, 1.0), polar * 0.28);
+
+  float clouds = smoothstep(0.72, 0.94, sin(longitude * 14.0 + latitude * 21.0) * 0.5 + 0.5);
+  clouds *= smoothstep(0.08, 0.62, z) * 0.20;
+  surface = mix(surface, vec3(1.0), clouds);
+
   vec3 viewDir = vec3(0.0, 0.0, 1.0);
   vec3 reflected = reflect(-lightDir, normal);
-  float specular = pow(max(dot(reflected, viewDir), 0.0), 30.0) * 0.42;
-  float rim = pow(clamp(1.0 - z, 0.0, 1.0), 5.0) * 0.22;
-  vec3 lit = vColor * (0.20 + terminator * 0.80);
-  lit += vec3(specular);
-  lit += vColor * rim;
-  float edge = 1.0 - smoothstep(0.965, 1.0, sqrt(d2));
+  float specular = pow(max(dot(reflected, viewDir), 0.0), 38.0) * 0.55;
+  float atmosphere = pow(clamp(1.0 - z, 0.0, 1.0), 2.4);
+  vec3 atmosphereColor = mix(vec3(0.20, 0.62, 1.0), vColor, 0.28);
+  vec3 lit = surface * (0.12 + terminator * 0.98);
+  lit += vec3(specular) * terminator;
+  lit += atmosphereColor * atmosphere * (0.18 + terminator * 0.34);
+  float edge = 1.0 - smoothstep(0.972, 1.0, sqrt(d2));
   gl_FragColor = vec4(lit, edge);
 }
 `;
@@ -376,14 +400,36 @@ function disposeLabelSprite(sprite: THREE.Sprite) {
   sprite.material.dispose();
 }
 
-const FOMO_AMETHYST: [number, number, number] = [0.7, 0.5, 1.0];
-const AFTERBELL_ICE: [number, number, number] = [0.7, 0.84, 1.0];
-const COMET_VIOLET: [number, number, number] = [0.58, 0.28, 0.96];
-const PLANET_GOLD: [number, number, number] = [0.78, 0.56, 0.22];
-const PLANET_RUST: [number, number, number] = [0.64, 0.18, 0.08];
-const PLANET_MAGENTA: [number, number, number] = [0.60, 0.10, 0.58];
-const PLANET_DEEP_BLUE: [number, number, number] = [0.025, 0.20, 0.62];
-const PLANET_CYAN: [number, number, number] = [0.04, 0.55, 0.78];
+const FOMO_AMETHYST: [number, number, number] = [0.78, 0.24, 1.0];
+const AFTERBELL_ICE: [number, number, number] = [0.20, 0.70, 1.0];
+const COMET_VIOLET: [number, number, number] = [0.72, 0.26, 1.0];
+const PLANET_GOLD: [number, number, number] = [0.95, 0.66, 0.18];
+const PLANET_RUST: [number, number, number] = [0.82, 0.20, 0.07];
+const PLANET_MAGENTA: [number, number, number] = [0.92, 0.08, 0.52];
+const PLANET_DEEP_BLUE: [number, number, number] = [0.015, 0.22, 0.82];
+const PLANET_CYAN: [number, number, number] = [0.02, 0.68, 0.92];
+const STAR_SPECTRA: readonly [number,number,number][] = [
+  [0.52,0.72,1.0],
+  [0.72,0.86,1.0],
+  [0.98,0.99,1.0],
+  [1.0,0.90,0.68],
+  [1.0,0.68,0.40],
+];
+
+function stableColorIndex(value:string){
+  let hash=2166136261;
+  for(let i=0;i<value.length;i++){hash^=value.charCodeAt(i);hash=Math.imul(hash,16777619);}
+  return (hash>>>0)%STAR_SPECTRA.length;
+}
+function mixRgb(a:readonly number[],b:readonly number[],weight:number):[number,number,number]{
+  const w=clamp(weight,0,1);return [a[0]*(1-w)+b[0]*w,a[1]*(1-w)+b[1]*w,a[2]*(1-w)+b[2]*w];
+}
+function stellarAlbedo(particle:FieldParticle,targetGalaxy:string):[number,number,number]{
+  const base=STAR_SPECTRA[stableColorIndex(particle.id)]??STAR_SPECTRA[2];
+  if(targetGalaxy==="fomo"||particle.metadata?.fomoTrader===true)return mixRgb(base,FOMO_AMETHYST,.28);
+  if(targetGalaxy==="afterbell"||particle.metadata?.afterbellTrader===true)return mixRgb(base,AFTERBELL_ICE,.24);
+  return [...base] as [number,number,number];
+}
 
 function namedCharacterToken(particle:FieldParticle){
   const label=`${String(particle.metadata?.symbol??"")} ${String(particle.metadata?.name??"")}`.toLowerCase();
@@ -415,16 +461,19 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
     positions.set(entity.position, i * 3);
     const base = parentColorForCategory(entity.category);
     const targetGalaxy = typeof entity.metadata?.targetGalaxyId === "string" ? entity.metadata.targetGalaxyId : "";
+    const kind=renderCosmicKind(entity);
     const color =
-      targetGalaxy === "fomo" || entity.metadata?.fomoTrader === true
-        ? FOMO_AMETHYST
-        : targetGalaxy === "afterbell" || entity.metadata?.afterbellTrader === true
-          ? AFTERBELL_ICE
-          : renderCosmicKind(entity) === "comet"
+      kind === "planet"
+        ? planetAlbedo(entity)
+        : kind === "star"
+          ? stellarAlbedo(entity,targetGalaxy)
+          : kind === "comet"
             ? COMET_VIOLET
-            : renderCosmicKind(entity) === "planet"
-              ? planetAlbedo(entity)
-              : snapshot.galaxyId === "pons"
+            : targetGalaxy === "fomo" || entity.metadata?.fomoTrader === true
+              ? FOMO_AMETHYST
+              : targetGalaxy === "afterbell" || entity.metadata?.afterbellTrader === true
+                ? AFTERBELL_ICE
+                : snapshot.galaxyId === "pons"
             ? ([
                 base[0] * 0.58 + 0.38,
                 base[1] * 0.62 + 0.34,
@@ -495,6 +544,7 @@ function buildStarMesh(material: THREE.MeshBasicMaterial) {
   const mesh = new THREE.InstancedMesh(geometry, material, count);
   mesh.frustumCulled = false;
   mesh.renderOrder = 0;
+  const spectral = [0xaecbff,0xd5e6ff,0xffffff,0xffe4b8,0xffbb7a].map(value=>new THREE.Color(value));
   for (let i = 0; i < count; i++) {
     _dummy.position.set(
       starfield.positions[i * 3],
@@ -505,8 +555,10 @@ function buildStarMesh(material: THREE.MeshBasicMaterial) {
     _dummy.rotation.set(0, 0, 0);
     _dummy.updateMatrix();
     mesh.setMatrixAt(i, _dummy.matrix);
+    mesh.setColorAt(i,spectral[(i*7+i%3)%spectral.length]);
   }
   mesh.instanceMatrix.needsUpdate = true;
+  if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
   return mesh;
 }
 
@@ -570,7 +622,7 @@ export class ParticleFieldRenderer {
       width: "100%",
       height: "100%",
       touchAction: "none",
-      background: "#0b0c10",
+      background: "#03050b",
     });
     host.append(canvas);
 
@@ -586,7 +638,7 @@ export class ParticleFieldRenderer {
       premultipliedAlpha: true,
       preserveDrawingBuffer: false,
     });
-    this.renderer.setClearColor(0x0b0c10, 1);
+    this.renderer.setClearColor(0x03050b, 1);
     this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, budget.dpr));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
@@ -646,9 +698,10 @@ export class ParticleFieldRenderer {
     this.#rebuildLiveLabels();
 
     this.starMaterial = new THREE.MeshBasicMaterial({
-      color: 0xd4dcf0,
+      color: 0xffffff,
+      vertexColors: true,
       transparent: true,
-      opacity: 0.62,
+      opacity: 0.78,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       toneMapped: false,
