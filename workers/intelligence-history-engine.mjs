@@ -8,7 +8,7 @@ import { ingestDecodedObservations, intelligenceDb } from './intelligence-indexe
 import { reserveProviderCredits } from './intelligence-provider-budget.mjs';
 
 const WALLET_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-const PUBLIC_RPC='https://solana-rpc.publicnode.com';
+const PUBLIC_RPC='https://rpc.solanatracker.io/public';
 const MAX_PAGE=50,MAX_TX=25,TX_CONCURRENCY=5;
 const HELIUS_WINDOW_CREDITS=100;
 const HELIUS_CURSOR_PREFIX='gtfa:';
