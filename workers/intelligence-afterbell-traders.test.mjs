@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { afterbellWindow, normalizeAfterbellEvents, rankAfterbellTraders } from './intelligence-afterbell-traders.mjs';
+import { AFTERBELL_BASIS_LOOKBACK_SECONDS, afterbellWindow, normalizeAfterbellEvents, rankAfterbellTraders } from './intelligence-afterbell-traders.mjs';
 
 const A='11111111111111111111111111111111';
 const B='22222222222222222222222222222222';
+
+test('Afterbell keeps pre-window basis hydration bounded for interactive galaxy reads',()=>{
+  assert.equal(AFTERBELL_BASIS_LOOKBACK_SECONDS,90*24*60*60);
+});
 
 test('Afterbell uses the most recent 4 PM to 9:30 AM New York weekday window',()=>{
   const mondayNoon=Date.parse('2026-09-21T16:00:00Z'); // 12:00 ET
