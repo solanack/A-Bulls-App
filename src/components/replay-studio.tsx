@@ -124,10 +124,11 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
         if (response.ok === false) throw new Error(String(response.error ?? "Replay is unavailable right now."));
         const next = obj(response.bundle), indexing = obj(next.indexing), market = obj(next.marketHydration);
         const pending = Boolean(indexing.requested) || ["queued", "running", "queued-or-running"].includes(String(indexing.state)) || Boolean(market.pending) || ["queued", "running"].includes(String(market.state));
-        const hasEvents = tapeEvents(next.events, obj(next.subject).quoteMint).length > 0;
+        const nextEvents = tapeEvents(next.events, obj(next.subject).quoteMint), nextCandles = tapeCandles(next.candles), nextCandleCoverage = replayCandleCoverage(nextCandles, nextEvents);
+        const hasEvents = nextEvents.length > 0;
         setBundle(next);
         if (!hasEvents && pending && attempts < MAX_HYDRATION_ATTEMPTS) { setStatus("building"); setAttempts((value) => value + 1); return; }
-        if (hasEvents && pending && tapeCandles(next.candles).length === 0 && attempts < MAX_HYDRATION_ATTEMPTS) setAttempts((value) => value + 1);
+        if (hasEvents && pending && !nextCandleCoverage.usable && attempts < MAX_HYDRATION_ATTEMPTS) setAttempts((value) => value + 1);
         setStatus(hasEvents ? "ready" : "empty");
       } catch (cause) {
         if (!cancelled) { setError(cause instanceof Error ? cause.message : "Replay is unavailable right now."); setStatus("error"); }
