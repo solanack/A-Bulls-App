@@ -77,7 +77,7 @@ export function dexScreenerReplayPools(payload=[],mint='',quoteMint='',chain='so
 
 export async function discoverDexScreenerReplayPools(env={},mint='',quoteMint='',{fetchImpl=providerFetch,chain='solana'}={}){
   const chainKey=normalizeChainKey(chain),base=canonicalChainAddress(chainKey,mint),provider=providerChainConfig(chainKey,base||mint,env);if(!base||!provider?.dexScreenerId)return Object.freeze([]);
-  const network=provider.geckoNetworks[0]||chainKey,limit=Math.max(1,Math.min(6,Math.trunc(n(env.REPLAY_MARKET_POOL_CANDIDATES)||4));
+  const network=provider.geckoNetworks[0]||chainKey,limit=Math.max(1,Math.min(6,Math.trunc(n(env.REPLAY_MARKET_POOL_CANDIDATES)||4)));
   try{
     const url=`https://api.dexscreener.com/token-pairs/v1/${encodeURIComponent(provider.dexScreenerId)}/${encodeURIComponent(base)}`,response=await fetchImpl(url,{headers:{accept:'application/json','user-agent':'A-Bulls-App/1.0'}});
     if(!response?.ok)return Object.freeze([]);
@@ -187,7 +187,7 @@ async function retainedAnyCandleCount(db,chain,mint,from,to){
 export async function prewarmFomoReplayCandles(env={},nowMs=Date.now(),{fetchImpl=providerFetch}={}){
   if(String(env.MULTICHAIN_MARKET_ENABLED||'').toLowerCase()!=='true')return Object.freeze({enabled:false});
   const db=intelligenceDb(env);if(!db)return Object.freeze({enabled:true,ok:false,error:'intelligence_db_unavailable'});
-  const defaultLimit=s(env.COINGECKO_API_KEY)?4:1,limit=Math.max(0,Math.min(8,Math.trunc(n(env.FOMO_REPLAY_CANDLE_PREWARM_PER_RUN)||defaultLimit));if(!limit)return Object.freeze({enabled:true,ok:true,processed:0,ready:0,skipped:0});
+  const defaultLimit=s(env.COINGECKO_API_KEY)?4:1,limit=Math.max(0,Math.min(8,Math.trunc(n(env.FOMO_REPLAY_CANDLE_PREWARM_PER_RUN)||defaultLimit)));if(!limit)return Object.freeze({enabled:true,ok:true,processed:0,ready:0,skipped:0});
   const rows=(await db.prepare(`
     SELECT x.handle,x.chain,x.token_address,x.created_at,x.closed_at,x.realized_pnl_usd
     FROM fomo_trader_trades x
