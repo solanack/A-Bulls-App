@@ -12,6 +12,9 @@ import { canonicalChainAddress,chainQualifiedId,normalizeChainKey,resolveChain }
 
 const SOLANA_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const USD_STABLE_MINTS=new Set(['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYDqfCMx1j8dYKVKJQmuayNX']);
+const WSOL_MINT='So11111111111111111111111111111111111111112';
+const PUBLIC_SOLANA_RPC='https://api.mainnet-beta.solana.com';
+const MAX_RECEIPT_EXECUTION_HYDRATION=24;
 const EVM_RE=/^0x[a-fA-F0-9]{40}$/;
 const EVM_TX_RE=/^0x[a-fA-F0-9]{64}$/;
 const SOLANA_SIG_RE=/^[1-9A-HJ-NP-Za-km-z]{64,96}$/;
@@ -67,9 +70,76 @@ function directExecution(routeRows=[],mint='',quoteMint=''){
   return execution;
 }
 
+function rpcOwnerTokenDeltas(tx={},wallet=''){
+  const map=new Map(),meta=tx?.meta||{};
+  for(const row of meta.preTokenBalances||[]){
+    if(s(row?.owner)!==wallet)continue;
+    const mint=s(row?.mint);if(!mint)continue;
+    const key=`${n(row?.accountIndex)}|${mint}`,current=map.get(key)||{mint,pre:0,post:0};
+    current.pre=n(row?.uiTokenAmount?.uiAmountString??row?.uiTokenAmount?.uiAmount);map.set(key,current);
+  }
+  for(const row of meta.postTokenBalances||[]){
+    if(s(row?.owner)!==wallet)continue;
+    const mint=s(row?.mint);if(!mint)continue;
+    const key=`${n(row?.accountIndex)}|${mint}`,current=map.get(key)||{mint,pre:0,post:0};
+    current.post=n(row?.uiTokenAmount?.uiAmountString??row?.uiTokenAmount?.uiAmount);map.set(key,current);
+  }
+  return [...map.values()].map(row=>({mint:row.mint,delta:row.post-row.pre})).filter(row=>Math.abs(row.delta)>1e-12);
+}
+
+function executionFromTokenDeltas(deltas=[],mint='',quoteMint='',meta={}){
+  const base=deltas.find(row=>s(row.mint)===mint&&Math.abs(n(row.delta))>1e-12);if(!base)return null;
+  const direction=Math.sign(n(base.delta)),opposites=deltas.filter(row=>s(row.mint)!==mint&&Math.sign(n(row.delta))===-direction&&Math.abs(n(row.delta))>1e-12);
+  if(!opposites.length)return null;
+  const selected=quoteMint?opposites.find(row=>s(row.mint)===quoteMint):opposites.slice().sort((a,b)=>{
+    const rank=value=>USD_STABLE_MINTS.has(s(value))?0:s(value)===WSOL_MINT?1:2;
+    return rank(a.mint)-rank(b.mint)||Math.abs(n(b.delta))-Math.abs(n(a.delta));
+  })[0];
+  if(!selected)return null;
+  const baseAmount=Math.abs(n(base.delta)),quoteAmount=Math.abs(n(selected.delta));if(!(baseAmount>0&&quoteAmount>0))return null;
+  return Object.freeze({side:direction>0?'buy':'sell',price:quoteAmount/baseAmount,baseAmount,quoteAmount,quoteMint:s(selected.mint),confidence:clamp(meta.confidence??.97,0,1),venue:s(meta.venue),pool:s(meta.pool),source:s(meta.source)||'same-transaction-token-balances',slot:nullable(meta.slot),blockTime:nullable(meta.blockTime)});
+}
+
+export function executionFromRpcReceipt(tx={},wallet='',mint='',quoteMint=''){
+  if(!tx||!wallet||!mint)return null;
+  return executionFromTokenDeltas(rpcOwnerTokenDeltas(tx,wallet),mint,quoteMint,{confidence:.98,source:'solana-public-rpc-receipt',slot:tx?.slot,blockTime:tx?.blockTime});
+}
+
+async function siblingExecutions(db,wallet,rows,mint,quoteMint){
+  const signatures=[...new Set(rows.map(row=>s(row.signature)).filter(Boolean))],out=new Map();
+  for(let offset=0;offset<signatures.length;offset+=60){
+    const chunk=signatures.slice(offset,offset+60),marks=chunk.map(()=>'?').join(',');
+    const siblings=await all(db.prepare(`SELECT signature,mint,token_delta,slot,block_time,source,confidence FROM bull_wallet_events WHERE wallet=? AND signature IN (${marks}) AND token_delta<>0 ORDER BY signature ASC,mint ASC`).bind(wallet,...chunk)),bySig=new Map();
+    for(const row of siblings){const key=s(row.signature);if(!bySig.has(key))bySig.set(key,[]);bySig.get(key).push({mint:s(row.mint),delta:n(row.token_delta)});}
+    for(const signature of chunk){const execution=executionFromTokenDeltas(bySig.get(signature)||[],mint,quoteMint,{confidence:.96,source:'indexed-same-transaction-token-balances'});if(execution)out.set(signature,execution);}
+  }
+  return out;
+}
+
+async function persistReceiptExecution(db,signature,wallet,mint,execution){
+  if(!execution||!signature)return;
+  const inputMint=execution.side==='buy'?execution.quoteMint:mint,outputMint=execution.side==='buy'?mint:execution.quoteMint,inputAmount=execution.side==='buy'?execution.quoteAmount:execution.baseAmount,outputAmount=execution.side==='buy'?execution.baseAmount:execution.quoteAmount;
+  await db.prepare(`INSERT INTO intelligence_trade_routes(signature,wallet,hop_index,program_id,venue,pool,input_mint,output_mint,input_amount,output_amount,fee_amount,fee_mint,slot,block_time,source,confidence) VALUES(?,?,0,NULL,NULL,NULL,?,?,?,?,NULL,NULL,?,?,?,?) ON CONFLICT(signature,wallet,hop_index) DO UPDATE SET input_mint=excluded.input_mint,output_mint=excluded.output_mint,input_amount=excluded.input_amount,output_amount=excluded.output_amount,slot=COALESCE(excluded.slot,intelligence_trade_routes.slot),block_time=COALESCE(excluded.block_time,intelligence_trade_routes.block_time),source=excluded.source,confidence=MAX(intelligence_trade_routes.confidence,excluded.confidence)`).bind(signature,wallet,inputMint,outputMint,inputAmount,outputAmount,execution.slot,execution.blockTime,execution.source,execution.confidence).run().catch(()=>null);
+}
+
+async function hydrateReceiptExecutions(db,wallet,rows,mint,quoteMint,fetchImpl=fetch){
+  const out=await siblingExecutions(db,wallet,rows,mint,quoteMint),missing=[...new Set(rows.map(row=>s(row.signature)).filter(signature=>signature&&!out.has(signature)))].slice(0,MAX_RECEIPT_EXECUTION_HYDRATION);
+  for(let offset=0;offset<missing.length;offset+=4){
+    const batch=missing.slice(offset,offset+4);
+    const results=await Promise.all(batch.map(async signature=>{
+      try{
+        const response=await fetchImpl(PUBLIC_SOLANA_RPC,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'getTransaction',params:[signature,{commitment:'confirmed',maxSupportedTransactionVersion:0,encoding:'jsonParsed'}]})});
+        if(!response.ok)return null;const body=await response.json(),execution=executionFromRpcReceipt(body?.result,wallet,mint,quoteMint);return execution?{signature,execution}:null;
+      }catch{return null}
+    }));
+    for(const item of results){if(!item)continue;out.set(item.signature,item.execution);await persistReceiptExecution(db,item.signature,wallet,mint,item.execution);}
+  }
+  return out;
+}
+
 function normalizedReplayEvent(row,execution){
-  const blockTime=Math.max(0,Math.trunc(n(row.block_time))),swapLike=s(row.event_class)==='swap-like',fallbackSide=swapLike?(n(row.token_delta)>0?'buy':n(row.token_delta)<0?'sell':null):null,sources=uniq([s(row.source),...parseList(row.provenance_sources),execution?.source]);
-  return Object.freeze({id:s(row.signature)||`${s(row.wallet)}-${blockTime}-${s(row.mint)}`,signature:s(row.signature)||null,wallet:s(row.wallet),token:s(row.mint)||null,timestamp:blockTime*1000,slot:n(row.slot)||null,kind:swapLike?'trade':s(row.event_class)||'event',side:execution?.side||fallbackSide,price:execution?.price??null,tokenDelta:n(row.token_delta),solDelta:n(row.sol_delta),feeLamports:Math.max(0,n(row.fee_lamports)),counterparty:s(row.counterparty)||null,programId:s(row.program_id)||null,confidence:clamp(Math.max(n(row.confidence),n(execution?.confidence)),0,1),verification:verificationState(row),sources,execution:execution?Object.freeze({baseAmount:execution.baseAmount,quoteAmount:execution.quoteAmount,quoteMint:execution.quoteMint,venue:execution.venue||null,pool:execution.pool||null}):null});
+  const blockTime=Math.max(0,Math.trunc(n(row.block_time))),swapLike=s(row.event_class)==='swap-like',fallbackSide=swapLike?(n(row.token_delta)>0?'buy':n(row.token_delta)<0?'sell':null):null,sources=uniq([s(row.source),...parseList(row.provenance_sources),execution?.source]),stableExecution=Boolean(execution&&USD_STABLE_MINTS.has(s(execution.quoteMint))),priceUsd=stableExecution?nullable(execution.price):null,notionalUsd=stableExecution?nullable(execution.quoteAmount):null;
+  return Object.freeze({id:s(row.signature)||`${s(row.wallet)}-${blockTime}-${s(row.mint)}`,signature:s(row.signature)||null,wallet:s(row.wallet),token:s(row.mint)||null,timestamp:blockTime*1000,slot:n(row.slot)||null,kind:swapLike?'trade':s(row.event_class)||'event',side:execution?.side||fallbackSide,price:execution?.price??null,priceUsd,notionalUsd,tokenDelta:n(row.token_delta),solDelta:n(row.sol_delta),feeLamports:Math.max(0,n(row.fee_lamports)),counterparty:s(row.counterparty)||null,programId:s(row.program_id)||null,confidence:clamp(Math.max(n(row.confidence),n(execution?.confidence)),0,1),verification:verificationState(row),sources,execution:execution?Object.freeze({baseAmount:execution.baseAmount,quoteAmount:execution.quoteAmount,quoteMint:execution.quoteMint,venue:execution.venue||null,pool:execution.pool||null}):null});
 }
 
 function normalizedChainReplayEvent(row){
@@ -239,7 +309,8 @@ async function buildSolanaReplayBundle(env,db,subject,window,input){
     const routeLoaded=rows.length?await pagedAll((take,offset)=>db.prepare(`SELECT signature,wallet,hop_index,venue,pool,input_mint,output_mint,input_amount,output_amount,block_time,source,confidence FROM intelligence_trade_routes WHERE wallet=? AND block_time BETWEEN ? AND ? AND (input_mint=? OR output_mint=?) ORDER BY block_time ASC,signature ASC,hop_index ASC LIMIT ? OFFSET ?`).bind(wallet,from,to,mint,mint,take,offset),MAX_REPLAY_ROUTE_ROWS):{rows:[],truncated:false};
     routeTruncated=routeTruncated||routeLoaded.truncated;const bySignature=new Map();
     for(const route of routeLoaded.rows){const key=s(route.signature);if(!bySignature.has(key))bySignature.set(key,[]);bySignature.get(key).push(route);}
-    for(const row of rows){const execution=directExecution(bySignature.get(s(row.signature))||[],mint,quoteMint),event=normalizedReplayEvent(row,execution);event.sources.forEach(source=>sourceSet.add(source));appendUniqueReplayEvent(events,event);}
+    const unresolved=rows.filter(row=>!directExecution(bySignature.get(s(row.signature))||[],mint,quoteMint)),hydrated=unresolved.length?await hydrateReceiptExecutions(db,wallet,unresolved,mint,quoteMint,env.__FETCH_IMPL||fetch):new Map();
+    for(const row of rows){const execution=directExecution(bySignature.get(s(row.signature))||[],mint,quoteMint)||hydrated.get(s(row.signature))||null,event=normalizedReplayEvent(row,execution);event.sources.forEach(source=>sourceSet.add(source));appendUniqueReplayEvent(events,event);}
     for(const event of await loadFomoReplayEvents(db,'solana',wallet,mint,from,to)){event.sources.forEach(source=>sourceSet.add(source));appendUniqueReplayEvent(events,event);}
     coverages.push(await coverageForWallet(env,wallet));
   }
