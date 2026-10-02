@@ -5,6 +5,7 @@ const obj = (value: unknown): Data =>
 const arr = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 const text = (value: unknown) => (value == null ? "" : String(value));
 const finite = (value: unknown): number | null => {
+  if (value == null || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 };
@@ -68,8 +69,8 @@ export function extractDivergeSeries(simulation: Data): {
 
   const points: { t: number; actual: number; hold: number }[] = [];
   for (const row of outcomes) {
-    const t = finite(row.blockTime ?? row.block_time ?? row.observedAt ?? row.timestamp);
-    const actual = finite(row.entryValueQuote ?? row.hypotheticalHoldValueAtEntry ?? row.entryValue);
+    const t = finite(row.targetBlockTime ?? row.targetTime ?? row.outcomeBlockTime ?? row.outcomeTime);
+    const actual = finite(row.actualValueQuote ?? row.actualEquityQuote ?? row.actualResultQuote);
     const hold = finite(
       row.counterfactualValueQuote ??
         row.hypotheticalHoldValueAtLatestIndexedCandle ??
@@ -89,7 +90,7 @@ export function extractDivergeSeries(simulation: Data): {
       timeLabel,
       emptyReason:
         points.length === 0
-          ? "No comparable actual-vs-hold series in this simulation payload. Chart not invented."
+          ? "No time-aligned actual-vs-hold equity series is available. Acquisition spending is not plotted as actual performance."
           : "Only one comparable point retained — diverge chart needs at least two observed points.",
     };
   }
