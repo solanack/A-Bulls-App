@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { verifyQrMatrix } from "./verify-qr.ts";
 
 test("verify QR is deterministic version 10 and has finder patterns",()=>{
-  const url="https://abullsapp.com/?mode=replay&wallet=G39wywquKbHK8F2wZZZFX3fcsyG91VCCbbr6WEVp5axy&mint=XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1";
+  const url="https://example.test/?mode=replay&wallet=G39wywquKbHK8F2wZZZFX3fcsyG91VCCbbr6WEVp5axy&mint=XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1";
   const one=verifyQrMatrix(url),two=verifyQrMatrix(url);
   assert.equal(one.length,57);assert.equal(one[0].length,57);assert.deepEqual(one,two);
   assert.equal(one[0][0],true);assert.equal(one[1][1],false);assert.equal(one[3][3],true);
