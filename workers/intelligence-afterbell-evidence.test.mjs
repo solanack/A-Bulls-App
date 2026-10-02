@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { afterbellOwnerDeltas, shouldRefreshAfterbell, __afterbellEvidenceContract } from "./intelligence-afterbell-evidence.mjs";
 
 const STOCK="Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh";
-const USDC="EPjFWdd5AufqSSqeM2q8vMLQV4G7wEGGkZwyTDt1v";
+const USDC="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const WALLET="9P6Ej2CRTDYMW9628wXA8awM1t82jnfynYNNPSVx7pfU";
 const POOL="So11111111111111111111111111111111111111112";
 
