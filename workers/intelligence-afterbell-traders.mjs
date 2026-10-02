@@ -39,6 +39,19 @@ export function afterbellWindow(nowMs=Date.now()){
   return Object.freeze({from:Math.floor(fromMs/1000),to:Math.floor(toMs/1000),scheduledEnd:Math.floor(scheduledEndMs/1000),live,timezone:ZONE,label:'AFTER CLOSE · 4:00 PM → 9:30 AM ET',calendarCoverage:'weekday Wall Street schedule; exchange-holiday exceptions are not inferred'});
 }
 
+export function afterbellSessionForTimestamp(blockTimeSeconds){
+  const seconds=Math.trunc(n(blockTimeSeconds));if(!(seconds>0))return null;
+  const ms=seconds*1000,p=partsAt(ms),today={year:p.year,month:p.month,day:p.day},clock=localSeconds(p),open=9*3600+30*60,close=16*3600;
+  let startDay,endDay;
+  if(businessDay(today)&&clock>=close){startDay=today;endDay=nextBusinessDay(today);}
+  else if(businessDay(today)&&clock<open){startDay=previousBusinessDay(today);endDay=today;}
+  else if(!businessDay(today)){startDay=today;while(!businessDay(startDay))startDay=ymdAdd(startDay,-1);endDay=nextBusinessDay(startDay);}
+  else return null;
+  const from=Math.floor(localToUtcMs({...startDay,hour:16,minute:0})/1000),to=Math.floor(localToUtcMs({...endDay,hour:9,minute:30})/1000);
+  if(seconds<from||seconds>to)return null;
+  return Object.freeze({from,to,scheduledEnd:to,live:false,timezone:ZONE,label:'MOST RECENT RETAINED AFTER CLOSE · 4:00 PM → 9:30 AM ET',calendarCoverage:'weekday Wall Street schedule; exchange-holiday exceptions are not inferred',retainedFallback:true});
+}
+
 
 function walletCallsign(wallet){const value=s(wallet);return value.length>=8?`${value.slice(0,4)}…${value.slice(-4)}`:value||'PUBLIC WALLET';}
 function safeAlias(value){const alias=s(value).replace(/^@/,'').slice(0,80);return alias&&alias.toLowerCase()!=='unknown'?alias:null;}
@@ -114,20 +127,51 @@ async function readRows(db,mint,from,to){
   const native=await all(db.prepare(`SELECT ? mint,wallet,signature txId,CASE WHEN token_delta>0 THEN 'buy' ELSE 'sell' END side,ABS(token_delta) amount,NULL priceUsd,CASE WHEN ABS(token_delta)>0 AND ABS(sol_delta)>0 THEN ABS(sol_delta/token_delta) ELSE NULL END priceSol,block_time blockTime,source,'observed-fact' sourceKind FROM bull_wallet_events WHERE mint=? AND block_time BETWEEN ? AND ? AND wallet IS NOT NULL AND token_delta<>0 ORDER BY block_time ASC LIMIT 10000`).bind(mint,mint,lookback,to));rows.push(...native);return rows;
 }
 
+async function latestRetainedAfterbellWindow(db,mints,before){
+  const unique=[...new Set((Array.isArray(mints)?mints:[]).map(s).filter(Boolean))];if(!unique.length)return null;
+  const placeholders=unique.map(()=>'?').join(','),cutoff=Math.max(0,Math.trunc(n(before))-180*24*60*60),end=Math.max(0,Math.trunc(n(before)));
+  const chain=await all(db.prepare(`SELECT block_time blockTime FROM intelligence_chain_events_v2 WHERE chain_key='solana' AND asset_address IN (${placeholders}) AND block_time BETWEEN ? AND ? AND wallet_address IS NOT NULL AND LOWER(side) IN ('buy','sell') ORDER BY block_time DESC LIMIT 1000`).bind(...unique,cutoff,end));
+  const native=await all(db.prepare(`SELECT block_time blockTime FROM bull_wallet_events WHERE mint IN (${placeholders}) AND block_time BETWEEN ? AND ? AND wallet IS NOT NULL AND token_delta<>0 ORDER BY block_time DESC LIMIT 1000`).bind(...unique,cutoff,end));
+  const times=[...chain,...native].map(row=>Math.trunc(n(row.blockTime))).filter(value=>value>0).sort((a,b)=>b-a);
+  for(const value of times){const window=afterbellSessionForTimestamp(value);if(window)return window;}
+  return null;
+}
+async function readAuditWindow(db,window){
+  const summary=await db.prepare(`SELECT COUNT(*) eventCount,COUNT(DISTINCT wallet) walletCount,COUNT(DISTINCT signature) transactionCount,COUNT(DISTINCT mint) assetCount,MAX(block_time) latestBlockTime FROM bull_wallet_events WHERE source LIKE 'helius-afterbell-%' AND block_time BETWEEN ? AND ?`).bind(window.from,window.to).first().catch(()=>null);
+  const assets=await all(db.prepare(`SELECT mint,COUNT(*) eventCount,COUNT(DISTINCT wallet) walletCount,COUNT(DISTINCT signature) transactionCount,MAX(block_time) latestBlockTime FROM bull_wallet_events WHERE source LIKE 'helius-afterbell-%' AND block_time BETWEEN ? AND ? GROUP BY mint ORDER BY transactionCount DESC,latestBlockTime DESC LIMIT 20`).bind(window.from,window.to));
+  return{summary,assets};
+}
+async function latestCollectorAfterbellWindow(db,before){
+  const cutoff=Math.max(0,Math.trunc(n(before))-180*24*60*60),rows=await all(db.prepare(`SELECT block_time blockTime FROM bull_wallet_events WHERE source LIKE 'helius-afterbell-%' AND block_time BETWEEN ? AND ? ORDER BY block_time DESC LIMIT 1000`).bind(cutoff,Math.trunc(n(before))));
+  for(const row of rows){const window=afterbellSessionForTimestamp(row.blockTime);if(window)return window;}
+  return null;
+}
+
 export async function readAfterbellTraders(env={},mintInput='',options={}){
   const db=intelligenceDb(env),rawMints=Array.isArray(mintInput)?mintInput:String(mintInput||'').split(','),mints=[...new Set(rawMints.map(value=>canonicalChainAddress('solana',s(value))).filter(Boolean))].slice(0,50);
   if(!mints.length)return Object.freeze({ok:false,coverage:'empty',error:'invalid_xstock_mint',mint:'',mints:[],items:[],disclosure:'At least one valid Solana xStock mint is required. No trader list was invented.'});
   if(!db)return Object.freeze({ok:false,coverage:'degraded',error:'database_unavailable',mint:mints.length===1?mints[0]:'',mints,items:[],disclosure:'The Intelligence D1 binding is unavailable. No trader list or PnL was invented.'});
-  const window=options.from&&options.to?Object.freeze({from:Math.trunc(n(options.from)),to:Math.trunc(n(options.to)),scheduledEnd:Math.trunc(n(options.to)),live:false,timezone:ZONE,label:'CUSTOM AFTERBELL WINDOW',calendarCoverage:'caller supplied'}):afterbellWindow(options.nowMs);
-  const groups=await Promise.all(mints.map(mint=>readRows(db,mint,window.from,window.to))),rows=groups.flat(),ranked=rankAfterbellTraders(rows,{from:window.from,to:window.to,limit:options.limit}),identities=await retainedIdentityMap(db,ranked.map(item=>item.wallet)),items=Object.freeze(ranked.map(item=>Object.freeze({...item,...(identities.get(item.wallet)||{displayName:walletCallsign(item.wallet),displayNameSource:'wallet-callsign'})})));
-  return Object.freeze({ok:true,coverage:items.length?'fresh':'empty',mint:mints.length===1?mints[0]:'',mints,window,items,method:'afterbell-cross-xstock-unique-retained-after-close-transactions-v4',disclosure:items.length?'Rank is based only on unique retained after-close transactions across the requested xStock universe. Display names use a retained authorized handle/alias when available, otherwise a deterministic wallet callsign. PnL consumes retained buys and sells from a bounded 90-day pre-window basis horizon before realizing in-window exits; older or unknown basis stays unavailable. Holdings and most-traded assets describe bounded retained evidence only; missing history stays unavailable. No identity, skill, ownership, brokerage, or recommendation claim is made.':'No retained xStock wallet trades are indexed across the requested Afterbell universe in this window. Empty coverage stays empty; no trader, identity, holding, or PnL was invented.'});
+  const custom=options.from&&options.to;let window=custom?Object.freeze({from:Math.trunc(n(options.from)),to:Math.trunc(n(options.to)),scheduledEnd:Math.trunc(n(options.to)),live:false,timezone:ZONE,label:'CUSTOM AFTERBELL WINDOW',calendarCoverage:'caller supplied'}):afterbellWindow(options.nowMs);
+  let groups=await Promise.all(mints.map(mint=>readRows(db,mint,window.from,window.to))),rows=groups.flat(),ranked=rankAfterbellTraders(rows,{from:window.from,to:window.to,limit:options.limit});
+  if(!custom&&!ranked.length){
+    const fallback=await latestRetainedAfterbellWindow(db,mints,window.from);
+    if(fallback){window=fallback;groups=await Promise.all(mints.map(mint=>readRows(db,mint,window.from,window.to)));rows=groups.flat();ranked=rankAfterbellTraders(rows,{from:window.from,to:window.to,limit:options.limit});}
+  }
+  const identities=await retainedIdentityMap(db,ranked.map(item=>item.wallet)),items=Object.freeze(ranked.map(item=>Object.freeze({...item,...(identities.get(item.wallet)||{displayName:walletCallsign(item.wallet),displayNameSource:'wallet-callsign'})}))),historical=window.retainedFallback===true;
+  const disclosure=items.length?`Rank is based only on unique retained after-close transactions across the requested xStock universe. ${historical?'The latest calendar after-close session has no retained events, so this view uses the most recent retained after-close session and labels it explicitly. ':''}Display names use a retained authorized handle/alias when available, otherwise a deterministic wallet callsign. PnL consumes retained buys and sells from a bounded 90-day pre-window basis horizon before realizing in-window exits; older or unknown basis stays unavailable. Holdings and most-traded assets describe bounded retained evidence only; missing history stays unavailable. No identity, skill, ownership, brokerage, or recommendation claim is made.`:'No retained xStock wallet trades are indexed across the requested Afterbell universe in the current or recent retained after-close sessions. Empty coverage stays empty; no trader, identity, holding, or PnL was invented.';
+  return Object.freeze({ok:true,coverage:items.length?(historical?'stale':'fresh'):'empty',mint:mints.length===1?mints[0]:'',mints,window,items,method:'afterbell-cross-xstock-unique-retained-after-close-transactions-v5',disclosure,reason:historical?'MOST_RECENT_RETAINED_SESSION':items.length?'CURRENT_SESSION':'NO_EVIDENCE'});
 }
 
 export async function readAfterbellAudit(env={},options={}){
   const db=intelligenceDb(env);if(!db)return Object.freeze({ok:false,coverage:'degraded',error:'database_unavailable'});
-  const window=afterbellWindow(options.nowMs),summary=await db.prepare(`SELECT COUNT(*) eventCount,COUNT(DISTINCT wallet) walletCount,COUNT(DISTINCT signature) transactionCount,COUNT(DISTINCT mint) assetCount,MAX(block_time) latestBlockTime FROM bull_wallet_events WHERE source LIKE 'helius-afterbell-%' AND block_time BETWEEN ? AND ?`).bind(window.from,window.to).first().catch(()=>null),assets=await all(db.prepare(`SELECT mint,COUNT(*) eventCount,COUNT(DISTINCT wallet) walletCount,COUNT(DISTINCT signature) transactionCount,MAX(block_time) latestBlockTime FROM bull_wallet_events WHERE source LIKE 'helius-afterbell-%' AND block_time BETWEEN ? AND ? GROUP BY mint ORDER BY transactionCount DESC,latestBlockTime DESC LIMIT 20`).bind(window.from,window.to)),sourceHealth=await db.prepare(`SELECT source,source_kind,state,last_ok_at,last_error_at,details_json,updated_at FROM intelligence_source_health WHERE source='afterbell-xstock-history' LIMIT 1`).first().catch(()=>null);
-  const counts=Object.freeze({events:n(summary?.eventCount),wallets:n(summary?.walletCount),transactions:n(summary?.transactionCount),assets:n(summary?.assetCount),latestBlockTime:n(summary?.latestBlockTime)||null});
-  return Object.freeze({ok:true,coverage:counts.events?'fresh':'empty',window,counts,assets:Object.freeze(assets),sourceHealth:sourceHealth||null,disclosure:counts.events?'Afterbell audit counts retained signer-owned swap-like xStock observations from the bounded archive collector.':'No retained observations from the Afterbell archive collector exist in this window yet. This is unavailable coverage, not zero market activity.'});
+  let window=afterbellWindow(options.nowMs),audit=await readAuditWindow(db,window),eventCount=n(audit.summary?.eventCount);
+  if(!eventCount){
+    const fallback=await latestCollectorAfterbellWindow(db,window.from);
+    if(fallback){window=fallback;audit=await readAuditWindow(db,window);eventCount=n(audit.summary?.eventCount);}
+  }
+  const summary=audit.summary,assets=audit.assets,sourceHealth=await db.prepare(`SELECT source,source_kind,state,last_ok_at,last_error_at,details_json,updated_at FROM intelligence_source_health WHERE source='afterbell-xstock-history' LIMIT 1`).first().catch(()=>null);
+  const counts=Object.freeze({events:eventCount,wallets:n(summary?.walletCount),transactions:n(summary?.transactionCount),assets:n(summary?.assetCount),latestBlockTime:n(summary?.latestBlockTime)||null}),historical=window.retainedFallback===true;
+  return Object.freeze({ok:true,coverage:counts.events?(historical?'stale':'fresh'):'empty',window,counts,assets:Object.freeze(assets),sourceHealth:sourceHealth||null,disclosure:counts.events?`Afterbell audit counts retained signer-owned swap-like xStock observations from the bounded archive collector. ${historical?'The current calendar session is empty, so these counts are from the most recent retained after-close session.':''}`:'No retained observations from the Afterbell archive collector exist in the current or recent retained after-close sessions. This is unavailable coverage, not zero market activity.'});
 }
 export async function handleAfterbellTradersRequest(request,env={}){
   const url=new URL(request.url);if(![AFTERBELL_TRADERS_PATH,AFTERBELL_AUDIT_PATH].includes(url.pathname))return null;if(request.method!=='GET')return json({ok:false,error:'method_not_allowed'},405,'no-store');if(url.pathname===AFTERBELL_AUDIT_PATH)return json(await readAfterbellAudit(env),200,'public, max-age=15, stale-while-revalidate=30');const mint=s(url.searchParams.get('mints')||url.searchParams.get('mint')),limit=Math.max(1,Math.min(AFTERBELL_MAX_TRADERS,Math.trunc(n(url.searchParams.get('limit'))||AFTERBELL_MAX_TRADERS))),from=finite(url.searchParams.get('from')),to=finite(url.searchParams.get('to')),body=await readAfterbellTraders(env,mint,{limit,from,to}),status=body.error==='invalid_xstock_mint'?400:body.error==='database_unavailable'?503:200;return json(body,status,status===200?'public, max-age=15, stale-while-revalidate=30':'no-store');
