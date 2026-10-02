@@ -71,9 +71,10 @@
 @keyframes first-touch-point{from{transform:translate(-12px,-8px) rotate(-8deg)}to{transform:translate(9px,10px) rotate(5deg)}}
 @media(prefers-reduced-motion:reduce){.field-shell[data-galaxy=fomo]::before,.first-touch svg{animation:none}}
 
-/* Type contract: readable body everywhere, display face for quantities, mono only for hashes/receipts. */
-.field-shell :where(button,input,select,textarea,label,summary,p,span,small,b,strong,li),
-.rs :where(button,input,select,textarea,label,summary,p,span,small,b,strong,li){font-size:max(var(--type-min),1em)!important;font-family:var(--font-body)!important}
+/* Type contract: specific compact UI can never fall below 11px. */
+.rs :where(.rs-chip,.rs-hud__mode b,.rs-hud__mode span,.rs-hud__metric span,.rs-hud small,.rs-src,.rs-count,.rs-act,.rs-speed,.rs-pill,.rs-usd,.rs-usd small),
+.field-shell :where(.fs-chip,.fs-id,.fs-latest,.fs-fine,.gz-menu-status,.gz-bottom){font-size:var(--type-min)!important}
+.rs :where(p,span,small,button,label,select,option){font-family:var(--font-body)!important}
 .field-shell :where([data-number=true],.metric-number,.score-number),
 .rs :where([data-number=true],.metric-number,.score-number,.rs-usd b,.rs-hud__metric strong){font-family:var(--font-number)!important;font-variant-numeric:tabular-nums}
 .field-shell :where(.hash,.tx-hash,.receipt-hash,[data-hash=true]),
