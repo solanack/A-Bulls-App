@@ -432,10 +432,10 @@ const DUST_SPECTRA: readonly [number,number,number][] = [
   [1.00,0.66,0.10], // gold
 ];
 
-function stableColorIndex(value:string){
+function stableColorIndex(value:string,modulo=STAR_SPECTRA.length){
   let hash=2166136261;
   for(let i=0;i<value.length;i++){hash^=value.charCodeAt(i);hash=Math.imul(hash,16777619);}
-  return (hash>>>0)%STAR_SPECTRA.length;
+  return (hash>>>0)%Math.max(1,modulo);
 }
 function mixRgb(a:readonly number[],b:readonly number[],weight:number):[number,number,number]{
   const w=clamp(weight,0,1);return [a[0]*(1-w)+b[0]*w,a[1]*(1-w)+b[1]*w,a[2]*(1-w)+b[2]*w];
@@ -447,7 +447,7 @@ function stellarAlbedo(particle:FieldParticle,targetGalaxy:string):[number,numbe
   return [...base] as [number,number,number];
 }
 function dustAlbedo(particle:FieldParticle):[number,number,number]{
-  const base=DUST_SPECTRA[stableColorIndex(`dust:${particle.id}`)]??DUST_SPECTRA[0];
+  const base=DUST_SPECTRA[stableColorIndex(`dust:${particle.id}`,DUST_SPECTRA.length)]??DUST_SPECTRA[0];
   return [...base] as [number,number,number];
 }
 
