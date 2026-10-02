@@ -51,6 +51,7 @@ test('page read scans closed trades once and probes evidence only for displayed 
   assert.doesNotMatch(queries[0],/EXISTS/);
   assert.equal(batches.length,1);
   assert.ok(batches[0].every(stmt=>!/LOWER\(/i.test(stmt.sql)));
+  assert.ok(batches[0].every(stmt=>/BETWEEN/i.test(stmt.sql)),'every readiness probe must be scoped to the displayed trade window');
   assert.ok(batches[0].length<=6*4);
   assert.deepEqual(body.winners.map(item=>item.tradeId),['t28','t26','t24']);
   assert.equal(body.replayReadyCount,0);
@@ -65,6 +66,7 @@ test('evidence flags land on the displayed trade they were probed for',async()=>
   const body=await(await handleFomoResultsRequest(new Request('https://intel.test/api/intelligence/fomo/results'),{FOMO_GALAXY_ENABLED:'true',INTELLIGENCE_DB:db})).json();
   assert.deepEqual(body.winners.map(item=>[item.tradeId,item.observedIndexed,item.chartIndexed]),[['indexed',true,true],['plain',false,false]]);
   assert.equal(body.replayReadyCount,1);
+  assert.equal(body.receiptReadyCount,1);
   assert.equal(body.chartReadyCount,1);
 });
 
