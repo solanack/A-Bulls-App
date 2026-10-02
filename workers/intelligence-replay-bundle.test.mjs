@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { __replayBundleContract, adaptiveReplayBucketSeconds, aggregateReplayCandleRows, buildReplayBundle, executionFromRpcReceipt, handleReplayBundleRequest, providerReportedFomoTradeEvents } from './intelligence-replay-bundle.mjs';
+import { __replayBundleContract, adaptiveReplayBucketSeconds, aggregateReplayCandleRows, buildReplayBundle, executionFromRpcReceipt, handleReplayBundleRequest, providerReportedFomoTradeEvents, replayBundleCandleCoverage } from './intelligence-replay-bundle.mjs';
 
 const walletA='11111111111111111111111111111111';
 const walletB='22222222222222222222222222222222';
@@ -136,6 +136,17 @@ test('full-history mode starts at the earliest retained wallet-token evidence',a
   assert.match(bundle.coverage.statement,/Full retained wallet history/i);
   assert.equal(__replayBundleContract.fullHistoryDefault,true);
   assert.equal(__replayBundleContract.pagedReplayEvents,true);
+});
+
+test('partial Replay OHLC coverage is measured without discarding valid candles',()=>{
+  const candles=[
+    {timestamp:120000,bucketSeconds:60,open:1,high:2,low:.8,close:1.5},
+    {timestamp:180000,bucketSeconds:60,open:1.5,high:2.5,low:1.4,close:2},
+  ];
+  const events=[{timestamp:150000},{timestamp:210000},{timestamp:300000}];
+  assert.deepEqual(replayBundleCandleCoverage(candles,events),{covered:2,total:3,complete:false});
+  assert.equal(__replayBundleContract.partialCandlesStayVisible,true);
+  assert.equal(__replayBundleContract.partialMarketCoverageHydrates,true);
 });
 
 test('adaptive Replay buckets preserve detail for short windows and bound long histories',()=>{

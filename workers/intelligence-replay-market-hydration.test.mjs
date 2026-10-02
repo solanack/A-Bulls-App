@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseExactReplayPool, chooseReplayPrewarmBucket, discoverExactReplayPool, discoverExactReplayPools, normalizeGeckoOhlcvRows, replayMarketProviders, replayPoolsForToken, __replayMarketHydrationContract } from './intelligence-replay-market-hydration.mjs';
+import { chooseExactReplayPool, chooseReplayPrewarmBucket, dexScreenerReplayPools, discoverDexScreenerReplayPools, discoverExactReplayPool, discoverExactReplayPools, normalizeGeckoOhlcvRows, replayMarketProviders, replayPoolsForToken, __replayMarketHydrationContract } from './intelligence-replay-market-hydration.mjs';
 
 const mint='33333333333333333333333333333333';
 const quote='44444444444444444444444444444444';
@@ -105,6 +105,29 @@ test('provider plan never exposes a configured CoinGecko key in provider metadat
   assert.equal(JSON.stringify(providers.map(({name,base})=>({name,base}))).includes('super-secret'),false);
 });
 
+test('free DexScreener discovery finds the exact pair before GeckoTerminal OHLC',async()=>{
+  const payload=[
+    {chainId:'solana',dexId:'raydium',pairAddress:pool,baseToken:{address:mint},quoteToken:{address:quote},liquidity:{usd:500000},volume:{h24:100000}},
+    {chainId:'solana',dexId:'orca',pairAddress:pool2,baseToken:{address:mint},quoteToken:{address:'77777777777777777777777777777777'},liquidity:{usd:900000},volume:{h24:200000}},
+  ];
+  const parsed=dexScreenerReplayPools(payload,mint,quote);
+  assert.equal(parsed.length,1);
+  assert.equal(parsed[0].address,pool);
+  assert.equal(parsed[0].quoteMint,quote);
+  assert.equal(parsed[0].provider,'geckoterminal-public');
+  assert.equal(parsed[0].discoverySource,'dexscreener-public');
+
+  const calls=[];
+  const fetchImpl=async(input,init={})=>{calls.push({url:String(input),headers:init.headers||{}});return new Response(JSON.stringify(payload),{headers:{'content-type':'application/json'}});};
+  const pools=await discoverDexScreenerReplayPools({},mint,quote,{fetchImpl});
+  assert.equal(pools[0].address,pool);
+  assert.equal(calls.length,1);
+  assert.match(calls[0].url,/api\.dexscreener\.com\/token-pairs\/v1\/solana/);
+  assert.equal(__replayMarketHydrationContract.freePrimaryPath,true);
+  assert.equal(__replayMarketHydrationContract.dexScreenerPoolDiscovery,true);
+  assert.equal(__replayMarketHydrationContract.geckoTerminalPublicOhlcv,true);
+});
+
 test('normalizes only finite positive OHLC rows inside the Replay window',()=>{
   const rows=normalizeGeckoOhlcvRows([
     [90,1,2,.5,1.5,100],
@@ -151,6 +174,7 @@ test('scheduled Fomo prewarm chooses bounded candle buckets instead of flooding 
   assert.equal(__replayMarketHydrationContract.supportsEvmBytes32PoolIds,true);
   assert.equal(__replayMarketHydrationContract.prewarmSkipsReadyMarkets,true);
   assert.equal(__replayMarketHydrationContract.prewarmFailureCooldownHours,6);
+  assert.equal(__replayMarketHydrationContract.freePrewarmDefault,1);
 });
 
 test('EVM auto-quote Replay hydrates USD OHLC from the deepest pool, not a token-quoted pair',async()=>{
