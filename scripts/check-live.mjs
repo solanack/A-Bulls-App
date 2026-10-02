@@ -185,8 +185,9 @@ export function validateAfterbellAudit(body) {
   assert.equal(body?.ok, true, `Afterbell audit failed: ${body?.error || "not ok"}`);
   const counts = asObject(body?.counts, "Afterbell audit is missing counts");
   for (const key of ["events","wallets","transactions","assets"]) assert.ok(Number.isSafeInteger(Number(counts[key])) && Number(counts[key]) >= 0, `Afterbell audit ${key} must be a non-negative integer`);
-  assert.ok(["fresh","empty"].includes(String(body?.coverage || "")), "Afterbell audit coverage is invalid");
-  if (body.coverage === "fresh") assert.ok(Number(counts.events) > 0 && Number(counts.wallets) > 0 && Number(counts.transactions) > 0, "Afterbell fresh audit has no retained evidence");
+  assert.ok(["fresh","stale","empty"].includes(String(body?.coverage || "")), "Afterbell audit coverage is invalid");
+  if (body.coverage === "fresh" || body.coverage === "stale") assert.ok(Number(counts.events) > 0 && Number(counts.wallets) > 0 && Number(counts.transactions) > 0, `Afterbell ${body.coverage} audit has no retained evidence`);
+  if (body.coverage === "stale") assert.equal(body?.window?.retainedFallback, true, "Afterbell stale audit must identify retained-session fallback coverage");
   return counts;
 }
 
