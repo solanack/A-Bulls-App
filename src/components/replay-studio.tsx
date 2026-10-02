@@ -60,7 +60,10 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
   const retainedCandles = useMemo(() => tapeCandles(bundle?.candles), [bundle]);
   const events = useMemo(() => tapeEvents(bundle?.events, obj(bundle?.subject).quoteMint), [bundle]);
   const candleCoverage = useMemo(() => replayCandleCoverage(retainedCandles, events), [retainedCandles, events]);
-  const candles = useMemo(() => candleCoverage.usable ? retainedCandles : [], [candleCoverage.usable, retainedCandles]);
+  // Keep every valid retained OHLC candle on screen even when some Replay events
+  // fall outside candle coverage. Uncovered events remain time-only; the renderer
+  // never pins them to an unrelated candle.
+  const candles = retainedCandles;
   const window_ = useMemo(() => (subject ? tapeWindow(bundle?.window, candles, events, subject) : { start: 0, end: 1 }), [bundle, candles, events, subject]);
   const view = useMemo(() => fullTape(candles, events, window_), [candles, events, window_]);
   const bolts = useMemo(() => anchorBolts(events, candles, view.start, view.end), [events, candles, view]);
@@ -360,7 +363,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
         <span className="rs-director-status">{status === "ready" ? `${historyLabel} · ${candles.length ? "CANDLE TAPE" : "EVENT TAPE"} · ${subject.chainKey.toUpperCase()}` : "READING EVIDENCE"}</span>
         {onToggleWatch ? <button type="button" className="rs-watch" aria-pressed={traderWatched} onClick={() => watch("wallet")}><Star size={15}/>{traderWatched ? "Saved trader" : "Watch trader"}</button> : null}
       </div>
-      {status === "ready" && !candleCoverage.usable && retainedCandles.length > 0 ? <p className="rs-coverage-warning">Cached candles cover {candleCoverage.covered} of {candleCoverage.total} events. Showing their actual timestamps on an event tape; no event is placed on an unrelated candle.</p> : null}
+      {status === "ready" && !candleCoverage.usable && retainedCandles.length > 0 ? <p className="rs-coverage-warning">Cached candles cover {candleCoverage.covered} of {candleCoverage.total} events. Showing all available OHLC; uncovered events stay time-only and are never placed on an unrelated candle.</p> : null}
       <div className="rs-body">
       <div className="rs-frame" ref={frameRef} data-scale={scaleMode} data-view-start={Math.round(view.start)} data-view-end={Math.round(view.end)} data-candles={candles.length} data-bolt-groups={groups.length} data-cohort={cohortOn ? ticks.length : 0}>
         {status === "ready" ? <div className="rs-hud" aria-label="Replay performance">
@@ -422,7 +425,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
               <button type="button" className="rs-pill" onClick={() => void share()} aria-label="Copy a link to this Replay"><Share2 size={13} /> {shareNote && shareNote.length < 20 ? shareNote : "SHARE"}</button>
               <button type="button" className="rs-pill rs-pill--cut" disabled={status !== "ready"} onClick={() => { setPlaying(false); setCutOpen(true); }}>CUT</button>
             </div>
-            <p className="rs-source">{candles.length ? `Candles · ${candleSourceLabel(source)}` : status === "ready" ? "Candles unavailable · event tape only · no price path drawn" : ""}{status === "ready" ? ` · ${bolts.length} events${events.some((row) => row.verification === "provider-reported") ? " · Fomo-reported" : ""}` : ""}</p>
+            <p className="rs-source">{candles.length ? `Candles · ${candleSourceLabel(source)}${!candleCoverage.usable ? ` · ${candleCoverage.covered}/${candleCoverage.total} events candle-covered` : ""}` : status === "ready" ? "Candles unavailable · event tape only · no price path drawn" : ""}{status === "ready" ? ` · ${bolts.length} events${events.some((row) => row.verification === "provider-reported") ? " · Fomo-reported" : ""}` : ""}</p>
           </>
         {shareNote ? <p className="rs-share-status" role="status">{shareNote.startsWith("http") ? <>Copy this Replay link: <a href={shareNote}>{shareNote}</a></> : shareNote}</p> : null}
       </footer>
