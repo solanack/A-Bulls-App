@@ -15,6 +15,7 @@ const USD_STABLE_MINTS=new Set(['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','
 const WSOL_MINT='So11111111111111111111111111111111111111112';
 const PUBLIC_SOLANA_RPC='https://api.mainnet-beta.solana.com';
 const MAX_RECEIPT_EXECUTION_HYDRATION=24;
+const MAX_INDEXED_SIBLING_EXECUTION_LOOKUPS=600;
 const EVM_RE=/^0x[a-fA-F0-9]{40}$/;
 const EVM_TX_RE=/^0x[a-fA-F0-9]{64}$/;
 const SOLANA_SIG_RE=/^[1-9A-HJ-NP-Za-km-z]{64,96}$/;
@@ -106,7 +107,7 @@ export function executionFromRpcReceipt(tx={},wallet='',mint='',quoteMint=''){
 }
 
 async function siblingExecutions(db,wallet,rows,mint,quoteMint){
-  const signatures=[...new Set(rows.map(row=>s(row.signature)).filter(Boolean))],out=new Map();
+  const signatures=[...new Set(rows.map(row=>s(row.signature)).filter(Boolean))].slice(0,MAX_INDEXED_SIBLING_EXECUTION_LOOKUPS),out=new Map();
   for(let offset=0;offset<signatures.length;offset+=60){
     const chunk=signatures.slice(offset,offset+60),marks=chunk.map(()=>'?').join(',');
     const siblings=await all(db.prepare(`SELECT signature,mint,token_delta,slot,block_time,source,confidence FROM bull_wallet_events WHERE wallet=? AND signature IN (${marks}) AND token_delta<>0 ORDER BY signature ASC,mint ASC`).bind(wallet,...chunk)),bySig=new Map();
@@ -123,7 +124,9 @@ async function persistReceiptExecution(db,signature,wallet,mint,execution){
 }
 
 async function hydrateReceiptExecutions(db,wallet,rows,mint,quoteMint,fetchImpl=fetch){
-  const out=await siblingExecutions(db,wallet,rows,mint,quoteMint),missing=[...new Set(rows.map(row=>s(row.signature)).filter(signature=>signature&&!out.has(signature)))].slice(0,MAX_RECEIPT_EXECUTION_HYDRATION);
+  const out=await siblingExecutions(db,wallet,rows,mint,quoteMint);
+  for(const [signature,execution] of out)await persistReceiptExecution(db,signature,wallet,mint,execution);
+  const missing=[...new Set(rows.map(row=>s(row.signature)).filter(signature=>signature&&!out.has(signature)))].slice(0,MAX_RECEIPT_EXECUTION_HYDRATION);
   for(let offset=0;offset<missing.length;offset+=4){
     const batch=missing.slice(offset,offset+4);
     const results=await Promise.all(batch.map(async signature=>{
@@ -310,7 +313,7 @@ async function buildSolanaReplayBundle(env,db,subject,window,input){
     const routeLoaded=rows.length?await pagedAll((take,offset)=>db.prepare(`SELECT signature,wallet,hop_index,venue,pool,input_mint,output_mint,input_amount,output_amount,block_time,source,confidence FROM intelligence_trade_routes WHERE wallet=? AND block_time BETWEEN ? AND ? AND (input_mint=? OR output_mint=?) ORDER BY block_time ASC,signature ASC,hop_index ASC LIMIT ? OFFSET ?`).bind(wallet,from,to,mint,mint,take,offset),MAX_REPLAY_ROUTE_ROWS):{rows:[],truncated:false};
     routeTruncated=routeTruncated||routeLoaded.truncated;const bySignature=new Map();
     for(const route of routeLoaded.rows){const key=s(route.signature);if(!bySignature.has(key))bySignature.set(key,[]);bySignature.get(key).push(route);}
-    const unresolved=rows.filter(row=>!directExecution(bySignature.get(s(row.signature))||[],mint,quoteMint)),hydrated=unresolved.length?await hydrateReceiptExecutions(db,wallet,unresolved,mint,quoteMint,env.__FETCH_IMPL||fetch):new Map();
+    const unresolved=rows.filter(row=>s(row.event_class)==='swap-like'&&n(row.token_delta)!==0&&s(row.signature)&&!directExecution(bySignature.get(s(row.signature))||[],mint,quoteMint)),hydrated=unresolved.length?await hydrateReceiptExecutions(db,wallet,unresolved,mint,quoteMint,env.__FETCH_IMPL||fetch):new Map();
     for(const row of rows){const execution=directExecution(bySignature.get(s(row.signature))||[],mint,quoteMint)||hydrated.get(s(row.signature))||null,event=normalizedReplayEvent(row,execution);event.sources.forEach(source=>sourceSet.add(source));appendUniqueReplayEvent(events,event);}
     for(const event of await loadFomoReplayEvents(db,'solana',wallet,mint,from,to)){event.sources.forEach(source=>sourceSet.add(source));appendUniqueReplayEvent(events,event);}
     coverages.push(await coverageForWallet(env,wallet));
@@ -363,4 +366,4 @@ export async function handleReplayBundleRequest(request,env={}){
   }catch(error){const code=String(error?.message||error),status=code==='intelligence_db_unavailable'?503:400;return json({ok:false,error:code},status);}
 }
 
-export const __replayBundleContract=Object.freeze({chainQualified:true,solanaHistorySchedulerOnlyForSolana:true,fullHistoryDefault:true,explicitShareWindows:true,pagedReplayEvents:true,maxReplayEvents:MAX_REPLAY_EVENTS,adaptiveHistoricalWindow:true,sevenDayPreEntryContext:true,sevenDayPreEntryContextForFallback:true,targetReplayCandles:TARGET_REPLAY_CANDLES,noArbitraryLookback:true,maxWindowYears:15,noSyntheticData:true,providerReportedLifecycleFallback:true,observedExecutionContext:true,exactPoolPreferred:true,robinhoodReferenceSeries:true});
+export const __replayBundleContract=Object.freeze({chainQualified:true,solanaHistorySchedulerOnlyForSolana:true,fullHistoryDefault:true,explicitShareWindows:true,pagedReplayEvents:true,maxReplayEvents:MAX_REPLAY_EVENTS,receiptExecutionHydration:true,maxReceiptExecutionHydration:MAX_RECEIPT_EXECUTION_HYDRATION,adaptiveHistoricalWindow:true,sevenDayPreEntryContext:true,sevenDayPreEntryContextForFallback:true,targetReplayCandles:TARGET_REPLAY_CANDLES,noArbitraryLookback:true,maxWindowYears:15,noSyntheticData:true,providerReportedLifecycleFallback:true,observedExecutionContext:true,exactPoolPreferred:true,robinhoodReferenceSeries:true});
