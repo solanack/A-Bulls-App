@@ -9,7 +9,7 @@ import { canonicalChainAddress } from './intelligence-chain-registry.mjs';
 export const AFTERBELL_TRADERS_PATH='/api/intelligence/afterbell/traders';
 export const AFTERBELL_AUDIT_PATH='/api/intelligence/afterbell/audit';
 export const AFTERBELL_MAX_TRADERS=50;
-export const AFTERBELL_BASIS_LOOKBACK_SECONDS=15*365*24*60*60;
+export const AFTERBELL_BASIS_LOOKBACK_SECONDS=90*24*60*60;
 const ZONE='America/New_York';
 const s=v=>String(v??'').trim();
 const n=v=>Number.isFinite(Number(v))?Number(v):0;
@@ -120,7 +120,7 @@ export async function readAfterbellTraders(env={},mintInput='',options={}){
   if(!db)return Object.freeze({ok:false,coverage:'degraded',error:'database_unavailable',mint:mints.length===1?mints[0]:'',mints,items:[],disclosure:'The Intelligence D1 binding is unavailable. No trader list or PnL was invented.'});
   const window=options.from&&options.to?Object.freeze({from:Math.trunc(n(options.from)),to:Math.trunc(n(options.to)),scheduledEnd:Math.trunc(n(options.to)),live:false,timezone:ZONE,label:'CUSTOM AFTERBELL WINDOW',calendarCoverage:'caller supplied'}):afterbellWindow(options.nowMs);
   const groups=await Promise.all(mints.map(mint=>readRows(db,mint,window.from,window.to))),rows=groups.flat(),ranked=rankAfterbellTraders(rows,{from:window.from,to:window.to,limit:options.limit}),identities=await retainedIdentityMap(db,ranked.map(item=>item.wallet)),items=Object.freeze(ranked.map(item=>Object.freeze({...item,...(identities.get(item.wallet)||{displayName:walletCallsign(item.wallet),displayNameSource:'wallet-callsign'})})));
-  return Object.freeze({ok:true,coverage:items.length?'fresh':'empty',mint:mints.length===1?mints[0]:'',mints,window,items,method:'afterbell-cross-xstock-unique-retained-after-close-transactions-v4',disclosure:items.length?'Rank is based only on unique retained after-close transactions across the requested xStock universe. Display names use a retained authorized handle/alias when available, otherwise a deterministic wallet callsign. PnL consumes retained pre-window buys and sells before realizing in-window exits; unknown basis stays unavailable. Holdings and most-traded assets describe bounded retained evidence only; missing history stays unavailable. No identity, skill, ownership, brokerage, or recommendation claim is made.':'No retained xStock wallet trades are indexed across the requested Afterbell universe in this window. Empty coverage stays empty; no trader, identity, holding, or PnL was invented.'});
+  return Object.freeze({ok:true,coverage:items.length?'fresh':'empty',mint:mints.length===1?mints[0]:'',mints,window,items,method:'afterbell-cross-xstock-unique-retained-after-close-transactions-v4',disclosure:items.length?'Rank is based only on unique retained after-close transactions across the requested xStock universe. Display names use a retained authorized handle/alias when available, otherwise a deterministic wallet callsign. PnL consumes retained buys and sells from a bounded 90-day pre-window basis horizon before realizing in-window exits; older or unknown basis stays unavailable. Holdings and most-traded assets describe bounded retained evidence only; missing history stays unavailable. No identity, skill, ownership, brokerage, or recommendation claim is made.':'No retained xStock wallet trades are indexed across the requested Afterbell universe in this window. Empty coverage stays empty; no trader, identity, holding, or PnL was invented.'});
 }
 
 export async function readAfterbellAudit(env={},options={}){
