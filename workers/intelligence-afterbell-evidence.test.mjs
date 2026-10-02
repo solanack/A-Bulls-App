@@ -12,7 +12,7 @@ const signedTx=(preTokenBalances,postTokenBalances)=>({transaction:{message:{acc
 
 test("Afterbell evidence decoder keeps signer-owned swap-like xStock deltas",()=>{
  const tx=signedTx([balance(1,STOCK,WALLET,1),balance(2,USDC,WALLET,1000)],[balance(1,STOCK,WALLET,2),balance(2,USDC,WALLET,800)]);
- assert.deepEqual(afterbellOwnerDeltas(tx,STOCK),[{owner:WALLET,delta:1}]);
+ assert.deepEqual(afterbellOwnerDeltas(tx,STOCK),[{owner:WALLET,delta:1,quoteMint:USDC,quoteDelta:-200}]);
 });
 
 test("Afterbell evidence decoder rejects one-sided transfers and non-signer pool authorities",()=>{
@@ -29,6 +29,7 @@ test("Afterbell archive refresh is after-close weekday only and credit bounded",
  assert.equal(__afterbellEvidenceContract.syntheticTrades,false);
  assert.equal(__afterbellEvidenceContract.queriesPoolAddress,true);
  assert.equal(__afterbellEvidenceContract.signerOnly,true);
+ assert.equal(__afterbellEvidenceContract.persistsExactCounterLeg,true);
  assert.equal(__afterbellEvidenceContract.maxSupportedTransactionVersion,1);
  assert.equal(__afterbellEvidenceContract.defaultAssetsPerRun,1);
  assert.ok(__afterbellEvidenceContract.defaultAssetsPerRun<=__afterbellEvidenceContract.maxAssetsPerRun);
