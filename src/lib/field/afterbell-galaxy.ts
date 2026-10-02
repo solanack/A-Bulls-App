@@ -1,7 +1,7 @@
 import type { FieldParticle, UniverseSnapshot } from "./types";
 import { canonicalUniverseId } from "./galaxies.ts";
 import { afterbellFactLine } from "./trader-sheet.ts";
-import type { AfterbellGalaxyData } from "../universe-data/afterbell-client.ts";
+import { XSTOCK_REGISTRY, type AfterbellGalaxyData } from "../universe-data/afterbell-client.ts";
 import type { AfterbellTraderResponse } from "../universe-data/afterbell-traders-client.ts";
 
 function starPosition(wallet:string,rank:number):[number,number,number]{
@@ -19,8 +19,10 @@ function starPosition(wallet:string,rank:number):[number,number,number]{
 function walletCallsign(wallet:string){return wallet.length>=8?`${wallet.slice(0,4)}…${wallet.slice(-4)}`:wallet;}
 function clamp01(v:number){return Math.max(.18,Math.min(1,Number.isFinite(v)?v:0));}
 
-export function buildAfterbellGalaxySnapshot(markets:AfterbellGalaxyData,traders:AfterbellTraderResponse):UniverseSnapshot{
-  const marketByMint=new Map(markets.planets.map(item=>[item.mint,item] as const));
+export function buildAfterbellGalaxySnapshot(markets:AfterbellGalaxyData|null,traders:AfterbellTraderResponse):UniverseSnapshot{
+  const marketByMint=new Map<string,{mint:string;symbol:string;name:string;cashSymbol:string}>();
+  for(const item of XSTOCK_REGISTRY)if(item.mintHint)marketByMint.set(item.mintHint,{mint:item.mintHint,symbol:item.symbol,name:item.name,cashSymbol:item.cashSymbol});
+  for(const item of markets?.planets??[])marketByMint.set(item.mint,item);
   const particles:FieldParticle[]=traders.items.slice(0,50).map(item=>{
     const tradedAssets=item.mints.map(mint=>{const market=marketByMint.get(mint);return{mint,symbol:market?.symbol??null,name:market?.name??null,cashSymbol:market?.cashSymbol??null};});
     const holdings=item.holdings.map(row=>{const market=marketByMint.get(row.mint);return{...row,symbol:market?.symbol??null,name:market?.name??null,cashSymbol:market?.cashSymbol??null};});
@@ -30,6 +32,7 @@ export function buildAfterbellGalaxySnapshot(markets:AfterbellGalaxyData,traders
     particle.metadata={...particle.metadata,factLine:afterbellFactLine(particle.metadata)};
     return particle;
   });
-  const times=particles.map(item=>item.observedAt).filter(Number.isFinite),now=Date.now(),sources=[...new Set([...particles.map(item=>item.source),markets.source].filter((value):value is string=>Boolean(value)))];
-  return{galaxyId:"afterbell",windowStart:traders.window?.from?traders.window.from*1000:times.length?Math.min(...times):now,windowEnd:traders.window?.to?traders.window.to*1000:times.length?Math.max(...times):now,observedEventCount:traders.items.reduce((sum,item)=>sum+item.eventCount,0),samplingPolicy:"Afterbell Top 50 public-wallet traders across supported xStocks · ranked only by unique retained after-close transactions · identity labels are retained-source aliases or deterministic wallet callsigns",coverageStatement:`${traders.disclosure} Market labels are venue-reported context only.`,sources:sources.length?sources:["a-bulls-indexed-solana-evidence"],particles};
+  const times=particles.map(item=>item.observedAt).filter(Number.isFinite),now=Date.now(),sources=[...new Set([...particles.map(item=>item.source),markets?.source??null].filter((value):value is string=>Boolean(value)))];
+  const marketDisclosure=markets?.disclosure??"xStock names and symbols come from the pinned canonical registry; live venue prices load independently and never gate trader evidence.";
+  return{galaxyId:"afterbell",windowStart:traders.window?.from?traders.window.from*1000:times.length?Math.min(...times):now,windowEnd:traders.window?.to?traders.window.to*1000:times.length?Math.max(...times):now,observedEventCount:traders.items.reduce((sum,item)=>sum+item.eventCount,0),samplingPolicy:"Afterbell Top 50 public-wallet traders across supported xStocks · ranked only by unique retained after-close transactions · identity labels are retained-source aliases or deterministic wallet callsigns",coverageStatement:`${traders.disclosure} ${marketDisclosure}`,sources:sources.length?sources:["a-bulls-indexed-solana-evidence"],particles};
 }
