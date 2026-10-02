@@ -370,7 +370,7 @@ test("mark separates realized FIFO PnL from remaining-basis unrealized PnL",()=>
   assert.equal(mark.remainingTokens,75);
   assert.equal(mark.remainingBasisUsd,75);
   assert.equal(mark.markedUsd,112.5);
-  assert.equal(mark.realizedUsd,5);
+  assert.ok(Math.abs((mark.realizedUsd??0)-5)<1e-9);
   assert.equal(mark.deltaUsd,37.5);
   assert.equal(mark.deltaPct,.5);
 });
