@@ -92,8 +92,10 @@ export function replaySubjectFrom(search: string, thread: Partial<ResearchThread
     wallet,
     mint,
     chainKey: chainKey.toLowerCase(),
-    fromTs: (fromUrl ? toMs(params.get("from")) : null) ?? (sameThread ? toMs(thread.fromTs) : null),
-    toTs: (fromUrl ? toMs(params.get("to")) : null) ?? (sameThread ? toMs(thread.toTs) : null),
+    // Normal in-app Replay always asks for the full retained wallet×token history.
+    // Only an explicit shared URL pins a bounded evidence window.
+    fromTs: fromUrl ? toMs(params.get("from")) : null,
+    toTs: fromUrl ? toMs(params.get("to")) : null,
     room: roomRaw === "fomo" || roomRaw === "afterbell" ? roomRaw : null,
     displayName: (fromUrl ? str(params.get("name")) : null) ?? (sameThread ? str(thread.displayName) : null),
     symbol: (fromUrl ? str(params.get("symbol")) : null) ?? (sameThread ? str(thread.symbol) : null),
@@ -116,6 +118,7 @@ export function replayToolInput(subject: ReplaySubject) {
   const evm = EVM.test(subject.wallet) && EVM.test(subject.mint);
   const bucketSeconds = subject.fromTs && subject.toTs && subject.toTs - subject.fromTs > 7 * 86_400_000 ? 3600 : 60;
   return {
+    historyMode: subject.fromTs != null || subject.toTs != null ? "window" : "full",
     wallets: [subject.wallet],
     wallet: subject.wallet,
     mint: subject.mint,
