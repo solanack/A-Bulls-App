@@ -98,8 +98,18 @@ function rowToTrader(row){
 
 async function galaxyPayload(db){
   const rows=await all(db.prepare(`SELECT * FROM fomo_traders WHERE current_rank BETWEEN 1 AND 50 AND captured_at=(SELECT MAX(captured_at) FROM fomo_traders) ORDER BY current_rank ASC,handle ASC LIMIT 50`));
-  const items=rows.map(rowToTrader),capturedAt=items.reduce((max,item)=>Math.max(max,item.capturedAt||0),0)||null;
-  return {ok:true,coverage:items.length?'fresh':'empty',items,source:'fomoapi.io',capturedAt,disclosure:items.length?'Fomo Galaxy shows the independent fomoapi.io all-time leaderboard as reported at the capture time. PnL, rank, profile, and top-token fields are provider-reported context, not independently verified A Bulls App performance claims. Wallet activity shown after entering a trader is separately sourced from retained public-chain evidence. No trade can be executed here.':'The cached Fomo all-time leaderboard is empty. No logged-in fomo.family session or public mirror was scraped as a fallback.'};
+  const items=rows.map(rowToTrader),capturedAt=items.reduce((max,item)=>Math.max(max,item.capturedAt||0),0)||null,latest=new Map();
+  const solana=items.map(item=>item.solanaWallet).filter(wallet=>SOLANA_RE.test(s(wallet))),evm=items.map(item=>item.evmWallet).filter(wallet=>EVM_RE.test(s(wallet)));
+  if(solana.length){
+    const marks=solana.map(()=>'?').join(','),events=await all(db.prepare(`SELECT wallet,MAX(block_time) latest_print_at FROM bull_wallet_events WHERE wallet IN (${marks}) GROUP BY wallet`).bind(...solana));
+    for(const event of events)if(n(event.latest_print_at)>0)latest.set(s(event.wallet),n(event.latest_print_at)*1000);
+  }
+  if(evm.length){
+    const marks=evm.map(()=>'?').join(','),events=await all(db.prepare(`SELECT wallet_address,MAX(block_time) latest_print_at FROM intelligence_chain_events_v2 WHERE wallet_address IN (${marks}) GROUP BY wallet_address`).bind(...evm));
+    for(const event of events)if(n(event.latest_print_at)>0)latest.set(s(event.wallet_address).toLowerCase(),n(event.latest_print_at)*1000);
+  }
+  const enriched=items.map(item=>({...item,latestPrintAt:latest.get(item.solanaWallet)||latest.get(s(item.evmWallet).toLowerCase())||null}));
+  return {ok:true,coverage:enriched.length?'fresh':'empty',items:enriched,source:'fomoapi.io',capturedAt,disclosure:enriched.length?'Fomo Galaxy shows the independent fomoapi.io all-time leaderboard as reported at the capture time. PnL, rank, profile, and top-token fields are provider-reported context, not independently verified A Bulls App performance claims. Star flicker uses only the latest retained public-chain print timestamp when one is indexed; missing print recency stays visually quiet. Wallet activity shown after entering a trader is separately sourced from retained public-chain evidence. No trade can be executed here.':'The cached Fomo all-time leaderboard is empty. No logged-in fomo.family session or public mirror was scraped as a fallback.'};
 }
 
 async function observedWalletPositions(db,wallet){
