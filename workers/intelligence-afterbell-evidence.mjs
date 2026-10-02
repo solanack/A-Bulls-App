@@ -101,7 +101,7 @@ async function fetchMarketWindow(env,market,window,fetchImpl=fetch){
       const buy=item.delta>0,baseAmount=Math.abs(item.delta),quoteAmount=Math.abs(item.quoteDelta);
       events.push({
         signature,slot,blockTime,wallet:item.owner,mint:market.mint,eventClass:'swap-like',solDelta:0,tokenDelta:item.delta,feeLamports:0,
-        source:'helius-afterbell-pool-window',confidence:.92,decoderVersion:'afterbell-pool-window-v3',
+        source:'helius-afterbell-pool-window',confidence:.92,decoderVersion:'afterbell-pool-window-v3',dexId:market.dexId||null,pool:market.pairAddress||null,
         execution:quoteAmount>0&&item.quoteMint?{side:buy?'buy':'sell',inputMint:buy?item.quoteMint:market.mint,outputMint:buy?market.mint:item.quoteMint,inputAmount:buy?quoteAmount:baseAmount,outputAmount:buy?baseAmount:quoteAmount,quoteMint:item.quoteMint,quoteAmount,baseAmount}:null
       });
     }
@@ -113,7 +113,7 @@ async function persistAfterbellRoutes(db,events=[]){
   const statements=[];
   for(const event of events){
     const route=event?.execution;if(!route||!event?.signature||!event?.wallet||!(n(route.inputAmount)>0)||!(n(route.outputAmount)>0))continue;
-    statements.push(db.prepare(`INSERT INTO intelligence_trade_routes(signature,wallet,hop_index,program_id,venue,pool,input_mint,output_mint,input_amount,output_amount,fee_amount,fee_mint,slot,block_time,source,confidence) VALUES(?,?,0,NULL,?,?, ?,?,?,?,NULL,NULL,?,?,?,?) ON CONFLICT(signature,wallet,hop_index) DO UPDATE SET venue=COALESCE(excluded.venue,intelligence_trade_routes.venue),pool=COALESCE(excluded.pool,intelligence_trade_routes.pool),input_mint=excluded.input_mint,output_mint=excluded.output_mint,input_amount=excluded.input_amount,output_amount=excluded.output_amount,slot=COALESCE(excluded.slot,intelligence_trade_routes.slot),block_time=COALESCE(excluded.block_time,intelligence_trade_routes.block_time),source=excluded.source,confidence=MAX(intelligence_trade_routes.confidence,excluded.confidence)`).bind(event.signature,event.wallet,s(event.dexId)||null,s(event.pool)||null,s(route.inputMint),s(route.outputMint),Math.abs(n(route.inputAmount)),Math.abs(n(route.outputAmount)),n(event.slot)||null,n(event.blockTime)||null,'helius-afterbell-pool-window-receipt',.97));
+    statements.push(db.prepare(`INSERT INTO intelligence_trade_routes(signature,wallet,hop_index,program_id,venue,pool,input_mint,output_mint,input_amount,output_amount,fee_amount,fee_mint,slot,block_time,source,confidence) VALUES(?,?,0,NULL,?,?, ?,?,?,?,NULL,NULL,?,?,?,?) ON CONFLICT(signature,wallet,hop_index) DO NOTHING`).bind(event.signature,event.wallet,s(event.dexId)||null,s(event.pool)||null,s(route.inputMint),s(route.outputMint),Math.abs(n(route.inputAmount)),Math.abs(n(route.outputAmount)),n(event.slot)||null,n(event.blockTime)||null,'helius-afterbell-pool-window-receipt',.97));
   }
   if(!statements.length)return 0;
   if(typeof db.batch==='function')await db.batch(statements);else for(const stmt of statements)await stmt.run();
