@@ -239,6 +239,9 @@ export function anchorBolts(events: readonly TapeEvent[], candles: readonly Tape
     const cursor = axis.frac(event.timestamp);
     if (!candles.length) return { ...event, candleTime: null, anchorPrice: null, cursor };
     const candle = candles[candleIndexAt(candles, event.timestamp)];
+    const bucketMs = (candle.bucketSeconds ? candle.bucketSeconds * 1000 : candleBucketMs(candles));
+    const candleCoversPrint = event.timestamp >= candle.timestamp && event.timestamp < candle.timestamp + bucketMs;
+    if (!candleCoversPrint) return { ...event, candleTime: null, anchorPrice: null, cursor };
     const inRange = event.priceUsd != null && event.priceUsd >= candle.low && event.priceUsd <= candle.high;
     return { ...event, candleTime: candle.time, anchorPrice: inRange ? event.priceUsd : event.side === "buy" ? candle.low : candle.high, cursor };
   });
