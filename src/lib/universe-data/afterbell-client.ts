@@ -6,14 +6,14 @@ export type AfterbellGalaxyData = { ok:boolean; coverage:"fresh"|"degraded"|"emp
 
 export type CatalogItem={symbol:string;name:string;cashSymbol:string;issuer:string;mintHint?:string};
 export const XSTOCK_REGISTRY:readonly CatalogItem[]=[
-  {symbol:"AAPLx",name:"Apple",cashSymbol:"AAPL",issuer:"xStocks"},
+  {symbol:"AAPLx",name:"Apple",cashSymbol:"AAPL",issuer:"xStocks",mintHint:"XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp"},
   {symbol:"NVDAx",name:"NVIDIA",cashSymbol:"NVDA",issuer:"xStocks",mintHint:"Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh"},
   {symbol:"TSLAx",name:"Tesla",cashSymbol:"TSLA",issuer:"xStocks",mintHint:"XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB"},
   {symbol:"MSFTx",name:"Microsoft",cashSymbol:"MSFT",issuer:"xStocks",mintHint:"XspzcW1PRtgf6Wj92HCiZdjzKCyFekVD8P5Ueh3dRMX"},
-  {symbol:"AMZNx",name:"Amazon",cashSymbol:"AMZN",issuer:"xStocks"},
-  {symbol:"SPYx",name:"S&P 500",cashSymbol:"SPY",issuer:"xStocks"},
-  {symbol:"QQQx",name:"Nasdaq-100",cashSymbol:"QQQ",issuer:"xStocks"},
-  {symbol:"CRCLx",name:"Circle",cashSymbol:"CRCL",issuer:"xStocks"},
+  {symbol:"AMZNx",name:"Amazon",cashSymbol:"AMZN",issuer:"xStocks",mintHint:"Xs3eBt7uRfJX8QUs4suhyU8p2M6DoUDrJyWBa8LLZsg"},
+  {symbol:"SPYx",name:"S&P 500",cashSymbol:"SPY",issuer:"xStocks",mintHint:"XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W"},
+  {symbol:"QQQx",name:"Nasdaq-100",cashSymbol:"QQQ",issuer:"xStocks",mintHint:"Xs8S1uUs1zvS2p7iwtsG3b6fkhpvmwz4GYU3gWAmWHZ"},
+  {symbol:"CRCLx",name:"Circle",cashSymbol:"CRCL",issuer:"xStocks",mintHint:"XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1"},
 ];
 const SOURCE="DexScreener venue-reported" as const,CACHE_MS=60_000;
 let cached:{at:number;value:AfterbellGalaxyData}|null=null;
