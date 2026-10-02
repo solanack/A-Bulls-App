@@ -18,6 +18,9 @@ const SOLANA_SIG_RE=/^[1-9A-HJ-NP-Za-km-z]{64,96}$/;
 const MAX_WINDOW_SECONDS=60*60*24*365*15;
 const REPLAY_PRE_ROLL_SECONDS=7*24*60*60;
 const TARGET_REPLAY_CANDLES=240;
+const REPLAY_EVENT_PAGE_SIZE=750;
+const MAX_REPLAY_EVENTS=50000;
+const MAX_REPLAY_ROUTE_ROWS=100000;
 const REPLAY_BUCKETS=Object.freeze([60,300,900,3600,14400,43200,86400]);
 const s=v=>String(v==null?'':v).trim();
 const n=v=>Number.isFinite(Number(v))?Number(v):0;
@@ -29,6 +32,17 @@ const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:
 function enabled(env={}){return String(env.PLAYABLE_DATA_ENABLED||'').trim().toLowerCase()==='true';}
 async function all(stmt){try{const result=await stmt.all();return result?.results||[];}catch{return[];}}
 async function first(stmt){try{return await stmt.first();}catch{return null;}}
+async function pagedAll(makeStatement,maxRows=MAX_REPLAY_EVENTS){
+  const rows=[];let offset=0,truncated=false;
+  while(rows.length<maxRows){
+    const take=Math.min(REPLAY_EVENT_PAGE_SIZE,maxRows-rows.length),batch=await all(makeStatement(take,offset));
+    rows.push(...batch);
+    if(batch.length<take)return Object.freeze({rows,truncated:false});
+    offset+=batch.length;
+  }
+  truncated=true;
+  return Object.freeze({rows,truncated});
+}
 function parseList(value){return s(value).split(',').map(item=>item.trim()).filter(Boolean);}
 function verificationState(row={}){const commitments=new Set(parseList(row.commitments).map(value=>value.toLowerCase()));if(n(row.verified)>0)return'verified';if(commitments.has('finalized'))return'finalized';if(commitments.has('confirmed'))return'confirmed';return parseList(row.provenance_sources).length||s(row.source)?'observed':'unknown';}
 
@@ -83,13 +97,12 @@ function appendUniqueReplayEvent(events,event){
 }
 
 async function loadFomoReplayEvents(db,chain,wallet,mint,from,to){
-  const evm=chain!=='solana',rows=evm
-    ?await all(db.prepare(`SELECT x.handle,x.trade_id,x.token_address,x.chain,x.status,x.amount,x.avg_entry_price,x.avg_exit_price,x.realized_pnl_usd,x.unrealized_pnl_usd,x.created_at,x.closed_at,x.source,x.tx_id,x.entry_tx_id,x.exit_tx_id FROM fomo_trader_trades x JOIN fomo_traders t ON t.handle=x.handle WHERE LOWER(t.evm_wallet)=? AND LOWER(x.token_address)=? AND ((COALESCE(x.created_at,0) BETWEEN ? AND ?) OR (COALESCE(x.closed_at,0) BETWEEN ? AND ?)) ORDER BY MAX(COALESCE(x.closed_at,0),COALESCE(x.created_at,0)) ASC LIMIT 100`).bind(wallet.toLowerCase(),mint.toLowerCase(),from,to,from,to))
-    :await all(db.prepare(`SELECT x.handle,x.trade_id,x.token_address,x.chain,x.status,x.amount,x.avg_entry_price,x.avg_exit_price,x.realized_pnl_usd,x.unrealized_pnl_usd,x.created_at,x.closed_at,x.source,x.tx_id,x.entry_tx_id,x.exit_tx_id FROM fomo_trader_trades x JOIN fomo_traders t ON t.handle=x.handle WHERE t.solana_wallet=? AND x.token_address=? AND ((COALESCE(x.created_at,0) BETWEEN ? AND ?) OR (COALESCE(x.closed_at,0) BETWEEN ? AND ?)) ORDER BY MAX(COALESCE(x.closed_at,0),COALESCE(x.created_at,0)) ASC LIMIT 100`).bind(wallet,mint,from,to,from,to));
-  const out=[];for(const row of rows){const rawChain=s(row.chain);if(evm){if(!rawChain||normalizeChainKey(rawChain)!==chain)continue;}else if(rawChain&&normalizeChainKey(rawChain)!=='solana')continue;for(const event of providerReportedFomoTradeEvents(row,chain,wallet,mint))if(event.timestamp>=from*1000&&event.timestamp<=to*1000)appendUniqueReplayEvent(out,event);}
+  const evm=chain!=='solana',loaded=await pagedAll((take,offset)=>evm
+    ?db.prepare(`SELECT x.handle,x.trade_id,x.token_address,x.chain,x.status,x.amount,x.avg_entry_price,x.avg_exit_price,x.realized_pnl_usd,x.unrealized_pnl_usd,x.created_at,x.closed_at,x.source,x.tx_id,x.entry_tx_id,x.exit_tx_id FROM fomo_trader_trades x JOIN fomo_traders t ON t.handle=x.handle WHERE LOWER(t.evm_wallet)=? AND LOWER(x.token_address)=? AND ((COALESCE(x.created_at,0) BETWEEN ? AND ?) OR (COALESCE(x.closed_at,0) BETWEEN ? AND ?)) ORDER BY MAX(COALESCE(x.closed_at,0),COALESCE(x.created_at,0)) ASC LIMIT ? OFFSET ?`).bind(wallet.toLowerCase(),mint.toLowerCase(),from,to,from,to,take,offset)
+    :db.prepare(`SELECT x.handle,x.trade_id,x.token_address,x.chain,x.status,x.amount,x.avg_entry_price,x.avg_exit_price,x.realized_pnl_usd,x.unrealized_pnl_usd,x.created_at,x.closed_at,x.source,x.tx_id,x.entry_tx_id,x.exit_tx_id FROM fomo_trader_trades x JOIN fomo_traders t ON t.handle=x.handle WHERE t.solana_wallet=? AND x.token_address=? AND ((COALESCE(x.created_at,0) BETWEEN ? AND ?) OR (COALESCE(x.closed_at,0) BETWEEN ? AND ?)) ORDER BY MAX(COALESCE(x.closed_at,0),COALESCE(x.created_at,0)) ASC LIMIT ? OFFSET ?`).bind(wallet,mint,from,to,from,to,take,offset),5000);
+  const out=[];for(const row of loaded.rows){const rawChain=s(row.chain);if(evm){if(!rawChain||normalizeChainKey(rawChain)!==chain)continue;}else if(rawChain&&normalizeChainKey(rawChain)!=='solana')continue;for(const event of providerReportedFomoTradeEvents(row,chain,wallet,mint))if(event.timestamp>=from*1000&&event.timestamp<=to*1000)appendUniqueReplayEvent(out,event);}
   return out;
 }
-
 async function retainedReplayQuote(db,chain,mint,from,to){
   if(chain==='solana'){
     const legacy=await first(db.prepare(`SELECT quote_mint quote,COUNT(*) count FROM intelligence_price_candles WHERE mint=? AND bucket_start BETWEEN ? AND ? GROUP BY quote_mint ORDER BY count DESC LIMIT 1`).bind(mint,from,to)),legacyQuote=canonicalChainAddress('solana',legacy?.quote);if(legacyQuote)return legacyQuote;
@@ -181,6 +194,19 @@ async function earliestIndexedReplayTime(db,chain,wallets,mint){
   return earliest;
 }
 
+async function earliestFomoReplayTime(db,chain,wallets,mint,to){
+  let earliest=null;
+  for(const wallet of wallets){
+    if(chain==='solana'){
+      const row=await first(db.prepare(`SELECT MIN(x.created_at) first_time FROM fomo_trader_trades x JOIN fomo_traders t ON t.handle=x.handle WHERE t.solana_wallet=? AND x.token_address=? AND x.created_at IS NOT NULL AND x.created_at>0 AND x.created_at<=?`).bind(wallet,mint,to));
+      const value=Math.trunc(n(row?.first_time));if(value>0&&(earliest==null||value<earliest))earliest=value;
+      continue;
+    }
+    const rows=await all(db.prepare(`SELECT x.chain,x.created_at FROM fomo_trader_trades x JOIN fomo_traders t ON t.handle=x.handle WHERE LOWER(t.evm_wallet)=? AND LOWER(x.token_address)=? AND x.created_at IS NOT NULL AND x.created_at>0 AND x.created_at<=? ORDER BY x.created_at ASC LIMIT 500`).bind(wallet.toLowerCase(),mint.toLowerCase(),to));
+    const row=rows.find(item=>normalizeChainKey(item.chain)===chain),value=Math.trunc(n(row?.created_at));if(value>0&&(earliest==null||value<earliest))earliest=value;
+  }
+  return earliest;
+}
 async function resolveReplayAnchor(db,chain,wallets,mint,to){
   for(const wallet of wallets){
     if(chain==='solana'){
@@ -193,14 +219,17 @@ async function resolveReplayAnchor(db,chain,wallets,mint,to){
 }
 
 async function resolveWindow(db,chain,wallets,mint,input){
-  const now=Math.floor(Date.now()/1000),rawTo=input.to??input.endTime,rawFrom=input.from??input.startTime,requestedTo=Math.max(0,Math.trunc(n(rawTo??now))),explicitFrom=rawFrom!=null&&rawFrom!=='';
-  if(explicitFrom){const requestedFrom=Math.max(0,Math.trunc(n(rawFrom))),low=Math.min(requestedFrom,requestedTo),high=Math.max(requestedFrom,requestedTo);if(high-low>MAX_WINDOW_SECONDS)throw new RangeError('replay_window_too_large');return Object.freeze({from:low,to:high,bucketSeconds:adaptiveReplayBucketSeconds(low,high,input.bucketSeconds),startResolved:true,startSource:'explicit',startSourceKind:'user-selected',startRef:null,entryTime:null,preRollSeconds:0});}
+  const now=Math.floor(Date.now()/1000),rawTo=input.to??input.endTime,rawFrom=input.from??input.startTime,requestedTo=Math.max(0,Math.trunc(n(rawTo??now))),explicitFrom=rawFrom!=null&&rawFrom!=='',historyMode=s(input.historyMode).toLowerCase()==='window'?'window':'full';
+  if(explicitFrom&&historyMode==='window'){const requestedFrom=Math.max(0,Math.trunc(n(rawFrom))),low=Math.min(requestedFrom,requestedTo),high=Math.max(requestedFrom,requestedTo);if(high-low>MAX_WINDOW_SECONDS)throw new RangeError('replay_window_too_large');return Object.freeze({historyMode,from:low,to:high,bucketSeconds:adaptiveReplayBucketSeconds(low,high,input.bucketSeconds),startResolved:true,startSource:'explicit',startSourceKind:'user-selected',startRef:null,entryTime:null,preRollSeconds:0});}
+  if(historyMode==='full'){
+    const indexed=await earliestIndexedReplayTime(db,chain,wallets,mint),provider=await earliestFomoReplayTime(db,chain,wallets,mint,requestedTo),historyStart=[indexed,provider].filter(value=>value!=null&&value>0).sort((a,b)=>a-b)[0]??null;
+    if(historyStart!=null){const low=Math.min(historyStart,requestedTo),high=Math.max(historyStart,requestedTo);if(high-low>MAX_WINDOW_SECONDS)throw new RangeError('replay_window_too_large');const observed=indexed!=null&&indexed===historyStart;return Object.freeze({historyMode,from:low,to:high,bucketSeconds:adaptiveReplayBucketSeconds(low,high,input.bucketSeconds),startResolved:true,startSource:observed?'earliest-indexed-evidence':'earliest-provider-reported-entry',startSourceKind:observed?'observed':'provider-reported',startRef:null,entryTime:historyStart*1000,preRollSeconds:0});}
+  }
   const anchor=await resolveReplayAnchor(db,chain,wallets,mint,requestedTo);
-  if(!anchor){return Object.freeze({from:requestedTo,to:requestedTo,bucketSeconds:60,startResolved:false,startSource:'unavailable',startSourceKind:'unavailable',startRef:null,entryTime:null,preRollSeconds:0});}
+  if(!anchor){return Object.freeze({historyMode,from:requestedTo,to:requestedTo,bucketSeconds:60,startResolved:false,startSource:'unavailable',startSourceKind:'unavailable',startRef:null,entryTime:null,preRollSeconds:0});}
   const entry=Math.max(0,Math.trunc(n(anchor.from))),resolvedTo=rawTo!=null&&rawTo!==''?requestedTo:Math.max(entry,Math.trunc(n(anchor.to)||requestedTo)),contextFrom=Math.max(0,entry-REPLAY_PRE_ROLL_SECONDS),low=Math.min(contextFrom,resolvedTo),high=Math.max(contextFrom,resolvedTo);if(high-low>MAX_WINDOW_SECONDS)throw new RangeError('replay_window_too_large');
-  return Object.freeze({from:low,to:high,bucketSeconds:adaptiveReplayBucketSeconds(low,high,input.bucketSeconds),startResolved:true,startSource:anchor.source,startSourceKind:anchor.sourceKind,startRef:anchor.ref,entryTime:entry*1000,preRollSeconds:Math.max(0,entry-low)});
+  return Object.freeze({historyMode,from:low,to:high,bucketSeconds:adaptiveReplayBucketSeconds(low,high,input.bucketSeconds),startResolved:true,startSource:anchor.source,startSourceKind:anchor.sourceKind,startRef:anchor.ref,entryTime:entry*1000,preRollSeconds:Math.max(0,entry-low)});
 }
-
 async function buildSolanaReplayBundle(env,db,subject,window,input){
   const {wallets,mint,quoteMint}=subject,{from,to,bucketSeconds}=window,limit=Math.max(1,Math.min(1000,Math.trunc(n(input.limit)||500))),events=[],coverages=[],sourceSet=new Set();
   for(const wallet of wallets){
