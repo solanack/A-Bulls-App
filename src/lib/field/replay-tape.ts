@@ -26,8 +26,10 @@ export type TapeEvent = {
   signature: string | null;
   amount: number | null;
   priceUsd: number | null;
-  /** Observed/provider-reported USD notional already present on the print, never inferred from candles. */
+  /** Observed/provider-reported USD notional already present on an individual fill, never inferred from candles. */
   notionalUsd?: number | null;
+  /** Provider-derived position value (amount × average position price). Context only; never counted as a fill. */
+  reportedPositionUsd?: number | null;
   /** Market cap supplied on this exact print, when present. Never inferred from price. */
   marketCapUsd?: number | null;
   verification: string;
@@ -162,6 +164,7 @@ export function tapeEvents(value: unknown, subjectQuoteMint: unknown = null): Ta
       const computedNotional = amount != null && priceUsd != null ? amount * priceUsd : null;
       // Quote is the exact stablecoin paid (buy) or received (sell). Do not use candle prices.
       const notionalUsd = positionSummary ? null : readyNotional ?? quoteNotional ?? computedNotional;
+      const reportedPositionUsd = positionSummary ? positive(row.positionNotionalUsd, row.reportedPositionNotionalUsd) : null;
       const sources = Array.isArray(row.sources) ? row.sources.map(String).filter(Boolean) : [];
       return [{
         id: str(row.id) ?? str(row.signature) ?? `${side}:${timestamp}`,
@@ -172,6 +175,7 @@ export function tapeEvents(value: unknown, subjectQuoteMint: unknown = null): Ta
         amount,
         priceUsd,
         notionalUsd,
+        reportedPositionUsd,
         marketCapUsd: positive(row.marketCapUsd,row.marketCap,row.market_cap,row.mcap,row.mcapUsd,row.market_cap_usd),
         verification: positionSummary ? "provider-reported" : str(row.verification) ?? str(row.sourceKind) ?? "unverified",
         sources,
@@ -277,6 +281,12 @@ export function observedUsdNotional(print: Pick<TapeEvent, "amount" | "priceUsd"
   return typeof amount === "number" && Number.isFinite(amount) && amount > 0 && typeof price === "number" && Number.isFinite(price) && price > 0
     ? amount * price
     : null;
+}
+
+export function reportedPositionUsd(print: Pick<TapeEvent, "eventScope" | "reportedPositionUsd">): number | null {
+  if (print.eventScope !== "position-summary") return null;
+  const value = print.reportedPositionUsd;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 /** Compact observed notional for bolt labels. Invalid/unknown values deliberately render nothing. */
