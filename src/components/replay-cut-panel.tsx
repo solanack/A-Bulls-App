@@ -26,7 +26,7 @@ export function ReplayCutPanel({ subject, title, trader, room, bolts, cohort, ca
   const coverage = replayCoverage(bolts);
   const greyLine = `${subject.displayName ?? "This wallet"} has ${bolts.length} retained events for ${subject.symbol ?? "this token"} in this window. ${coverage.summaries ? `${coverage.summaries} are provider-reported position summaries, not individual fills. ` : ""}${coverage.receipts} have transaction references. Open Replay to inspect the sources.`;
   const sourceLine = `${candleCount ? `Candles: ${candleSourceLabel(source)}` : "Dark tape: price candles unavailable; event timing only"} · ${bolts.length} events · ${coverage.provider} provider-reported · ${coverage.summaries} summaries · ${subject.chainKey}`;
-  const input = useMemo<ReplayCutInput>(() => ({ format, tapeSeconds: pace, soundtrack, title, roomLabel: room === "afterbell" ? "AFTERBELL" : room === "fomo" ? "FOMO" : "REPLAY", trader, wallet: subject.wallet, heroGlyph: subject.wallet, candles, bolts, cohort, marketCapPoints, evidenceLine, start, end, scaleMode, replayUrl, sourceLine, greyLine: grey && soundtrack !== "silent" ? greyLine : null }), [format, pace, soundtrack, title, room, trader, subject.wallet, candles, bolts, cohort, marketCapPoints, evidenceLine, start, end, scaleMode, replayUrl, sourceLine, grey, greyLine]);
+  const input = useMemo<ReplayCutInput>(() => ({ format, tapeSeconds: pace, soundtrack, title, roomLabel: room === "afterbell" ? "AFTERBELL" : room === "fomo" ? "FOMO" : "REPLAY", trader, wallet: subject.wallet, heroGlyph: subject.wallet, candles, bolts, cohort, marketCapPoints, evidenceLine, start, end, scaleMode, replayUrl, sourceLine, greyLine: grey ? greyLine : null }), [format, pace, soundtrack, title, room, trader, subject.wallet, candles, bolts, cohort, marketCapPoints, evidenceLine, start, end, scaleMode, replayUrl, sourceLine, grey, greyLine]);
   const slug = `abulls-replay-${(subject.symbol ?? subject.mint.slice(0, 6)).replace(/[^a-z0-9]+/gi, "").toLowerCase()}-${format}`;
 
   useEffect(() => { const el = dialog.current; el?.showModal(); return () => el?.close(); }, []);
@@ -64,8 +64,8 @@ export function ReplayCutPanel({ subject, title, trader, room, bolts, cohort, ca
           <label className="rs-cut__setting">Format<select value={format} onChange={e => setFormat(e.target.value as CutFormat)}><option value="portrait">9:16 Social · 1080 × 1920</option><option value="landscape">Landscape · 1920 × 1080</option></select></label>
           <label className="rs-cut__setting">Pacing<select value={pace} onChange={e => setPace(Number(e.target.value) as CutPace)}>{CUT_PACES.map((value, i) => <option key={value} value={value}>{["Quick", "Measured", "Deep dive"][i]} · {cutDuration(value).toFixed(1)} seconds</option>)}</select></label>
           <label className="rs-cut__setting">Sound<select value={soundtrack} onChange={e => setSoundtrack(e.target.value as CutSoundtrack)}><option value="minimal">Minimal · fill ticks + room tone</option><option value="pulse">Pulse · original synth bed + fill ticks</option><option value="silent">Silent · no audio or narration</option></select></label>
-          <label className="rs-toggle"><input type="checkbox" checked={grey && soundtrack !== "silent"} disabled={soundtrack === "silent"} onChange={e => setGrey(e.target.checked)}/> Auto-caption Grey’s observed facts</label>
-          {grey && soundtrack !== "silent" ? <p className="rs-cut__grey">“{greyLine}”</p> : null}
+          <label className="rs-toggle"><input type="checkbox" checked={grey} onChange={e => setGrey(e.target.checked)}/> Auto-caption Grey’s observed facts</label>
+          {grey ? <p className="rs-cut__grey">“{greyLine}”{soundtrack==="silent"?" · captions only":""}</p> : null}
           <p className="rs-cut__fine">{sourceLine}. Missing fill USD stays unavailable.</p>
         </fieldset>
         <div className="rs-cut__preview">
@@ -79,7 +79,7 @@ export function ReplayCutPanel({ subject, title, trader, room, bolts, cohort, ca
       {result ? <div className="rs-cut__done">
         <video src={result.videoUrl} controls playsInline className={format === "portrait" ? "is-portrait" : ""}/>
         <div className="rs-actions"><a href={result.videoUrl} download={`${slug}.${result.extension}`}>DOWNLOAD VIDEO</a><a href={result.manifestUrl} download={`${slug}.manifest.json`}>MANIFEST</a></div>
-        {input.greyLine && !result.greyIncluded ? <p className="rs-cut__error">Grey is unavailable. The Cut includes your selected soundtrack without narration.</p> : null}
+        {soundtrack!=="silent" && input.greyLine && !result.greyIncluded ? <p className="rs-cut__error">Grey narration is unavailable. The Cut still includes the observed-fact captions and selected soundtrack.</p> : null}
       </div> : <div className="rs-actions"><button type="button" disabled={busy} onClick={() => void render()}>{busy ? "RENDERING…" : `RENDER ${cutDuration(pace).toFixed(1)}s CUT`}</button></div>}
       <p className="rs-cut__fine">The manifest retains source labels, position-summary distinctions, signatures, pacing, and the verification link.</p>
     </div>
