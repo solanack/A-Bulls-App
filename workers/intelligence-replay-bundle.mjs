@@ -14,7 +14,8 @@ const SOLANA_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const USD_STABLE_MINTS=new Set(['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYDqfCMx1j8dYKVKJQmuayNX']);
 const WSOL_MINT='So11111111111111111111111111111111111111112';
 const PUBLIC_SOLANA_RPC='https://api.mainnet-beta.solana.com';
-const MAX_RECEIPT_EXECUTION_HYDRATION=24;
+const MAX_RECEIPT_EXECUTION_HYDRATION=16;
+const MAX_INTERACTIVE_RECEIPT_REPAIR_EVENTS=32;
 const MAX_INDEXED_SIBLING_EXECUTION_LOOKUPS=600;
 const EVM_RE=/^0x[a-fA-F0-9]{40}$/;
 const EVM_TX_RE=/^0x[a-fA-F0-9]{64}$/;
@@ -123,10 +124,12 @@ async function persistReceiptExecution(db,signature,wallet,mint,execution){
   await db.prepare(`INSERT INTO intelligence_trade_routes(signature,wallet,hop_index,program_id,venue,pool,input_mint,output_mint,input_amount,output_amount,fee_amount,fee_mint,slot,block_time,source,confidence) VALUES(?,?,0,NULL,NULL,NULL,?,?,?,?,NULL,NULL,?,?,?,?) ON CONFLICT(signature,wallet,hop_index) DO UPDATE SET input_mint=excluded.input_mint,output_mint=excluded.output_mint,input_amount=excluded.input_amount,output_amount=excluded.output_amount,slot=COALESCE(excluded.slot,intelligence_trade_routes.slot),block_time=COALESCE(excluded.block_time,intelligence_trade_routes.block_time),source=excluded.source,confidence=MAX(intelligence_trade_routes.confidence,excluded.confidence)`).bind(signature,wallet,inputMint,outputMint,inputAmount,outputAmount,execution.slot,execution.blockTime,execution.source,execution.confidence).run().catch(()=>null);
 }
 
-async function hydrateReceiptExecutions(db,wallet,rows,mint,quoteMint,fetchImpl=fetch){
+async function hydrateReceiptExecutions(db,wallet,rows,mint,quoteMint,fetchImpl=fetch,{allowExternal=true}={}){
   const out=await siblingExecutions(db,wallet,rows,mint,quoteMint);
-  for(const [signature,execution] of out)await persistReceiptExecution(db,signature,wallet,mint,execution);
+  if(!allowExternal)return out;
   const missing=[...new Set(rows.map(row=>s(row.signature)).filter(signature=>signature&&!out.has(signature)))].slice(0,MAX_RECEIPT_EXECUTION_HYDRATION);
+  if(!missing.length)return out;
+  const recovered=[];
   for(let offset=0;offset<missing.length;offset+=4){
     const batch=missing.slice(offset,offset+4);
     const results=await Promise.all(batch.map(async signature=>{
@@ -135,8 +138,11 @@ async function hydrateReceiptExecutions(db,wallet,rows,mint,quoteMint,fetchImpl=
         if(!response.ok)return null;const body=await response.json(),execution=executionFromRpcReceipt(body?.result,wallet,mint,quoteMint);return execution?{signature,execution}:null;
       }catch{return null}
     }));
-    for(const item of results){if(!item)continue;out.set(item.signature,item.execution);await persistReceiptExecution(db,item.signature,wallet,mint,item.execution);}
+    for(const item of results){if(!item)continue;out.set(item.signature,item.execution);recovered.push(item);}
   }
+  // Cache only newly recovered external receipts, after the read result is complete.
+  // Never serialize hundreds of D1 writes on Replay's critical response path.
+  if(recovered.length)Promise.all(recovered.map(item=>persistReceiptExecution(db,item.signature,wallet,mint,item.execution))).catch(()=>null);
   return out;
 }
 
@@ -313,7 +319,9 @@ async function buildSolanaReplayBundle(env,db,subject,window,input){
     const routeLoaded=rows.length?await pagedAll((take,offset)=>db.prepare(`SELECT signature,wallet,hop_index,venue,pool,input_mint,output_mint,input_amount,output_amount,block_time,source,confidence FROM intelligence_trade_routes WHERE wallet=? AND block_time BETWEEN ? AND ? AND (input_mint=? OR output_mint=?) ORDER BY block_time ASC,signature ASC,hop_index ASC LIMIT ? OFFSET ?`).bind(wallet,from,to,mint,mint,take,offset),MAX_REPLAY_ROUTE_ROWS):{rows:[],truncated:false};
     routeTruncated=routeTruncated||routeLoaded.truncated;const bySignature=new Map();
     for(const route of routeLoaded.rows){const key=s(route.signature);if(!bySignature.has(key))bySignature.set(key,[]);bySignature.get(key).push(route);}
-    const unresolved=rows.filter(row=>s(row.event_class)==='swap-like'&&n(row.token_delta)!==0&&s(row.signature)&&!directExecution(bySignature.get(s(row.signature))||[],mint,quoteMint)),hydrated=unresolved.length?await hydrateReceiptExecutions(db,wallet,unresolved,mint,quoteMint,env.__FETCH_IMPL||fetch):new Map();
+    const unresolved=rows.filter(row=>s(row.event_class)==='swap-like'&&n(row.token_delta)!==0&&s(row.signature)&&!directExecution(bySignature.get(s(row.signature))||[],mint,quoteMint));
+    const allowExternalReceiptRepair=rows.length<=MAX_INTERACTIVE_RECEIPT_REPAIR_EVENTS&&unresolved.length<=MAX_INTERACTIVE_RECEIPT_REPAIR_EVENTS;
+    const hydrated=unresolved.length?await hydrateReceiptExecutions(db,wallet,unresolved,mint,quoteMint,env.__FETCH_IMPL||fetch,{allowExternal:allowExternalReceiptRepair}):new Map();
     for(const row of rows){const execution=directExecution(bySignature.get(s(row.signature))||[],mint,quoteMint)||hydrated.get(s(row.signature))||null,event=normalizedReplayEvent(row,execution);event.sources.forEach(source=>sourceSet.add(source));appendUniqueReplayEvent(events,event);}
     for(const event of await loadFomoReplayEvents(db,'solana',wallet,mint,from,to)){event.sources.forEach(source=>sourceSet.add(source));appendUniqueReplayEvent(events,event);}
     coverages.push(await coverageForWallet(env,wallet));
@@ -366,4 +374,4 @@ export async function handleReplayBundleRequest(request,env={}){
   }catch(error){const code=String(error?.message||error),status=code==='intelligence_db_unavailable'?503:400;return json({ok:false,error:code},status);}
 }
 
-export const __replayBundleContract=Object.freeze({chainQualified:true,solanaHistorySchedulerOnlyForSolana:true,fullHistoryDefault:true,explicitShareWindows:true,pagedReplayEvents:true,maxReplayEvents:MAX_REPLAY_EVENTS,receiptExecutionHydration:true,maxReceiptExecutionHydration:MAX_RECEIPT_EXECUTION_HYDRATION,adaptiveHistoricalWindow:true,sevenDayPreEntryContext:true,sevenDayPreEntryContextForFallback:true,targetReplayCandles:TARGET_REPLAY_CANDLES,noArbitraryLookback:true,maxWindowYears:15,noSyntheticData:true,providerReportedLifecycleFallback:true,observedExecutionContext:true,exactPoolPreferred:true,robinhoodReferenceSeries:true});
+export const __replayBundleContract=Object.freeze({chainQualified:true,solanaHistorySchedulerOnlyForSolana:true,fullHistoryDefault:true,explicitShareWindows:true,pagedReplayEvents:true,maxReplayEvents:MAX_REPLAY_EVENTS,receiptExecutionHydration:true,maxReceiptExecutionHydration:MAX_RECEIPT_EXECUTION_HYDRATION,maxInteractiveReceiptRepairEvents:MAX_INTERACTIVE_RECEIPT_REPAIR_EVENTS,adaptiveHistoricalWindow:true,sevenDayPreEntryContext:true,sevenDayPreEntryContextForFallback:true,targetReplayCandles:TARGET_REPLAY_CANDLES,noArbitraryLookback:true,maxWindowYears:15,noSyntheticData:true,providerReportedLifecycleFallback:true,observedExecutionContext:true,exactPoolPreferred:true,robinhoodReferenceSeries:true});
