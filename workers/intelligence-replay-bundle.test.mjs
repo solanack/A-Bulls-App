@@ -108,6 +108,7 @@ test('recovers exact USDC fill execution from one Solana receipt',()=>{
   assert.equal(__replayBundleContract.receiptExecutionHydration,true);
   assert.equal(__replayBundleContract.maxReceiptExecutionHydration,16);
   assert.equal(__replayBundleContract.maxInteractiveReceiptRepairEvents,32);
+  assert.equal(__replayBundleContract.publicReceiptRpcCount,3);
 });
 
 test('aggregates retained finer candles into the adaptive Replay bucket without inventing OHLC',()=>{
