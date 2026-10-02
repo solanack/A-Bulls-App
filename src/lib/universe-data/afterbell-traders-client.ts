@@ -14,9 +14,9 @@ export type AfterbellTraderRank = {
   realizedPnlUsd:number|null; realizedPnlSol:number|null; lastObservedAt:number;
   sourceKind:"observed"|"provider-reported"; sources:readonly string[];
 };
-export type AfterbellTraderWindow = {from:number;to:number;scheduledEnd:number;live:boolean;timezone:string;label:string;calendarCoverage:string;};
+export type AfterbellTraderWindow = {from:number;to:number;scheduledEnd:number;live:boolean;timezone:string;label:string;calendarCoverage:string;retainedFallback?:boolean;};
 export type AfterbellTraderResponse = {
-  ok:boolean; coverage:"fresh"|"empty"|"degraded"; mint:string; mints?:readonly string[];
+  ok:boolean; coverage:"fresh"|"stale"|"empty"|"degraded"; mint:string; mints?:readonly string[];
   window?:AfterbellTraderWindow; items:readonly AfterbellTraderRank[]; method?:string; disclosure:string; error?:string;
 };
 const fallback=(mints:readonly string[]):AfterbellTraderResponse=>({ok:false,coverage:"degraded",mint:mints.length===1?mints[0]??"":"",mints,items:[],disclosure:"Afterbell trader evidence is unavailable. No trader ranking, trades, or PnL were invented.",error:"afterbell_traders_unavailable"});
