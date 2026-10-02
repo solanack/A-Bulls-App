@@ -68,7 +68,8 @@ test("Replay renders a deterministic time-axis visual when trade timing exists b
 test("closed Fomo outcomes preserve the selected blockchain into Replay",()=>{
   assert.match(appShell,/chainKey:trade\.chain/);
   assert.match(closedTrades,/trade\.chain\.toUpperCase\(\)/);
-  assert.match(closedTrades,/CANDLES READY/);
+  assert.match(closedTrades,/REPLAY READY/);
+  assert.doesNotMatch(closedTrades,/CANDLES READY/);
   assert.doesNotMatch(closedTrades,/maximumFractionDigits:0\}\);/);
 });
 
