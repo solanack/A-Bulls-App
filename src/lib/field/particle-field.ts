@@ -83,7 +83,7 @@ void main() {
   float pulse = 1.0;
   if (abs(aCosmic - 1.0) < 0.45) {
     float recent = smoothstep(0.18, 1.0, aObserved);
-    float roomPulse = aRoom < 1.5 ? (0.045 + recent * 0.14) : 0.045;
+    float roomPulse = abs(aRoom - 1.0) < 0.45 ? (0.045 + recent * 0.14) : 0.045;
     pulse += sin(uTime * (1.9 + recent * 2.4) + aPhase * 6.28318) * roomPulse * uMotion;
   }
   if (abs(aCosmic - 7.0) < 0.45) pulse += sin(uTime * 2.7 + aPhase * 6.28318) * 0.09 * uMotion;
@@ -158,7 +158,7 @@ void main() {
     float rays = pow(abs(cos(a * 4.0)), 12.0) * (1.0 - smoothstep(0.18, 0.92, d));
     alpha = max(core, max(halo * 0.2, rays * 0.34));
     float recent = smoothstep(0.18, 1.0, vObserved);
-    float fomoFlicker = vRoom < 1.5 ? (0.90 + (0.10 + recent * 0.22) * sin(uTime * (2.4 + recent * 3.2) + vPhase * 18.0)) : 1.0;
+    float fomoFlicker = abs(vRoom - 1.0) < 0.45 ? (0.90 + (0.10 + recent * 0.22) * sin(uTime * (2.4 + recent * 3.2) + vPhase * 18.0)) : 1.0;
     light = (0.9 + core * 0.65 + rays * 0.5) * fomoFlicker;
     surfaceColor = mix(vColor, vec3(1.0, 0.985, 0.94), core * 0.62);
     float glyph = sigilCell(vLocal * 1.22, vSigil) * (1.0 - smoothstep(0.54, 0.68, d));
