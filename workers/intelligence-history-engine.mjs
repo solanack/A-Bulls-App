@@ -91,6 +91,10 @@ async function upsertCoverage(db,wallet,source,sigs,accepted,complete,{completeT
 async function provenance(db,wallet,source,rows){for(const row of rows){if(!row.sig?.signature)continue;await db.prepare(`INSERT INTO intelligence_event_provenance(signature,wallet,source,source_kind,observed_at,slot,commitment,verified) VALUES(?,?,?,?,unixepoch(),?,'confirmed',?) ON CONFLICT(signature,wallet,source) DO UPDATE SET observed_at=unixepoch(),slot=excluded.slot,verified=MAX(verified,excluded.verified)`).bind(row.sig.signature,wallet,source.name,source.kind,n(row.sig.slot)||null,row.tx?1:0).run()}}
 
 function heliusSource(source={}){return s(source.name)==='helius-standard-rpc'||s(source.url).includes('helius-rpc.com')}
+export function publicHistoryRpcSource(){return{name:'solana-public-rpc',kind:'rpc',url:PUBLIC_RPC};}
+export function historyRepairSource(source={}){
+  return heliusSource(source)?publicHistoryRpcSource():null;
+}
 export function heliusWindowCursor(value=''){const cursor=s(value);return cursor.startsWith(HELIUS_CURSOR_PREFIX)?cursor.slice(HELIUS_CURSOR_PREFIX.length):'';}
 export function buildHeliusWindowConfig({from,to,paginationToken='',limit=100}={}){
   const fromSec=finite(from),toSec=finite(to);if(fromSec==null||toSec==null)return null;
@@ -122,30 +126,43 @@ async function backfillHeliusWindowPass(env,wallet,source,options,db){
 export async function backfillHistoryPass(env,wallet,options={}){
   if(!isValidHistorySolanaPublicKey(wallet))throw new Error('invalid_public_wallet');
   const db=intelligenceDb(env);if(!db)throw new Error('Intelligence database binding is unavailable.');
-  const source=options.source||resolveHistoryRpc(env),from=finite(options.from),to=finite(options.to),timeoutMs=historyRpcTimeoutMs(env,options);
+  let source=options.source||resolveHistoryRpc(env);
+  const from=finite(options.from),to=finite(options.to),timeoutMs=historyRpcTimeoutMs(env,options);
   if(!s(source?.url))throw new Error('history_rpc_unconfigured');
 
   if(heliusSource(source)&&from!=null&&to!=null){
     try{return await backfillHeliusWindowPass(env,wallet,source,{...options,rpcTimeoutMs:timeoutMs},db)}
     catch(error){
       await sourceHealth(db,{...source,name:'helius-getTransactionsForAddress',kind:'archive-rpc'},'error',null,s(error?.message)).catch(()=>null);
-      // Keep the standard RPC adapter as a fail-closed repair path when the
-      // account plan, provider, or archival method is temporarily unavailable.
+      // A configured Helius key may be exhausted, forbidden for archival methods,
+      // or temporarily unavailable. Fall through to Solana's public read-only RPC
+      // instead of retrying the same failing Helius endpoint forever.
+      source=historyRepairSource(source)||source;
     }
   }
 
   const pageSize=Math.max(1,Math.min(MAX_PAGE,Math.round(n(options.pageSize||25)))),cfg={limit:pageSize,commitment:'confirmed'};
   const before=s(options.before);if(before&&!before.startsWith(HELIUS_CURSOR_PREFIX))cfg.before=before;
-  try{
-    if(source.name==='helius-standard-rpc'){
+
+  const runStandard=async activeSource=>{
+    if(activeSource.name==='helius-standard-rpc'){
       const reservation=await reserveProviderCredits(env,1+Math.min(pageSize,MAX_TX),'helius');
       if(reservation.blocked)throw new Error('provider_budget_blocked');
     }
-    const sigResult=await historyRpcRequest(source,'getSignaturesForAddress',[s(wallet),cfg],{fetchImpl:options.fetchImpl,timeoutMs}),sigs=Array.isArray(sigResult.result)?sigResult.result:[];
+    const sigResult=await historyRpcRequest(activeSource,'getSignaturesForAddress',[s(wallet),cfg],{fetchImpl:options.fetchImpl,timeoutMs}),sigs=Array.isArray(sigResult.result)?sigResult.result:[];
     let txLatency=0;
-    const txRows=await mapLimit(sigs.slice(0,MAX_TX),TX_CONCURRENCY,async sig=>{try{const tx=await historyRpcRequest(source,'getTransaction',[sig.signature,{commitment:'confirmed',maxSupportedTransactionVersion:0,encoding:'jsonParsed'}],{fetchImpl:options.fetchImpl,timeoutMs});txLatency+=tx.latencyMs;return{sig,tx:tx.result}}catch(error){return{sig,tx:null,error:s(error?.message)}}});
-    const decoded=txRows.flatMap(x=>decodeRpcWalletTx(x.sig,x.tx,s(wallet),source.name)),ingested=await ingestDecodedObservations(env,s(wallet),decoded,{windowKey:'progressive-history'}),nextCursor=s(sigs[sigs.length-1]?.signature),complete=sigs.length<pageSize||!nextCursor;
-    await provenance(db,s(wallet),source,txRows);await upsertCoverage(db,s(wallet),source,sigs,ingested.accepted,complete);await sourceHealth(db,source,'ok',Math.round((sigResult.latencyMs+txLatency)/Math.max(1,1+txRows.length)));
-    return{ok:true,wallet:s(wallet),source:source.name,signatures:sigs.length,transactionsFetched:txRows.filter(x=>x.tx).length,acceptedEvents:ingested.accepted,complete,nextCursor:complete?null:nextCursor,state:complete?'complete-history':'partial-history'};
-  }catch(error){await sourceHealth(db,source,'error',null,s(error?.message)).catch(()=>null);throw error}
+    const txRows=await mapLimit(sigs.slice(0,MAX_TX),TX_CONCURRENCY,async sig=>{try{const tx=await historyRpcRequest(activeSource,'getTransaction',[sig.signature,{commitment:'confirmed',maxSupportedTransactionVersion:0,encoding:'jsonParsed'}],{fetchImpl:options.fetchImpl,timeoutMs});txLatency+=tx.latencyMs;return{sig,tx:tx.result}}catch(error){return{sig,tx:null,error:s(error?.message)}}});
+    const decoded=txRows.flatMap(x=>decodeRpcWalletTx(x.sig,x.tx,s(wallet),activeSource.name)),ingested=await ingestDecodedObservations(env,s(wallet),decoded,{windowKey:'progressive-history'}),nextCursor=s(sigs[sigs.length-1]?.signature),complete=sigs.length<pageSize||!nextCursor;
+    await provenance(db,s(wallet),activeSource,txRows);await upsertCoverage(db,s(wallet),activeSource,sigs,ingested.accepted,complete);await sourceHealth(db,activeSource,'ok',Math.round((sigResult.latencyMs+txLatency)/Math.max(1,1+txRows.length)));
+    return{ok:true,wallet:s(wallet),source:activeSource.name,signatures:sigs.length,transactionsFetched:txRows.filter(x=>x.tx).length,acceptedEvents:ingested.accepted,complete,nextCursor:complete?null:nextCursor,state:complete?'complete-history':'partial-history'};
+  };
+
+  try{return await runStandard(source)}
+  catch(error){
+    await sourceHealth(db,source,'error',null,s(error?.message)).catch(()=>null);
+    const repair=historyRepairSource(source);
+    if(!repair)throw error;
+    try{return await runStandard(repair)}
+    catch(repairError){await sourceHealth(db,repair,'error',null,s(repairError?.message)).catch(()=>null);throw repairError}
+  }
 }
