@@ -75,6 +75,7 @@ void main() {
   if (abs(aCosmic - 1.0) < 0.45) pulse += sin(uTime * 1.8 + aPhase * 6.28318) * 0.055 * uMotion;
   if (abs(aCosmic - 7.0) < 0.45) pulse += sin(uTime * 2.7 + aPhase * 6.28318) * 0.09 * uMotion;
   if (abs(aCosmic - 9.0) < 0.45) pulse += sin(uTime * 0.9 + aPhase * 6.28318) * 0.045 * uMotion;
+  if (aCosmic > 9.5) pulse += sin(uTime * (2.4 + aPhase * 2.2) + aPhase * 31.0) * 0.12 * uMotion;
   float size = pSize * pulse * mix(1.0, 0.28, ease) * (1.0 + focusVisual * 1.6) * max(vReplayVisible, 0.04);
   vec2 displayLocal = position.xy;
   if (abs(aCosmic - 5.0) < 0.45) displayLocal.x *= 2.25;
@@ -188,11 +189,16 @@ void main() {
     alpha = max(outline * breaks * 0.34, haze);
     light = 0.58 + outline * 0.25;
   } else {
-    // DUST — decorative field fabric only. Tiny and intentionally subdued.
+    // DUST — decorative field fabric only. Eight-color spectral dust with a
+    // shader-only twinkle so mobile keeps the existing instanced draw path.
     if (d > 0.72) discard;
-    float core = 1.0 - smoothstep(0.05, 0.48, d);
-    alpha = core * 0.32;
-    light = 0.62;
+    float core = 1.0 - smoothstep(0.04, 0.46, d);
+    float halo = 1.0 - smoothstep(0.18, 0.72, d);
+    float wave = 0.5 + 0.5 * sin(uTime * (2.8 + vPhase * 3.6) * uMotion + vPhase * 47.123);
+    float sparkle = pow(max(wave, 0.0), 5.0);
+    alpha = max(core * (0.30 + sparkle * 0.68), halo * sparkle * 0.16);
+    light = 0.72 + sparkle * 1.85;
+    surfaceColor = mix(vColor, vec3(1.0), sparkle * 0.30);
   }
 
   if (alpha < 0.012) discard;
@@ -415,6 +421,16 @@ const STAR_SPECTRA: readonly [number,number,number][] = [
   [1.0,0.90,0.68],
   [1.0,0.68,0.40],
 ];
+const DUST_SPECTRA: readonly [number,number,number][] = [
+  [1.00,0.16,0.18], // red
+  [0.14,0.48,1.00], // blue
+  [0.14,1.00,0.38], // green
+  [1.00,0.46,0.08], // orange
+  [0.64,0.18,1.00], // purple
+  [1.00,0.24,0.68], // pink
+  [1.00,0.92,0.12], // yellow
+  [1.00,0.66,0.10], // gold
+];
 
 function stableColorIndex(value:string){
   let hash=2166136261;
@@ -428,6 +444,10 @@ function stellarAlbedo(particle:FieldParticle,targetGalaxy:string):[number,numbe
   const base=STAR_SPECTRA[stableColorIndex(particle.id)]??STAR_SPECTRA[2];
   if(targetGalaxy==="fomo"||particle.metadata?.fomoTrader===true)return mixRgb(base,FOMO_AMETHYST,.28);
   if(targetGalaxy==="afterbell"||particle.metadata?.afterbellTrader===true)return mixRgb(base,AFTERBELL_ICE,.24);
+  return [...base] as [number,number,number];
+}
+function dustAlbedo(particle:FieldParticle):[number,number,number]{
+  const base=DUST_SPECTRA[stableColorIndex(`dust:${particle.id}`)]??DUST_SPECTRA[0];
   return [...base] as [number,number,number];
 }
 
@@ -467,8 +487,10 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
         ? planetAlbedo(entity)
         : kind === "star"
           ? stellarAlbedo(entity,targetGalaxy)
-          : kind === "comet"
-            ? COMET_VIOLET
+          : kind === "dust"
+            ? dustAlbedo(entity)
+            : kind === "comet"
+              ? COMET_VIOLET
             : targetGalaxy === "fomo" || entity.metadata?.fomoTrader === true
               ? FOMO_AMETHYST
               : targetGalaxy === "afterbell" || entity.metadata?.afterbellTrader === true
