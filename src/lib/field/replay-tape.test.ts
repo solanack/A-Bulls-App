@@ -362,14 +362,30 @@ test("mark is omitted when any visible print amount is missing",()=>{
   assert.equal(tapeMarkSummary(bolts,candles).markedUsd,null);
 });
 
-test("mark uses observed remaining token amount times indexed last close and is never named PnL",()=>{
+test("mark separates realized FIFO PnL from remaining-basis unrealized PnL",()=>{
   const candles=[candleAt(0)],bolts=anchorBolts([
     eventAt("buy",candles[0].timestamp+1,"buy",{amount:100,priceUsd:1,notionalUsd:100}),
     eventAt("sell",candles[0].timestamp+2,"sell",{amount:25,priceUsd:1.2,notionalUsd:30}),
   ],candles,candles[0].timestamp,candles[0].timestamp+H),mark=tapeMarkSummary(bolts,candles);
   assert.equal(mark.remainingTokens,75);
+  assert.equal(mark.remainingBasisUsd,75);
   assert.equal(mark.markedUsd,112.5);
-  assert.equal(mark.deltaUsd,12.5);
+  assert.equal(mark.realizedUsd,5);
+  assert.equal(mark.deltaUsd,37.5);
+  assert.equal(mark.deltaPct,.5);
+});
+
+test("profitable full exit never becomes minus one hundred percent versus historical buys",()=>{
+  const candles=[candleAt(0)],bolts=anchorBolts([
+    eventAt("buy",candles[0].timestamp+1,"buy",{amount:10,priceUsd:10,notionalUsd:100}),
+    eventAt("sell",candles[0].timestamp+2,"sell",{amount:10,priceUsd:20,notionalUsd:200}),
+  ],candles,candles[0].timestamp,candles[0].timestamp+H),mark=tapeMarkSummary(bolts,candles);
+  assert.equal(mark.realizedUsd,100);
+  assert.equal(mark.remainingTokens,0);
+  assert.equal(mark.remainingBasisUsd,0);
+  assert.equal(mark.markedUsd,0);
+  assert.equal(mark.deltaUsd,0);
+  assert.equal(mark.deltaPct,null);
 });
 
 test("drawTape keeps a tappable bolt hit for a rendered stack",()=>{
