@@ -80,14 +80,13 @@ const SOLANA_ALIASES=new Set(['solana','sol','svm','solana-mainnet']);
 function evidenceStatements(db,row,item){
   const chains=variants(row.chain,s(row.chain).toLowerCase(),item.chain),solana=SOLANA_ALIASES.has(s(row.chain).toLowerCase())||item.chain==='solana';
   const wallets=variants(row.evm_wallet,s(row.evm_wallet).toLowerCase()),assets=variants(row.token_address,s(row.token_address).toLowerCase(),item.mint);
-  const observed=[],chart=[];
-  if(solana&&s(row.solana_wallet))observed.push(db.prepare('SELECT 1 hit FROM bull_wallet_events WHERE wallet=? AND mint=? LIMIT 1').bind(s(row.solana_wallet),s(row.token_address)));
-  if(wallets.length)observed.push(db.prepare(`SELECT 1 hit FROM intelligence_chain_events_v2 WHERE chain_key IN (${inList(chains)}) AND wallet_address IN (${inList(wallets)}) AND asset_address IN (${inList(assets)}) AND source_kind='observed-fact' LIMIT 1`).bind(...chains,...wallets,...assets));
-  chart.push(db.prepare(`SELECT 1 hit FROM intelligence_price_candles_v2 WHERE chain_key IN (${inList(chains)}) AND asset_address IN (${inList(assets)}) LIMIT 1`).bind(...chains,...assets));
-  if(solana)chart.push(db.prepare('SELECT 1 hit FROM intelligence_price_candles WHERE mint=? LIMIT 1').bind(s(row.token_address)));
+  const from=Math.floor(item.fromTs/1000),to=Math.ceil(item.toTs/1000),observed=[],chart=[];
+  if(solana&&s(row.solana_wallet))observed.push(db.prepare('SELECT 1 hit FROM bull_wallet_events WHERE wallet=? AND mint=? AND block_time BETWEEN ? AND ? LIMIT 1').bind(s(row.solana_wallet),s(row.token_address),from,to));
+  if(wallets.length)observed.push(db.prepare(`SELECT 1 hit FROM intelligence_chain_events_v2 WHERE chain_key IN (${inList(chains)}) AND wallet_address IN (${inList(wallets)}) AND asset_address IN (${inList(assets)}) AND source_kind='observed-fact' AND block_time BETWEEN ? AND ? LIMIT 1`).bind(...chains,...wallets,...assets,from,to));
+  chart.push(db.prepare(`SELECT 1 hit FROM intelligence_price_candles_v2 WHERE chain_key IN (${inList(chains)}) AND asset_address IN (${inList(assets)}) AND bucket_start BETWEEN ? AND ? LIMIT 1`).bind(...chains,...assets,from,to));
+  if(solana)chart.push(db.prepare('SELECT 1 hit FROM intelligence_price_candles WHERE mint=? AND bucket_start BETWEEN ? AND ? LIMIT 1').bind(s(row.token_address),from,to));
   return{observed,chart};
 }
-
 async function markEvidence(db,rows,displayed,nowMs){
   const byId=new Map();for(const row of rows){const item=normalizedClosedTrade(row,nowMs);if(item)byId.set(item.id,row);}
   const probes=displayed.map(item=>{const row=byId.get(item.id);return row?{row,...evidenceStatements(db,row,item)}:null;}).filter(Boolean);
@@ -105,17 +104,18 @@ export async function handleFomoResultsRequest(request,env={}){
   const limit=clamp(url.searchParams.get('limit'),8,1,20),nowMs=Date.now(),rows=(await resultRows(db)).map(row=>({...row})),first=rankClosedFomoTrades(rows,{limit,nowMs});
   await markEvidence(db,rows,[...first.winners,...first.losers],nowMs);
   const ranked=rankClosedFomoTrades(rows,{limit,nowMs});
-  const total=ranked.winners.length+ranked.losers.length,displayed=[...ranked.winners,...ranked.losers],ready=displayed.filter(item=>item.observedIndexed).length,chartReady=displayed.filter(item=>item.chartIndexed).length;
+  const total=ranked.winners.length+ranked.losers.length,displayed=[...ranked.winners,...ranked.losers],ready=displayed.filter(item=>item.observedIndexed&&item.chartIndexed).length,receiptReady=displayed.filter(item=>item.observedIndexed).length,chartReady=displayed.filter(item=>item.chartIndexed).length;
   return json({
     ok:true,
     coverage:total?'partial':'empty',
     winners:ranked.winners,
     losers:ranked.losers,
     replayReadyCount:ready,
+    receiptReadyCount:receiptReady,
     chartReadyCount:chartReady,
     source:'fomoapi.io cached closed trades + a-bulls retained public-chain evidence + source-labeled market cache',
     disclosure:total
-      ?`Top Winners and Losses are ranked by provider-reported realized USD PnL across the current chain-qualified Fomo trader cohort, including supported Solana and EVM chains. PnL remains provider-reported context, not an independently verified A Bulls performance claim. ${ready} displayed rows have independently retained wallet-token chain evidence and ${chartReady} already have indexed market candles; missing candles are hydrated from source-labeled public market data when available.`
+      ?`Top Winners and Losses are ranked by provider-reported realized USD PnL across the current chain-qualified Fomo trader cohort, including supported Solana and EVM chains. PnL remains provider-reported context, not an independently verified A Bulls performance claim. ${ready} displayed rows have both retained wallet-token evidence and market context inside that trade's Replay window; ${receiptReady} have retained chain evidence and ${chartReady} have time-bounded indexed market candles. A candle elsewhere in the asset's history no longer marks this trade ready; missing market context is hydrated from source-labeled public data when available.`
       :'No qualifying cached closed Fomo trades with finite realized PnL and valid Solana wallet/token addresses are available yet. Missing coverage is not zero activity.',
   },200,'public, max-age=60, stale-while-revalidate=180');
 }
