@@ -602,6 +602,58 @@ function buildPlanetMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMater
   return { mesh, positions, colors };
 }
 
+function constellationTokenKeys(particle: FieldParticle) {
+  const out = new Set<string>();
+  const metadata = particle.metadata ?? {};
+  const direct = metadata.mints;
+  if (Array.isArray(direct)) for (const value of direct) if (typeof value === "string" && value.trim()) out.add(value.trim().toLowerCase());
+  for (const field of ["holdings", "mostTraded", "positions"] as const) {
+    const rows = metadata[field];
+    if (!Array.isArray(rows)) continue;
+    for (const raw of rows) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+      const row = raw as Record<string, unknown>;
+      for (const key of ["mint", "tokenAddress", "assetAddress", "address"]) {
+        const value = row[key];
+        if (typeof value === "string" && value.trim()) { out.add(value.trim().toLowerCase()); break; }
+      }
+    }
+  }
+  return out;
+}
+
+function buildConstellations(snapshot: UniverseSnapshot) {
+  const stars = snapshot.particles.filter((particle) => renderCosmicKind(particle) === "star" && particleHasWallet(particle)).slice(0, 50);
+  const tokenSets = stars.map(constellationTokenKeys);
+  const vertices: number[] = [];
+  let links = 0;
+  for (let i = 0; i < stars.length && links < 72; i++) {
+    if (!tokenSets[i].size) continue;
+    for (let j = i + 1; j < stars.length && links < 72; j++) {
+      let shared = false;
+      for (const token of tokenSets[i]) if (tokenSets[j].has(token)) { shared = true; break; }
+      if (!shared) continue;
+      vertices.push(...stars[i].position, ...stars[j].position);
+      links += 1;
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  const afterbell = snapshot.galaxyId === "afterbell";
+  const material = new THREE.LineBasicMaterial({
+    color: afterbell ? 0xead9a8 : 0xa273ff,
+    transparent: true,
+    opacity: afterbell ? 0.13 : 0.16,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const lines = new THREE.LineSegments(geometry, material);
+  lines.frustumCulled = false;
+  lines.renderOrder = 1;
+  lines.visible = links > 0;
+  return lines;
+}
+
 function buildStarMesh(material: THREE.MeshBasicMaterial) {
   const starfield = createStarfield();
   const count = starfield.count;
@@ -636,6 +688,7 @@ export class ParticleFieldRenderer {
   points: THREE.InstancedMesh;
   planets: THREE.InstancedMesh;
   stars: THREE.InstancedMesh;
+  constellations: THREE.LineSegments;
   liveLabels: THREE.Sprite[] = [];
   material: THREE.ShaderMaterial;
   planetMaterial: THREE.ShaderMaterial;
@@ -670,6 +723,14 @@ export class ParticleFieldRenderer {
   #didRender = false;
   #pageVisible = document.visibilityState !== "hidden";
   #flightUntil = 0;
+  #bloomStarted = 0;
+  #bloomUntil = 0;
+  #baseDpr = 1;
+  #qualityScale = 1;
+  #fpsFrames = 0;
+  #fpsTime = 0;
+  #fieldMax = 0;
+  #starMax = 0;
 
   constructor(host: HTMLElement, snapshot: UniverseSnapshot) {
     this.host = host;
@@ -704,7 +765,8 @@ export class ParticleFieldRenderer {
       preserveDrawingBuffer: false,
     });
     this.renderer.setClearColor(0x03050b, 1);
-    this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, budget.dpr));
+    this.#baseDpr = Math.min(globalThis.devicePixelRatio || 1, budget.dpr);
+    this.renderer.setPixelRatio(this.#baseDpr);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
     canvas.addEventListener("webglcontextlost", this.#onContextLost, false);
@@ -758,6 +820,9 @@ export class ParticleFieldRenderer {
     this.colors = fieldMesh.colors;
     this.points = fieldMesh.mesh;
     this.planets = planetMesh.mesh;
+    this.#fieldMax = this.points.count;
+    this.constellations = buildConstellations(snapshot);
+    this.scene.add(this.constellations);
     this.scene.add(this.points);
     this.scene.add(this.planets);
     this.#rebuildLiveLabels();
@@ -773,6 +838,7 @@ export class ParticleFieldRenderer {
       side: THREE.DoubleSide,
     });
     this.stars = buildStarMesh(this.starMaterial);
+    this.#starMax = this.stars.count;
     this.scene.add(this.stars);
 
     this.#gestures = new CameraGestures(canvas, {
@@ -865,24 +931,36 @@ export class ParticleFieldRenderer {
     const planetMesh = buildPlanetMesh(snapshot, this.planetMaterial, deviceBudget().field);
     const previous = this.points;
     const previousPlanets = this.planets;
+    const previousConstellations = this.constellations;
     this.snapshot = snapshot;
     if (galaxyChanged) {
       this.cameraState = { yaw: 0.4, pitch: 0.18, distance: snapshot.galaxyId === "galaxy-zero" ? GALAXY_ZERO_CAMERA_DISTANCE : 125, target: [0, 0, 0] };
-      this.#flightUntil = performance.now() + (this.reducedMotion ? 0 : 1150);
+      const now = performance.now();
+      this.#flightUntil = now + (this.reducedMotion ? 0 : 1150);
+      this.#bloomStarted = now;
+      this.#bloomUntil = now + (this.reducedMotion ? 0 : 900);
     }
     this.basePositions = new Float32Array(fieldMesh.positions);
     this.colors = fieldMesh.colors;
     this.points = fieldMesh.mesh;
     this.planets = planetMesh.mesh;
+    this.#fieldMax = this.points.count;
+    this.constellations = buildConstellations(snapshot);
     this.planetMaterial.uniforms.uPlanetLight.value.set(...focusedTraderLight(snapshot));
     this.points.scale.set(1, snapshot.galaxyId === "pons" ? 0.72 : 1, 1);
     this.planets.scale.copy(this.points.scale);
+    this.constellations.scale.copy(this.points.scale);
+    this.scene.add(this.constellations);
     this.scene.add(this.points);
     this.scene.add(this.planets);
     previous.removeFromParent();
     previousPlanets.removeFromParent();
+    previousConstellations.removeFromParent();
     previous.geometry.dispose();
     previousPlanets.geometry.dispose();
+    previousConstellations.geometry.dispose();
+    (previousConstellations.material as THREE.Material).dispose();
+    this.#applyDynamicQuality();
     this.renderer.domElement.setAttribute(
       "aria-label",
       `Interactive ${snapshot.galaxyId} activity field`,
@@ -1021,7 +1099,40 @@ export class ParticleFieldRenderer {
 
   /** Ease the camera toward the current cameraState instead of cutting to it. */
   beginFlight(ms = 820) {
-    this.#flightUntil = performance.now() + (this.reducedMotion ? 0 : ms);
+    const now = performance.now();
+    this.#flightUntil = now + (this.reducedMotion ? 0 : ms);
+    this.#bloomStarted = now;
+    this.#bloomUntil = now + (this.reducedMotion ? 0 : Math.min(ms, 920));
+  }
+
+  #applyDynamicQuality() {
+    const entities = this.points.geometry.userData.entities as FieldParticle[];
+    let liveFloor = 0;
+    for (let i = 0; i < entities.length; i++) if (renderCosmicKind(entities[i]) !== "dust" || entities[i].metadata?.interactive !== false) liveFloor = i + 1;
+    const fieldFraction = 0.42 + this.#qualityScale * 0.58;
+    this.points.count = Math.min(this.#fieldMax, Math.max(liveFloor, Math.floor(this.#fieldMax * fieldFraction)));
+    this.stars.count = Math.min(this.#starMax, Math.max(180, Math.floor(this.#starMax * fieldFraction)));
+    const nextDpr = Math.max(0.7, this.#baseDpr * (0.72 + this.#qualityScale * 0.28));
+    if (Math.abs(this.renderer.getPixelRatio() - nextDpr) > 0.03) {
+      this.renderer.setPixelRatio(nextDpr);
+      this.resize();
+    }
+    this.host.dataset.fieldQuality = this.#qualityScale.toFixed(2);
+  }
+
+  #measureFrameBudget(elapsed: number) {
+    if (this.reducedMotion || elapsed <= 0) return;
+    this.#fpsFrames += 1;
+    this.#fpsTime += elapsed;
+    if (this.#fpsTime < 2.2) return;
+    const fps = this.#fpsFrames / this.#fpsTime;
+    this.#fpsFrames = 0;
+    this.#fpsTime = 0;
+    const before = this.#qualityScale;
+    if (fps < 44) this.#qualityScale = Math.max(0.55, this.#qualityScale - 0.12);
+    else if (fps > 56) this.#qualityScale = Math.min(1, this.#qualityScale + 0.06);
+    if (Math.abs(before - this.#qualityScale) >= 0.04) this.#applyDynamicQuality();
+    this.host.dataset.fieldFps = fps.toFixed(0);
   }
 
   snapshotCamera(): CameraState {
@@ -1138,6 +1249,7 @@ export class ParticleFieldRenderer {
     }
     const elapsed = Math.min(0.1, (now - this.#last) / 1000);
     this.#last = now;
+    this.#measureFrameBudget(elapsed);
     if (this.replayActive && this.replayPlaying) {
       this.replayCursor = Math.min(1, this.replayCursor + elapsed * this.replaySpeed);
       if (this.replayCursor >= 1) this.replayPlaying = false;
@@ -1170,21 +1282,26 @@ export class ParticleFieldRenderer {
       this.cameraState.yaw += elapsed * this.autoSpin * 60;
       this.points.rotation.y += elapsed * 0.09;
       this.planets.rotation.y = this.points.rotation.y;
+      this.constellations.rotation.y = this.points.rotation.y;
       this.stars.rotation.y += elapsed * 0.05;
     }
 
     this.material.uniforms.uTime.value = now / 1000;
-    this.material.uniforms.uIntensity.value = 1.15 - this.queryBlend * 0.96;
+    const bloomLife = this.#bloomUntil > this.#bloomStarted ? clamp((this.#bloomUntil - now) / (this.#bloomUntil - this.#bloomStarted), 0, 1) : 0;
+    const bloom = bloomLife > 0 ? Math.sin((1 - bloomLife) * Math.PI) : 0;
+    this.material.uniforms.uIntensity.value = 1.15 - this.queryBlend * 0.96 + bloom * 0.42;
     this.material.uniforms.uPull.value = this.queryBlend;
-    this.planetMaterial.uniforms.uIntensity.value = 1.05 - this.queryBlend * 0.88;
+    this.planetMaterial.uniforms.uIntensity.value = 1.05 - this.queryBlend * 0.88 + bloom * 0.16;
     this.planetMaterial.uniforms.uPull.value = this.queryBlend;
     this.planetMaterial.uniforms.uReplayCursor.value = this.replayCursor;
     const fieldScale = 1 - this.queryBlend * 0.06;
     this.points.scale.set(fieldScale, fieldScale * (this.snapshot.galaxyId === "pons" ? 0.72 : 1), fieldScale);
     this.planets.scale.copy(this.points.scale);
+    this.constellations.scale.copy(this.points.scale);
     this.points.visible = this.queryBlend < 0.97;
     this.planets.visible = this.queryBlend < 0.97;
-    this.starMaterial.opacity = 0.54 + this.queryBlend * 0.32;
+    this.constellations.visible = this.queryBlend < 0.97 && this.constellations.geometry.getAttribute("position").count > 0;
+    this.starMaterial.opacity = 0.54 + this.queryBlend * 0.32 + bloom * 0.16;
 
     const c = this.cameraState;
     const [tx, ty, tz] = c.target;
@@ -1227,6 +1344,8 @@ export class ParticleFieldRenderer {
     document.removeEventListener("visibilitychange", this.#onVisibilityChange);
     this.points.geometry.dispose();
     this.planets.geometry.dispose();
+    this.constellations.geometry.dispose();
+    (this.constellations.material as THREE.Material).dispose();
     for (const sprite of this.liveLabels) disposeLabelSprite(sprite);
     this.liveLabels = [];
     this.stars.geometry.dispose();
