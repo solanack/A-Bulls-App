@@ -25,8 +25,8 @@ describe("extractDivergeSeries", () => {
       quoteMint: "So11111111111111111111111111111111111111112",
       rule: { type: "fixed-hold-after-observed-acquisition", holdDays: 7 },
       outcomes: [
-        { blockTime: 1_700_000_000, entryValueQuote: 10, counterfactualValueQuote: 12 },
-        { blockTime: 1_700_086_400, entryValueQuote: 5, counterfactualValueQuote: 4 },
+        { targetBlockTime: 1_700_000_000, actualValueQuote: 10, counterfactualValueQuote: 12 },
+        { targetBlockTime: 1_700_086_400, actualValueQuote: 5, counterfactualValueQuote: 4 },
       ],
     });
     assert.equal(series.emptyReason, null);
@@ -39,6 +39,18 @@ describe("extractDivergeSeries", () => {
     assert.match(series.timeLabel, /7d/);
   });
 
+  it("does not relabel acquisition spending as actual performance", () => {
+    const series = extractDivergeSeries({
+      outcomes: [
+        { blockTime: 1_700_000_000, entryValueQuote: 10, counterfactualValueQuote: 12 },
+        { blockTime: 1_700_086_400, entryValueQuote: 5, counterfactualValueQuote: 4 },
+      ],
+    });
+    assert.deepEqual(series.actual, []);
+    assert.deepEqual(series.hold, []);
+    assert.match(series.emptyReason ?? "", /Acquisition spending is not plotted/i);
+  });
+
   it("returns honest empty when series cannot be formed", () => {
     const empty = extractDivergeSeries({ outcomes: [] });
     assert.ok(empty.emptyReason);
@@ -46,7 +58,7 @@ describe("extractDivergeSeries", () => {
     assert.deepEqual(empty.hold, []);
 
     const one = extractDivergeSeries({
-      outcomes: [{ blockTime: 1_700_000_000, entryValueQuote: 1, counterfactualValueQuote: 2 }],
+      outcomes: [{ targetBlockTime: 1_700_000_000, actualValueQuote: 1, counterfactualValueQuote: 2 }],
     });
     assert.ok(one.emptyReason);
     assert.deepEqual(one.actual, []);
@@ -55,10 +67,10 @@ describe("extractDivergeSeries", () => {
   it("skips rows missing actual or hold numbers (no invent)", () => {
     const series = extractDivergeSeries({
       outcomes: [
-        { blockTime: 1, entryValueQuote: 1 },
-        { blockTime: 2, counterfactualValueQuote: 2 },
-        { blockTime: 3, entryValueQuote: 3, counterfactualValueQuote: 4 },
-        { blockTime: 4, entryValueQuote: 5, counterfactualValueQuote: 6 },
+        { targetBlockTime: 1, actualValueQuote: 1 },
+        { targetBlockTime: 2, counterfactualValueQuote: 2 },
+        { targetBlockTime: 3, actualValueQuote: 3, counterfactualValueQuote: 4 },
+        { targetBlockTime: 4, actualValueQuote: 5, counterfactualValueQuote: 6 },
       ],
     });
     assert.equal(series.actual.length, 2);
@@ -83,10 +95,14 @@ describe("duelBarRatio + extractDuelFields", () => {
 
   it("extracts only present comparable fields", () => {
     const fields = extractDuelFields(
-      { tx_count: 12, mint_count: 4, swap_events: 8 },
-      { tx_count: 7, mint_count: 4 },
+      { tx_count: 12, mint_count: 4, swap_events: 8, fees_sol: null },
+      { tx_count: 7, mint_count: 4, fees_sol: 1 },
     );
-    assert.equal(fields.length, 3);
+    assert.equal(fields.length, 4);
+    const fees = fields.find((f) => f.key === "fees_sol");
+    assert.equal(fees?.a, null);
+    assert.equal(fees?.b, 1);
+    assert.equal(duelBarRatio(fees!.a, fees!.b).leading, "gap");
     const swaps = fields.find((f) => f.key === "swap_events");
     assert.equal(swaps?.a, 8);
     assert.equal(swaps?.b, null);
