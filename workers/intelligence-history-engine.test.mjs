@@ -11,7 +11,7 @@ test('history engine prefers configured or Helius RPC and does not silently depe
 
 test('failed Helius history repairs through the public read-only Solana RPC', () => {
   assert.deepEqual(historyRepairSource({name:'helius-standard-rpc',kind:'rpc',url:'https://mainnet.helius-rpc.com/?api-key=x'}), {
-    name:'solana-public-rpc',kind:'rpc',url:'https://api.mainnet-beta.solana.com'
+    name:'solana-public-rpc',kind:'rpc',url:'https://solana-rpc.publicnode.com'
   });
   assert.equal(historyRepairSource({name:'configured-rpc',kind:'rpc',url:'https://rpc.example'}),null);
 });
