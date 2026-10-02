@@ -13,7 +13,7 @@ import { canonicalChainAddress,chainQualifiedId,normalizeChainKey,resolveChain }
 const SOLANA_RE=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const USD_STABLE_MINTS=new Set(['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYDqfCMx1j8dYKVKJQmuayNX']);
 const WSOL_MINT='So11111111111111111111111111111111111111112';
-const PUBLIC_SOLANA_RPC='https://api.mainnet-beta.solana.com';
+const PUBLIC_SOLANA_RPC='https://solana-rpc.publicnode.com';
 const MAX_RECEIPT_EXECUTION_HYDRATION=16;
 const MAX_INTERACTIVE_RECEIPT_REPAIR_EVENTS=32;
 const MAX_INDEXED_SIBLING_EXECUTION_LOOKUPS=600;
