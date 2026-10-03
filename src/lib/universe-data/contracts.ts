@@ -72,7 +72,7 @@ export type DataCompleteness = {
   costBasisMatched: boolean;
   sampleSufficient: boolean;
   fresh: boolean;
-  reasons: readonly string[];
+  reasons: string[];
 };
 
 export type TradeDistribution = {
