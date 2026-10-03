@@ -10,6 +10,13 @@ export const AFTERBELL_TRADERS_PATH='/api/intelligence/afterbell/traders';
 export const AFTERBELL_AUDIT_PATH='/api/intelligence/afterbell/audit';
 export const AFTERBELL_MAX_TRADERS=50;
 export const AFTERBELL_BASIS_LOOKBACK_SECONDS=90*24*60*60;
+export const AFTERBELL_WSOL_MINT='So11111111111111111111111111111111111111112';
+/** Native SOL below this is fee-sized unless a SOL quote shows a real micro trade. */
+export const AFTERBELL_FEE_SIZED_SOL=0.001;
+const AFTERBELL_USDC_MINT='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const AFTERBELL_USDT_MINT='Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+const AFTERBELL_USDT_EVIDENCE_MINT='Es9vMFrzaCERmJfrF4H2FYDqfCMx1j8dYKVKJQmuayNX';
+const FEE_LAMPORT_SLACK=2;
 const ZONE='America/New_York';
 const s=v=>String(v??'').trim();
 const n=v=>Number.isFinite(Number(v))?Number(v):0;
@@ -66,6 +73,23 @@ export async function retainedIdentityMap(db,wallets=[]){
 }
 
 function eventKey(event){const tx=s(event.txId);return tx?`${tx}:${s(event.mint)}`:[s(event.wallet),s(event.mint),n(event.blockTime),s(event.side),n(event.amount),s(event.source)].join(':');}
+
+/** SOL per token from a retained native delta.
+ * A stable or other non-SOL quote is not a SOL price when the native delta is only fee-sized.
+ * A delta that matches the recorded fee is not a price when no quote was retained.
+ * A SOL-sized delta is kept. Stable amounts are never converted into SOL.
+ */
+export function afterbellObservedPriceSol({tokenDelta,solDelta,feeLamports=0,quoteMint=''}={}){
+  const token=Math.abs(Number(tokenDelta)),sol=Math.abs(Number(solDelta));
+  if(!Number.isFinite(token)||!Number.isFinite(sol)||!(token>0)||!(sol>0))return null;
+  const quote=s(quoteMint),nonSol=quote!==''&&quote!==AFTERBELL_WSOL_MINT;
+  const solLamports=Math.round(sol*1e9),fee=Math.round(Math.abs(Number(feeLamports))||0);
+  const matchesFee=fee>0&&Math.abs(solLamports-fee)<=FEE_LAMPORT_SLACK;
+  const feeSized=sol<AFTERBELL_FEE_SIZED_SOL||matchesFee;
+  if(nonSol&&feeSized)return null;
+  if((quote===''||quote===AFTERBELL_WSOL_MINT)&&matchesFee&&sol<AFTERBELL_FEE_SIZED_SOL)return null;
+  return sol/token;
+}
 export function normalizeAfterbellEvents(rows=[]){
   const byKey=new Map();
   for(const raw of Array.isArray(rows)?rows:[]){
@@ -123,10 +147,24 @@ export function rankAfterbellTraders(events=[],{from,to,limit=AFTERBELL_MAX_TRAD
   return Object.freeze(result.slice(0,cap).map((row,index)=>Object.freeze({rank:index+1,...row})));
 }
 
+async function rowsOf(stmt){const result=await stmt.all();return result?.results||[];}
+const NATIVE_COLUMNS=`SELECT ? mint,wallet,signature txId,CASE WHEN token_delta>0 THEN 'buy' ELSE 'sell' END side,ABS(token_delta) amount,NULL priceUsd,token_delta tokenDelta,sol_delta solDelta,fee_lamports feeLamports,block_time blockTime,source,'observed-fact' sourceKind`;
+const NATIVE_WHERE=`FROM bull_wallet_events WHERE mint=? AND block_time BETWEEN ? AND ? AND wallet IS NOT NULL AND token_delta<>0 ORDER BY block_time ASC LIMIT 10000`;
+const SIBLING_QUOTE=`(SELECT s.mint FROM bull_wallet_events s WHERE s.signature=bull_wallet_events.signature AND s.wallet=bull_wallet_events.wallet AND s.mint<>bull_wallet_events.mint AND ifnull(s.mint,'')<>'' AND s.token_delta<>0 ORDER BY CASE WHEN s.mint IN (?,?,?) THEN 0 WHEN s.mint=? THEN 2 ELSE 1 END,ABS(s.token_delta) DESC LIMIT 1) siblingQuote`;
+const ROUTE_QUOTE=`(SELECT CASE WHEN r.input_mint=bull_wallet_events.mint THEN r.output_mint ELSE r.input_mint END FROM intelligence_trade_routes r WHERE r.signature=bull_wallet_events.signature AND r.wallet=bull_wallet_events.wallet AND r.hop_index=0 AND (r.input_mint=bull_wallet_events.mint OR r.output_mint=bull_wallet_events.mint) LIMIT 1) routeQuote`;
 async function readRows(db,mint,from,to){
   const lookback=Math.max(0,from-AFTERBELL_BASIS_LOOKBACK_SECONDS),rows=[];
   const chain=await all(db.prepare(`SELECT wallet_address wallet,asset_address mint,tx_id txId,LOWER(side) side,ABS(COALESCE(amount,0)) amount,price_usd priceUsd,NULL priceSol,block_time blockTime,source,source_kind sourceKind FROM intelligence_chain_events_v2 WHERE chain_key='solana' AND asset_address=? AND block_time BETWEEN ? AND ? AND wallet_address IS NOT NULL AND LOWER(side) IN ('buy','sell') ORDER BY block_time ASC LIMIT 10000`).bind(mint,lookback,to));rows.push(...chain);
-  const native=await all(db.prepare(`SELECT ? mint,wallet,signature txId,CASE WHEN token_delta>0 THEN 'buy' ELSE 'sell' END side,ABS(token_delta) amount,NULL priceUsd,CASE WHEN ABS(token_delta)>0 AND ABS(sol_delta)>0 THEN ABS(sol_delta/token_delta) ELSE NULL END priceSol,block_time blockTime,source,'observed-fact' sourceKind FROM bull_wallet_events WHERE mint=? AND block_time BETWEEN ? AND ? AND wallet IS NOT NULL AND token_delta<>0 ORDER BY block_time ASC LIMIT 10000`).bind(mint,mint,lookback,to));rows.push(...native);return rows;
+  const quoteBinds=[mint,AFTERBELL_USDC_MINT,AFTERBELL_USDT_MINT,AFTERBELL_USDT_EVIDENCE_MINT,AFTERBELL_WSOL_MINT,mint,lookback,to];
+  let native=[];
+  try{native=await rowsOf(db.prepare(`${NATIVE_COLUMNS},${ROUTE_QUOTE},${SIBLING_QUOTE} ${NATIVE_WHERE}`).bind(...quoteBinds));}
+  catch{try{native=await rowsOf(db.prepare(`${NATIVE_COLUMNS},${SIBLING_QUOTE} ${NATIVE_WHERE}`).bind(...quoteBinds));}catch{try{native=await rowsOf(db.prepare(`${NATIVE_COLUMNS} ${NATIVE_WHERE}`).bind(mint,mint,lookback,to));}catch{native=[];}}}
+  for(const row of native){
+    const quote=s(row.routeQuote)||s(row.siblingQuote);
+    row.priceSol=afterbellObservedPriceSol({tokenDelta:row.tokenDelta,solDelta:row.solDelta,feeLamports:row.feeLamports,quoteMint:quote});
+    delete row.tokenDelta;delete row.solDelta;delete row.feeLamports;delete row.routeQuote;delete row.siblingQuote;
+  }
+  rows.push(...native);return rows;
 }
 
 async function latestRetainedAfterbellWindow(db,mints,before){

@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AFTERBELL_BASIS_LOOKBACK_SECONDS, afterbellWindow, normalizeAfterbellEvents, rankAfterbellTraders } from './intelligence-afterbell-traders.mjs';
+import { DatabaseSync } from 'node:sqlite';
+import { AFTERBELL_BASIS_LOOKBACK_SECONDS, AFTERBELL_FEE_SIZED_SOL, AFTERBELL_WSOL_MINT, afterbellObservedPriceSol, afterbellWindow, normalizeAfterbellEvents, rankAfterbellTraders, readAfterbellTraders } from './intelligence-afterbell-traders.mjs';
 
 const A='11111111111111111111111111111111';
 const B='22222222222222222222222222222222';
+const C='33333333333333333333333333333333';
+const D='44444444444444444444444444444444';
+const E='55555555555555555555555555555555';
+const F='66666666666666666666666666666666';
 
 test('Afterbell keeps pre-window basis hydration bounded for interactive galaxy reads',()=>{
   assert.equal(AFTERBELL_BASIS_LOOKBACK_SECONDS,90*24*60*60);
@@ -136,4 +141,106 @@ test('Afterbell trader activity exposes bounded holdings, most-traded assets, an
   assert.equal(ranked.holdings[0].mint,mint);
   assert.ok(ranked.holdings[0].observedNetAmount>0);
   assert.deepEqual(ranked.topHeld,ranked.holdings);
+});
+
+const USDC='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const USDT='Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+const STOCK='Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh';
+const FEE_SOL=53600/1e9;
+
+test('Afterbell priceSol ignores a fee-sized SOL delta on a non-SOL quote',()=>{
+  assert.equal(AFTERBELL_FEE_SIZED_SOL,0.001);
+  assert.equal(afterbellObservedPriceSol({tokenDelta:1,solDelta:-FEE_SOL,feeLamports:53600,quoteMint:USDC}),null);
+  assert.equal(afterbellObservedPriceSol({tokenDelta:2,solDelta:5.36e-5,feeLamports:0,quoteMint:USDT}),null);
+  assert.equal(afterbellObservedPriceSol({tokenDelta:1,solDelta:-0.000999,feeLamports:5000,quoteMint:'Es9vMFrzaCERmJfrF4H2FYDqfCMx1j8dYKVKJQmuayNX'}),null);
+  assert.equal(afterbellObservedPriceSol({tokenDelta:10,solDelta:-1.2,feeLamports:5000,quoteMint:USDC}),0.12);
+  assert.equal(afterbellObservedPriceSol({tokenDelta:10,solDelta:-0.001,feeLamports:5000,quoteMint:USDC}),0.0001);
+  assert.equal(afterbellObservedPriceSol({tokenDelta:4,solDelta:0.8,feeLamports:5000,quoteMint:AFTERBELL_WSOL_MINT}),0.2);
+  assert.equal(afterbellObservedPriceSol({tokenDelta:1,solDelta:-FEE_SOL,feeLamports:53600,quoteMint:AFTERBELL_WSOL_MINT}),null);
+  assert.equal(afterbellObservedPriceSol({tokenDelta:1,solDelta:-FEE_SOL,feeLamports:53600,quoteMint:''}),null);
+  assert.equal(afterbellObservedPriceSol({tokenDelta:2,solDelta:-0.00004,feeLamports:0,quoteMint:''}),0.00002);
+  assert.equal(afterbellObservedPriceSol({tokenDelta:2,solDelta:-0.00004,feeLamports:5000,quoteMint:''}),0.00002);
+  const ranked=rankAfterbellTraders([
+    {wallet:A,mint:STOCK,txId:'fee-buy',side:'buy',amount:1,priceSol:null,blockTime:210,source:'helius',sourceKind:'observed-fact'},
+    {wallet:A,mint:STOCK,txId:'fee-sell',side:'sell',amount:1,priceSol:null,blockTime:220,source:'helius',sourceKind:'observed-fact'},
+  ],{from:200,to:400});
+  assert.equal(ranked[0].realizedPnlSol,null);
+  assert.equal(ranked[0].latestTrades.every(trade=>trade.priceSol==null),true);
+});
+
+test('Afterbell retained reads do not price a USDC swap from the fee SOL delta',async()=>{
+  const sql=new DatabaseSync(':memory:');
+  sql.exec(`CREATE TABLE bull_wallet_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    signature TEXT NOT NULL,
+    block_time INTEGER,
+    wallet TEXT NOT NULL,
+    mint TEXT NOT NULL DEFAULT '',
+    event_class TEXT NOT NULL,
+    sol_delta REAL NOT NULL DEFAULT 0,
+    token_delta REAL NOT NULL DEFAULT 0,
+    fee_lamports INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL
+  );
+  CREATE TABLE intelligence_trade_routes (
+    signature TEXT NOT NULL,
+    wallet TEXT NOT NULL,
+    hop_index INTEGER NOT NULL,
+    input_mint TEXT,
+    output_mint TEXT,
+    input_amount REAL,
+    output_amount REAL,
+    block_time INTEGER,
+    source TEXT,
+    confidence REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY(signature, wallet, hop_index)
+  );`);
+  const insert=sql.prepare(`INSERT INTO bull_wallet_events(signature,block_time,wallet,mint,event_class,sol_delta,token_delta,fee_lamports,source) VALUES(?,?,?,?,?,?,?,?,?)`);
+  const fee=(signature,wallet,sideSign,token,time)=>insert.run(signature,time,wallet,STOCK,'swap-like',-FEE_SOL*Math.sign(sideSign),sideSign*token,53600,'helius-history');
+  fee('sig-usdc',A,1,1,1500);
+  insert.run('sig-usdc',1500,A,USDC,'swap-like',-FEE_SOL,-25,53600,'helius-history');
+  fee('sig-usdc-sell',A,-1,1,1600);
+  insert.run('sig-usdc-sell',1600,A,USDC,'swap-like',-FEE_SOL,25,53600,'helius-history');
+  insert.run('sig-wsol',1700,B,STOCK,'swap-like',-1.5,10,5000,'helius-history');
+  insert.run('sig-wsol',1700,B,AFTERBELL_WSOL_MINT,'swap-like',-1.5,-1.5,5000,'helius-history');
+  insert.run('sig-wsol-sell',1800,B,STOCK,'swap-like',0.8,-4,5000,'helius-history');
+  insert.run('sig-wsol-sell',1800,B,AFTERBELL_WSOL_MINT,'swap-like',0.8,0.8,5000,'helius-history');
+  insert.run('sig-sized',1900,C,STOCK,'swap-like',-1.2,10,5000,'helius-history');
+  insert.run('sig-sized',1900,C,USDC,'swap-like',-1.2,-40,5000,'helius-history');
+  insert.run('sig-fee-only',2000,D,STOCK,'swap-like',-FEE_SOL,1,53600,'helius-history');
+  insert.run('sig-micro',2100,E,STOCK,'swap-like',-0.00004,2,0,'helius-history');
+  insert.run('sig-route',2200,F,STOCK,'swap-like',-FEE_SOL,3,53600,'helius-history');
+  sql.prepare(`INSERT INTO intelligence_trade_routes(signature,wallet,hop_index,input_mint,output_mint,input_amount,output_amount,block_time,source,confidence) VALUES(?,?,0,?,?,?,?,?,?,1)`).run('sig-route',F,USDC,STOCK,30,3,2200,'helius-afterbell-pool-window-receipt');
+  const norm=values=>values.map(value=>value===undefined?null:value);
+  const db={prepare(query){const statement=(args=[])=>({bind(...bound){return statement(bound);},async all(){return {results:sql.prepare(query).all(...norm(args))};},async first(){return (await this.all()).results[0]??null;},async run(){return {meta:{changes:Number(sql.prepare(query).run(...norm(args)).changes)}};} });return statement();}};
+  const body=await readAfterbellTraders({INTELLIGENCE_DB:db},STOCK,{from:1000,to:5000});
+  const byWallet=new Map(body.items.map(item=>[item.wallet,item]));
+  const prices=wallet=>byWallet.get(wallet).latestTrades.map(trade=>trade.priceSol);
+  assert.deepEqual(prices(A),[null,null]);
+  assert.equal(byWallet.get(A).realizedPnlSol,null);
+  assert.ok(Math.abs(byWallet.get(B).realizedPnlSol-0.2)<1e-9);
+  assert.ok(prices(B).every(price=>price>0.1));
+  assert.deepEqual(prices(C),[0.12]);
+  assert.deepEqual(prices(D),[null]);
+  assert.equal(prices(E)[0],0.00002);
+  assert.deepEqual(prices(F),[null]);
+  sql.close();
+});
+
+test('Afterbell price guard still sees a stable sibling when route storage is absent',async()=>{
+  const sql=new DatabaseSync(':memory:');
+  sql.exec(`CREATE TABLE bull_wallet_events (
+    signature TEXT NOT NULL, block_time INTEGER, wallet TEXT NOT NULL, mint TEXT NOT NULL,
+    event_class TEXT NOT NULL, sol_delta REAL NOT NULL, token_delta REAL NOT NULL,
+    fee_lamports INTEGER NOT NULL, source TEXT NOT NULL
+  );`);
+  const insert=sql.prepare(`INSERT INTO bull_wallet_events(signature,block_time,wallet,mint,event_class,sol_delta,token_delta,fee_lamports,source) VALUES(?,?,?,?,?,?,?,?,?)`);
+  insert.run('sig-usdt',1500,A,STOCK,'swap-like',-FEE_SOL,1,53600,'helius-history');
+  insert.run('sig-usdt',1500,A,USDT,'swap-like',-FEE_SOL,-10,53600,'helius-history');
+  const norm=values=>values.map(value=>value===undefined?null:value);
+  const db={prepare(query){const statement=(args=[])=>({bind(...bound){return statement(bound);},async all(){return {results:sql.prepare(query).all(...norm(args))};},async first(){return (await this.all()).results[0]??null;}});return statement();}};
+  const body=await readAfterbellTraders({INTELLIGENCE_DB:db},STOCK,{from:1000,to:5000});
+  assert.equal(body.items[0].latestTrades[0].priceSol,null);
+  assert.equal(body.items[0].realizedPnlSol,null);
+  sql.close();
 });
