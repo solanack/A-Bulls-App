@@ -19,6 +19,8 @@ export type CutFrameLayout = {
   sourceLineCount: number;
   verifyY: number;
   lastBaseline: number;
+  noticeY: number | null;
+  noticeLineCount: number;
 };
 
 export function cutPositionCardHeight(rowCount: number, width: number, k: number) {
@@ -28,13 +30,15 @@ export function cutPositionCardHeight(rowCount: number, width: number, k: number
 }
 
 /** Place the position card and source lines above the VERIFY footer on both canvases. */
-export function cutFrameLayout(input: { format: CutFormatName; rowCount: number; evidence: boolean; sourceLines: number }): CutFrameLayout {
+export function cutFrameLayout(input: { format: CutFormatName; rowCount: number; evidence: boolean; sourceLines: number; noticeLines?: number }): CutFrameLayout {
   const { width: w, height: h } = CUT_SIZE[input.format];
   const portrait = input.format === "portrait";
   const k = Math.min(w, h) / 1080;
   const cardH = cutPositionCardHeight(input.rowCount, w, k);
   const sourceLineCount = Math.max(1, Math.min(2, Math.trunc(input.sourceLines) || 1));
-  const verifyY = h - (portrait ? 56 : 30) * k;
+  const noticeLineCount = Math.max(0, Math.min(8, Math.trunc(input.noticeLines ?? 0) || 0));
+  const noticeBlock = noticeLineCount ? noticeLineCount * 40 * k + 28 * k : 0;
+  const verifyY = h - (portrait ? 56 : 30) * k - noticeBlock;
   const baselineGap = 40 * k;
   const afterCard = 26 * k + 28 * k + (input.evidence ? 34 * k : 0) + (sourceLineCount - 1) * 28 * k;
   const preferredLower = portrait ? h - 500 * k : h - 274 * k;
@@ -46,5 +50,6 @@ export function cutFrameLayout(input: { format: CutFormatName; rowCount: number;
   const evidenceY = input.evidence ? roundY + 28 * k : null;
   const sourceY = roundY + 28 * k + (input.evidence ? 34 * k : 0);
   const lastBaseline = sourceY + (sourceLineCount - 1) * 28 * k;
-  return { width: w, height: h, k, chartTop, chartBottom, lowerTop, cardH, roundY, evidenceY, sourceY, sourceLineCount, verifyY, lastBaseline };
+  const noticeY = noticeLineCount ? verifyY + 36 * k : null;
+  return { width: w, height: h, k, chartTop, chartBottom, lowerTop, cardH, roundY, evidenceY, sourceY, sourceLineCount, verifyY, lastBaseline, noticeY, noticeLineCount };
 }

@@ -4,6 +4,8 @@ import type { TraderSheetDetail } from "@/lib/field/trader-sheet";
 import { callsign } from "@/lib/field/trader-sheet";
 import { watchShelves, type WatchItem } from "@/lib/field/watchlist";
 import { TraderSigil } from "@/components/trader-sigil";
+import { ComplianceNotice } from "@/components/compliance-notice";
+import { FEE_GROSS_UNLESS_EMBEDDED, FIFO_MATCHED, pnlCardNotice, providerReportedNotice } from "../../js/compliance-notice.mjs";
 
 type TraderSection = Extract<FieldSection, { kind: "trader-system" }>;
 
@@ -55,8 +57,9 @@ export function TraderSheet({
     <aside className="fs-sheet" data-room={room} aria-label={`${ROOM_NAME[room]} trader details`}>
       <div className="fs-chips">
         <span className="fs-chip">{ROOM_CHIP[room]}</span>
-        {detail.rank != null ? <span className="fs-chip fs-chip--muted" title={detail.rankBasis}>#{detail.rank}</span> : null}
+        {detail.rank != null ? <span className="fs-chip fs-chip--muted">#{detail.rank}</span> : null}
       </div>
+      {detail.rankBasis ? <p className="fs-fine">{detail.rankBasis}</p> : null}
       <div className="fs-identity">
         {detail.wallet ? <TraderSigil wallet={detail.wallet} size={42} title={`Deterministic sigil for ${detail.identity}`} /> : null}
         <div>
@@ -79,7 +82,9 @@ export function TraderSheet({
       </div>
       {!researchable ? <p className="fs-fine">No retained prints for this wallet yet. Replay opens when one is indexed.</p> : null}
       <p className="fs-fine">{detail.sourceLabel} · {detail.cometCount} COMETS · Research only.</p>
+      {room === "fomo" ? <p className="fs-fine">{detail.windowLabel}</p> : <p className="fs-fine">{FIFO_MATCHED} · {FEE_GROSS_UNLESS_EMBEDDED} · {detail.windowLabel || "after close"}</p>}
       <p className="fs-fine">{detail.pnlCaveat || PNL_CAVEAT}</p>
+      <ComplianceNotice text={room === "fomo" ? providerReportedNotice({ capturedAt: detail.capturedAt, windowLabel: "all-time" }) : pnlCardNotice({ method: FIFO_MATCHED, fees: FEE_GROSS_UNLESS_EMBEDDED, windowLabel: detail.windowLabel || "after close" })} />
     </aside>
   );
 }

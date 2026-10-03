@@ -3,6 +3,8 @@ import { X } from "lucide-react";
 import { callUniverseTool } from "@/lib/universe-intelligence";
 import { INTELLIGENCE_PUBLIC_ORIGIN } from "@/lib/app-origins";
 import { PNL_CAVEAT, PNL_HYPOTHETICAL_LABEL, PNL_REALIZED_LABEL } from "@/lib/field/honest-pnl";
+import { ComplianceNotice } from "@/components/compliance-notice";
+import { FEE_GROSS_UNLESS_EMBEDDED, FIFO_MATCHED, pnlCardNotice, windowRangeLabel } from "../../js/compliance-notice.mjs";
 import { anchorBolts, formatUsdNotional, isPublicAddress, replayShareUrl, replayToolInput, tapeEvents, tapeMarkSummary, tapeMatchedRounds, type ReplaySubject, type TapeBolt, type TapeCandle } from "@/lib/field/replay-tape";
 import { drawTape } from "@/lib/field/replay-tape-render";
 import { TraderSigil } from "@/components/trader-sigil";
@@ -76,7 +78,9 @@ export function ReplayVersusPanel({ subject, traderLabel, candles, heroBolts, st
         <VersusTape label={traderLabel} wallet={subject.wallet} candles={candles} bolts={heroBolts} start={start} end={end} cursor={cursor} scaleMode={scaleMode} verifyHref={replayShareUrl(typeof window==="undefined"?INTELLIGENCE_PUBLIC_ORIGIN:window.location.origin, subject)}/>
         {status==="ready"?<VersusTape label={rivalLabel} wallet={wallet.trim()} candles={candles} bolts={rivalBolts} start={start} end={end} cursor={cursor} scaleMode={scaleMode} verifyHref={replayShareUrl(typeof window==="undefined"?INTELLIGENCE_PUBLIC_ORIGIN:window.location.origin, {...subject, wallet:wallet.trim(), displayName:rivalLabel})}/>:<div className="rs-vs__empty">Load another public wallet. Both tapes race on this Replay clock; missing values stay —.</div>}
       </div>
+      <p className="rs-vs__caveat">{FIFO_MATCHED} · {FEE_GROSS_UNLESS_EMBEDDED} · {windowRangeLabel(start, end, "same clock")}</p>
       <p className="rs-vs__caveat">{PNL_CAVEAT}</p>
+      <ComplianceNotice text={pnlCardNotice({ method: FIFO_MATCHED, fees: FEE_GROSS_UNLESS_EMBEDDED, windowLabel: windowRangeLabel(start, end, "same clock") })} />
     </div>
   </dialog>;
 }

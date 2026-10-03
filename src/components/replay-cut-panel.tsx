@@ -4,6 +4,8 @@ import { INTELLIGENCE_PUBLIC_ORIGIN } from "@/lib/app-origins";
 import { CUT_PACES, cutDuration, replayCoverage, type CutPace, type CutSoundtrack } from "@/lib/field/replay-director";
 import { buildCutManifest, candleSourceLabel, CUT_SIZE, replayShareUrl, type CohortTick, type CutFormat, type ReplaySubject, type TapeBolt, type TapeCandle, type TapeMarketCapPoint } from "@/lib/field/replay-tape";
 import type { ReplayCutInput } from "@/lib/replay-cut";
+import { ComplianceNotice } from "@/components/compliance-notice";
+import { cutExportNotice, FEE_GROSS_UNLESS_EMBEDDED, FIFO_MATCHED, windowRangeLabel } from "../../js/compliance-notice.mjs";
 
 export function ReplayCutPanel({ subject, title, trader, room, bolts, cohort, candles, marketCapPoints, candleCount, start, end, scaleMode, source, evidenceLine, onClose }: {
   subject: ReplaySubject; title: string; trader: string; room: "fomo" | "afterbell" | null;
@@ -67,6 +69,8 @@ export function ReplayCutPanel({ subject, title, trader, room, bolts, cohort, ca
           <label className="rs-toggle"><input type="checkbox" checked={grey} onChange={e => setGrey(e.target.checked)}/> Auto-caption Grey’s observed facts</label>
           {grey ? <p className="rs-cut__grey">“{greyLine}”{soundtrack==="silent"?" · captions only":""}</p> : null}
           <p className="rs-cut__fine">{sourceLine}. Missing fill USD stays unavailable.</p>
+          <p className="rs-cut__fine">{FIFO_MATCHED} · {FEE_GROSS_UNLESS_EMBEDDED} · {windowRangeLabel(start, end)}</p>
+          <ComplianceNotice text={cutExportNotice({ method: FIFO_MATCHED, fees: FEE_GROSS_UNLESS_EMBEDDED, windowLabel: windowRangeLabel(start, end), verifyUrl: replayUrl })} />
         </fieldset>
         <div className="rs-cut__preview">
           <canvas ref={canvas} width={CUT_SIZE[format].width} height={CUT_SIZE[format].height} role="img" aria-label="Cut frame preview"/>

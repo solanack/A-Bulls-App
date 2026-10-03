@@ -1,5 +1,6 @@
 import { synthesizeCutNarration, type AlienVoiceDelivery, type NarrationRole } from "@/lib/alien-voice";
 import { buildCutFrameModel, preferredCutVideoMime } from "../../js/trickster-cut-video.mjs";
+import { pnlRevealNotice, withVerifyUrl } from "../../js/compliance-notice.mjs";
 
 type Data=Record<string,unknown>;
 type Progress=(value:number,label:string)=>void;
@@ -139,6 +140,30 @@ function drawCinematicFrame(ctx:CanvasRenderingContext2D,model:Data,role:Narrati
   ctx.fillStyle="rgba(5,7,13,.93)";ctx.fillRect(0,h*.87,w,h*.13);ctx.fillStyle=role==="grey"?"#8ee9ff":"#d5a8ff";ctx.font=`800 ${Math.round(w*.021)}px ui-monospace,monospace`;ctx.fillText(role==="grey"?"GREY · OBSERVED FACT":"TRICKSTER · INTERPRETATION",w*.06,h*.907);ctx.fillStyle="#d7e0ea";ctx.font=`600 ${Math.round(w*.019)}px system-ui,sans-serif`;const narration=obj(model.narration),roleLine=text(narration[role]);wrapLines(ctx,roleLine,w*.86,2).forEach((line,index)=>ctx.fillText(line,w*.06,h*(.938+index*.026)));
   ctx.fillStyle="#93a8ba";ctx.font=`600 ${Math.round(w*.016)}px ui-monospace,monospace`;ctx.fillText(`${text(model.walletLabel)} · ${text(model.signature)||"signature unavailable"}`,w*.06,h*.982);
   ctx.textAlign="right";ctx.fillStyle="#65f4d2";ctx.font=`800 ${Math.round(w*.015)}px ui-monospace,monospace`;ctx.fillText(`VERIFY ${text(model.shareHref)||"link unavailable"}`,w*.94,h*.06);ctx.textAlign="left";
+  drawComplianceBand(ctx, model, w, h);
+}
+
+function drawComplianceBand(ctx:CanvasRenderingContext2D, model:Data, w:number, h:number){
+  const reveal=text(model.template)==="pnl-reveal";
+  const metric=obj(model.metric);
+  const stored=text(model.complianceNotice);
+  const showsFigure=reveal||Boolean(text(metric.display));
+  const notice=withVerifyUrl(stored||(showsFigure?pnlRevealNotice({from:num(model.coverageFrom),to:num(model.coverageTo),verifyUrl:text(model.shareHref)}):""), text(model.shareHref));
+  if(!notice||(!reveal&&!text(metric.display)))return;
+  const font=Math.max(32, Math.round(w*0.02));
+  ctx.save();
+  ctx.font=`500 ${font}px system-ui,sans-serif`;
+  const lines=wrapLines(ctx, notice, w*0.88, 8);
+  const lineH=Math.round(font*1.25);
+  const bandH=lines.length*lineH+20;
+  const y=Math.max(8, h-bandH-12);
+  ctx.fillStyle="rgba(5,7,13,.92)";
+  ctx.fillRect(w*0.04, y, w*0.92, bandH);
+  ctx.fillStyle="#f4f1ea";
+  ctx.textAlign="left";
+  ctx.textBaseline="top";
+  lines.forEach((line, index)=>ctx.fillText(line, w*0.06, y+10+index*lineH));
+  ctx.restore();
 }
 
 function connectVoice(context:BaseAudioContext,destination:AudioNode,buffer:AudioBuffer,start:number,available:number){

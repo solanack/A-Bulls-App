@@ -1,5 +1,6 @@
 import type { ResearchThreadContext } from "../research-thread.ts";
 import { roundsMatchedLine } from "./honest-pnl.ts";
+import { cutExportNotice, FEE_GROSS_UNLESS_EMBEDDED, FIFO_MATCHED, windowRangeLabel } from "../../../js/compliance-notice.mjs";
 
 export const WSOL_MINT = "So11111111111111111111111111111111111111112";
 const EVM = /^0x[0-9a-fA-F]{40}$/;
@@ -643,6 +644,6 @@ export function buildCutManifest(input: { subject: ReplaySubject; bolts: readonl
     cohortBuysAfterFirstPrint: input.cohortCount ?? 0,
     greyLine: input.greyLine,
     replayUrl: input.replayUrl,
-    disclosure: "Research only. Events may include provider-reported position summaries; these are not individual fills. Source labels and receipts do not establish trader skill. No price path was invented. A Bulls App is not a broker and executes no trades.",
+    disclosure: `Research only. Events may include provider-reported position summaries; these are not individual fills. Source labels and receipts do not establish trader skill. No price path was invented. A Bulls App is not a broker and executes no trades. ${cutExportNotice({ method: FIFO_MATCHED, fees: FEE_GROSS_UNLESS_EMBEDDED, windowLabel: windowRangeLabel(input.start, input.end), verifyUrl: input.replayUrl })}`,
   };
 }

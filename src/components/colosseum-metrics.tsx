@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { evidenceVerifyHref, PNL_CAVEAT, roundsMatchedLine } from "../lib/field/honest-pnl.ts";
+import { ComplianceNotice } from "@/components/compliance-notice";
+import { COMPARE_METHOD_ID, FEE_GROSS_UNLESS_EMBEDDED, pnlCardNotice } from "../../js/compliance-notice.mjs";
 import {
   duelBarRatio,
   extractDivergeSeries,
@@ -215,6 +217,8 @@ export function CompareDuel({
         <p className="colosseum-duel__diff-note">Same-period matched-round signals only — not a skill, ownership, copy-trading, or future-return rank.</p>
       ) : null}
       <p className="colosseum-duel__diff-note">{PNL_CAVEAT}</p>
+      <p className="colosseum-duel__diff-note">{String(summaryA.method || summaryB.method || COMPARE_METHOD_ID)} · {FEE_GROSS_UNLESS_EMBEDDED} · {Number.isFinite(Number(summaryA.period_days ?? summaryB.period_days)) ? `same period · ${Math.trunc(Number(summaryA.period_days ?? summaryB.period_days))}D` : "same period"}</p>
+      <ComplianceNotice text={pnlCardNotice({ method: String(summaryA.method || summaryB.method || COMPARE_METHOD_ID), fees: FEE_GROSS_UNLESS_EMBEDDED, windowLabel: Number.isFinite(Number(summaryA.period_days ?? summaryB.period_days)) ? `same period · ${Math.trunc(Number(summaryA.period_days ?? summaryB.period_days))}D` : "same period" })} />
       {disclaimer ? <p className="universe-disclosure">{disclaimer}</p> : null}
     </section>
   );

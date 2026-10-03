@@ -88,7 +88,7 @@ export function skyFactText(value: unknown, max = 64): string | null {
   if (!text) return null;
   if (text.length <= max) return text;
   const held = text.match(/ · Holds \S+$/);
-  const tails = [" · Fomo-reported", " · Coverage thin"];
+  const tails = [" · All-time, provider-reported · Fomo-reported", " · Fomo-reported", " · Coverage thin"];
   const tail = tails.find((item) => text.endsWith(item)) ?? held?.[0] ?? "";
   if (tail && tail.length + 2 < max) {
     const room = max - tail.length - 1;

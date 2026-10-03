@@ -76,6 +76,7 @@ export const ADVANCED_MODES: { id: FieldMode; label: string }[] = [
   { id: "compare", label: "Compare" },
   { id: "sequences", label: "Sequences" },
   { id: "ghost", label: "Ghost" },
+  { id: "observatory", label: "Observatory" },
 ];
 export const TOOL_TITLE: Partial<Record<FieldMode, string>> = {
   trickster: "Make a Cut",
@@ -83,6 +84,7 @@ export const TOOL_TITLE: Partial<Record<FieldMode, string>> = {
   evidence: "Receipts for this trade",
   compare: "Compare two traders side by side",
   "what-if": "Indexed fixed-hold record",
+  observatory: "Observatory",
 };
 export const MODE_HINT: Record<FieldMode, string> = {
   explore: "Return to the Field · FOMO + AFTERBELL.",
@@ -98,6 +100,6 @@ export const MODE_HINT: Record<FieldMode, string> = {
   replay: "Replay the trade on its indexed tape.",
   ghost: "See the indexed counterfactual portfolio. Estimates stay labeled.",
   social: "Follow evidence, creators, wallets, tokens, and galaxies without connecting a wallet.",
-  observatory: "Study cached Fomo trader STARS alongside separately labeled provider and chain evidence. No copy trading.",
+  observatory: "Cached 7D matched realized SOL. FIFO matched, matched-in-window-fifo-realized-sol-v2. Not a skill score.",
   watchlist: "Watch a trader or a token from the Field. Saved on this device.",
 };

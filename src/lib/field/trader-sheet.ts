@@ -26,6 +26,7 @@ export type TraderSheetDetail = {
   pnlCoverage: string | null;
   pnlVerifyHref: string | null;
   pnlCaveat: string;
+  capturedAt: number | null;
 };
 
 type Row = Record<string, JsonValue>;
@@ -141,6 +142,7 @@ export function afterbellTraderDetail(star: FieldParticle, planetCount: number, 
       chain: "solana",
     }),
     pnlCaveat: PNL_CAVEAT,
+    capturedAt: null,
   };
 }
 
@@ -154,6 +156,7 @@ export function fomoTraderDetail(input: {
   reportedPnlUsd?: number | null;
   positions: readonly { mint: string; symbol: string | null; tradeCount: number | null; sourceKind: string; chain?: string | null }[];
   latestTrades: readonly { side: string; observedAt: number; mint: string; signature: string | null }[];
+  capturedAt?: number | null;
 }): TraderSheetDetail {
   const symbols = new Map(input.positions.filter((row) => row.symbol).map((row) => [row.mint.toLowerCase(), row.symbol as string] as const));
   const latest = [...input.latestTrades].sort((a, b) => b.observedAt - a.observedAt)[0];
@@ -175,12 +178,13 @@ export function fomoTraderDetail(input: {
     planetCount: Math.min(10, input.positions.length),
     cometCount: Math.min(3, input.latestTrades.length),
     latestPrint: latest ? { side: latest.side, at: latest.observedAt, mint: latest.mint, symbol: symbols.get(latest.mint.toLowerCase()) ?? null, signature: latest.signature } : null,
-    windowLabel: null,
+    windowLabel: "All-time, provider-reported",
     sourceLabel: PNL_FOMO_LABEL,
     pnlText: formatCompactUsd(finitePnl(input.reportedPnlUsd)).text,
     pnlSourceLabel: PNL_FOMO_LABEL,
     pnlCoverage: null,
     pnlVerifyHref: evidenceVerifyHref({ wallet: verifyWallet, mint: position?.mint ?? null, chain }),
     pnlCaveat: PNL_CAVEAT,
+    capturedAt: typeof input.capturedAt === "number" && Number.isFinite(input.capturedAt) ? input.capturedAt : null,
   };
 }

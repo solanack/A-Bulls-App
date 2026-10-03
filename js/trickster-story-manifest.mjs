@@ -100,6 +100,8 @@ export function validateStoryManifest(input) {
   });
   if (coverage.to < coverage.from) throw new RangeError('coverage.to must not precede coverage.from');
 
+  const complianceNotice = String(input.complianceNotice ?? '').trim().slice(0, 800);
+
   return Object.freeze({
     schemaVersion: 1,
     id: text(input.id, 'id'),
@@ -118,13 +120,15 @@ export function validateStoryManifest(input) {
       locale: String(input.output?.locale ?? 'en-US'),
       theme: String(input.output?.theme ?? 'hyperspace'),
       rendererVersion: text(input.output?.rendererVersion, 'rendererVersion')
-    })
+    }),
+    ...(complianceNotice ? { complianceNotice } : {})
   });
 }
 
 export function manifestDisclosures(manifest) {
   const disclosures = new Set();
   if (manifest.coverage.verifiedPercent < 100) disclosures.add(manifest.coverage.statement);
+  if (manifest.complianceNotice) disclosures.add(String(manifest.complianceNotice));
   for (const claim of manifest.claims) if (claim.disclosure) disclosures.add(claim.disclosure);
   if(manifest.presentation?.soundtrack?.kind==='user-supplied')disclosures.add('User-supplied soundtrack and cinematic SFX are presentation layers only; they do not alter the frozen evidence, timestamps, prices, or claims.');
   if(manifest.presentation?.soundtrack?.kind==='a-bulls-original')disclosures.add('A Bulls original soundtrack and cinematic SFX are presentation layers only; they do not alter the frozen evidence, timestamps, prices, or claims.');

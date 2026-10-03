@@ -60,6 +60,44 @@ export function buildTricksterSimulationCue({at=0,prompt='',summary=''}={}){
   return Object.freeze({id:`simulation-${Math.max(0,Math.trunc(n(at)))}`,at:n(at),kind:'simulation',statement:s(summary)||s(prompt)||'What If simulation',claimKind:'simulated',disclosure:'Simulation: this segment is not an observed blockchain event.',suggestedPresentation:'alternate-timeline'});
 }
 
+function wrapNotice(value, maxChars) {
+  const words = s(value).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  const push = (chunk) => {
+    if (!line) { line = chunk; return; }
+    const next = `${line} ${chunk}`;
+    if (next.length > maxChars) { lines.push(line); line = chunk; }
+    else line = next;
+  };
+  for (const word of words) {
+    if (word.length <= maxChars) { push(word); continue; }
+    if (line) { lines.push(line); line = ''; }
+    for (let i = 0; i < word.length; i += maxChars) lines.push(word.slice(i, i + maxChars));
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function noticeLayout(notice, w, h, pad) {
+  if (!notice) return null;
+  const font = Math.max(32, Math.round(w * 0.02));
+  const inner = Math.max(160, w - pad * 2 - 32);
+  const maxChars = Math.max(18, Math.floor(inner / (font * 0.56)));
+  const lines = wrapNotice(notice, maxChars, 12);
+  const lineH = Math.round(font * 1.28);
+  const bandH = lines.length * lineH + 28;
+  const y = Math.max(8, h - bandH - Math.max(16, Math.round(pad * 0.35)));
+  return { font, lines, lineH, bandH, y };
+}
+
+function noticeMarkup(notice, w, h, pad) {
+  const layout = noticeLayout(notice, w, h, pad);
+  if (!layout) return '';
+  const { font, lines, lineH, bandH, y } = layout;
+  return `<rect x="${pad}" y="${y}" width="${w - pad * 2}" height="${bandH}" rx="16" fill="rgba(5,7,13,0.92)"/>${lines.map((line, i) => `<text x="${pad + 16}" y="${y + font + 8 + i * lineH}" fill="#f4f1ea" font-size="${font}" font-family="ui-sans-serif,system-ui,sans-serif">${xml(line)}</text>`).join('')}`;
+}
+
 /** Social SVG poster retained as a deterministic fallback when browser video capture is unavailable. */
 export function buildCutShareSvg(opts={}){
   const manifest=opts.manifest,shareHref=opts.shareHref||'',candles=opts.candles||[],tokenLabel=opts.tokenLabel||'This trade';
@@ -94,6 +132,9 @@ export function buildCutShareSvg(opts={}){
   const receiptTop=chartTop+chartH+Math.round(w*0.06);
   const receipt=lines.filter(line=>line!=='INDEXED').map((line,i)=>`<text x="${pad}" y="${receiptTop+Math.round(w*0.05)+i*Math.round(w*0.04)}" fill="#9ab0c2" font-size="${Math.round(w*0.026)}" font-family="ui-monospace,monospace">${xml(line)}</text>`).join('');
   const coverage=xml(manifest?.coverage?.statement||'Currently indexed evidence only. Missing coverage stays missing.');
+  const notice=s(opts.complianceNotice||manifest?.complianceNotice);
+  const noticeBox=noticeLayout(notice, w, h, pad);
+  const coverageY=noticeBox ? noticeBox.y - 14 : h - pad;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
     <rect width="${w}" height="${h}" fill="#05060c"/>
     <rect width="${w}" height="${Math.round(h*0.38)}" fill="rgba(76,68,240,0.16)"/>
@@ -104,7 +145,8 @@ export function buildCutShareSvg(opts={}){
     ${chart}
     <text x="${pad}" y="${receiptTop}" fill="#f5f8ff" font-size="${Math.round(w*0.032)}" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="650">Receipts for this trade</text>
     ${receipt}
-    <text x="${pad}" y="${h-pad}" fill="#8298aa" font-size="${Math.round(w*0.022)}" font-family="ui-monospace,monospace">${coverage}</text>
+    ${noticeMarkup(notice, w, h, pad)}
+    <text x="${pad}" y="${coverageY}" fill="#e7e2d8" font-size="${Math.max(32, Math.round(w*0.02))}" font-family="ui-sans-serif,system-ui,sans-serif">${coverage}</text>
   </svg>`;
 }
 

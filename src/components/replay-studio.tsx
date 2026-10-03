@@ -9,6 +9,8 @@ import { callUniverseTool } from "@/lib/universe-intelligence";
 import { loadResearchThread, saveResearchThread } from "@/lib/research-thread-store";
 import { requestTradeResearchMode } from "@/lib/field/trade-research-navigation";
 import { PNL_CAVEAT, PNL_HYPOTHETICAL_LABEL, PNL_REALIZED_LABEL } from "@/lib/field/honest-pnl";
+import { ComplianceNotice } from "@/components/compliance-notice";
+import { FEE_GROSS_UNLESS_EMBEDDED, FIFO_MATCHED, pnlCardNotice, windowRangeLabel } from "../../js/compliance-notice.mjs";
 import { observedUsdNotional, reportedPositionUsd, anchorBolts, candleSource, candleSourceLabel, cohortTicks, explorerUrl, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, tapeAvgEntryMarketCap, tapeAxis, tapeCandles, tapeEvents, tapeEvidenceLine, tapeHeaderLine, tapeMarketCapAt, tapeMarketCapPoints, tapeMarkSummary, tapeMatchedRounds, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, tapeWindow, type CohortTick, type ReplaySubject, type TapeBolt, type TapeCandle, type TapeMarkSummary, type TapeMarketCapPoint, type TapeUsdSummary } from "@/lib/field/replay-tape";
 import { drawTape, hitBolt, type BoltHit } from "@/lib/field/replay-tape-render";
 import { callsign } from "@/lib/field/trader-sheet";
@@ -410,12 +412,14 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
       <div className="rs-frame" ref={frameRef} data-scale={scaleMode} data-view-start={Math.round(view.start)} data-view-end={Math.round(view.end)} data-candles={candles.length} data-bolt-groups={groups.length} data-cohort={cohortOn ? ticks.length : 0}>
         {status === "ready" ? <div className="rs-hud rs-scoreboard" aria-label="Matched results scoreboard">
           <div className="rs-hud__mode"><b>MATCHED RESULTS</b><span data-coverage={coverageLabel.toLowerCase()}>{coverageLabel}</span></div>
+          <p className="rs-hud__meta">{FIFO_MATCHED} · {FEE_GROSS_UNLESS_EMBEDDED} · {windowRangeLabel(view.start, view.end, historyLabel)}</p>
           <div className="rs-hud__metric rs-hud__metric--pnl"><span>{PNL_REALIZED_LABEL}</span><strong data-number="true" data-sign={mark.realizedUsd==null?"unknown":mark.realizedUsd>=0?"up":"down"}>{signedUsd(mark.realizedUsd)}</strong>{verifyHref?<a href={verifyHref}>VERIFY</a>:null}</div>
           <div className="rs-hud__metric rs-hud__metric--pnl"><span>{PNL_HYPOTHETICAL_LABEL}</span><strong data-number="true" data-sign={mark.deltaUsd==null?"unknown":mark.deltaUsd>=0?"up":"down"}>{signedUsd(mark.deltaUsd)}</strong>{verifyHref?<a href={verifyHref}>VERIFY</a>:null}</div>
           <div className="rs-hud__metric"><span>MATCHED EXITS</span><strong data-number="true">{mark.realizedUsd==null?"—":visible.filter(row=>row.side==="sell").length}</strong></div>
           <div className="rs-hud__metric"><span>REMAINING</span><strong data-number="true">{mark.remainingTokens==null?"—":amountLabel(mark.remainingTokens)}</strong></div>
           <small className="rs-hud__note">{roundLine} · {visible.length}/{bolts.length} prints · unknowns stay —</small>
           <small className="rs-hud__note">{PNL_CAVEAT}</small>
+          <ComplianceNotice text={pnlCardNotice({ method: FIFO_MATCHED, fees: FEE_GROSS_UNLESS_EMBEDDED, windowLabel: windowRangeLabel(view.start, view.end, historyLabel) })} />
         </div> : null}
         {status === "ready" ? <canvas ref={canvasRef} className="rs-canvas" onPointerDown={onCanvasPointer} aria-label={`${candles.length ? "Candles" : "Event tape"} with ${bolts.length} buy and sell bolts. Tap a bolt for its evidence.`} role="img" /> : null}
         {status === "loading" || status === "building" ? <div className="rs-state rs-skeleton" aria-live="polite"><div className="rs-skeleton__chart" aria-hidden="true"><i/><i/><i/><i/><i/><i/><i/></div><p><b>Grey is reading prints</b><span>{status === "building" ? "Extending retained history without inventing missing evidence." : "Matching receipts to the tape and checking candle coverage."}</span></p></div> : null}

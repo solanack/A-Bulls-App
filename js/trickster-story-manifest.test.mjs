@@ -70,6 +70,15 @@ test('native share prefers a file, then the VERIFY URL, then clipboard', async (
 });
 
 
+test('optional compliance notice is preserved and disclosed without rejecting older manifests', () => {
+  const plain = validateStoryManifest(valid);
+  assert.equal(plain.complianceNotice, undefined);
+  const notice = 'Analytics only, not investment, tax or legal advice. Past performance does not predict future results. FIFO matched · 7D · gross of fees unless embedded.';
+  const manifest = validateStoryManifest({ ...valid, complianceNotice: notice });
+  assert.equal(manifest.complianceNotice, notice);
+  assert.ok(manifestDisclosures(manifest).includes(notice));
+});
+
 test('Cut presentation metadata preserves soundtrack provenance without changing evidence claims',()=>{
   const manifest=validateStoryManifest({...valid,presentation:{sfxPack:'arcade',soundtrack:{kind:'user-supplied',name:'my-track.wav',volume:.24,rightsConfirmed:true}}});
   assert.equal(manifest.presentation.sfxPack,'arcade');

@@ -6,6 +6,7 @@ import { cutFrameLayout } from "@/lib/field/replay-cut-layout";
 import { CUT_SIZE, formatUsdNotional, formatUsdPrice, tapeAvgEntryMarketCap, tapeAxis, tapeMarketCapAt, tapeMarkSummary, tapeMatchedRounds, tapeUsdSummary, type CohortTick, type CutFormat, type TapeBolt, type TapeCandle, type TapeMarketCapPoint, type TapeMarkSummary, type TapeUsdSummary } from "@/lib/field/replay-tape";
 import { drawTraderSigil } from "@/lib/field/trader-sigil";
 import { drawVerifyQr } from "@/lib/verify-qr";
+import { cutExportNotice, FEE_GROSS_UNLESS_EMBEDDED, FIFO_MATCHED, windowRangeLabel } from "../../js/compliance-notice.mjs";
 
 export { cutTiming } from "@/lib/field/replay-director";
 
@@ -54,6 +55,33 @@ function wrap(ctx: CanvasRenderingContext2D, value: string, maxWidth: number) {
   return lines;
 }
 
+function replayCutNotice(input: ReplayCutInput) {
+  return cutExportNotice({
+    method: FIFO_MATCHED,
+    fees: FEE_GROSS_UNLESS_EMBEDDED,
+    windowLabel: windowRangeLabel(input.start, input.end),
+    verifyUrl: input.replayUrl,
+  });
+}
+
+function drawNoticeBand(ctx: CanvasRenderingContext2D, w: number, h: number, k: number, notice: string) {
+  const font = Math.max(32, Math.round(32 * k));
+  ctx.save();
+  ctx.font = `500 ${font}px ui-sans-serif,system-ui,sans-serif`;
+  const lines = wrap(ctx, notice, w * 0.9).slice(0, 8);
+  const lineH = Math.round(font * 1.25);
+  const bandH = lines.length * lineH + 28 * k;
+  const y = h - bandH - 16 * k;
+  ctx.fillStyle = "rgba(5,7,13,.92)";
+  ctx.fillRect(0, y, w, h - y);
+  ctx.fillStyle = "#f4f1ea";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  lines.forEach((line, i) => ctx.fillText(line, w * 0.05, y + 14 * k + i * lineH));
+  ctx.restore();
+  return y;
+}
+
 function drawVerify(ctx: CanvasRenderingContext2D, w: number, h: number, input: ReplayCutInput, alpha: number) {
   const k = Math.min(w, h) / 1080, qrSize = Math.min(w * .48, 460 * k), qrX = (w - qrSize) / 2, qrY = h * .42;
   ctx.save();ctx.globalAlpha = alpha;ctx.fillStyle = TAPE_BG;ctx.fillRect(0, 0, w, h);
@@ -61,8 +89,17 @@ function drawVerify(ctx: CanvasRenderingContext2D, w: number, h: number, input: 
   ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillStyle="rgba(236,218,170,.97)";ctx.font=`800 ${Math.round(116*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillText("VERIFY",w/2,h*.31);
   ctx.fillStyle="rgba(244,242,236,.78)";ctx.font=`540 ${Math.round(30*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillText("Scan to reopen the evidence-backed Replay.",w/2,h*.36);
   drawVerifyQr(ctx,input.replayUrl,qrX,qrY,qrSize);
-  ctx.fillStyle="rgba(236,236,240,.7)";ctx.font=`520 ${Math.round(24*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillText(shortUrl(input.replayUrl).slice(0,72),w/2,qrY+qrSize+48*k);
-  ctx.fillStyle="rgba(236,236,240,.46)";ctx.font=`700 ${Math.round(22*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillText("A BULLS APP · RESEARCH ONLY · NOT A BROKER",w/2,h-90*k);ctx.restore();
+  ctx.fillStyle="rgba(236,236,240,.7)";ctx.font=`520 ${Math.round(32*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillText(shortUrl(input.replayUrl).slice(0,72),w/2,qrY+qrSize+48*k);
+  const bandTop = drawNoticeBand(ctx, w, h, k, replayCutNotice(input));
+  const researchY = bandTop - 28 * k;
+  if (researchY > qrY + qrSize + 64 * k) {
+    ctx.fillStyle = "#f4f1ea";
+    ctx.font = `700 ${Math.max(32, Math.round(32 * k))}px ui-sans-serif,system-ui,sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("RESEARCH ONLY · NOT A BROKER", w / 2, researchY);
+  }
+  ctx.restore();
 }
 
 const timingCache = new WeakMap<readonly TapeBolt[], Map<number, ReturnType<typeof cutTiming>>>();
@@ -131,9 +168,13 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   const strikeAge = (bolt: TapeBolt) => { const at = timing.arrivalAt.get(bolt.id); return at == null || tapeT < at ? null : (tapeT - at) * 1000; };
   const left = 56 * k;
   const rowCount = 5 + (avgEntryMc != null ? 1 : 0) + (summary.sellTotal > 0 ? 2 : 0);
+  const noticeFont = Math.max(32, Math.round(32 * k));
+  ctx.font = `500 ${noticeFont}px ui-sans-serif, system-ui, sans-serif`;
+  const notice = replayCutNotice(input);
+  const noticeLines = wrap(ctx, notice, w - left * 2 - 24 * k).slice(0, 8);
   ctx.font = `520 ${Math.round(20 * k)}px ui-sans-serif, system-ui, sans-serif`;
   const sourceLines = wrap(ctx, input.sourceLine, w - left * 2).slice(0, 2);
-  const layout = cutFrameLayout({ format: input.format, rowCount, evidence: Boolean(input.evidenceLine), sourceLines: sourceLines.length });
+  const layout = cutFrameLayout({ format: input.format, rowCount, evidence: Boolean(input.evidenceLine), sourceLines: sourceLines.length, noticeLines: noticeLines.length });
   const chartTop = layout.chartTop, chartBottom = layout.chartBottom;
   ctx.save();
   ctx.fillStyle = TAPE_BG;
@@ -169,8 +210,21 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   sourceLines.forEach((line, i) => ctx.fillText(line, left, layout.sourceY + i * 28 * k));
 
   ctx.fillStyle = "rgba(236,218,170,.62)";
-  ctx.font = `650 ${Math.round(20 * k)}px ui-sans-serif, system-ui, sans-serif`;
+  ctx.font = `650 ${Math.max(32, Math.round(20 * k))}px ui-sans-serif, system-ui, sans-serif`;
   ctx.fillText(`VERIFY · ${wrap(ctx, shortUrl(input.replayUrl), w - left * 2 - 150 * k)[0] ?? ""}`, left, layout.verifyY);
+  if (layout.noticeY != null && noticeLines.length) {
+    const lineH = 40 * k;
+    const boxH = noticeLines.length * lineH + 16 * k;
+    ctx.fillStyle = "rgba(5,7,13,.92)";
+    ctx.beginPath();
+    ctx.roundRect(left, layout.noticeY - 28 * k, cardW, boxH, 12 * k);
+    ctx.fill();
+    ctx.fillStyle = "#f4f1ea";
+    ctx.font = `500 ${noticeFont}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    noticeLines.forEach((line, i) => ctx.fillText(line, left + 12 * k, layout.noticeY! + i * lineH));
+  }
 
   const captionAlpha=tapeT<Math.min(7,tapeSeconds)?Math.min(1,tapeT/0.45)*Math.min(1,(Math.min(7,tapeSeconds)-tapeT)/.5):0;
   drawGreyCaption(ctx,w,h,input.greyLine,k,captionAlpha);

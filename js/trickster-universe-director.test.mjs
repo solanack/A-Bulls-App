@@ -49,3 +49,21 @@ test('vertical share SVG burns INDEXED receipts and stays honest without OHLC',(
   assert.match(empty,/No price path was invented/);
   assert.match(empty,/signature unavailable/);
 });
+
+test('pnl-reveal share SVG keeps the full compliance notice inside the frame', () => {
+  const notice = 'Analytics only, not investment, tax or legal advice. Past performance does not predict future results. entry-to-exit observed price change · Jan 2, 2024, 2:00 PM → Jan 2, 2024, 6:30 PM · gross of fees unless embedded. Verify: https://abulls.app/cut/demo';
+  const svg = buildCutShareSvg({
+    manifest: { output: { aspectRatio: '9:16' }, coverage: { statement: 'Currently indexed evidence only.' }, evidence: [] },
+    shareHref: 'https://abulls.app/cut/demo',
+    candles: [],
+    complianceNotice: notice,
+  });
+  const painted = svg.replace(/<[^>]+>/g, ' ');
+  assert.match(painted, /Analytics only, not investment, tax or legal/);
+  assert.match(painted, /Past performance does not predict future/);
+  assert.match(painted, /gross of fees unless embedded/);
+  assert.match(painted, /https:\/\/abulls\.app\/cut\/demo/);
+  const band = svg.match(/<rect x="\d+" y="(\d+)" width="\d+" height="(\d+)" rx="16"/);
+  assert.ok(band, 'notice band is painted');
+  assert.ok(Number(band[1]) + Number(band[2]) <= 1920, 'notice band stays inside the portrait frame');
+});
