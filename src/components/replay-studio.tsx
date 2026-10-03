@@ -1,5 +1,5 @@
 import { ReplayCutPanel as CutPanel } from "@/components/replay-cut-panel";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ReplayLedger } from "@/components/replay-ledger";
 import { printLabel, printSource, replayCandleCoverage } from "@/lib/field/replay-director";
 import "@/components/replay-director.css";
@@ -8,7 +8,8 @@ import { ArrowLeft, Clapperboard, List, CalendarDays, Pause, Play, Share2, SkipB
 import { callUniverseTool } from "@/lib/universe-intelligence";
 import { loadResearchThread, saveResearchThread } from "@/lib/research-thread-store";
 import { requestTradeResearchMode } from "@/lib/field/trade-research-navigation";
-import { observedUsdNotional, reportedPositionUsd, anchorBolts, candleSource, candleSourceLabel, cohortTicks, explorerUrl, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, tapeAvgEntryMarketCap, tapeAxis, tapeCandles, tapeEvents, tapeEvidenceLine, tapeHeaderLine, tapeMarketCapAt, tapeMarketCapPoints, tapeMarkSummary, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, tapeWindow, type CohortTick, type ReplaySubject, type TapeBolt, type TapeCandle, type TapeMarkSummary, type TapeMarketCapPoint, type TapeUsdSummary } from "@/lib/field/replay-tape";
+import { PNL_CAVEAT, PNL_HYPOTHETICAL_LABEL, PNL_REALIZED_LABEL } from "@/lib/field/honest-pnl";
+import { observedUsdNotional, reportedPositionUsd, anchorBolts, candleSource, candleSourceLabel, cohortTicks, explorerUrl, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, tapeAvgEntryMarketCap, tapeAxis, tapeCandles, tapeEvents, tapeEvidenceLine, tapeHeaderLine, tapeMarketCapAt, tapeMarketCapPoints, tapeMarkSummary, tapeMatchedRounds, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, tapeWindow, type CohortTick, type ReplaySubject, type TapeBolt, type TapeCandle, type TapeMarkSummary, type TapeMarketCapPoint, type TapeUsdSummary } from "@/lib/field/replay-tape";
 import { drawTape, hitBolt, type BoltHit } from "@/lib/field/replay-tape-render";
 import { callsign } from "@/lib/field/trader-sheet";
 import { getAfterbellGalaxy, XSTOCK_REGISTRY } from "@/lib/universe-data/afterbell-client";
@@ -69,6 +70,8 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
   const canvasRef = useRef<HTMLCanvasElement | null>(null), frameRef = useRef<HTMLDivElement | null>(null), hitsRef = useRef<BoltHit[]>([]), audioRef = useRef<{ ctx: AudioContext; tone: GainNode } | null>(null), lastTickRef = useRef(0), cursorRef = useRef(cursor), progressRef = useRef(0), strikesRef = useRef(new Map<string, number>()), visitedRef = useRef(new Set<string>()), drawRef = useRef<() => void>(() => {}), hitStopUntilRef = useRef(0), impactRef = useRef({ started: 0, until: 0, strength: 0 }), scrubbingRef = useRef(false), lastHapticRef = useRef(-1);
   const audible = ticksOn && !muted;
   const [size, setSize] = useState({ w: 0, h: 0, dpr: 1 });
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
 
   const retainedCandles = useMemo(() => tapeCandles(bundle?.candles), [bundle]);
   const events = useMemo(() => tapeEvents(bundle?.events, obj(bundle?.subject).quoteMint), [bundle]);
@@ -156,10 +159,16 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
     if (reduced) setCursor(1); else setPlaying(true);
   }, [status]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const host = frameRef.current;
     if (!host) return;
-    const measure = () => setSize({ w: host.clientWidth, h: host.clientHeight, dpr: Math.min(2, globalThis.devicePixelRatio || 1) });
+    const measure = () => {
+      const next = { w: host.clientWidth, h: host.clientHeight, dpr: Math.min(2, globalThis.devicePixelRatio || 1) };
+      if (!next.w || !next.h) return;
+      sizeRef.current = next;
+      setSize((prev) => (prev.w === next.w && prev.h === next.h && prev.dpr === next.dpr ? prev : next));
+      drawRef.current();
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(host);
@@ -168,6 +177,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
 
   drawRef.current = () => {
     const canvas = canvasRef.current, ctx = canvas?.getContext("2d");
+    const size = sizeRef.current;
     if (!canvas || !ctx || !size.w || !size.h) return;
     const px = Math.round(size.w * size.dpr), py = Math.round(size.h * size.dpr);
     if (canvas.width !== px || canvas.height !== py) { canvas.width = px; canvas.height = py; }
@@ -182,7 +192,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
       const push = 1 + impact.strength * life * 0.018;
       ctx.translate(size.w / 2 + sx, size.h / 2 + sy); ctx.scale(push, push); ctx.translate(-size.w / 2, -size.h / 2);
     }
-    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 17 : 18, hypothetical: whatIf ? { cursor, side: latest?.side === "buy" ? "sell" : "buy", label: "HYPOTHETICAL" } : null, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 68 : 72, right: compact ? 58 : 72, bottom: 28, left: compact ? 8 : 20 } });
+    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 17 : 18, hypothetical: whatIf ? { cursor, side: latest?.side === "buy" ? "sell" : "buy", label: "HYPOTHETICAL" } : null, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 168 : 200, right: compact ? 58 : 72, bottom: 28, left: compact ? 8 : 20 } });
     ctx.restore();
   };
 
@@ -366,6 +376,8 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
   const headerLine = status === "ready" ? tapeHeaderLine({ token: tokenLabel, trader: traderLabel, bolts, cohortCount: cohortItems ? ticks.length : null }) : null;
   const evidenceLine = status === "ready" ? tapeEvidenceLine(bolts) : null;
   const buyCoverage = tapeUsdCoverage(visible, "buy"), sellCoverage = tapeUsdCoverage(visible, "sell");
+  const roundLine = tapeMatchedRounds(visible, mark.realizedUsd).line;
+  const verifyHref = subject ? replayShareUrl(typeof window === "undefined" ? INTELLIGENCE_PUBLIC_ORIGIN : window.location.origin, { ...subject, fromTs: view.start, toTs: view.end, displayName: subject.displayName ?? handle, symbol: subject.symbol ?? resolvedSymbol }) : null;
 
   return (
     <section className="rs" data-ledger={ledgerOpen} data-room={room ?? undefined} data-status={status} aria-label="Replay">
@@ -398,10 +410,12 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
       <div className="rs-frame" ref={frameRef} data-scale={scaleMode} data-view-start={Math.round(view.start)} data-view-end={Math.round(view.end)} data-candles={candles.length} data-bolt-groups={groups.length} data-cohort={cohortOn ? ticks.length : 0}>
         {status === "ready" ? <div className="rs-hud rs-scoreboard" aria-label="Matched results scoreboard">
           <div className="rs-hud__mode"><b>MATCHED RESULTS</b><span data-coverage={coverageLabel.toLowerCase()}>{coverageLabel}</span></div>
-          <div className="rs-hud__metric"><span>REALIZED</span><strong data-number="true" data-sign={mark.realizedUsd==null?"unknown":mark.realizedUsd>=0?"win":"loss"}>{signedUsd(mark.realizedUsd)}</strong></div>
+          <div className="rs-hud__metric rs-hud__metric--pnl"><span>{PNL_REALIZED_LABEL}</span><strong data-number="true" data-sign={mark.realizedUsd==null?"unknown":mark.realizedUsd>=0?"up":"down"}>{signedUsd(mark.realizedUsd)}</strong>{verifyHref?<a href={verifyHref}>VERIFY</a>:null}</div>
+          <div className="rs-hud__metric rs-hud__metric--pnl"><span>{PNL_HYPOTHETICAL_LABEL}</span><strong data-number="true" data-sign={mark.deltaUsd==null?"unknown":mark.deltaUsd>=0?"up":"down"}>{signedUsd(mark.deltaUsd)}</strong>{verifyHref?<a href={verifyHref}>VERIFY</a>:null}</div>
           <div className="rs-hud__metric"><span>MATCHED EXITS</span><strong data-number="true">{mark.realizedUsd==null?"—":visible.filter(row=>row.side==="sell").length}</strong></div>
           <div className="rs-hud__metric"><span>REMAINING</span><strong data-number="true">{mark.remainingTokens==null?"—":amountLabel(mark.remainingTokens)}</strong></div>
-          <small>{visible.length}/{bolts.length} prints · matched values only · unknowns stay —</small>
+          <small className="rs-hud__note">{roundLine} · {visible.length}/{bolts.length} prints · unknowns stay —</small>
+          <small className="rs-hud__note">{PNL_CAVEAT}</small>
         </div> : null}
         {status === "ready" ? <canvas ref={canvasRef} className="rs-canvas" onPointerDown={onCanvasPointer} aria-label={`${candles.length ? "Candles" : "Event tape"} with ${bolts.length} buy and sell bolts. Tap a bolt for its evidence.`} role="img" /> : null}
         {status === "loading" || status === "building" ? <div className="rs-state rs-skeleton" aria-live="polite"><div className="rs-skeleton__chart" aria-hidden="true"><i/><i/><i/><i/><i/><i/><i/></div><p><b>Grey is reading prints</b><span>{status === "building" ? "Extending retained history without inventing missing evidence." : "Matching receipts to the tape and checking candle coverage."}</span></p></div> : null}

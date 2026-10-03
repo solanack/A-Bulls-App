@@ -1,4 +1,5 @@
 import type { ResearchThreadContext } from "../research-thread.ts";
+import { roundsMatchedLine } from "./honest-pnl.ts";
 
 export const WSOL_MINT = "So11111111111111111111111111111111111111112";
 const EVM = /^0x[0-9a-fA-F]{40}$/;
@@ -320,7 +321,7 @@ export type TapeMarkSummary = {
   realizedUsd: number | null;
   /** FIFO acquisition basis still attached to remaining inventory. */
   remainingBasisUsd: number | null;
-  /** Unrealized PnL on remaining inventory at the tape mark. */
+  /** Hypothetical mark on remaining inventory. Never added to realizedUsd. */
   deltaUsd: number | null;
   deltaPct: number | null;
   remainingTokens: number | null;
@@ -460,7 +461,14 @@ export function tapeMarkSummary(bolts: readonly TapeBolt[], candles: readonly Ta
   const markedUsd=remainingTokens*last.close;
   const deltaUsd=remainingBasisUsd!=null?markedUsd-remainingBasisUsd:null;
   const deltaPct=remainingBasisUsd!=null&&remainingBasisUsd>0&&deltaUsd!=null?deltaUsd/remainingBasisUsd:null;
-  return {markedUsd,realizedUsd:hadSell?(realizedKnown?realizedUsd:null):0,remainingBasisUsd,deltaUsd,deltaPct,remainingTokens,lastClose:last.close};
+  return {markedUsd,realizedUsd:hadSell&&realizedKnown?realizedUsd:null,remainingBasisUsd,deltaUsd,deltaPct,remainingTokens,lastClose:last.close};
+}
+
+/** In-view sells are one round each. A known FIFO result means every sell matched; an unknown result matches none. */
+export function tapeMatchedRounds(bolts: readonly TapeBolt[], realizedUsd: number | null) {
+  const total = bolts.filter((bolt) => bolt.side === "sell").length;
+  const matched = realizedUsd != null && total > 0 ? total : 0;
+  return { matched, total, line: roundsMatchedLine(matched, total) };
 }
 
 /** Several prints on one bar and side become one bolt with a count. Notional is amount × price when both are known. */

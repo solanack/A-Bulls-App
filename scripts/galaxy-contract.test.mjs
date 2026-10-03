@@ -27,6 +27,12 @@ test("Field visual polish stays inside the known-good WebGL renderer",()=>{
   assert.match(field,/WARP_STREAK_LENGTH/);
   assert.match(field,/uStreak/);
   assert.match(field,/sampleWarp/);
+  assert.match(field,/warpClock\(this\.#warp\.started/);
+  assert.doesNotMatch(field,/if \(retarget\) this\.#warp\.started = performance\.now\(\)/);
+  assert.match(field,/warpScale\(warp\.reduced/);
+  assert.match(field,/addEventListener\("change", this\.#onReducedMotion\)/);
+  assert.match(field,/delete this\.host\.dataset\.fieldWarp/);
+  assert.match(field,/#settleInterruptedWarp/);
   assert.match(field,/this\.cameraState = \{ yaw: 0\.4, pitch: 0\.18, distance: snapshot\.galaxyId === "galaxy-zero" \? GALAXY_ZERO_CAMERA_DISTANCE : 125, target: \[0, 0, 0\] \};/);
   assert.doesNotMatch(field,/if \(galaxyChanged\) \{[^}]*#placeCamera\(\)/s);
   assert.match(field,/new THREE\.WebGLRenderer/);

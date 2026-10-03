@@ -40,6 +40,25 @@ export function warpDuration(reducedMotion: boolean) {
   return reducedMotion ? WARP_REDUCED_MS : WARP_DURATION_MS;
 }
 
+/** Keep the original start when the destination changes. A null start is the first tap. */
+export function warpClock(existingStart: number | null, now: number) {
+  return existingStart ?? now;
+}
+
+/**
+ * Shorten an in-flight warp when reduced motion turns on.
+ * The original clock is never extended, so the shot stays inside the cinematic window.
+ */
+export function warpReducedDuration(started: number, duration: number, now: number, reducedMs = WARP_REDUCED_MS) {
+  const elapsed = Math.max(0, now - started);
+  return Math.min(duration, elapsed + reducedMs);
+}
+
+/** Reduced motion is a fade. Warp and settle stay at zero so the galaxy does not scale. */
+export function warpScale(reduced: boolean, approach: number, settle: number) {
+  return reduced ? { warp: 0, settle: 0 } : { warp: approach, settle };
+}
+
 export type WarpSample = {
   /** Portal growth. Rises ease-in to the commit, then eases back out. */
   approach: number;

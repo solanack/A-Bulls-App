@@ -4,7 +4,7 @@
 @theme {
   --color-bg: #0b0c10;
   --color-fg: #f2eee7;
-  --color-muted: #9a958c;
+  --color-muted: #b7b3aa;
   --color-line: rgba(242, 238, 231, 0.14);
   --color-line-strong: rgba(242, 238, 231, 0.24);
   --color-surface: rgba(10, 10, 14, 0.72);
@@ -32,7 +32,7 @@
 .universe-workspace > header { margin-bottom: 18px; }
 .universe-workspace > header span,
 .universe-workspace label,
-.candle-chart > span { color: #7ad9ff; font: 600 10px/1.3 ui-monospace, monospace; letter-spacing: .14em; }
+.candle-chart > span { color: #7ad9ff; font: 600 11px/1.3 ui-monospace, monospace; letter-spacing: .08em; }
 .universe-workspace h2 { margin: 5px 0 0; font-size: clamp(22px, 4vw, 38px); font-weight: 380; letter-spacing: -.04em; }
 .universe-workspace__body { display: grid; gap: 13px; }
 .universe-inputs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
@@ -46,8 +46,8 @@
 .universe-details > summary {
   cursor: pointer;
   color: #8ee9ff;
-  font: 650 10px/1.3 ui-monospace, monospace;
-  letter-spacing: .12em;
+  font: 650 11px/1.3 ui-monospace, monospace;
+  letter-spacing: .08em;
 }
 .universe-details > summary::-webkit-details-marker { color: #8ee9ff; }
 .universe-details[open] > summary { margin-bottom: 8px; }
@@ -71,7 +71,7 @@
 .universe-action {
   justify-self: start; display: inline-flex; align-items: center; gap: 7px; border: 1px solid rgba(90,228,255,.5);
   border-radius: 999px; background: linear-gradient(110deg, rgba(54,57,255,.32), rgba(10,210,205,.16));
-  color: #eaffff; padding: 10px 15px; font: 700 10px/1 ui-monospace, monospace; letter-spacing: .1em;
+  color: #eaffff; padding: 10px 15px; font: 700 11px/1 ui-monospace, monospace; letter-spacing: .08em;
 }
 .universe-action:disabled { opacity: .35; }
 .universe-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -84,18 +84,18 @@
 .universe-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; }
 .universe-metrics--wrap { grid-template-columns: repeat(auto-fit,minmax(130px,1fr)); }
 .universe-metrics > div { min-width: 0; border: 1px solid rgba(115,212,255,.15); border-radius: 9px; padding: 10px; background: rgba(2,8,20,.45); }
-.universe-metrics span { display: block; color: #7691a8; font: 600 9px/1.2 ui-monospace,monospace; letter-spacing: .1em; }
+.universe-metrics span { display: block; color: var(--text-muted); font: 600 11px/1.2 ui-monospace,monospace; letter-spacing: .06em; }
 .universe-metrics strong { display: block; margin-top: 4px; overflow-wrap: anywhere; font: 500 16px/1.2 ui-monospace,monospace; }
 .candle-chart { border: 1px solid rgba(97,216,255,.16); border-radius: 11px; padding: 10px; background: radial-gradient(circle at 70% 0,rgba(50,39,211,.16),transparent 50%),rgba(0,4,12,.66); }
 .candle-chart svg { display: block; width: 100%; height: 180px; margin-top: 5px; }
 .candle-chart line { stroke-width: 1; }.candle-chart rect { stroke: none; }
 .candle-up line,.candle-up rect { stroke: #42efbd; fill: #42efbd; }.candle-down line,.candle-down rect { stroke: #ff5b82; fill: #ff5b82; }
 .universe-events { display: grid; max-height: 290px; overflow: auto; border: 1px solid rgba(125,209,255,.13); border-radius: 10px; }
-.universe-events > div { display: grid; grid-template-columns: minmax(115px,.7fr) minmax(90px,.5fr) minmax(120px,1fr); gap: 8px; padding: 9px 11px; border-bottom: 1px solid rgba(125,209,255,.09); font: 500 10px/1.35 ui-monospace,monospace; }
+.universe-events > div { display: grid; grid-template-columns: minmax(115px,.7fr) minmax(90px,.5fr) minmax(120px,1fr); gap: 8px; padding: 9px 11px; border-bottom: 1px solid rgba(125,209,255,.09); font: 500 11px/1.35 ui-monospace,monospace; }
 .universe-events > div:last-child { border: 0; }.universe-events time,.universe-events span { color: #8299aa; overflow-wrap: anywhere; }.universe-events b { color: #eafaff; }
 .universe-disclosure { color: #8298aa; padding: 10px 12px; border-left: 2px solid rgba(95,225,255,.36); background: rgba(11,30,51,.22); }
 .evidence-receipt,.share-receipt { display: flex; gap: 10px; align-items: flex-start; border: 1px solid rgba(80,239,191,.27); border-radius: 10px; padding: 12px; background: rgba(20,99,80,.1); }
-.evidence-receipt svg,.share-receipt svg { color: #50efbf; flex: 0 0 auto; }.evidence-receipt div,.share-receipt div { display: grid; gap: 3px; min-width: 0; }.evidence-receipt span,.share-receipt a { color: #91abba; font: 500 10px/1.4 ui-monospace,monospace; overflow-wrap: anywhere; }
+.evidence-receipt svg,.share-receipt svg { color: #50efbf; flex: 0 0 auto; }.evidence-receipt div,.share-receipt div { display: grid; gap: 3px; min-width: 0; }.evidence-receipt span,.share-receipt a { color: var(--receipt-muted); font: 500 11px/1.4 ui-monospace,monospace; overflow-wrap: anywhere; }
 @keyframes universe-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 720px) {
@@ -130,6 +130,18 @@
 
   * {
     box-sizing: border-box;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 }
 
@@ -1321,14 +1333,14 @@
 .colosseum-status-chip {
   margin: 8px 0 0;
   color: #8ee9ff;
-  font: 600 9px/1.3 ui-monospace, monospace;
-  letter-spacing: .12em;
+  font: 600 11px/1.3 ui-monospace, monospace;
+  letter-spacing: .08em;
 }
 .colosseum-status-chip[data-badge="LOCAL"] { color: #d7b56d; }
 .colosseum-status-chip[data-badge="INDEXED"] { color: #65f4d2; }
 
 .colosseum-metric { min-width: 0; border: 1px solid rgba(115,212,255,.15); border-radius: 9px; padding: 10px; background: rgba(2,8,20,.38); }
-.colosseum-metric span { display: block; color: #7691a8; font: 600 9px/1.2 ui-monospace,monospace; letter-spacing: .1em; }
+.colosseum-metric span { display: block; color: var(--text-muted); font: 600 11px/1.2 ui-monospace,monospace; letter-spacing: .06em; }
 .colosseum-metric strong { display: block; margin-top: 4px; overflow-wrap: anywhere; font: 500 16px/1.2 ui-monospace,monospace; }
 .universe-metrics > .colosseum-metric { background: rgba(2,8,20,.38); }
 
@@ -1344,8 +1356,8 @@
 .colosseum-diverge__legend,
 .colosseum-diverge__meta {
   color: #7ad9ff;
-  font: 600 10px/1.35 ui-monospace, monospace;
-  letter-spacing: .1em;
+  font: 600 11px/1.35 ui-monospace, monospace;
+  letter-spacing: .06em;
 }
 .colosseum-diverge svg { display: block; width: 100%; height: 180px; margin-top: 5px; }
 .colosseum-diverge__actual { stroke: #ff8a3d; }
@@ -1364,7 +1376,7 @@
 .colosseum-diverge__legend .is-actual { color: #ff8a3d; }
 .colosseum-diverge__legend .is-hold { color: #4da6ff; }
 .colosseum-diverge__legend .is-hold::before { border-top: 2px dashed #4da6ff; height: 0; background: transparent; }
-.colosseum-diverge__meta { margin: 8px 0 0; color: #8298aa; letter-spacing: .06em; }
+.colosseum-diverge__meta { margin: 8px 0 0; color: var(--text-muted); letter-spacing: .04em; }
 .colosseum-diverge--empty { background: rgba(2,4,10,.28); }
 
 .colosseum-duel { display: grid; gap: 12px; }
@@ -1375,12 +1387,12 @@
   padding: 12px;
   background: linear-gradient(145deg, rgba(255,255,255,.04), rgba(255,255,255,.015));
 }
-.colosseum-duel__card span { display: block; color: #8ee9ff; font: 600 9px/1.2 ui-monospace, monospace; letter-spacing: .12em; }
+.colosseum-duel__card span { display: block; color: #8ee9ff; font: 600 11px/1.2 ui-monospace, monospace; letter-spacing: .08em; }
 .colosseum-duel__card b { display: block; margin-top: 6px; overflow-wrap: anywhere; font: 500 14px/1.3 ui-monospace, monospace; }
 .colosseum-duel__bars { display: grid; gap: 10px; }
 .colosseum-duel__row { display: grid; gap: 6px; }
-.colosseum-duel__label { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font: 600 9px/1.3 ui-monospace, monospace; letter-spacing: .1em; color: #9ab0c2; }
-.colosseum-duel__hint { color: #6f8498; font-weight: 500; letter-spacing: .06em; }
+.colosseum-duel__label { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font: 600 11px/1.3 ui-monospace, monospace; letter-spacing: .06em; color: var(--text-muted); }
+.colosseum-duel__hint { color: var(--text-muted); font-weight: 500; letter-spacing: .04em; }
 .colosseum-duel__track { display: grid; gap: 4px; }
 .colosseum-duel__bar {
   min-height: 22px;

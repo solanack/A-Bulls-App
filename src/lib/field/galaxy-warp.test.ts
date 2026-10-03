@@ -9,8 +9,11 @@ import {
   WARP_TINT,
   isFieldWarpRoute,
   sampleWarp,
+  warpClock,
   warpDuration,
   warpPortal,
+  warpReducedDuration,
+  warpScale,
   warpTint,
 } from "./galaxy-warp.ts";
 import { createUniverseMapSnapshot, GALAXY_ZERO_CENTERS } from "./synthetic-universe.ts";
@@ -51,6 +54,25 @@ test("approach accelerates before the commit and arrival settles afterward", () 
   assert.ok(sampleWarp(WARP_COMMIT, false).settle > 0.95);
   assert.ok(sampleWarp(1, false).settle < 0.02);
   assert.equal(sampleWarp(0.2, false).settle, 0);
+});
+
+test("retargeting keeps the original warp clock so the flight stays inside 1.8s", () => {
+  const start = 1_000;
+  let clock = warpClock(null, start);
+  assert.equal(clock, start);
+  for (let tap = 0; tap < 5; tap++) clock = warpClock(clock, start + (tap + 1) * 180);
+  assert.equal(clock, start);
+  assert.ok(clock + WARP_DURATION_MS - start <= 1800);
+  assert.equal(warpReducedDuration(start, WARP_DURATION_MS, start + 400), 400 + WARP_REDUCED_MS);
+  assert.equal(warpReducedDuration(start, 300, start + 100), 300);
+});
+
+test("reduced motion keeps warp and settle scales at zero", () => {
+  assert.deepEqual(warpScale(true, 1, 1), { warp: 0, settle: 0 });
+  assert.deepEqual(warpScale(false, 0.4, 0.2), { warp: 0.4, settle: 0.2 });
+  const reduced = warpScale(true, sampleWarp(WARP_COMMIT, true).approach, sampleWarp(WARP_COMMIT, true).settle);
+  assert.equal(1 + reduced.warp * 5.6, 1);
+  assert.equal(reduced.settle, 0);
 });
 
 test("only Field entrances aim at a portal, and each room keeps its tint", () => {

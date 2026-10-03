@@ -42,7 +42,7 @@ export async function ghostPortfolio(env={},wallet='',quoteMint='So1111111111111
     }
     totalAcquired+=amount; positions.push(item);
   }
-  return {wallet:s(wallet),quoteMint:s(quoteMint),state:positions.length?'ready':'no-observed-buy-like-events',coverage:await coverageForWallet(env,wallet),positions,totalObservedAcquiredUnits:totalAcquired,comparablePositions:comparable,hypotheticalAggregateChangeQuote:hypotheticalDeltaQuote,disclaimer:'Counterfactual hold calculation over observed buy-like balance changes and indexed on-chain candles. Not realized P&L, not complete unless coverage is complete, and not investment advice.'};
+  return {wallet:s(wallet),quoteMint:s(quoteMint),state:positions.length?'ready':'no-observed-buy-like-events',coverage:await coverageForWallet(env,wallet),positions,totalObservedAcquiredUnits:totalAcquired,comparablePositions:comparable,positionCount:positions.length,hypotheticalAggregateChangeQuote:comparable?hypotheticalDeltaQuote:null,disclaimer:'Counterfactual hold calculation over observed buy-like balance changes and indexed on-chain candles. Not realized P&L, not complete unless coverage is complete, and not investment advice.'};
 }
 
 export async function parallelUniverse(env={},wallet='',quoteMint='',holdDays=7,limit=60,mintFilter=''){
@@ -59,7 +59,7 @@ export async function parallelUniverse(env={},wallet='',quoteMint='',holdDays=7,
     outcomes.push({signature:row.signature,mint:row.mint,blockTime:n(row.block_time),holdDays:days,observedAcquiredAmount:amount,entryPrice:n(entry.close),targetPrice:n(target.close),entryValueQuote:amount*n(entry.close),counterfactualValueQuote:amount*n(target.close),counterfactualChangeQuote:amount*(n(target.close)-n(entry.close)),confidence:Math.min(n(row.confidence)||1,n(entry.confidence)||1,n(target.confidence)||1)});
   }
   const total=outcomes.reduce((a,x)=>a+x.counterfactualChangeQuote,0);
-  return {wallet:s(wallet),quoteMint:s(quoteMint),rule:{type:'fixed-hold-after-observed-acquisition',holdDays:days},outcomes,aggregateCounterfactualChangeQuote:total,coverage:await coverageForWallet(env,wallet),disclaimer:'Historical counterfactual only. It asks what the indexed record would have looked like under a fixed hold rule; it does not recommend future behavior.'};
+  return {wallet:s(wallet),quoteMint:s(quoteMint),rule:{type:'fixed-hold-after-observed-acquisition',holdDays:days},outcomes,comparablePositions:outcomes.length,positionCount:rows.length,aggregateCounterfactualChangeQuote:outcomes.length?total:null,coverage:await coverageForWallet(env,wallet),disclaimer:'Historical counterfactual only. It asks what the indexed record would have looked like under a fixed hold rule; it does not recommend future behavior.'};
 }
 
 export function summarizePerformanceRounds(rounds=[],{periodDays=30,truncated=false}={}){

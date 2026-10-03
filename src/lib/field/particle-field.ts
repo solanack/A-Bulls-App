@@ -7,6 +7,7 @@ import { CameraGestures } from "./gestures";
 import { createStarfield, GALAXY_ZERO_CAMERA_DISTANCE } from "./synthetic-universe";
 import { ALIEN_BOUNDS, parentColorForCategory } from "./anatomy";
 import { isLiveSkyParticle, particleMint } from "./volume-sky";
+import { skyFactText } from "./honest-pnl.ts";
 import { mintKey } from "./watchlist";
 import {
   COSMIC_KIND_INDEX,
@@ -18,8 +19,11 @@ import {
   WARP_APPROACH_DISTANCE,
   WARP_STREAK_LENGTH,
   sampleWarp,
+  warpClock,
   warpDuration,
   warpPortal,
+  warpReducedDuration,
+  warpScale,
   warpTint,
   type WarpSample,
 } from "./galaxy-warp";
@@ -412,7 +416,7 @@ function liveLabel(particle: FieldParticle): LiveLabel | null {
   if (kind === "star") {
     const wallet = labelText(particle.metadata?.wallet, 64);
     const title = labelText(particle.metadata?.displayName, 18) ?? labelText(particle.metadata?.name, 18) ?? (wallet ? `${wallet.slice(0, 4)}…${wallet.slice(-4)}` : "Public wallet");
-    return { title, fact: labelText(particle.metadata?.factLine, 28), tone, prominence: "body" };
+    return { title, fact: skyFactText(particle.metadata?.factLine, 64), tone, prominence: "body" };
   }
   if (kind === "comet") {
     const side = labelText(particle.metadata?.side, 8)?.toUpperCase() ?? "PRINT";
@@ -438,47 +442,95 @@ const LABEL_INK: Record<LiveLabel["tone"], string> = {
   neutral: "rgba(246,244,238,.97)",
 };
 
+function wrapLabel(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && context.measureText(next).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+    if (lines.length === 3) break;
+  }
+  if (line && lines.length < 3) lines.push(line);
+  return lines;
+}
+
 function createLabelSprite(label: LiveLabel, compact: boolean) {
   const galaxy = label.prominence === "galaxy";
   const fact = galaxy ? label.fact : compact ? null : label.fact;
   const canvas = document.createElement("canvas");
   canvas.width = galaxy ? 640 : 448;
-  canvas.height = galaxy ? 168 : fact ? 96 : 72;
   const context = canvas.getContext("2d");
   if (!context) return null;
-  context.clearRect(0, 0, canvas.width, canvas.height);
   context.textAlign = "center";
   context.textBaseline = "middle";
   const measure = (text: string, font: string) => {
     context.font = font;
     return context.measureText(text).width;
   };
-  const titleFont = galaxy ? "700 46px system-ui, -apple-system, sans-serif" : "650 26px system-ui, -apple-system, sans-serif";
-  const factFont = galaxy ? "500 20px system-ui, -apple-system, sans-serif" : "500 19px system-ui, -apple-system, sans-serif";
-  const tracking = galaxy ? "0.16em" : "0em";
   const lettered = context as CanvasRenderingContext2D & { letterSpacing?: string };
-  lettered.letterSpacing = tracking;
-  const titleWidth = measure(label.title, titleFont);
-  const factWidth = fact ? measure(fact, factFont) : 0;
-  const boxWidth = Math.min(400, Math.max(132, Math.ceil(Math.max(titleWidth, factWidth)) + 44));
-  const boxHeight = galaxy ? (fact ? 108 : 72) : fact ? 76 : 48;
-  const boxTop = galaxy ? 18 : 10;
-  const boxLeft = (canvas.width - boxWidth) / 2;
-  context.fillStyle = galaxy ? "rgba(10,12,20,.72)" : "rgba(11,12,16,.74)";
-  context.strokeStyle = LABEL_RIM[label.tone];
-  context.lineWidth = galaxy ? 2 : 1.5;
-  context.beginPath();
-  context.roundRect(boxLeft, boxTop, boxWidth, boxHeight, galaxy ? 18 : 14);
-  context.fill();
-  context.stroke();
-  context.font = titleFont;
-  context.fillStyle = galaxy ? LABEL_INK[label.tone] : "rgba(246,244,238,.97)";
-  context.fillText(label.title, canvas.width / 2, boxTop + (fact ? 40 : boxHeight / 2));
-  if (fact) {
-    lettered.letterSpacing = galaxy ? "0.08em" : "0em";
+  if (galaxy) {
+    canvas.height = fact ? 168 : 120;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    const titleFont = "700 46px system-ui, -apple-system, sans-serif";
+    const factFont = "500 20px system-ui, -apple-system, sans-serif";
+    lettered.letterSpacing = "0.16em";
+    const titleWidth = measure(label.title, titleFont);
+    const factWidth = fact ? measure(fact, factFont) : 0;
+    const boxWidth = Math.min(400, Math.max(132, Math.ceil(Math.max(titleWidth, factWidth)) + 44));
+    const boxHeight = fact ? 108 : 72;
+    const boxTop = 18;
+    const boxLeft = (canvas.width - boxWidth) / 2;
+    context.fillStyle = "rgba(10,12,20,.72)";
+    context.strokeStyle = LABEL_RIM[label.tone];
+    context.lineWidth = 2;
+    context.beginPath();
+    context.roundRect(boxLeft, boxTop, boxWidth, boxHeight, 18);
+    context.fill();
+    context.stroke();
+    context.font = titleFont;
+    context.fillStyle = LABEL_INK[label.tone];
+    context.fillText(label.title, canvas.width / 2, boxTop + (fact ? 40 : boxHeight / 2));
+    if (fact) {
+      lettered.letterSpacing = "0.08em";
+      context.font = factFont;
+      context.fillStyle = "rgba(214,212,206,.78)";
+      context.fillText(fact, canvas.width / 2, boxTop + 78);
+    }
+  } else {
+    const factFont = compact ? "500 14px system-ui, -apple-system, sans-serif" : "500 16px system-ui, -apple-system, sans-serif";
+    const factMax = 352;
     context.font = factFont;
-    context.fillStyle = "rgba(214,212,206,.78)";
-    context.fillText(fact, canvas.width / 2, boxTop + (galaxy ? 78 : 54));
+    const factLines = fact ? wrapLabel(context, fact, factMax) : [];
+    const lineH = compact ? 18 : 20;
+    const boxHeight = factLines.length ? 36 + factLines.length * lineH + 12 : 48;
+    canvas.height = boxHeight + 20;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    const titleWidth = measure(label.title, "650 26px system-ui, -apple-system, sans-serif");
+    context.font = factFont;
+    const factWidth = factLines.reduce((widest, line) => Math.max(widest, context.measureText(line).width), 0);
+    const boxWidth = Math.min(400, Math.max(132, Math.ceil(Math.max(titleWidth, factWidth)) + 44));
+    const boxLeft = (canvas.width - boxWidth) / 2;
+    context.fillStyle = "rgba(11,12,16,.74)";
+    context.strokeStyle = LABEL_RIM[label.tone];
+    context.lineWidth = 1.5;
+    context.beginPath();
+    context.roundRect(boxLeft, 10, boxWidth, boxHeight, 14);
+    context.fill();
+    context.stroke();
+    context.font = "650 26px system-ui, -apple-system, sans-serif";
+    context.fillStyle = "rgba(246,244,238,.97)";
+    context.fillText(label.title, canvas.width / 2, factLines.length ? 28 : 34);
+    if (factLines.length) {
+      context.font = factFont;
+      context.fillStyle = "rgba(214,212,206,.78)";
+      factLines.forEach((line, index) => context.fillText(line, canvas.width / 2, 50 + index * lineH));
+    }
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -491,7 +543,7 @@ function createLabelSprite(label: LiveLabel, compact: boolean) {
       toneMapped: false,
     }),
   );
-  sprite.scale.set(galaxy ? 34 : 25, galaxy ? (fact ? 9.4 : 7.2) : fact ? 5.36 : 4.1, 1);
+  sprite.scale.set(galaxy ? 34 : 25, galaxy ? (fact ? 9.4 : 7.2) : 25 * (canvas.height / canvas.width), 1);
   sprite.renderOrder = 6;
   return sprite;
 }
@@ -878,6 +930,10 @@ export class ParticleFieldRenderer {
   #parallax = new THREE.Vector2();
   #parallaxTarget = new THREE.Vector2();
   #tiltFromDevice = false;
+  #reducedMedia: MediaQueryList | null = null;
+  #onReducedMotion = (event: MediaQueryListEvent) => {
+    this.#applyReducedMotion(event.matches);
+  };
 
   constructor(host: HTMLElement, snapshot: UniverseSnapshot) {
     this.host = host;
@@ -915,6 +971,7 @@ export class ParticleFieldRenderer {
       });
     } catch (error) {
       canvas.remove();
+      delete host.dataset.fieldWarp;
       throw error;
     }
     this.renderer = renderer;
@@ -955,6 +1012,9 @@ export class ParticleFieldRenderer {
       vertexShader: FIELD_VERT,
       fragmentShader: FIELD_FRAG,
     });
+    this.#reducedMedia = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)") ?? null;
+    this.#applyReducedMotion(this.#reducedMedia?.matches ?? this.reducedMotion);
+    this.#reducedMedia?.addEventListener("change", this.#onReducedMotion);
 
     this.planetMaterial = new THREE.ShaderMaterial({
       transparent: true,
@@ -1073,8 +1133,47 @@ export class ParticleFieldRenderer {
     event.preventDefault();
     this.#contextLost = true;
     this.host.dataset.fieldReady = "context-lost";
+    this.#settleInterruptedWarp();
     console.warn("[field-renderer] WebGL context lost; waiting for browser restoration");
   };
+
+  /** Reduced motion is read live. An in-flight warp fades out instead of growing. */
+  #applyReducedMotion(reduced: boolean) {
+    this.reducedMotion = reduced;
+    if (this.material?.uniforms?.uMotion) this.material.uniforms.uMotion.value = reduced ? 0 : 1;
+    const warp = this.#warp;
+    if (!warp) return;
+    warp.reduced = reduced;
+    if (reduced) warp.duration = warpReducedDuration(warp.started, warp.duration, performance.now());
+  }
+
+  /**
+   * Context loss skips the frame loop, so a mid-warp commit would never fire and the
+   * sky would stay held. Finish the swap, then park the camera on the rest pose.
+   */
+  #settleInterruptedWarp() {
+    const warp = this.#warp;
+    if (!warp) return;
+    if (!warp.committed) {
+      warp.committed = true;
+      this.#warpLanding = true;
+      try {
+        warp.onCommit();
+      } catch (error) {
+        console.error("[field-renderer] warp commit failed", error);
+      }
+    }
+    const rest = this.snapshot.galaxyId === "galaxy-zero" ? GALAXY_ZERO_CAMERA_DISTANCE : 125;
+    this.cameraState = { yaw: 0.4, pitch: 0.18, distance: rest, target: [0, 0, 0] };
+    this.#warp = null;
+    this.#warpLanding = false;
+    try {
+      this.#clearWarpVisuals();
+    } catch {
+      delete this.host.dataset.fieldWarp;
+    }
+    this.#placeCamera();
+  }
 
   #onContextRestored = () => {
     this.#contextLost = false;
@@ -1212,7 +1311,7 @@ export class ParticleFieldRenderer {
       const key = target ? `galaxy:${target}` : mint ? `mint:${mintKey(mint)}` : `id:${particle.id}`;
       if (seen.has(key)) continue;
       const [x, y, z] = particle.position;
-      if (candidates.some((other) => Math.abs(other.position[0] - x) < 22 && Math.abs(other.position[1] - y) < 7 && Math.abs(other.position[2] - z) < 30)) continue;
+      if (candidates.some((other) => Math.abs(other.position[0] - x) < 22 && Math.abs(other.position[1] - y) < 12 && Math.abs(other.position[2] - z) < 30)) continue;
       seen.add(key);
       candidates.push(particle);
       if (candidates.length >= 6) break;
@@ -1301,13 +1400,12 @@ export class ParticleFieldRenderer {
     const tint = warpTint(input.targetId);
     const focus = new THREE.Vector3(...(portal ?? [0, 0, 0]));
     if (this.#warp && !this.#warp.committed) {
-      const retarget = this.#warp.targetId !== input.targetId;
       this.#warp.targetId = input.targetId;
       this.#warp.onCommit = input.onCommit;
       this.#warp.focus.copy(focus);
       this.#warp.tint.setRGB(tint[0], tint[1], tint[2]);
       this.#warp.armed = Boolean(portal);
-      if (retarget) this.#warp.started = performance.now();
+      this.#warp.started = warpClock(this.#warp.started, performance.now());
       this.host.dataset.fieldWarp = input.targetId;
       return true;
     }
@@ -1505,8 +1603,9 @@ export class ParticleFieldRenderer {
   }
 
   #applyWarpSample(warp: GalaxyWarpFlight, sample: WarpSample) {
-    this.material.uniforms.uWarp.value = warp.reduced ? sample.approach * 0.22 : sample.approach;
-    this.material.uniforms.uSettle.value = sample.settle;
+    const scale = warpScale(warp.reduced, sample.approach, sample.settle);
+    this.material.uniforms.uWarp.value = scale.warp;
+    this.material.uniforms.uSettle.value = scale.settle;
     this.material.uniforms.uWarpArmed.value = warp.armed && !warp.committed ? 1 : 0;
     (this.material.uniforms.uWarpFocus.value as THREE.Vector3).copy(warp.focus);
     this.starMaterial.uniforms.uStreak.value = sample.streak;
@@ -1575,6 +1674,7 @@ export class ParticleFieldRenderer {
   #frame = (now: number) => {
     if (this.destroyed) return;
     if (!this.#pageVisible || this.#contextLost || this.#suspended) {
+      if (this.#contextLost) this.#settleInterruptedWarp();
       this.#last = now;
       this.#raf = requestAnimationFrame(this.#frame);
       return;
@@ -1688,7 +1788,10 @@ export class ParticleFieldRenderer {
     document.removeEventListener("visibilitychange", this.#onVisibilityChange);
     this.renderer.domElement.removeEventListener("pointermove", this.#onPointerParallax);
     globalThis.removeEventListener("deviceorientation", this.#onDeviceTilt);
+    this.#reducedMedia?.removeEventListener("change", this.#onReducedMotion);
+    this.#reducedMedia = null;
     this.#warp = null;
+    delete this.host.dataset.fieldWarp;
     this.points.geometry.dispose();
     this.planets.geometry.dispose();
     this.constellations.geometry.dispose();

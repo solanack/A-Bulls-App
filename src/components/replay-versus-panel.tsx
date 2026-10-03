@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { callUniverseTool } from "@/lib/universe-intelligence";
-import { anchorBolts, isPublicAddress, replayToolInput, tapeEvents, type ReplaySubject, type TapeBolt, type TapeCandle } from "@/lib/field/replay-tape";
+import { INTELLIGENCE_PUBLIC_ORIGIN } from "@/lib/app-origins";
+import { PNL_CAVEAT, PNL_HYPOTHETICAL_LABEL, PNL_REALIZED_LABEL } from "@/lib/field/honest-pnl";
+import { anchorBolts, formatUsdNotional, isPublicAddress, replayShareUrl, replayToolInput, tapeEvents, tapeMarkSummary, tapeMatchedRounds, type ReplaySubject, type TapeBolt, type TapeCandle } from "@/lib/field/replay-tape";
 import { drawTape } from "@/lib/field/replay-tape-render";
 import { TraderSigil } from "@/components/trader-sigil";
 import { callsign } from "@/lib/field/trader-sheet";
@@ -9,8 +11,10 @@ import { callsign } from "@/lib/field/trader-sheet";
 type Data = Record<string, unknown>;
 const obj = (value: unknown): Data => value && typeof value === "object" && !Array.isArray(value) ? value as Data : {};
 
-function VersusTape({ label, wallet, candles, bolts, start, end, cursor, scaleMode }: {
-  label: string; wallet: string; candles: TapeCandle[]; bolts: TapeBolt[]; start: number; end: number; cursor: number; scaleMode: "log" | "linear";
+const signedUsd = (value: number | null) => value == null || !Number.isFinite(value) ? "—" : value === 0 ? "$0" : `${value > 0 ? "+" : "−"}${formatUsdNotional(Math.abs(value))}`;
+
+function VersusTape({ label, wallet, candles, bolts, start, end, cursor, scaleMode, verifyHref }: {
+  label: string; wallet: string; candles: TapeCandle[]; bolts: TapeBolt[]; start: number; end: number; cursor: number; scaleMode: "log" | "linear"; verifyHref: string | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -28,8 +32,10 @@ function VersusTape({ label, wallet, candles, bolts, start, end, cursor, scaleMo
     draw();
     const ro = new ResizeObserver(draw); ro.observe(host); return () => ro.disconnect();
   }, [candles,bolts,start,end,cursor,scaleMode]);
+  const mark = tapeMarkSummary(bolts, candles);
+  const coverage = tapeMatchedRounds(bolts, mark.realizedUsd).line;
   return <section className="rs-vs__lane" ref={hostRef}>
-    <header><TraderSigil wallet={wallet} size={32}/><div><b>{label}</b><span>{callsign(wallet)} · {bolts.length} prints</span></div></header>
+    <header><TraderSigil wallet={wallet} size={32}/><div><b>{label}</b><span>{callsign(wallet)} · {bolts.length} prints</span><span>{PNL_REALIZED_LABEL} · {signedUsd(mark.realizedUsd)} · {coverage}</span><span>{PNL_HYPOTHETICAL_LABEL} · {signedUsd(mark.deltaUsd)}</span>{verifyHref?<a href={verifyHref}>VERIFY</a>:null}</div></header>
     <canvas ref={canvasRef} role="img" aria-label={`${label} Replay tape`}/>
   </section>;
 }
@@ -67,9 +73,10 @@ export function ReplayVersusPanel({ subject, traderLabel, candles, heroBolts, st
       </div>
       {error?<p className="rs-vs__error" role="alert">{error}</p>:null}
       <div className="rs-vs__stack">
-        <VersusTape label={traderLabel} wallet={subject.wallet} candles={candles} bolts={heroBolts} start={start} end={end} cursor={cursor} scaleMode={scaleMode}/>
-        {status==="ready"?<VersusTape label={rivalLabel} wallet={wallet.trim()} candles={candles} bolts={rivalBolts} start={start} end={end} cursor={cursor} scaleMode={scaleMode}/>:<div className="rs-vs__empty">Load another public wallet. Both tapes race on this Replay clock; missing values stay —.</div>}
+        <VersusTape label={traderLabel} wallet={subject.wallet} candles={candles} bolts={heroBolts} start={start} end={end} cursor={cursor} scaleMode={scaleMode} verifyHref={replayShareUrl(typeof window==="undefined"?INTELLIGENCE_PUBLIC_ORIGIN:window.location.origin, subject)}/>
+        {status==="ready"?<VersusTape label={rivalLabel} wallet={wallet.trim()} candles={candles} bolts={rivalBolts} start={start} end={end} cursor={cursor} scaleMode={scaleMode} verifyHref={replayShareUrl(typeof window==="undefined"?INTELLIGENCE_PUBLIC_ORIGIN:window.location.origin, {...subject, wallet:wallet.trim(), displayName:rivalLabel})}/>:<div className="rs-vs__empty">Load another public wallet. Both tapes race on this Replay clock; missing values stay —.</div>}
       </div>
+      <p className="rs-vs__caveat">{PNL_CAVEAT}</p>
     </div>
   </dialog>;
 }

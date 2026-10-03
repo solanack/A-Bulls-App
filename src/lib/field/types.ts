@@ -82,7 +82,7 @@ export const TOOL_TITLE: Partial<Record<FieldMode, string>> = {
   replay: "Replay",
   evidence: "Receipts for this trade",
   compare: "Compare two traders side by side",
-  "what-if": "What if you held instead?",
+  "what-if": "Indexed fixed-hold record",
 };
 export const MODE_HINT: Record<FieldMode, string> = {
   explore: "Return to the Field · FOMO + AFTERBELL.",
@@ -92,7 +92,7 @@ export const MODE_HINT: Record<FieldMode, string> = {
   trickster: "Share the story with receipts",
   games: "Retired mode. No game surface is active in the public Field.",
   compare: "Compare two traders side by side",
-  "what-if": "What if you held instead?",
+  "what-if": "Historical counterfactual. Not financial advice.",
   sequences: "Discover bounded market sequences.",
   evidence: "Receipts for this trade",
   replay: "Replay the trade on its indexed tape.",

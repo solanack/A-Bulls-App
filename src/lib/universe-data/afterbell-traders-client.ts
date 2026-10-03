@@ -12,6 +12,7 @@ export type AfterbellTraderRank = {
   displayName:string; displayNameSource:string; assetCount:number; mints:readonly string[];
   holdings:readonly AfterbellTraderHolding[]; mostTraded:readonly AfterbellMostTraded[]; latestTrades:readonly AfterbellTrade[];
   realizedPnlUsd:number|null; realizedPnlSol:number|null; lastObservedAt:number;
+  pnlDisplayUnit?:"usd"|"sol"|null; pnlMatchedRounds?:number|null; pnlRoundCount?:number|null; pnlSource?:"realized-fifo";
   sourceKind:"observed"|"provider-reported"; sources:readonly string[];
 };
 export type AfterbellTraderWindow = {from:number;to:number;scheduledEnd:number;live:boolean;timezone:string;label:string;calendarCoverage:string;retainedFallback?:boolean;};

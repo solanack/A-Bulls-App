@@ -47,6 +47,13 @@ test('Afterbell ranks unique transactions and computes only defensible FIFO PnL'
   assert.equal(ranked[1].wallet,A);
   assert.equal(ranked[1].transactionCount,1);
   assert.equal(ranked[1].realizedPnlUsd,8);
+  assert.equal(ranked[1].pnlDisplayUnit,'usd');
+  assert.equal(ranked[1].pnlMatchedRounds,1);
+  assert.equal(ranked[1].pnlRoundCount,1);
+  assert.equal(ranked[1].pnlSource,'realized-fifo');
+  assert.equal(ranked[0].pnlMatchedRounds,0);
+  assert.equal(ranked[0].pnlRoundCount,1);
+  assert.equal(ranked[0].realizedPnlSol,null);
 });
 
 test('Afterbell consumes already-sold pre-window inventory before in-window FIFO PnL',()=>{
