@@ -471,6 +471,25 @@ export function tapeMatchedRounds(bolts: readonly TapeBolt[], realizedUsd: numbe
   return { matched, total, line: roundsMatchedLine(matched, total) };
 }
 
+/**
+ * The round the playhead is inside. Entry is the first buy of that round.
+ * Exit is included only after the playhead has reached the closing sell.
+ */
+export function heldRound(bolts: readonly TapeBolt[], cursor: number): { entry: TapeBolt | null; exit: TapeBolt | null } {
+  const ordered = [...bolts].sort((a, b) => a.timestamp - b.timestamp || a.cursor - b.cursor);
+  const rounds: { entry: TapeBolt; exit: TapeBolt | null }[] = [];
+  let open: { entry: TapeBolt; exit: TapeBolt | null } | null = null;
+  for (const bolt of ordered) {
+    if (bolt.side === "buy") {
+      if (!open || open.exit) { open = { entry: bolt, exit: null }; rounds.push(open); }
+    } else if (open && !open.exit) open.exit = bolt;
+  }
+  let chosen: { entry: TapeBolt; exit: TapeBolt | null } | null = null;
+  for (const round of rounds) if (round.entry.cursor <= cursor + 1e-9) chosen = round;
+  if (!chosen) return { entry: null, exit: null };
+  return { entry: chosen.entry, exit: chosen.exit && chosen.exit.cursor <= cursor + 1e-9 ? chosen.exit : null };
+}
+
 /** Several prints on one bar and side become one bolt with a count. Notional is amount × price when both are known. */
 export function groupBolts(bolts: readonly TapeBolt[]): BoltGroup[] {
   const groups = new Map<string, BoltGroup>();

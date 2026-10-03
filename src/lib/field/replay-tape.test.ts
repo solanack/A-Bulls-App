@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anchorBolts, cohortTicks, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, notionalScale, observedPricedPrintCount, observedUsdNotional, priceAxisLabel, reportedPositionUsd, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeMarkSummary, tapeMatchedRounds, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
+import { anchorBolts, cohortTicks, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, heldRound, hopSchedule, notionalScale, observedPricedPrintCount, observedUsdNotional, priceAxisLabel, reportedPositionUsd, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeMarkSummary, tapeMatchedRounds, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
 import { drawTape, tapePrintLabelLayouts } from "./replay-tape-render.ts";
 
 const AB_WALLET = "G39wywquKbHK8F2wZZZFX3fcsyG91VCCbbr6WEVp5axy";
@@ -334,6 +334,8 @@ test("on the lightning impact frame, distinct same-bar buys and sells paint thei
   assert.deepEqual(dollars.map(print=>print.x),[187,187,187]); // first bar's center, not pad.left=18
   assert.equal(dollars[0].color,"#B8FF3C");
   assert.equal(dollars[2].color,"#FF2D55");
+  assert.ok(prints.some((print) => print.label === "ENTRY"));
+  assert.ok(prints.some((print) => print.label === "EXIT"));
 });
 
 test("USD summary ignores implied-only candle anchors", () => {
@@ -439,6 +441,22 @@ test("drawTape keeps a tappable bolt hit for a rendered stack",()=>{
   assert.equal(hits.length,1);
   assert.equal(hits[0].id,"hero");
   assert.ok(hits[0].r>0);
+});
+
+test("held round shows the entry immediately and the exit only after the playhead reaches it", () => {
+  const candles = [candleAt(0), candleAt(1), candleAt(2)];
+  const bolts = anchorBolts([
+    eventAt("buy", candles[0].timestamp + 1, "buy", { amount: 10, priceUsd: 1, notionalUsd: 10 }),
+    eventAt("sell", candles[2].timestamp + 1, "sell", { amount: 10, priceUsd: 2, notionalUsd: 20 }),
+  ], candles, candles[0].timestamp, candles[2].timestamp + H);
+  const early = heldRound(bolts, bolts[0].cursor);
+  assert.equal(early.entry?.id, "buy");
+  assert.equal(early.exit, null);
+  const late = heldRound(bolts, 1);
+  assert.equal(late.entry?.id, "buy");
+  assert.equal(late.exit?.id, "sell");
+  const before = heldRound(bolts, 0);
+  assert.equal(before.entry, null);
 });
 
 test("same-bar priced labels cap at six with overflow count only",()=>{
