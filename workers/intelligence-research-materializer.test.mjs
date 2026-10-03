@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { ghostOpenCountSql } from '../scripts/backfill-ghost-open-rounds.mjs';
-import { chainRoundGalaxy, deriveMatchedRounds, derivePosition, replayObjectForRound, staleOpenIds, tradesFromWalletEvidence } from './intelligence-research-materializer.mjs';
+import { chainRoundGalaxy, deriveMatchedRounds, derivePosition, lotsFromOpenRounds, replaceableOpenIds, replayObjectForRound, staleOpenIds, tradesFromWalletEvidence } from './intelligence-research-materializer.mjs';
 
 const row=(id,side,token,sol,time)=>({event_id:id,signature:`sig-${id}`,event_index:0,wallet:'wallet',mint:'mint',side,token_amount:token,sol_amount:sol,block_time:time});
 const near=(actual,expected)=>assert.ok(Math.abs(actual-expected)<1e-9,`${actual} ~= ${expected}`);
@@ -115,6 +116,10 @@ test('pump basis is paged into lots and ghost cleanup stays idempotent',()=>{
   const script=readFileSync(new URL('../scripts/backfill-ghost-open-rounds.mjs',import.meta.url),'utf8');
   assert.match(source,/matched_basis_applied/);
   assert.match(source,/matched_position_lots/);
+  assert.match(source,/replaceableOpenIds/);
+  assert.match(source,/\[research-index-pump-pair\]/);
+  assert.match(source,/\[research-index-basis-pair\]/);
+  assert.doesNotMatch(source,/async function loadOpeningLots\(db,wallet,mint\)\{\s*try\{/);
   assert.doesNotMatch(source,/LIMIT 300/);
   assert.match(migration,/status = 'open'/);
   assert.match(migration,/updated_at >/);
@@ -128,4 +133,95 @@ test('pump basis is paged into lots and ghost cleanup stays idempotent',()=>{
   const predicate=sql=>sql.replace(/^--.*$/gm,'').trim().replace(/;\s*$/,'').replace(/^(?:DELETE|SELECT COUNT\(\*\) AS ghost_open_rounds)\s+FROM matched_trade_rounds/i,'');
   assert.match(count,/^SELECT COUNT\(\*\) AS ghost_open_rounds\nFROM matched_trade_rounds/);
   assert.equal(predicate(count),predicate(migration));
+});
+
+test('an open row with no retained buy is seeded and is not deleted unless a new round replaces it',()=>{
+  const kept={id:'round:wallet:mint:legacy:open',status:'open',entry_signature:'sig-old',entry_ts:100000,buy_sol:1,observed_inventory:10,evidence_ids_json:'["old-buy"]',wallet:'wallet',mint:'mint'};
+  const sellOnly=[row('s1','sell',4,.5,200)];
+  assert.deepEqual(replaceableOpenIds([kept],derivePosition(sellOnly).rounds,{openingLots:[],trades:sellOnly}),[]);
+  const seeded=lotsFromOpenRounds([kept],{trades:sellOnly,storedLots:[]});
+  assert.equal(seeded.length,1);
+  assert.equal(seeded[0].evidenceId,'old-buy');
+  assert.equal(seeded[0].remaining,10);
+  const replaced=derivePosition(sellOnly,{openingLots:seeded});
+  const closed=replaced.rounds.find(round=>round.status==='closed');
+  assert.equal(closed.entrySignature,'sig-old');
+  assert.equal(closed.matchedRealizedSol,.5- .4);
+  assert.ok(replaced.rounds.some(round=>round.status==='open'&&round.observedInventory===6));
+  assert.deepEqual(replaceableOpenIds([kept],replaced.rounds,{openingLots:seeded,trades:sellOnly}),['round:wallet:mint:legacy:open']);
+  const unrelatedBuy=[row('b2','buy',5,.5,300)];
+  assert.deepEqual(replaceableOpenIds([kept],derivePosition(unrelatedBuy).rounds,{openingLots:[],trades:unrelatedBuy}),[]);
+  assert.equal(lotsFromOpenRounds([kept],{trades:[{...row('old-buy','buy',10,1,100),signature:'sig-old'}],storedLots:[]}).length,0);
+});
+
+test('0041 ghost delete is idempotent on 26 seeded rounds and keeps live open remainders',()=>{
+  const db=new DatabaseSync(':memory:');
+  db.exec(`CREATE TABLE matched_trade_rounds (
+    id TEXT PRIMARY KEY,
+    wallet TEXT NOT NULL,
+    mint TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('closed','open','unmatched')),
+    entry_signature TEXT,
+    exit_signature TEXT,
+    entry_ts INTEGER,
+    exit_ts INTEGER,
+    buy_sol REAL,
+    sell_sol REAL,
+    matched_realized_sol REAL,
+    observed_inventory REAL,
+    method TEXT NOT NULL,
+    evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+    coverage TEXT NOT NULL DEFAULT 'partial',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
+  const method='bounded-fifo-observed-swaps-v1';
+  const round=(id,overrides)=>({id,wallet:'W',mint:'M',status:'open',entry_signature:null,exit_signature:null,entry_ts:1,exit_ts:null,buy_sol:1,sell_sol:null,matched_realized_sol:null,observed_inventory:1,method,evidence_ids_json:'[]',coverage:'partial',created_at:1,updated_at:1,...overrides});
+  const rows=[
+    round('ghost-1-open',{entry_signature:'ea',updated_at:100}),
+    round('ghost-2-open',{entry_signature:'eb',updated_at:100}),
+    round('ghost-3-open',{entry_signature:'ec',updated_at:100}),
+    round('ghost-4-open',{entry_signature:'ed',updated_at:100}),
+    round('ghost-5-open',{entry_signature:'ee',updated_at:100}),
+    round('ghost-6-open',{entry_signature:'ef',updated_at:100}),
+    round('ghost-1-closed',{status:'closed',entry_signature:'ea',exit_signature:'xa',exit_ts:2,sell_sol:2,matched_realized_sol:1,observed_inventory:0,updated_at:200}),
+    round('ghost-2-closed',{status:'closed',entry_signature:'eb',exit_signature:'xb',exit_ts:2,sell_sol:2,matched_realized_sol:1,observed_inventory:0,updated_at:200}),
+    round('ghost-3-closed',{status:'closed',entry_signature:'ec',exit_signature:'xc',exit_ts:2,sell_sol:2,matched_realized_sol:1,observed_inventory:0,updated_at:200}),
+    round('ghost-4-closed',{status:'closed',entry_signature:'ed',exit_signature:'xd',exit_ts:2,sell_sol:2,matched_realized_sol:1,observed_inventory:0,updated_at:200}),
+    round('ghost-5-closed',{status:'closed',entry_signature:'ee',exit_signature:'xe',exit_ts:2,sell_sol:2,matched_realized_sol:1,observed_inventory:0,updated_at:200}),
+    round('ghost-6-closed',{status:'closed',entry_signature:'ef',exit_signature:'xf',exit_ts:2,sell_sol:2,matched_realized_sol:1,observed_inventory:0,updated_at:200}),
+    round('live-equal-open',{entry_signature:'elive',updated_at:500}),
+    round('live-equal-closed',{status:'closed',entry_signature:'elive',exit_signature:'xl',exit_ts:3,sell_sol:1.2,matched_realized_sol:.2,observed_inventory:0,updated_at:500}),
+    round('live-newer-open',{entry_signature:'enew',updated_at:800}),
+    round('live-older-closed',{status:'closed',entry_signature:'enew',exit_signature:'xn',exit_ts:3,sell_sol:1.2,matched_realized_sol:.2,observed_inventory:0,updated_at:700}),
+    round('null-entry-open',{entry_signature:null,updated_at:50}),
+    round('orphan-open',{entry_signature:'eorphan',updated_at:50}),
+    round('other-wallet-open',{wallet:'W2',entry_signature:'ea',updated_at:50}),
+    round('other-mint-open',{mint:'M2',entry_signature:'ea',updated_at:50}),
+    round('blank-entry-open',{entry_signature:'',updated_at:50}),
+    round('unmatched-row',{status:'unmatched',exit_signature:'xu',sell_sol:.4,observed_inventory:0,updated_at:50}),
+    round('closed-only',{status:'closed',entry_signature:'eonly',exit_signature:'xo',exit_ts:4,sell_sol:1,matched_realized_sol:0,observed_inventory:0,updated_at:50}),
+    round('unmatched-open',{entry_signature:'eun',updated_at:50}),
+    round('unmatched-sibling',{status:'unmatched',entry_signature:'eun',exit_signature:'xu2',sell_sol:.4,observed_inventory:0,updated_at:900}),
+    round('newer-same-entry-open',{entry_signature:'ea',updated_at:250}),
+  ];
+  assert.equal(rows.length,26);
+  const insert=db.prepare(`INSERT INTO matched_trade_rounds(id,wallet,mint,status,entry_signature,exit_signature,entry_ts,exit_ts,buy_sol,sell_sol,matched_realized_sol,observed_inventory,method,evidence_ids_json,coverage,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  for(const item of rows)insert.run(item.id,item.wallet,item.mint,item.status,item.entry_signature,item.exit_signature,item.entry_ts,item.exit_ts,item.buy_sol,item.sell_sol,item.matched_realized_sol,item.observed_inventory,item.method,item.evidence_ids_json,item.coverage,item.created_at,item.updated_at);
+  const statement=readFileSync(new URL('./migrations/0041_matched_round_ghost_backfill.sql',import.meta.url),'utf8').split('\n').filter(line=>!line.trim().startsWith('--')).join('\n');
+  const remove=db.prepare(statement);
+  const first=remove.run();
+  assert.equal(first.changes,6);
+  const survivors=db.prepare('SELECT id FROM matched_trade_rounds ORDER BY id').all().map(item=>item.id);
+  assert.deepEqual(survivors,[
+    'blank-entry-open','closed-only','ghost-1-closed','ghost-2-closed','ghost-3-closed','ghost-4-closed','ghost-5-closed','ghost-6-closed',
+    'live-equal-closed','live-equal-open','live-newer-open','live-older-closed','newer-same-entry-open','null-entry-open','orphan-open',
+    'other-mint-open','other-wallet-open','unmatched-open','unmatched-row','unmatched-sibling',
+  ]);
+  assert.equal(survivors.includes('ghost-1-open'),false);
+  assert.equal(survivors.includes('live-equal-open'),true);
+  const second=remove.run();
+  assert.equal(second.changes,0);
+  assert.deepEqual(db.prepare('SELECT id FROM matched_trade_rounds ORDER BY id').all().map(item=>item.id),survivors);
+  db.close();
 });

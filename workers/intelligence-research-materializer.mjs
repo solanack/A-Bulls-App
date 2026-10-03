@@ -173,11 +173,44 @@ async function writeJsonCheckpoint(db,source,status,detail,now){
   await db.prepare(`INSERT INTO index_coverage_checkpoints(source,status,detail,updated_at) VALUES(?,?,?,?) ON CONFLICT(source) DO UPDATE SET status=excluded.status,detail=excluded.detail,updated_at=excluded.updated_at`).bind(source,status,jsonText(detail),now).run().catch(()=>{});
 }
 function roundNow(now){const value=Number(now)||Date.now();return value>10_000_000_000?Math.trunc(value):Math.trunc(value*1000);}
+function evidenceList(row){
+  const raw=row?.evidenceIds??row?.evidence_ids_json;
+  if(Array.isArray(raw))return raw.map(s).filter(Boolean);
+  try{const parsed=JSON.parse(s(raw)||'[]');return Array.isArray(parsed)?parsed.map(s).filter(Boolean):[];}catch{return [];}
+}
 async function loadOpeningLots(db,wallet,mint){
-  try{
-    const result=await db.prepare(`SELECT evidence_id,entry_signature,opened_at,token_remaining,cost_sol FROM matched_position_lots WHERE wallet=? AND mint=? AND source='pump_trades' AND token_remaining>0 ORDER BY lot_order ASC,evidence_id ASC`).bind(wallet,mint).all();
-    return (result?.results||[]).map(row=>({evidenceId:row.evidence_id,signature:row.entry_signature,openedAt:finite(row.opened_at),remaining:row.token_remaining,cost:row.cost_sol,wallet,mint}));
-  }catch{return [];}
+  const result=await db.prepare(`SELECT evidence_id,entry_signature,opened_at,token_remaining,cost_sol FROM matched_position_lots WHERE wallet=? AND mint=? AND source='pump_trades' AND token_remaining>0 ORDER BY lot_order ASC,evidence_id ASC`).bind(wallet,mint).all();
+  return (result?.results||[]).map(row=>({evidenceId:row.evidence_id,signature:row.entry_signature,openedAt:finite(row.opened_at),remaining:row.token_remaining,cost:row.cost_sol,wallet,mint}));
+}
+/** Open rows whose entry buy is no longer in pump_trades. Do not invent a second lot when the buy is still in this page or already stored. */
+export function lotsFromOpenRounds(opens=[],{trades=[],storedLots=[]}={}){
+  const represented=new Set();
+  for(const lot of storedLots){if(s(lot?.evidenceId))represented.add(s(lot.evidenceId));if(s(lot?.signature))represented.add(s(lot.signature));}
+  for(const trade of trades){if(s(trade?.side).toLowerCase()!=='buy')continue;const key=evidenceKey(trade);if(key)represented.add(key);if(s(trade?.signature))represented.add(s(trade.signature));}
+  const lots=[];
+  for(const open of opens){
+    if(s(open?.status||'open')!=='open')continue;
+    const evidence=evidenceList(open),signature=s(open.entrySignature||open.entry_signature)||null,evidenceId=evidence[0]||signature||'';
+    if(!evidenceId||represented.has(evidenceId)||(signature&&represented.has(signature)))continue;
+    const remaining=amount(open.observedInventory??open.observed_inventory);
+    if(remaining==null)continue;
+    const costRaw=open.buySol!==undefined?open.buySol:open.buy_sol,cost=costRaw==null||costRaw===''?null:(Number.isFinite(Number(costRaw))?Math.abs(Number(costRaw)):null);
+    represented.add(evidenceId);if(signature)represented.add(signature);
+    lots.push({evidenceId,signature,openedAt:finite(open.entryTs??open.entry_ts),remaining,cost,wallet:s(open.wallet),mint:s(open.mint)});
+  }
+  return lots;
+}
+/** Stale open ids whose entry evidence is present on a round this recompute emits. An unmatched open with no replacement is kept. */
+export function replaceableOpenIds(existing=[],next=[],{openingLots=[],trades=[]}={}){
+  const hasBuy=(Array.isArray(trades)?trades:[]).some(trade=>s(trade?.side).toLowerCase()==='buy'&&amount(trade.token_amount??trade.tokenAmount)!=null);
+  if(!(Array.isArray(openingLots)?openingLots:[]).length&&!hasBuy)return Object.freeze([]);
+  const covered=new Set();
+  for(const round of Array.isArray(next)?next:[]){if(s(round?.entrySignature))covered.add(s(round.entrySignature));if(s(round?.id))covered.add(s(round.id));for(const id of round?.evidenceIds||[])if(s(id))covered.add(s(id));}
+  return Object.freeze(staleOpenIds(existing,next,{complete:true}).filter(id=>{
+    const row=(Array.isArray(existing)?existing:[]).find(item=>s(item?.id)===id);
+    if(!row)return false;
+    return [s(row.entrySignature||row.entry_signature),s(row.id),...evidenceList(row)].some(key=>key&&covered.has(key));
+  }));
 }
 async function unappliedPumpTrades(db,wallet,mint,{cutoff=null,limit=BASIS_TRADE_PAGE}={}){
   const sql=cutoff==null
@@ -209,7 +242,9 @@ async function applyPumpPairPage(db,{wallet,mint,cutoff=null,now,symbol,name,sou
   const trades=await unappliedPumpTrades(db,wallet,mint,{cutoff});
   if(!trades.length)return {applied:0,rounds:0,replays:0,deleted:false};
   const openingLots=await loadOpeningLots(db,wallet,mint),stamped=roundNow(now);
-  const position=derivePosition(trades,{openingLots});
+  const existing=(await db.prepare(`SELECT id,status,entry_signature,entry_ts,buy_sol,observed_inventory,evidence_ids_json FROM matched_trade_rounds WHERE wallet=? AND mint=? AND status='open'`).bind(wallet,mint).all())?.results||[];
+  const seeded=lotsFromOpenRounds(existing,{trades,storedLots:openingLots});
+  const position=derivePosition(trades,{openingLots:[...openingLots,...seeded]});
   const basis=[db.prepare(`DELETE FROM matched_position_lots WHERE wallet=? AND mint=? AND source='pump_trades'`).bind(wallet,mint)];
   position.openLots.forEach((lot,lotOrder)=>basis.push(db.prepare(`INSERT INTO matched_position_lots(id,wallet,mint,evidence_id,entry_signature,opened_at,token_remaining,cost_sol,lot_order,source,updated_at) VALUES(?,?,?,?,?,?,?,?,?,'pump_trades',?)`).bind(`lot:${wallet}:${mint}:${lot.evidenceId}`,wallet,mint,lot.evidenceId,lot.signature,lot.openedAt,lot.remaining,lot.cost,lotOrder,stamped)));
   for(const trade of trades)basis.push(db.prepare(`INSERT INTO matched_basis_applied(source,evidence_id,wallet,mint,applied_at) VALUES('pump_trades',?,?,?,?) ON CONFLICT(source,evidence_id) DO NOTHING`).bind(evidenceKey(trade),wallet,mint,stamped));
@@ -218,8 +253,7 @@ async function applyPumpPairPage(db,{wallet,mint,cutoff=null,now,symbol,name,sou
   statements.push(indexStatement(db,{id:planetId,kind:'planet',mint,galaxyId:'pump-fun',title:label,summary:name||'Indexed pump.fun token planet',sourceKind:'observed',sourceRef:source||'pump-index',observedTs:lastTs,coverage:'partial',payload:{symbol:symbol||null,name:name||null,launchOrigin:'pump-fun'}}));
   statements.push(indexStatement(db,{id:starId,kind:'star',wallet,galaxyId:'pump-fun',title:`Wallet ${short(wallet)}`,summary:'Observed public wallet star with retained pump.fun swap evidence',sourceKind:'observed',sourceRef:'pump_trades',observedTs:lastTs,coverage:'partial',payload:{publicWallet:wallet}}));
   for(const trade of trades){const id=`trade:pump:${evidenceKey(trade)}`,ts=secToMs(trade.block_time);statements.push(indexStatement(db,{id,kind:'trade',mint,wallet,galaxyId:'pump-fun',title:`${s(trade.side).toUpperCase()} ${label}`,summary:`Observed public swap · ${short(trade.signature)}`,sourceKind:'observed',sourceRef:s(trade.source)||'pump_trades',observedTs:ts,coverage:s(trade.commitment)||'confirmed',payload:{signature:s(trade.signature)||null,side:s(trade.side),tokenAmount:finite(trade.token_amount),solAmount:finite(trade.sol_amount),priceSol:finite(trade.price_sol),slot:finite(trade.slot),commitment:s(trade.commitment)||null}}));statements.push(edgeStatement(db,{fromId:starId,toId:id,relation:'made_trade',observedTs:ts,evidenceId:evidenceKey(trade)}),edgeStatement(db,{fromId:id,toId:planetId,relation:'traded_planet',observedTs:ts,evidenceId:evidenceKey(trade)}));}
-  const existing=await db.prepare(`SELECT id,status FROM matched_trade_rounds WHERE wallet=? AND mint=? AND status='open'`).bind(wallet,mint).all().catch(()=>({results:[]}));
-  for(const id of staleOpenIds(existing?.results||[],position.rounds,{complete:true}))statements.push(db.prepare(`DELETE FROM matched_trade_rounds WHERE id=? AND wallet=? AND mint=? AND status='open'`).bind(id,wallet,mint));
+  for(const id of replaceableOpenIds(existing,position.rounds,{openingLots:[...openingLots,...seeded],trades}))statements.push(db.prepare(`DELETE FROM matched_trade_rounds WHERE id=? AND wallet=? AND mint=? AND status='open'`).bind(id,wallet,mint));
   const replays=appendRoundStatements(statements,db,{rounds:position.rounds,wallet,mint,galaxyId:'pump-fun',symbol:label,now:stamped,lastTs,tradePrefix:'trade:pump:'});
   if(typeof db.batch==='function')await db.batch(statements);else{for(const statement of statements)await statement.run();}
   let deleted=false;
@@ -235,9 +269,8 @@ async function materializePump(db,env,now){
   const pairResult=await db.prepare(`SELECT wallet,mint,MAX(block_time) latest FROM pump_trades WHERE wallet IS NOT NULL AND wallet<>'' AND mint<>'' AND side IN ('buy','sell') AND NOT EXISTS (SELECT 1 FROM matched_basis_applied a WHERE a.source='pump_trades' AND a.evidence_id=pump_trades.event_id) GROUP BY wallet,mint ORDER BY latest DESC,wallet ASC,mint ASC LIMIT ?`).bind(pageSize).all();
   const pairs=pairResult?.results||[];let indexedTrades=0,indexedRounds=0,indexedReplays=0;
   for(const pair of pairs){const wallet=s(pair.wallet),mint=s(pair.mint);if(!wallet||!mint)continue;
-    const token=await tokenLabel(db,mint);
-    const wrote=await applyPumpPairPage(db,{wallet,mint,now,symbol:token.symbol,name:token.name,source:token.source});
-    indexedTrades+=wrote.applied;indexedRounds+=wrote.rounds;indexedReplays+=wrote.replays;
+    try{const token=await tokenLabel(db,mint);const wrote=await applyPumpPairPage(db,{wallet,mint,now,symbol:token.symbol,name:token.name,source:token.source});indexedTrades+=wrote.applied;indexedRounds+=wrote.rounds;indexedReplays+=wrote.replays;}
+    catch(error){console.error('[research-index-pump-pair]',JSON.stringify({wallet,mint,error:s(error?.message||error)}));}
   }
   await writeJsonCheckpoint(db,'research_index_pair_cursor',pairs.length?'paging':'caught-up',{pairPage:pageSize,tradePage:BASIS_TRADE_PAGE,mode:'oldest-unapplied'},now);
   const head=await db.prepare(`SELECT MAX(slot) slot,MAX(block_time) block_time,COUNT(*) count FROM pump_trades WHERE block_time>=?`).bind(since).first().catch(()=>null);const lastSlot=finite(head?.slot),count=Math.max(0,Number(head?.count)||0);await db.prepare(`INSERT INTO index_coverage_checkpoints(source,last_observed_slot,last_verified_slot,gap_from_slot,gap_to_slot,status,detail,updated_at) VALUES('pump_trades',?,NULL,NULL,NULL,?,?,?) ON CONFLICT(source) DO UPDATE SET last_observed_slot=excluded.last_observed_slot,status=excluded.status,detail=excluded.detail,updated_at=excluded.updated_at`).bind(lastSlot,count?'observed':'empty',`Pump materializer applied up to ${BASIS_TRADE_PAGE} oldest unapplied trades on ${pairs.length} pairs. Already-applied trades stay in matched_position_lots. Confirmed observations are not promoted to verified-through slots.`,now).run();
@@ -250,9 +283,8 @@ export async function foldExpiringPumpBasis(db,cutoff,now=Math.floor(Date.now()/
   const pairs=pairResult?.results||[];let applied=0,deletedPairs=0;
   for(const pair of pairs){
     const wallet=s(pair.wallet),mint=s(pair.mint);if(!wallet||!mint)continue;
-    const token=await tokenLabel(db,mint);
-    const wrote=await applyPumpPairPage(db,{wallet,mint,cutoff,now,symbol:token.symbol,name:token.name,source:token.source});
-    applied+=wrote.applied;if(wrote.deleted)deletedPairs++;
+    try{const token=await tokenLabel(db,mint);const wrote=await applyPumpPairPage(db,{wallet,mint,cutoff,now,symbol:token.symbol,name:token.name,source:token.source});applied+=wrote.applied;if(wrote.deleted)deletedPairs++;}
+    catch(error){console.error('[research-index-basis-pair]',JSON.stringify({wallet,mint,error:s(error?.message||error)}));}
   }
   await db.prepare(`DELETE FROM pump_trades WHERE rowid IN (SELECT rowid FROM pump_trades WHERE block_time<? AND (wallet IS NULL OR wallet='' OR ifnull(mint,'')='' OR ifnull(side,'') NOT IN ('buy','sell')) LIMIT 200)`).bind(cutoff).run().catch(()=>null);
   return {pairs:pairs.length,applied,deletedPairs};
@@ -298,9 +330,9 @@ async function materializeChainWallet(db,wallet,{fomoWallet,now}){
     if(!galaxyId||galaxyId==='pump-fun')continue;
     const position=derivePosition(trades);
     const pumpOwns=pumpSigs.sigs.size>0;
-    const existing=pumpOwns?{results:[]}:await db.prepare(`SELECT id,status FROM matched_trade_rounds WHERE wallet=? AND mint=? AND status='open'`).bind(wallet,mint).all().catch(()=>({results:[]}));
+    const existing=pumpOwns?[]:((await db.prepare(`SELECT id,status,entry_signature,evidence_ids_json FROM matched_trade_rounds WHERE wallet=? AND mint=? AND status='open'`).bind(wallet,mint).all())?.results||[]);
     const statements=[],lastTs=secToMs(trades.at(-1)?.block_time)??roundNow(now),symbol=short(mint);
-    if(!pumpOwns)for(const id of staleOpenIds(existing?.results||[],position.rounds,{complete:true}))statements.push(db.prepare(`DELETE FROM matched_trade_rounds WHERE id=? AND wallet=? AND mint=? AND status='open'`).bind(id,wallet,mint));
+    if(!pumpOwns)for(const id of replaceableOpenIds(existing,position.rounds,{openingLots:[],trades}))statements.push(db.prepare(`DELETE FROM matched_trade_rounds WHERE id=? AND wallet=? AND mint=? AND status='open'`).bind(id,wallet,mint));
     statements.push(indexStatement(db,{id:`planet:${galaxyId}:${mint}`,kind:'planet',mint,galaxyId,title:symbol,summary:galaxyId==='afterbell'?'Observed Afterbell token planet from retained wallet evidence':'Observed Fomo wallet token planet from retained chain evidence',sourceKind:'observed',sourceRef:galaxyId,observedTs:lastTs,coverage:'retained',payload:{launchOrigin:galaxyId}}));
     statements.push(indexStatement(db,{id:`star:solana:${wallet}`,kind:'star',wallet,galaxyId,title:`Wallet ${short(wallet)}`,summary:galaxyId==='afterbell'?'Observed public wallet from retained Afterbell evidence':'Observed public wallet from retained Fomo chain evidence',sourceKind:'observed',sourceRef:'bull_wallet_events',observedTs:lastTs,coverage:'retained',payload:{publicWallet:wallet}}));
     appendRoundStatements(statements,db,{rounds:position.rounds,wallet,mint,galaxyId,symbol,now:roundNow(now),lastTs,tradePrefix:'trade:observed:'});
