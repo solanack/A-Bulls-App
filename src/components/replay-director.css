@@ -89,6 +89,8 @@
   .rs-ledger { position: absolute; inset: 0 0 0 auto; width: min(350px,100%); z-index: 2; box-sizing: border-box; }
   .rs.rs .rs-third { padding: 10px 12px max(12px,env(safe-area-inset-bottom)); gap: 7px; }
   .rs.rs .rs-controls { gap: 6px; }
+  .rs.rs .rs-transport { gap: 6px; }
+  .rs.rs .rs-control-actions { gap: 6px; }
   .rs.rs .rs-pill { padding: 0 10px; }
   .rs.rs .rs-source { font-size:11px; }
   .rs.rs .rs-now { font-size: 11px; gap: 7px; }
@@ -109,3 +111,11 @@
 .rs.rs .rs-ledger__event[data-reached=false] { opacity: .75; }
 .rs.rs .rs-cut button:disabled, .rs.rs .rs-cut select:disabled { opacity: .5; }
 @media(max-width:760px) { .rs.rs dialog.rs-cut { padding: 8px; } .rs.rs .rs-cut__card { max-height: calc(100dvh - 16px); padding: 12px; gap: 12px; } .rs-cut__layout { gap: 12px; } }
+/* Phone widths cannot keep transport and WHAT-IF / VERSUS / SHARE / CUT on one line.
+   The action cluster wraps under the transport and splits into two tappable rows. */
+@media(max-width:560px) {
+  .rs.rs .rs-controls { align-items: stretch; row-gap: 8px; }
+  .rs.rs .rs-transport { flex: 1 1 auto; }
+  .rs.rs .rs-control-actions { flex: 1 1 100%; margin-left: 0; justify-content: stretch; }
+  .rs.rs .rs-control-actions .rs-pill { flex: 1 1 calc(50% - 6px); min-width: calc(50% - 6px); height: 44px; min-height: 44px; justify-content: center; padding-inline: 8px; }
+}

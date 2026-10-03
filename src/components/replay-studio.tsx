@@ -461,15 +461,18 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
             </div> : null}
             <input className="rs-scrub" type="range" min={0} max={1000} value={Math.round(cursor * 1000)} aria-label="Hold and scrub Replay position" disabled={status !== "ready"} onPointerDown={()=>{scrubbingRef.current=true;setPlaying(false);}} onPointerUp={()=>{scrubbingRef.current=false;}} onPointerCancel={()=>{scrubbingRef.current=false;}} onInput={(event) => { setPlaying(false); const next=Number((event.target as HTMLInputElement).value)/1000; setCursor(next); if(scrubbingRef.current){const notch=Math.round(next*24);if(notch!==lastHapticRef.current){lastHapticRef.current=notch;if(typeof navigator.vibrate==="function")navigator.vibrate(5);}} }} />
             <div className="rs-controls">
-              <button type="button" className="rs-icon" aria-label="Previous print" disabled={status !== "ready"} onClick={() => step(-1)}><SkipBack size={15} /></button>
-              <button type="button" className="rs-play" aria-label={playing ? "Pause" : "Play"} disabled={status !== "ready"} onClick={toggle}>{playing ? <Pause size={18} /> : <Play size={18} />}</button>
-              <button type="button" className="rs-icon" aria-label="Next print" disabled={status !== "ready"} onClick={() => step(1)}><SkipForward size={15} /></button>
-              <button type="button" className="rs-speed" aria-label="Playback speed" onClick={() => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length])}>{speed}×</button>
-              <span className="rs-spacer" />
-              <button type="button" className="rs-pill" aria-pressed={whatIf} onClick={()=>setWhatIf(value=>!value)}>WHAT-IF</button>
-              <button type="button" className="rs-pill rs-pill--versus" onClick={()=>{setPlaying(false);setVersusOpen(true);}}>VERSUS</button>
-              <button type="button" className="rs-pill" onClick={() => void share()} aria-label="Copy a link to this Replay"><Share2 size={13} /> {shareNote && shareNote.length < 20 ? shareNote : "SHARE"}</button>
-              <button type="button" className="rs-pill rs-pill--cut" disabled={status !== "ready"} onClick={() => { setPlaying(false); setCutOpen(true); }}>CUT</button>
+              <div className="rs-transport">
+                <button type="button" className="rs-icon" aria-label="Previous print" disabled={status !== "ready"} onClick={() => step(-1)}><SkipBack size={15} /></button>
+                <button type="button" className="rs-play" aria-label={playing ? "Pause" : "Play"} disabled={status !== "ready"} onClick={toggle}>{playing ? <Pause size={18} /> : <Play size={18} />}</button>
+                <button type="button" className="rs-icon" aria-label="Next print" disabled={status !== "ready"} onClick={() => step(1)}><SkipForward size={15} /></button>
+                <button type="button" className="rs-speed" aria-label="Playback speed" onClick={() => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length])}>{speed}×</button>
+              </div>
+              <div className="rs-control-actions">
+                <button type="button" className="rs-pill" aria-pressed={whatIf} onClick={()=>setWhatIf(value=>!value)}>WHAT-IF</button>
+                <button type="button" className="rs-pill rs-pill--versus" onClick={()=>{setPlaying(false);setVersusOpen(true);}}>VERSUS</button>
+                <button type="button" className="rs-pill" onClick={() => void share()} aria-label="Copy a link to this Replay"><Share2 size={13} /> {shareNote && shareNote.length < 20 ? shareNote : "SHARE"}</button>
+                <button type="button" className="rs-pill rs-pill--cut" disabled={status !== "ready"} onClick={() => { setPlaying(false); setCutOpen(true); }}>CUT</button>
+              </div>
             </div>
             <p className="rs-source">{candles.length ? `Candles · ${candleSourceLabel(source)}${!candleCoverage.usable ? ` · ${candleCoverage.covered}/${candleCoverage.total} events candle-covered` : ""}` : status === "ready" ? "Dark tape · price candles unavailable · event timing only" : ""}{status === "ready" ? ` · ${bolts.length} events${events.some((row) => row.verification === "provider-reported") ? " · Fomo-reported" : ""}` : ""}</p>
           </>
