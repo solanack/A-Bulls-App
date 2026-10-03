@@ -69,6 +69,12 @@ test("closed Fomo outcomes preserve the selected blockchain into Replay",()=>{
   assert.match(appShell,/chainKey:trade\.chain/);
   assert.match(closedTrades,/trade\.chain\.toUpperCase\(\)/);
   assert.match(closedTrades,/REPLAY READY/);
+  assert.match(closedTrades,/HIGHER REPORTED/);
+  assert.match(closedTrades,/LOWER REPORTED/);
+  assert.match(closedTrades,/Not financial advice, not a recommendation, and not a promise of future results/);
+  assert.match(closedTrades,/overflow-y:auto/);
+  assert.doesNotMatch(closedTrades,/TOP WINNERS/);
+  assert.doesNotMatch(closedTrades,/max-height:31vh/);
   assert.doesNotMatch(closedTrades,/CANDLES READY/);
   assert.doesNotMatch(closedTrades,/maximumFractionDigits:0\}\);/);
 });

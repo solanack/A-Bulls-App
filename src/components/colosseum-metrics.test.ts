@@ -101,6 +101,9 @@ describe("duelBarRatio + extractDuelFields", () => {
     );
     assert.equal(fields.length, 4);
     const factor = fields.find((f) => f.key === "profit_factor");
+    assert.equal(factor?.label, "OBSERVED GAIN RATIO");
+    assert.equal(fields.find((f) => f.key === "median_roi_pct")?.label, "MEDIAN MATCHED CHANGE");
+    assert.equal(fields.find((f) => f.key === "win_rate_pct")?.label, "POSITIVE MATCHED SHARE");
     assert.equal(factor?.a, null);
     assert.equal(factor?.b, 2.1);
     assert.equal(duelBarRatio(factor!.a, factor!.b).leading, "gap");
