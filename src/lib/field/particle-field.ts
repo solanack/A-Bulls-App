@@ -18,11 +18,11 @@ import {
 import {
   WARP_APPROACH_DISTANCE,
   WARP_STREAK_LENGTH,
+  planWarpFollowUp,
   sampleWarp,
   warpClock,
-  warpDuration,
   warpPortal,
-  warpReducedDuration,
+  warpReducedRestart,
   warpScale,
   warpTint,
   type WarpSample,
@@ -866,6 +866,8 @@ type GalaxyWarpFlight = {
   tint: THREE.Color;
   started: number;
   duration: number;
+  endsAt: number;
+  anchor: number;
   committed: boolean;
   reduced: boolean;
   armed: boolean;
@@ -927,6 +929,8 @@ export class ParticleFieldRenderer {
   #starMax = 0;
   #warp: GalaxyWarpFlight | null = null;
   #warpLanding = false;
+  #holdWarpCamera = false;
+  #warpTimer = 0;
   #parallax = new THREE.Vector2();
   #parallaxTarget = new THREE.Vector2();
   #tiltFromDevice = false;
@@ -1144,7 +1148,27 @@ export class ParticleFieldRenderer {
     const warp = this.#warp;
     if (!warp) return;
     warp.reduced = reduced;
-    if (reduced) warp.duration = warpReducedDuration(warp.started, warp.duration, performance.now());
+    if (!reduced) return;
+    const now = performance.now();
+    const restart = warpReducedRestart(now, warp.endsAt);
+    warp.started = restart.started;
+    warp.duration = restart.duration;
+    warp.endsAt = restart.endsAt;
+    this.#armWarpDeadline();
+  }
+
+  /** Clear the shot on its deadline even when a slow frame delays the next paint. */
+  #armWarpDeadline() {
+    if (this.#warpTimer) clearTimeout(this.#warpTimer);
+    const warp = this.#warp;
+    if (!warp) return;
+    const delay = Math.max(0, warp.endsAt - performance.now());
+    this.#warpTimer = window.setTimeout(() => {
+      this.#warpTimer = 0;
+      if (!this.#warp || this.destroyed) return;
+      this.#updateWarp(performance.now(), 0.016);
+      if (this.#warp) this.#armWarpDeadline();
+    }, delay);
   }
 
   /**
@@ -1165,6 +1189,8 @@ export class ParticleFieldRenderer {
     }
     const rest = this.snapshot.galaxyId === "galaxy-zero" ? GALAXY_ZERO_CAMERA_DISTANCE : 125;
     this.cameraState = { yaw: 0.4, pitch: 0.18, distance: rest, target: [0, 0, 0] };
+    if (this.#warpTimer) clearTimeout(this.#warpTimer);
+    this.#warpTimer = 0;
     this.#warp = null;
     this.#warpLanding = false;
     try {
@@ -1218,7 +1244,9 @@ export class ParticleFieldRenderer {
     const previousPlanets = this.planets;
     const previousConstellations = this.constellations;
     this.snapshot = snapshot;
-    if (galaxyChanged && this.#warpLanding) {
+    if (galaxyChanged && this.#holdWarpCamera) {
+      this.#holdWarpCamera = false;
+    } else if (galaxyChanged && this.#warpLanding) {
       const reduced = this.#warp?.reduced ?? this.reducedMotion;
       this.#warpLanding = false;
       this.cameraState = {
@@ -1399,34 +1427,59 @@ export class ParticleFieldRenderer {
     const portal = warpPortal(input.fromId, input.targetId);
     const tint = warpTint(input.targetId);
     const focus = new THREE.Vector3(...(portal ?? [0, 0, 0]));
-    if (this.#warp && !this.#warp.committed) {
+    const now = performance.now();
+    const plan = planWarpFollowUp({
+      now,
+      reduced: this.reducedMotion,
+      inFlight: Boolean(this.#warp),
+      committed: this.#warp?.committed ?? false,
+      started: this.#warp?.started ?? null,
+      endsAt: this.#warp?.endsAt ?? null,
+      anchor: this.#warp?.anchor ?? null,
+    });
+    if (plan.action === "retarget" && this.#warp) {
       this.#warp.targetId = input.targetId;
       this.#warp.onCommit = input.onCommit;
       this.#warp.focus.copy(focus);
       this.#warp.tint.setRGB(tint[0], tint[1], tint[2]);
-      this.#warp.armed = Boolean(portal);
-      this.#warp.started = warpClock(this.#warp.started, performance.now());
+      this.#warp.started = warpClock(this.#warp.started, now);
+      this.#warp.duration = plan.duration;
+      this.#warp.endsAt = plan.endsAt;
+      this.#warp.anchor = plan.anchor;
+      if (plan.reopenCommit) {
+        this.#warp.committed = false;
+        this.#warp.armed = false;
+        this.#holdWarpCamera = true;
+      } else {
+        this.#warp.armed = Boolean(portal);
+      }
       this.host.dataset.fieldWarp = input.targetId;
+      this.#armWarpDeadline();
       return true;
     }
     this.#warp = {
       targetId: input.targetId,
       focus,
       tint: new THREE.Color(tint[0], tint[1], tint[2]),
-      started: performance.now(),
-      duration: warpDuration(this.reducedMotion),
+      started: plan.started,
+      duration: plan.duration,
+      endsAt: plan.endsAt,
+      anchor: plan.anchor,
       committed: false,
       reduced: this.reducedMotion,
       armed: Boolean(portal),
       onCommit: input.onCommit,
     };
     this.host.dataset.fieldWarp = input.targetId;
+    this.#armWarpDeadline();
     return true;
   }
 
   cancelGalaxyWarp() {
     this.#warp = null;
     this.#warpLanding = false;
+    if (this.#warpTimer) clearTimeout(this.#warpTimer);
+    this.#warpTimer = 0;
     this.#clearWarpVisuals();
   }
 
@@ -1621,17 +1674,20 @@ export class ParticleFieldRenderer {
   #updateWarp(now: number, elapsed: number) {
     const warp = this.#warp;
     if (!warp) return;
-    const t = clamp((now - warp.started) / Math.max(1, warp.duration), 0, 1);
+    const clock = Math.max(now, performance.now());
+    const t = clamp((clock - warp.started) / Math.max(1, warp.duration), 0, 1);
+    const finished = t >= 1 || clock + 2 >= warp.endsAt;
     const sample = sampleWarp(t, warp.reduced);
-    if (!warp.committed && sample.committed) {
+    if (!warp.committed && (sample.committed || finished)) {
       warp.committed = true;
-      this.#warpLanding = true;
+      if (!this.#holdWarpCamera) this.#warpLanding = true;
       warp.armed = false;
       try {
         warp.onCommit();
       } catch (error) {
         console.error("[field-renderer] warp commit failed", error);
       }
+      this.#holdWarpCamera = false;
     }
     this.#applyWarpSample(warp, sample);
     if (!this.#gestures.interacting && !warp.reduced) {
@@ -1655,7 +1711,9 @@ export class ParticleFieldRenderer {
         this.cameraState.pitch += (0.18 - this.cameraState.pitch) * k;
       }
     }
-    if (t >= 1) {
+    if (finished) {
+      if (this.#warpTimer) clearTimeout(this.#warpTimer);
+      this.#warpTimer = 0;
       const rest = this.snapshot.galaxyId === "galaxy-zero" ? GALAXY_ZERO_CAMERA_DISTANCE : 125;
       this.cameraState = { yaw: 0.4, pitch: 0.18, distance: rest, target: [0, 0, 0] };
       this.#warp = null;
@@ -1790,6 +1848,8 @@ export class ParticleFieldRenderer {
     globalThis.removeEventListener("deviceorientation", this.#onDeviceTilt);
     this.#reducedMedia?.removeEventListener("change", this.#onReducedMotion);
     this.#reducedMedia = null;
+    if (this.#warpTimer) clearTimeout(this.#warpTimer);
+    this.#warpTimer = 0;
     this.#warp = null;
     delete this.host.dataset.fieldWarp;
     this.points.geometry.dispose();

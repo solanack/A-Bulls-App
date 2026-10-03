@@ -8,6 +8,8 @@ import { GALAXY_ZERO_CENTERS } from "./synthetic-universe.ts";
  */
 export const WARP_DURATION_MS = 1520;
 export const WARP_REDUCED_MS = 420;
+/** A burst of taps shares the first tap. The shot never runs past this. */
+export const WARP_BURST_CAP_MS = 1800;
 export const WARP_STREAK_LENGTH = 18;
 /** Fraction of the shot where the destination scene replaces the departure scene. */
 export const WARP_COMMIT = 0.58;
@@ -46,12 +48,60 @@ export function warpClock(existingStart: number | null, now: number) {
 }
 
 /**
- * Shorten an in-flight warp when reduced motion turns on.
- * The original clock is never extended, so the shot stays inside the cinematic window.
+ * Reduced motion mid-flight restarts a fade at the toggle.
+ * The shot ends `reducedMs` after `now`, not a full cinematic duration later.
+ * An existing deadline that is sooner is kept, so the fade never gets longer.
  */
-export function warpReducedDuration(started: number, duration: number, now: number, reducedMs = WARP_REDUCED_MS) {
-  const elapsed = Math.max(0, now - started);
-  return Math.min(duration, elapsed + reducedMs);
+export function warpReducedRestart(now: number, endsAt: number, reducedMs = WARP_REDUCED_MS) {
+  const deadline = Math.min(endsAt, now + reducedMs);
+  const duration = Math.max(1, deadline - now);
+  return { started: now, duration, endsAt: now + duration };
+}
+
+export type WarpFollowPlan = {
+  action: "start" | "retarget";
+  started: number;
+  duration: number;
+  endsAt: number;
+  anchor: number;
+  /** Post-commit tap: land the new sky on the next frame without a second full shot. */
+  reopenCommit: boolean;
+};
+
+/**
+ * Taps during a shot share its deadline. A tap after the commit reopens the
+ * landing instead of scheduling another 1.52s warp.
+ */
+export function planWarpFollowUp(input: {
+  now: number;
+  reduced: boolean;
+  inFlight: boolean;
+  committed: boolean;
+  started: number | null;
+  endsAt: number | null;
+  anchor: number | null;
+}): WarpFollowPlan {
+  const full = warpDuration(input.reduced);
+  if (!input.inFlight || input.started == null || input.endsAt == null) {
+    return {
+      action: "start",
+      started: input.now,
+      duration: full,
+      endsAt: input.now + full,
+      anchor: input.now,
+      reopenCommit: false,
+    };
+  }
+  const anchor = input.anchor ?? input.started;
+  const endsAt = Math.min(input.endsAt, anchor + WARP_BURST_CAP_MS);
+  return {
+    action: "retarget",
+    started: warpClock(input.started, input.now),
+    duration: Math.max(1, endsAt - input.started),
+    endsAt,
+    anchor,
+    reopenCommit: input.committed,
+  };
 }
 
 /** Reduced motion is a fade. Warp and settle stay at zero so the galaxy does not scale. */
