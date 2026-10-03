@@ -5,10 +5,11 @@ name: That day social reach
 # duplicated long-lived shared secret. SOCIAL_INGEST_TOKEN remains an optional compatibility fallback.
 # TWITTER_AUTH_TOKEN / TWITTER_CT0 are optional and must belong to a dedicated account, never the owner's main X account.
 #
+# Schedule is hourly (`0 * * * *`).
 # Supply chain: actions are pinned to commit SHAs, Agent-Reach to commit
-# a19a171fa980a0785849596492e0af4db800c82f, twitter-cli==0.8.5, and mcporter@0.14.2.
-# The OIDC token is minted only after those installs. The three ingest/X secrets are set on the
-# steps that read them, not on the job, so install scripts do not receive them through the environment.
+# a19a171fa980a0785849596492e0af4db800c82f, and PyPI/npm dependencies to hashes.
+# The install step receives no secrets. The OIDC token is minted after those installs.
+# SOCIAL_INGEST_TOKEN, TWITTER_AUTH_TOKEN, and TWITTER_CT0 are set only on the collector step.
 
 on:
   schedule:
@@ -44,14 +45,13 @@ jobs:
           # mcporter@0.14.2 declares engines.node >= 24.
           node-version: "24"
       - name: Install Agent-Reach fork and backends
-        env:
-          TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
-          TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
         run: |
-          pip install --quiet "git+https://github.com/solanack/Agent-Reach.git@a19a171fa980a0785849596492e0af4db800c82f"
-          if [ -n "$TWITTER_AUTH_TOKEN" ] && [ -n "$TWITTER_CT0" ]; then pip install --quiet "twitter-cli==0.8.5"; fi
-          npm install -g --silent mcporter@0.14.2
-          mcporter config add exa https://mcp.exa.ai/mcp --scope home || true
+          set -euo pipefail
+          python -m pip install --require-hashes --no-deps --only-binary=:all: --no-cache-dir -r scripts/social-reach/requirements.txt
+          python -m pip install --no-deps --no-build-isolation --no-cache-dir "git+https://github.com/solanack/Agent-Reach.git@a19a171fa980a0785849596492e0af4db800c82f"
+          npm ci --ignore-scripts --prefix scripts/social-reach
+          echo "$GITHUB_WORKSPACE/scripts/social-reach/node_modules/.bin" >> "$GITHUB_PATH"
+          "$GITHUB_WORKSPACE/scripts/social-reach/node_modules/.bin/mcporter" config add exa https://mcp.exa.ai/mcp --scope home || true
       - name: Request short-lived GitHub OIDC ingest token
         shell: bash
         run: |
