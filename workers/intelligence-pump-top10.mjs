@@ -69,7 +69,18 @@ export function normalizePumpEvent(input={},eventIndex=0){
   }
   if(!wallet){wallet=side==='buy'?s(primary.toUserAccount):s(primary.fromUserAccount);}
   let solAmount=Math.abs(n(input.solAmount??input.sol_amount??input.nativeAmount));
-  if(!solAmount&&nativeTransfers.length)solAmount=nativeTransfers.reduce((sum,item)=>sum+Math.abs(n(item.amount))/1_000_000_000,0);
+  // Forward only: attribute the SOL leg of this swap. Do not rewrite rows already stored.
+  if(!solAmount&&nativeTransfers.length){
+    const pool=side==='buy'?s(primary.fromUserAccount):side==='sell'?s(primary.toUserAccount):'';
+    const directional=nativeTransfers.filter(item=>{
+      const from=s(item.fromUserAccount),to=s(item.toUserAccount);
+      if(side==='buy')return from===wallet&&(!pool||to===pool);
+      if(side==='sell')return to===wallet&&(!pool||from===pool);
+      return false;
+    });
+    const leg=directional.length?directional:nativeTransfers.filter(item=>side==='buy'?s(item.fromUserAccount)===wallet:side==='sell'?s(item.toUserAccount)===wallet:false);
+    solAmount=leg.reduce((sum,item)=>sum+Math.abs(n(item.amount)),0)/1_000_000_000;
+  }
   const blockTime=Math.max(0,Math.trunc(n(input.blockTime??input.timestamp??input.block_time)));
   const slot=Math.max(0,Math.trunc(n(input.slot)));
   const index=Math.max(0,Math.trunc(n(input.eventIndex??input.instructionIndex??eventIndex)));
@@ -161,9 +172,11 @@ export async function maintainPumpIndex(env={},now=Math.floor(Date.now()/1000)){
   const db=intelligenceDb(env),cfg=config(env);if(!db||!cfg.enabled)return{enabled:false};
   const ranking=await refreshPumpRankings(env,now);
   const rawCutoff=now-cfg.rawRetentionHours*3600,candleCutoff=now-cfg.candleRetentionDays*86400;
+  const {foldExpiringPumpBasis}=await import('./intelligence-research-materializer.mjs');
+  let basis={pairs:0,applied:0,deletedPairs:0};
+  try{basis=await foldExpiringPumpBasis(db,rawCutoff,now);}catch(error){console.error('[pump-basis-fold]',s(error?.message||error));}
   await Promise.allSettled([
     db.prepare('DELETE FROM pump_seen_events WHERE inserted_at<?').bind(now-48*3600).run(),
-    db.prepare('DELETE FROM pump_trades WHERE block_time<?').bind(rawCutoff).run(),
     db.prepare('DELETE FROM pump_volume_buckets WHERE bucket_start<?').bind(now-2*86400).run(),
     db.prepare('DELETE FROM pump_candles WHERE bucket_start<?').bind(candleCutoff).run(),
     db.prepare('DELETE FROM pump_ranking_snapshots WHERE snapshot_at<?').bind(now-90*86400).run()
@@ -178,7 +191,7 @@ export async function maintainPumpIndex(env={},now=Math.floor(Date.now()/1000)){
       if(response.ok)await recordUsage(db,{bytes:0,events:0,credits:100,now});
     }catch{}
   }
-  return{enabled:true,ranking,budget,webhookPaused};
+  return{enabled:true,ranking,budget,webhookPaused,basis};
 }
 
 async function topPayload(env,now=Math.floor(Date.now()/1000)){

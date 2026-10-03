@@ -92,16 +92,19 @@ function monthKey(now=Math.floor(Date.now()/1000)){
 }
 
 function budgetPolicy(env={}){
-  const monthlyLimit=Math.max(1,Math.trunc(n(env.HELIUS_MONTHLY_CREDITS||env.PUMP_MONTHLY_CREDIT_BUDGET)||1_000_000));
-  const configuredRatio=n(env.HELIUS_BREAKER_RATIO)||(n(env.PUMP_BUDGET_HARD_STOP_PERCENT)/100)||.8;
-  return{provider:'helius',monthlyLimit,circuitBreakerRatio:Math.max(.01,Math.min(1,configuredRatio))};
+  const configured=Math.trunc(n(env.HELIUS_MONTHLY_CREDITS));
+  if(!(configured>0))return{provider:'helius',monthlyLimit:0,circuitBreakerRatio:.75,unconfigured:true};
+  const configuredRatio=n(env.HELIUS_BREAKER_RATIO)||.75;
+  return{provider:'helius',monthlyLimit:configured,circuitBreakerRatio:Math.max(.5,Math.min(.95,configuredRatio)),unconfigured:false};
 }
 
 export async function readFieldProviderBudget(env={},now=Math.floor(Date.now()/1000)){
-  const db=intelligenceDb(env),policy=budgetPolicy(env),key=monthKey(now);
+  const policy=budgetPolicy(env),key=monthKey(now);
+  if(policy.unconfigured)return{provider:'helius',monthKey:key,requests:0,unitsSpent:0,monthlyLimit:0,circuitBreakerRatio:policy.circuitBreakerRatio,coverage:'stale',blocked:true,reason:'budget_unconfigured',updatedAt:null};
+  const db=intelligenceDb(env);
   if(!db)return null;
   const row=await db.prepare('SELECT call_count,credits_reserved,monthly_limit,breaker_ratio,updated_at FROM intelligence_provider_budget_monthly WHERE provider=? AND month_key=?').bind(policy.provider,key).first();
-  const units=n(row?.credits_reserved),limit=n(row?.monthly_limit)||policy.monthlyLimit,ratio=n(row?.breaker_ratio)||policy.circuitBreakerRatio;
+  const units=n(row?.credits_reserved),stored=n(row?.monthly_limit),limit=stored>0?Math.min(policy.monthlyLimit,stored):policy.monthlyLimit,ratio=n(row?.breaker_ratio)||policy.circuitBreakerRatio;
   return{provider:policy.provider,monthKey:key,requests:Math.trunc(n(row?.call_count)),unitsSpent:Math.trunc(units),monthlyLimit:Math.trunc(limit),circuitBreakerRatio:ratio,coverage:units>=Math.floor(limit*ratio)?'stale':'fresh',blocked:units>=Math.floor(limit*ratio),updatedAt:n(row?.updated_at)*1000};
 }
 

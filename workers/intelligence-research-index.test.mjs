@@ -11,6 +11,8 @@ test('trader holdings route reads matched rounds only and does not invent PnL',(
   assert.match(source,/\/api\/intelligence\/research\/holdings/);
   assert.match(source,/aggregateTraderHoldings/);
   assert.match(source,/status IN \('closed','open'\)/);
+  assert.match(source,/LIMIT \? OFFSET \?/);
+  assert.doesNotMatch(source,/LIMIT 250/);
   assert.doesNotMatch(source,/helius/i);
   assert.doesNotMatch(source,/reported_pnl/i);
 });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { providerBudgetPolicy, reserveProviderCredits, providerBudgetDiagnostics, handleProviderBudgetDiagnosticsRequest, __providerBudgetContract } from './intelligence-provider-budget.mjs';
+import { providerBudgetPolicy, reserveProviderCredits, recordProviderUsageObservation, providerBudgetDiagnostics, handleProviderBudgetDiagnosticsRequest, isQuotaVerified, __providerBudgetContract } from './intelligence-provider-budget.mjs';
 
 function fakeDb(){
   const monthly=new Map(),alerts=new Map(),snapshots=[];
@@ -76,4 +76,46 @@ test('blocked reservations persist a deduped alert and diagnostics expose headro
   const body=await authorized.json();
   assert.equal(body.internalOnly,true);
   assert.ok(body.providers.some(item=>item.provider==='helius'));
+});
+
+test('Helius fails closed when the monthly limit is unset and unverified text is not verified',async()=>{
+  const policy=providerBudgetPolicy({});
+  assert.equal(policy.unconfigured,true);
+  assert.equal(policy.monthlyLimit,0);
+  assert.equal(policy.hardLimit,0);
+  assert.equal(policy.quotaVerified,false);
+  assert.equal(isQuotaVerified('operator-config-unverified'),false);
+  assert.equal(isQuotaVerified('provider-verified-helius-usage'),true);
+  const db=fakeDb();
+  const result=await reserveProviderCredits({INTELLIGENCE_DB:db},1,'helius',Date.parse('2026-09-17T12:00:00Z'));
+  assert.equal(result.blocked,true);
+  assert.equal(result.reason,'budget_unconfigured');
+  assert.equal(result.hardLimit,0);
+  assert.equal(db.state.monthly.size,0);
+});
+
+test('Helius reservations stop at the breaker and ignore an inflated stored limit',async()=>{
+  const db=fakeDb(),env={INTELLIGENCE_DB:db,HELIUS_MONTHLY_CREDITS:'100',HELIUS_BREAKER_RATIO:'0.9'},stamp=Date.parse('2026-09-17T12:00:00Z');
+  const first=await reserveProviderCredits(env,90,'helius',stamp);
+  assert.equal(first.blocked,false);
+  assert.equal(first.creditsReserved,90);
+  assert.equal(first.hardLimit,90);
+  const second=await reserveProviderCredits(env,1,'helius',stamp);
+  assert.equal(second.blocked,true);
+  db.state.monthly.set('helius:2026-09',{provider:'helius',month_key:'2026-09',call_count:0,credits_reserved:0,monthly_limit:5000,breaker_ratio:.9,updated_at:0});
+  const inflated=await reserveProviderCredits(env,91,'helius',stamp);
+  assert.equal(inflated.blocked,true);
+  assert.equal(inflated.hardLimit,90);
+});
+
+test('usage observations do not raise the stored Helius limit from remaining credits',async()=>{
+  const db=fakeDb(),env={INTELLIGENCE_DB:db,HELIUS_MONTHLY_CREDITS:'1000',HELIUS_QUOTA_SOURCE:'provider-verified-helius-usage'},stamp=Date.parse('2026-09-17T12:00:00Z');
+  db.state.monthly.set('helius:2026-09',{provider:'helius',month_key:'2026-09',call_count:1,credits_reserved:10,monthly_limit:1000,breaker_ratio:.75,updated_at:0});
+  const observed=await recordProviderUsageObservation(env,{provider:'helius',providerRemaining:50000,providerCost:1,quotaSource:'operator-config-unverified',observedAt:stamp});
+  assert.equal(observed.effectiveObservedLimit,null);
+  assert.equal(db.state.monthly.get('helius:2026-09').monthly_limit,1000);
+  const diagnostics=await providerBudgetDiagnostics(env,stamp);
+  const helius=diagnostics.providers.find(item=>item.provider==='helius');
+  assert.equal(helius.monthlyLimit,1000);
+  assert.equal(helius.quotaVerified,false);
 });
