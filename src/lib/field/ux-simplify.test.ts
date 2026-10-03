@@ -44,8 +44,8 @@ describe("UX simplify pack — Cut-first demo menu", () => {
     assert.equal(MODE_HINT.replay, "Replay the trade on its indexed tape.");
     assert.equal(TOOL_TITLE.evidence, "Receipts for this trade");
     assert.equal(MODE_HINT.evidence, "Receipts for this trade");
-    assert.equal(TOOL_TITLE["what-if"], "What if you held instead?");
-    assert.equal(MODE_HINT["what-if"], "What if you held instead?");
+    assert.equal(TOOL_TITLE["what-if"], "Indexed fixed-hold record");
+    assert.equal(MODE_HINT["what-if"], "Historical counterfactual. Not financial advice.");
     assert.equal(TOOL_TITLE.compare, "Compare two traders side by side");
     assert.equal(MODE_HINT.compare, "Compare two traders side by side");
     assert.match(director, /Make a Cut/);

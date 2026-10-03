@@ -70,17 +70,18 @@ export function afterbellPnlCoverage(metadata: Record<string, JsonValue> | undef
   return roundsMatchedLine(matched, total);
 }
 
-/** One fact per Afterbell STAR. The figure leads so a 28-character sky label keeps the PnL. */
+/** One fact per Afterbell STAR. The signed figure and the realized source travel with the disclaimer. */
 export function afterbellFactLine(metadata: Record<string, JsonValue> | undefined) {
   const figure = afterbellPnlText(metadata);
+  const lead = `Not financial advice · Realized ${figure}`;
   const held = rows(metadata?.holdings).find((row) => Number(row.observedNetAmount) > 0 && marketSymbol(row));
-  if (held) return `${figure} · Holds ${marketSymbol(held)}`;
+  if (held) return `${lead} · Holds ${marketSymbol(held)}`;
   const traded = rows(metadata?.mostTraded)[0];
   const unique = count(metadata?.uniqueAfterCloseTxCount) ?? count(metadata?.transactionCount) ?? 0;
   const tradedSymbol = traded ? marketSymbol(traded) : null;
-  if (tradedSymbol) return `${figure} · ${tradedSymbol} · ${printsLabel(count(traded?.uniqueAfterCloseTxCount) ?? unique)}`;
-  if (unique > 0) return `${figure} · ${printsLabel(unique)}`;
-  return `${figure} · Coverage thin`;
+  if (tradedSymbol) return `${lead} · ${tradedSymbol} · ${printsLabel(count(traded?.uniqueAfterCloseTxCount) ?? unique)}`;
+  if (unique > 0) return `${lead} · ${printsLabel(unique)}`;
+  return `${lead} · Coverage thin`;
 }
 
 /** One fact per FOMO STAR in the room view. Provider counts are labeled as Fomo-reported. */
@@ -145,16 +146,22 @@ export function afterbellTraderDetail(star: FieldParticle, planetCount: number, 
 
 export function fomoTraderDetail(input: {
   wallet: string | null;
+  solanaWallet?: string | null;
+  evmWallet?: string | null;
   handle: string;
   displayName: string | null;
   rank: number | null;
   reportedPnlUsd?: number | null;
-  positions: readonly { mint: string; symbol: string | null; tradeCount: number | null; sourceKind: string }[];
+  positions: readonly { mint: string; symbol: string | null; tradeCount: number | null; sourceKind: string; chain?: string | null }[];
   latestTrades: readonly { side: string; observedAt: number; mint: string; signature: string | null }[];
 }): TraderSheetDetail {
   const symbols = new Map(input.positions.filter((row) => row.symbol).map((row) => [row.mint.toLowerCase(), row.symbol as string] as const));
   const latest = [...input.latestTrades].sort((a, b) => b.observedAt - a.observedAt)[0];
   const observedPrints = input.positions.reduce((sum, row) => sum + Math.max(0, row.tradeCount ?? 0), 0);
+  const position = input.positions[0];
+  const chain = String(position?.chain ?? "").trim() || null;
+  const evmChain = Boolean(chain && chain !== "solana");
+  const verifyWallet = evmChain ? input.evmWallet || input.wallet : chain === "solana" ? input.solanaWallet || input.wallet : input.wallet;
   return {
     room: "fomo",
     wallet: input.wallet,
@@ -173,7 +180,7 @@ export function fomoTraderDetail(input: {
     pnlText: formatCompactUsd(finitePnl(input.reportedPnlUsd)).text,
     pnlSourceLabel: PNL_FOMO_LABEL,
     pnlCoverage: null,
-    pnlVerifyHref: evidenceVerifyHref({ wallet: input.wallet, mint: input.positions[0]?.mint ?? null }),
+    pnlVerifyHref: evidenceVerifyHref({ wallet: verifyWallet, mint: position?.mint ?? null, chain }),
     pnlCaveat: PNL_CAVEAT,
   };
 }

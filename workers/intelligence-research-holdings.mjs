@@ -85,6 +85,6 @@ export function aggregateTraderHoldings(rounds = [], tokens = [], { limit = HOLD
 
 export function holdingsDisclosure(itemCount) {
   return itemCount
-    ? 'Holdings are indexed matched-round observations for this public wallet. Floating PnL is matched realized SOL from closed rounds with known acquisition basis only. Open inventory has no realized result. Unmatched sells are excluded. This is not a skill score or copy-trading signal.'
+    ? 'Holdings are indexed matched-round observations for this public wallet. PnL shown is matched realized SOL from closed rounds with known acquisition basis only. Open inventory has no realized result. Unmatched sells are excluded. This is not a skill score or copy-trading signal.'
     : 'No indexed matched holdings exist for this public wallet. Empty coverage stays empty. No PnL was invented.';
 }

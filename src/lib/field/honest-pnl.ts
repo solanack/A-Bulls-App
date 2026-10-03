@@ -25,9 +25,76 @@ export function finitePnl(value: unknown): number | null {
 }
 
 export function roundsMatchedLine(matched: number, total: number): string {
-  const x = Number.isFinite(matched) && matched > 0 ? Math.trunc(matched) : 0;
   const y = Number.isFinite(total) && total > 0 ? Math.trunc(total) : 0;
+  if (y <= 0) return PNL_MISSING;
+  const x = Number.isFinite(matched) && matched > 0 ? Math.min(y, Math.trunc(matched)) : 0;
   return `${x} of ${y} rounds matched`;
+}
+
+/** A count that was not sent stays unknown. A real zero is kept. */
+export function finiteCount(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.trunc(n);
+}
+
+/**
+ * What-If coverage when the Worker has not shipped `positionCount` yet.
+ * Absent fields fall back to the arrays already on the response.
+ */
+export function simulationRoundCounts(input: {
+  positionCount?: unknown;
+  comparablePositions?: unknown;
+  positionLength?: number;
+  outcomeLength?: number;
+}): { total: number; comparable: number } {
+  const positions = finiteCount(input.positionLength) ?? 0;
+  const outcomes = finiteCount(input.outcomeLength) ?? 0;
+  return {
+    total: finiteCount(input.positionCount) ?? (positions || outcomes),
+    comparable: finiteCount(input.comparablePositions) ?? outcomes,
+  };
+}
+
+const USD_QUOTE_MINTS = new Set([
+  "epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v",
+  "es9vmfrzacermjfrf4h2fyd4kconky11mcce8benwnyb",
+]);
+
+/**
+ * What-If unit. An explicit Worker `pnlDisplayUnit` wins. Older Workers omit it;
+ * the quote mint decides, and a missing quote stays SOL because that is the product default.
+ */
+export function hypotheticalDisplayUnit(input: { pnlDisplayUnit?: unknown; quoteMint?: unknown }): "usd" | "sol" {
+  if (input.pnlDisplayUnit === "usd" || input.pnlDisplayUnit === "sol") return input.pnlDisplayUnit;
+  const quote = String(input.quoteMint ?? "").trim().toLowerCase();
+  if (quote === "usd" || quote === "usdc" || quote === "usdt" || USD_QUOTE_MINTS.has(quote)) return "usd";
+  return "sol";
+}
+
+export function formatHypothetical(value: number | null, unit: "usd" | "sol"): string {
+  if (value == null || !Number.isFinite(value)) return PNL_MISSING;
+  return unit === "usd" ? formatCompactUsd(value).text : formatSolPnl(value).text;
+}
+
+/**
+ * Sky facts stay readable when they exceed the sprite budget.
+ * A trailing source or holding stays intact instead of being sliced mid-word.
+ */
+export function skyFactText(value: unknown, max = 64): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (!text) return null;
+  if (text.length <= max) return text;
+  const held = text.match(/ · Holds \S+$/);
+  const tails = [" · Fomo-reported", " · Coverage thin"];
+  const tail = tails.find((item) => text.endsWith(item)) ?? held?.[0] ?? "";
+  if (tail && tail.length + 2 < max) {
+    const room = max - tail.length - 1;
+    return `${text.slice(0, room).trimEnd()}…${tail}`;
+  }
+  return `${text.slice(0, Math.max(1, max - 1)).trimEnd()}…`;
 }
 
 export function formatSolPnl(value: number | null | undefined): { text: string; known: boolean } {
@@ -41,9 +108,29 @@ export function formatCompactUsd(value: number | null | undefined): { text: stri
   const sign = value >= 0 ? "+" : "-";
   const amount = Math.abs(value);
   if (amount === 0) return { text: "+$0", known: true };
-  if (amount >= 1_000_000_000) return { text: `${sign}$${(amount / 1_000_000_000).toFixed(amount >= 10_000_000_000 ? 0 : 1)}B`, known: true };
-  if (amount >= 1_000_000) return { text: `${sign}$${(amount / 1_000_000).toFixed(amount >= 10_000_000 ? 0 : 1)}M`, known: true };
-  if (amount >= 1_000) return { text: `${sign}$${(amount / 1_000).toFixed(amount >= 100_000 ? 0 : 1)}K`, known: true };
+  if (amount < 0.01) {
+    const digits = Math.min(6, Math.max(2, Math.ceil(-Math.log10(amount)) + 1));
+    const precise = amount.toFixed(digits).replace(/0+$/, "");
+    if (Number(precise) === 0) return { text: `${sign}<$0.000001`, known: true };
+    return { text: `${sign}$${precise}`, known: true };
+  }
+  const tiers = [
+    { min: 1_000_000_000, div: 1_000_000_000, suffix: "B" },
+    { min: 1_000_000, div: 1_000_000, suffix: "M" },
+    { min: 1_000, div: 1_000, suffix: "K" },
+  ];
+  for (let i = 0; i < tiers.length; i++) {
+    const tier = tiers[i];
+    if (amount < tier.min) continue;
+    const digits = amount >= tier.min * 10 ? 0 : 1;
+    const rounded = Number((amount / tier.div).toFixed(digits));
+    if (rounded >= 1000 && i > 0) {
+      const up = tiers[i - 1];
+      const upDigits = amount >= up.min * 10 ? 0 : 1;
+      return { text: `${sign}$${(amount / up.div).toFixed(upDigits)}${up.suffix}`, known: true };
+    }
+    return { text: `${sign}$${rounded.toFixed(digits)}${tier.suffix}`, known: true };
+  }
   return { text: `${sign}$${amount.toFixed(amount >= 100 ? 0 : 2)}`, known: true };
 }
 

@@ -1,5 +1,5 @@
 import { ReplayCutPanel as CutPanel } from "@/components/replay-cut-panel";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ReplayLedger } from "@/components/replay-ledger";
 import { printLabel, printSource, replayCandleCoverage } from "@/lib/field/replay-director";
 import "@/components/replay-director.css";
@@ -70,6 +70,8 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
   const canvasRef = useRef<HTMLCanvasElement | null>(null), frameRef = useRef<HTMLDivElement | null>(null), hitsRef = useRef<BoltHit[]>([]), audioRef = useRef<{ ctx: AudioContext; tone: GainNode } | null>(null), lastTickRef = useRef(0), cursorRef = useRef(cursor), progressRef = useRef(0), strikesRef = useRef(new Map<string, number>()), visitedRef = useRef(new Set<string>()), drawRef = useRef<() => void>(() => {}), hitStopUntilRef = useRef(0), impactRef = useRef({ started: 0, until: 0, strength: 0 }), scrubbingRef = useRef(false), lastHapticRef = useRef(-1);
   const audible = ticksOn && !muted;
   const [size, setSize] = useState({ w: 0, h: 0, dpr: 1 });
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
 
   const retainedCandles = useMemo(() => tapeCandles(bundle?.candles), [bundle]);
   const events = useMemo(() => tapeEvents(bundle?.events, obj(bundle?.subject).quoteMint), [bundle]);
@@ -157,10 +159,16 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
     if (reduced) setCursor(1); else setPlaying(true);
   }, [status]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const host = frameRef.current;
     if (!host) return;
-    const measure = () => setSize({ w: host.clientWidth, h: host.clientHeight, dpr: Math.min(2, globalThis.devicePixelRatio || 1) });
+    const measure = () => {
+      const next = { w: host.clientWidth, h: host.clientHeight, dpr: Math.min(2, globalThis.devicePixelRatio || 1) };
+      if (!next.w || !next.h) return;
+      sizeRef.current = next;
+      setSize((prev) => (prev.w === next.w && prev.h === next.h && prev.dpr === next.dpr ? prev : next));
+      drawRef.current();
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(host);
@@ -169,6 +177,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
 
   drawRef.current = () => {
     const canvas = canvasRef.current, ctx = canvas?.getContext("2d");
+    const size = sizeRef.current;
     if (!canvas || !ctx || !size.w || !size.h) return;
     const px = Math.round(size.w * size.dpr), py = Math.round(size.h * size.dpr);
     if (canvas.width !== px || canvas.height !== py) { canvas.width = px; canvas.height = py; }
@@ -183,7 +192,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
       const push = 1 + impact.strength * life * 0.018;
       ctx.translate(size.w / 2 + sx, size.h / 2 + sy); ctx.scale(push, push); ctx.translate(-size.w / 2, -size.h / 2);
     }
-    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 17 : 18, hypothetical: whatIf ? { cursor, side: latest?.side === "buy" ? "sell" : "buy", label: "HYPOTHETICAL" } : null, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 68 : 72, right: compact ? 58 : 72, bottom: 28, left: compact ? 8 : 20 } });
+    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 17 : 18, hypothetical: whatIf ? { cursor, side: latest?.side === "buy" ? "sell" : "buy", label: "HYPOTHETICAL" } : null, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 168 : 200, right: compact ? 58 : 72, bottom: 28, left: compact ? 8 : 20 } });
     ctx.restore();
   };
 
