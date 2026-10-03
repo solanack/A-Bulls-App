@@ -17,27 +17,27 @@ const json = (body, status = 200, cache = "no-store") =>
 const s = (value) => String(value ?? "").trim();
 const n = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
 const LIMIT = 50;
-const GALAXIES = new Set(["pump-fun", "galaxy-zero"]);
+// Public default is Galaxy Zero. pump-fun and pons are retired public galaxies.
+// Fomo and Afterbell are public research galaxies, but this feed only reads
+// intelligence_universe_membership_events. Fomo lives in the provider cache
+// (fomo_traders / fomo_trader_trades), not that membership table, so it is not
+// a discover source yet.
+const GALAXIES = new Set(["galaxy-zero"]);
 const GALAXY_TO_UNIVERSE = Object.freeze({
-  "pump-fun": "pump-fun",
   "galaxy-zero": "solana",
 });
-const DEFAULT_GALAXY = "pump-fun";
-const LARGE_TRADE_SOL = 5;
+const DEFAULT_GALAXY = "galaxy-zero";
+const MEMBERSHIP_SOURCES = Object.freeze([
+  "intelligence-mesh",
+  "indexed Solana field",
+  "universe-membership",
+]);
 
 const INDEXER_ACTORS = Object.freeze({
-  "pump-fun": Object.freeze({
-    id: "indexer:pump-fun",
-    handle: "pumpfun",
-    displayName: "pump.fun index",
-    avatarUrl: null,
-    reputation: 0,
-    evidenceAccuracy: null,
-  }),
   "galaxy-zero": Object.freeze({
     id: "indexer:galaxy-zero",
     handle: "galaxyzero",
-    displayName: "Galaxy Zero index",
+    displayName: "Indexed Solana field",
     avatarUrl: null,
     reputation: 0,
     evidenceAccuracy: null,
@@ -45,7 +45,7 @@ const INDEXER_ACTORS = Object.freeze({
 });
 
 const DISCLOSURE =
-  "Observations are indexed public-chain events with evidence receipts. Not endorsement or investment advice.";
+  "Observations are indexed Solana universe-membership events. They are not resolved evidence receipts, endorsements, or investment advice.";
 
 async function principal(request, env = {}) {
   const verifier = env.SOCIAL_AUTH;
@@ -95,78 +95,39 @@ function coverageFromAge(observedAtSec, hasItems) {
 function mapMembershipEvent(galaxyId, row) {
   const eventKind = s(row.event_kind);
   const mint = s(row.entity_id);
-  const evidenceId = s(row.source_snapshot_id)
+  const citation = s(row.source_snapshot_id)
     ? `membership:${s(row.source_snapshot_id)}:${eventKind}:${mint}`
     : `membership:${n(row.id)}:${eventKind}:${mint}`;
-  if (!mint || !evidenceId) return null;
-  if (eventKind === "entered") {
-    return {
-      id: `obs:${galaxyId}:${evidenceId}`,
-      kind: "observation",
-      body: `New mint entered the indexed ${galaxyId === "pump-fun" ? "pump.fun" : "Galaxy Zero"} set · ${shortMint(mint)}`,
-      createdAt: n(row.observed_at) * 1000,
-      galaxyId,
-      tokenId: mint,
-      evidenceId,
-      coverage: null,
-      actor: INDEXER_ACTORS[galaxyId],
-      reactions: 0,
-      replies: 0,
-    };
-  }
-  if (eventKind === "exited") {
-    return {
-      id: `obs:${galaxyId}:${evidenceId}`,
-      kind: "alert",
-      body: `Mint exited the indexed ${galaxyId === "pump-fun" ? "pump.fun" : "Galaxy Zero"} set · ${shortMint(mint)}`,
-      createdAt: n(row.observed_at) * 1000,
-      galaxyId,
-      tokenId: mint,
-      evidenceId,
-      coverage: null,
-      actor: INDEXER_ACTORS[galaxyId],
-      reactions: 0,
-      replies: 0,
-    };
-  }
-  // rank-changed intentionally omitted in step 1 — too noisy for discover.
-  return null;
-}
-
-function mapPumpTrade(galaxyId, row) {
-  const evidenceId = s(row.event_id);
-  const mint = s(row.mint);
-  const side = s(row.side).toLowerCase();
-  const sol = n(row.sol_amount);
-  if (!evidenceId || !mint) return null;
-  if (side === "sell") {
-    return {
-      id: `obs:${galaxyId}:${evidenceId}`,
-      kind: "alert",
-      body: `Large sell indexed on pump.fun · ${shortMint(mint)} · ${sol.toFixed(2)} SOL`,
-      createdAt: n(row.block_time) * 1000,
-      galaxyId,
-      tokenId: mint,
-      evidenceId,
-      coverage: null,
-      actor: INDEXER_ACTORS[galaxyId],
-      reactions: 0,
-      replies: 0,
-    };
-  }
-  return {
-    id: `obs:${galaxyId}:${evidenceId}`,
-    kind: "observation",
-    body: `Large ${side || "trade"} indexed on pump.fun · ${shortMint(mint)} · ${sol.toFixed(2)} SOL`,
-    createdAt: n(row.block_time) * 1000,
+  if (!mint || !citation) return null;
+  // Membership rows are indexed observations. No evidence-id resolver looks
+  // these citations up, so evidenceId stays empty.
+  const shared = {
+    id: `obs:${galaxyId}:${citation}`,
+    createdAt: n(row.observed_at) * 1000,
     galaxyId,
     tokenId: mint,
-    evidenceId,
+    evidenceId: null,
     coverage: null,
     actor: INDEXER_ACTORS[galaxyId],
     reactions: 0,
     replies: 0,
   };
+  if (eventKind === "entered") {
+    return {
+      ...shared,
+      kind: "observation",
+      body: `New mint entered indexed Solana membership · ${shortMint(mint)}`,
+    };
+  }
+  if (eventKind === "exited") {
+    return {
+      ...shared,
+      kind: "alert",
+      body: `Mint exited indexed Solana membership · ${shortMint(mint)}`,
+    };
+  }
+  // rank-changed intentionally omitted in step 1 — too noisy for discover.
+  return null;
 }
 
 function filterKinds(items, kindsParam) {
@@ -185,21 +146,20 @@ function filterKinds(items, kindsParam) {
 async function discoverFeed(db, { galaxyId, limit, kinds }) {
   const universeId = GALAXY_TO_UNIVERSE[galaxyId];
   const actor = INDEXER_ACTORS[galaxyId];
-  const sources =
-    galaxyId === "pump-fun"
-      ? ["pump.fun indexed stream", "Helius indexed history", "universe-membership"]
-      : ["synthetic-prototype", "indexed Solana field", "universe-membership"];
+  const sources = MEMBERSHIP_SOURCES;
 
   const items = [];
   let latest = 0;
   let membershipOk = false;
-  let tradesOk = false;
 
   try {
+    // idx_universe_membership_events_window is (universe_id, observed_at DESC).
+    // Do not scan pump_trades: block_time has no standalone index, and pump-fun
+    // is a retired public galaxy.
     const membership = await db
       .prepare(
         `
-      SELECT id, entity_id, event_kind, observed_at, source_snapshot_id, rank
+      SELECT id, entity_id, event_kind, observed_at, source_snapshot_id
       FROM intelligence_universe_membership_events
       WHERE universe_id = ?
         AND event_kind IN ('entered', 'exited')
@@ -212,7 +172,7 @@ async function discoverFeed(db, { galaxyId, limit, kinds }) {
     membershipOk = true;
     for (const row of membership?.results || []) {
       const item = mapMembershipEvent(galaxyId, row);
-      if (!item?.evidenceId) continue;
+      if (!item) continue;
       items.push(item);
       latest = Math.max(latest, Math.floor(n(item.createdAt) / 1000));
     }
@@ -220,55 +180,18 @@ async function discoverFeed(db, { galaxyId, limit, kinds }) {
     membershipOk = false;
   }
 
-  if (galaxyId === "pump-fun") {
-    try {
-      const remaining = Math.max(0, limit - items.length);
-      if (remaining > 0) {
-        const trades = await db
-          .prepare(
-            `
-          SELECT event_id, mint, side, sol_amount, block_time
-          FROM pump_trades
-          WHERE sol_amount >= ?
-          ORDER BY block_time DESC
-          LIMIT ?
-        `,
-          )
-          .bind(LARGE_TRADE_SOL, remaining)
-          .all();
-        tradesOk = true;
-        for (const row of trades?.results || []) {
-          const item = mapPumpTrade(galaxyId, row);
-          if (!item?.evidenceId) continue;
-          items.push(item);
-          latest = Math.max(latest, Math.floor(n(item.createdAt) / 1000));
-        }
-      } else {
-        tradesOk = true;
-      }
-    } catch {
-      tradesOk = false;
-    }
-  } else {
-    tradesOk = true;
-  }
-
   items.sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id));
   const deduped = [];
   const seen = new Set();
   for (const item of items) {
-    if (seen.has(item.evidenceId)) continue;
-    seen.add(item.evidenceId);
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
     deduped.push(item);
     if (deduped.length >= limit) break;
   }
 
   const filtered = filterKinds(deduped, kinds);
-  let coverage = coverageFromAge(latest, filtered.length > 0);
-  if (!membershipOk && !tradesOk) coverage = "degraded";
-  if (!membershipOk && galaxyId !== "pump-fun") coverage = filtered.length ? coverage : "degraded";
-  if (galaxyId === "pump-fun" && !membershipOk && !tradesOk) coverage = "degraded";
-  if (galaxyId === "pump-fun" && !membershipOk && tradesOk && !filtered.length) coverage = "empty";
+  const coverage = membershipOk ? coverageFromAge(latest, filtered.length > 0) : "degraded";
 
   return {
     ok: true,
@@ -358,7 +281,7 @@ async function accountFeed(request, env, db, { scope, limit }) {
       items,
       nextCursor: null,
       disclosure:
-        "Social posts are user expression. Evidence badges indicate an attached indexed receipt, not endorsement or investment advice.",
+        "Social posts are user expression. An evidence id on a post is not a resolved receipt, endorsement, or investment advice.",
     },
     200,
     cache,

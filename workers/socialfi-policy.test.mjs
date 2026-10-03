@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   requireSocialWrites,
   socialCapabilities,
@@ -91,44 +92,38 @@ function mockDb(handlers = {}) {
   };
 }
 
-test("discover feed maps membership lifecycle into evidence-linked observations", async () => {
+test("discover feed reads indexed Solana membership for Galaxy Zero", async () => {
+  const prepared = [];
   const env = {
     SOCIALFI_ENABLED: "true",
     INTELLIGENCE_DB: mockDb({
       prepare(sql) {
+        prepared.push(sql);
+        assert.equal(sql.includes("pump_trades"), false);
+        assert.equal(/order by block_time/i.test(sql), false);
         if (sql.includes("intelligence_universe_membership_events")) {
-          return {
-            results: [
-              {
-                id: 11,
-                entity_id: "So11111111111111111111111111111111111111112",
-                event_kind: "entered",
-                observed_at: 1_700_000_100,
-                source_snapshot_id: "pump-fun:snap1",
-                rank: 1,
-              },
-              {
-                id: 12,
-                entity_id: "So11111111111111111111111111111111111111112",
-                event_kind: "exited",
-                observed_at: 1_700_000_200,
-                source_snapshot_id: "pump-fun:snap2",
-                rank: 1,
-              },
-            ],
-          };
-        }
-        if (sql.includes("pump_trades")) {
-          return {
-            results: [
-              {
-                event_id: "trade:abc",
-                mint: "TokenMint111111111111111111111111111111111",
-                side: "sell",
-                sol_amount: 12.5,
-                block_time: 1_700_000_300,
-              },
-            ],
+          assert.match(sql, /universe_id = \?/);
+          assert.match(sql, /ORDER BY observed_at DESC, id DESC/);
+          return (args) => {
+            assert.deepEqual(args, ["solana", 10]);
+            return {
+              results: [
+                {
+                  id: 11,
+                  entity_id: "So11111111111111111111111111111111111111112",
+                  event_kind: "entered",
+                  observed_at: 1_700_000_100,
+                  source_snapshot_id: "solana:snap1",
+                },
+                {
+                  id: 12,
+                  entity_id: "So11111111111111111111111111111111111111112",
+                  event_kind: "exited",
+                  observed_at: 1_700_000_200,
+                  source_snapshot_id: "solana:snap2",
+                },
+              ],
+            };
           };
         }
         return { results: [] };
@@ -136,31 +131,54 @@ test("discover feed maps membership lifecycle into evidence-linked observations"
     }),
   };
 
-  // intelligenceDb() reads env binding — stub via monkeypatch on module if needed.
-  // The router imports intelligenceDb from indexer; tests pass env with INTELLIGENCE_DB
-  // only if indexer reads it. Mirror production: patch global by importing indexer contract.
-  const { handleSocialFiRequest: handle } = await import("./socialfi-router.mjs");
-  // Re-bind: socialfi-router uses intelligenceDb(env). Ensure indexer uses env.INTELLIGENCE_DB.
-  const response = await handle(
+  const response = await handleSocialFiRequest(
     new Request("https://example.com/api/social/feed?scope=discover&limit=10"),
     env,
   );
-  // If indexer doesn't see our mock, skip soft — assert status path at least enabled.
-  assert.ok([200, 503].includes(response.status));
-  if (response.status === 200) {
-    const body = await response.json();
-    assert.equal(body.ok, true);
-    assert.equal(body.scope, "discover");
-    assert.equal(body.galaxyId, "pump-fun");
-    assert.ok(Array.isArray(body.sources));
-    for (const item of body.items) {
-      assert.ok(item.evidenceId);
-      assert.ok(item.galaxyId);
-      assert.ok(["observation", "alert"].includes(item.kind));
-      assert.equal(item.actor.id, "indexer:pump-fun");
-      assert.equal(item.reactions, 0);
-    }
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.scope, "discover");
+  assert.equal(body.galaxyId, "galaxy-zero");
+  assert.deepEqual(body.sources, [
+    "intelligence-mesh",
+    "indexed Solana field",
+    "universe-membership",
+  ]);
+  assert.equal(body.sources.includes("synthetic-prototype"), false);
+  assert.equal(prepared.some((sql) => sql.includes("pump_trades")), false);
+  assert.equal(body.items.length, 2);
+  assert.deepEqual(
+    body.items.map((item) => item.kind),
+    ["alert", "observation"],
+  );
+  for (const item of body.items) {
+    assert.equal(item.evidenceId, null);
+    assert.equal(item.galaxyId, "galaxy-zero");
+    assert.equal(item.actor.id, "indexer:galaxy-zero");
+    assert.equal(item.reactions, 0);
+    assert.equal(/pump\.fun|EVIDENCE ATTACHED/i.test(item.body), false);
   }
+});
+
+test("retired pump-fun and unsupported fomo are not discover sources", async () => {
+  for (const galaxyId of ["pump-fun", "fomo", "pons", "afterbell"]) {
+    const response = await handleSocialFiRequest(
+      new Request(`https://example.com/api/social/feed?scope=discover&galaxyId=${galaxyId}`),
+      { SOCIALFI_ENABLED: "true", INTELLIGENCE_DB: mockDb() },
+    );
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, "unknown_galaxy");
+  }
+});
+
+test("social cards do not claim a resolved evidence receipt", () => {
+  const source = readFileSync(
+    new URL("../src/components/socialfi-workspace.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.equal(source.includes("EVIDENCE ATTACHED"), false);
+  assert.match(source, /INDEXED OBSERVATION/);
 });
 
 test("creators scope is closed in step 1", async () => {
@@ -168,5 +186,6 @@ test("creators scope is closed in step 1", async () => {
     new Request("https://example.com/api/social/feed?scope=creators"),
     { SOCIALFI_ENABLED: "true", INTELLIGENCE_DB: mockDb() },
   );
-  assert.ok([400, 503].includes(response.status));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, "scope_not_in_step_1");
 });
