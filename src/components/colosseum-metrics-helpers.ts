@@ -120,8 +120,8 @@ export type DuelField = {
 const DUEL_FIELDS: { key: string; alt?: string[]; label: string }[] = [
   { key: "realized_sol", alt: ["realizedSol"], label: PNL_REALIZED_LABEL },
   { key: "win_rate_pct", alt: ["winRatePct"], label: "POSITIVE MATCHED SHARE" },
-  { key: "profit_factor", alt: ["profitFactor"], label: "PROFIT FACTOR" },
-  { key: "median_roi_pct", alt: ["medianRoiPct"], label: "MEDIAN TRADE ROI" },
+  { key: "profit_factor", alt: ["profitFactor"], label: "OBSERVED GAIN RATIO" },
+  { key: "median_roi_pct", alt: ["medianRoiPct"], label: "MEDIAN MATCHED CHANGE" },
 ];
 
 function pickNum(row: Data, key: string, alt: string[] = []): number | null {

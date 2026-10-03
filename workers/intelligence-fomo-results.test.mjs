@@ -55,6 +55,8 @@ test('page read scans closed trades once and probes evidence only for displayed 
   assert.ok(batches[0].length<=6*4);
   assert.deepEqual(body.winners.map(item=>item.tradeId),['t28','t26','t24']);
   assert.equal(body.replayReadyCount,0);
+  assert.match(body.disclosure,/not financial advice, not a recommendation, and not a promise of future results/i);
+  assert.doesNotMatch(body.disclosure,/Top Winners/);
 });
 
 test('evidence flags land on the displayed trade they were probed for',async()=>{
