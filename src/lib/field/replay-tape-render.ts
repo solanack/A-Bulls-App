@@ -1,4 +1,9 @@
-import { formatUsdNotional, groupBolts, priceAxisLabel, strikePhase, tapeAxis, type BoltGroup, type CohortTick, type TapeBolt, type TapeCandle, type TapeMarkSummary } from "./replay-tape.ts";
+import { formatUsdNotional, groupBolts, heldRound, priceAxisLabel, strikePhase, tapeAxis, type BoltGroup, type CohortTick, type TapeBolt, type TapeCandle, type TapeMarkSummary } from "./replay-tape.ts";
+
+/** Read on every frame so a live OS setting change stops pulse, shake, and haptics immediately. */
+export function liveReducedMotion() {
+  try { return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true; } catch { return false; }
+}
 
 export const TAPE_BG = "#0b0c10";
 /** Tape colours. Bolts never use these. */
@@ -152,12 +157,79 @@ function drawLightning(ctx: CanvasRenderingContext2D, key: string, side: "buy" |
   drawImpactBloom(ctx, x, y, side, k, Math.max(0, 1 - phase.progress * 2.2));
 }
 
+function drawHeldConnector(ctx: CanvasRenderingContext2D, x1: number, x2: number, y: number, k: number, reduce: boolean) {
+  if (Math.abs(x2 - x1) < 1) return;
+  ctx.save();
+  ctx.strokeStyle = "rgba(184,255,60,.82)";
+  ctx.lineWidth = Math.max(1, 1.35 * k);
+  ctx.shadowColor = reduce ? "transparent" : "#B8FF3C";
+  ctx.shadowBlur = reduce ? 0 : 8 * k;
+  ctx.beginPath();
+  ctx.moveTo(Math.min(x1, x2), y);
+  ctx.lineTo(Math.max(x1, x2), y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Big entry/exit bolt. Tip sits on the print. Reduced motion is a static glow with no pulse or moving streaks. */
+function drawHeroBolt(ctx: CanvasRenderingContext2D, x: number, y: number, side: "buy" | "sell", height: number, k: number, selected: boolean, pulse: number, reduce: boolean, phase: { phase: "down" | "up"; progress: number } | null, label: string) {
+  const grow = !reduce && phase?.phase === "down" ? 0.18 + 0.82 * phase.progress : 1;
+  const h = Math.max(8, height * grow);
+  const cy = y - h * 0.32;
+  const palette = BOLT[side];
+  const glow = reduce ? 0.92 : 0.55 + 0.45 * pulse;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.shadowColor = palette.glow;
+  ctx.shadowBlur = (reduce ? 8 : 14 + 12 * pulse) * k;
+  ctx.globalAlpha = glow;
+  ctx.strokeStyle = palette.glow;
+  ctx.lineWidth = Math.max(1, 1.6 * k);
+  const spin = reduce ? 0.6 : (typeof performance !== "undefined" ? performance.now() : 0) / 700;
+  for (let i = 0; i < 4; i++) {
+    const angle = spin + i * 1.15;
+    const len = h * (reduce ? 0.42 : 0.34 + 0.16 * pulse);
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(angle) * h * 0.08, cy + Math.sin(angle) * h * 0.08);
+    ctx.lineTo(x + Math.cos(angle) * len, cy + Math.sin(angle) * len * 0.55);
+    ctx.stroke();
+  }
+  ctx.shadowBlur = (reduce ? 10 : 16 + 8 * pulse) * k;
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  BOLT_SHAPE.forEach(([px, py], i) => {
+    const bx = x + px * h, by = cy + py * h;
+    if (i) ctx.lineTo(bx, by); else ctx.moveTo(bx, by);
+  });
+  ctx.closePath();
+  ctx.fillStyle = palette.fill;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.lineJoin = "miter";
+  ctx.strokeStyle = "#f7fbff";
+  ctx.lineWidth = Math.max(1, 1.15 * k);
+  ctx.stroke();
+  if (selected) {
+    ctx.beginPath();
+    ctx.arc(x, cy, h * 0.72, 0, Math.PI * 2);
+    ctx.lineWidth = 1.5 * k;
+    ctx.strokeStyle = "rgba(255,255,255,.95)";
+    ctx.stroke();
+  }
+  ctx.font = `700 ${Math.max(11, Math.round(11 * k))}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.fillStyle = palette.fill;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.fillText(label, x, cy - h * 0.52);
+  ctx.restore();
+}
+
 function drawNotional(ctx: CanvasRenderingContext2D, x: number, y: number, side: "buy" | "sell", notional: number | null, k: number) {
   if (notional == null) return;
   const label = formatUsdNotional(notional);
   if (!label) return;
   ctx.save();
-  ctx.font = `760 ${Math.round(10 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.font = `760 ${Math.max(11, Math.round(11 * k))}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   const padX = 5 * k, h = 16 * k, w = ctx.measureText(label).width + padX * 2;
   ctx.fillStyle = "rgba(5,6,9,.88)";
   ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 4 * k); ctx.fill();
@@ -170,7 +242,7 @@ function drawNotional(ctx: CanvasRenderingContext2D, x: number, y: number, side:
 
 function drawCount(ctx: CanvasRenderingContext2D, x: number, y: number, side: "buy" | "sell", count: number, k: number) {
   const label = `×${count}`;
-  ctx.font = `750 ${Math.round(8 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.font = `750 ${Math.max(11, Math.round(11 * k))}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   const w = ctx.measureText(label).width + 6 * k, h = 12 * k;
   ctx.fillStyle = "rgba(8,9,12,.9)";
   ctx.strokeStyle = BOLT[side].fill;
@@ -203,7 +275,7 @@ export function tapePrintLabelLayouts(group:BoltGroup,x:number,barY:number,k:num
 }
 function drawOverflow(ctx:CanvasRenderingContext2D,x:number,y:number,count:number,side:"buy"|"sell",k:number){
   if(count<=0)return;
-  const label=`+${count}`;ctx.save();ctx.font=`750 ${Math.round(8*k)}px ui-monospace,SFMono-Regular,Menlo,monospace`;
+  const label=`+${count}`;ctx.save();ctx.font=`750 ${Math.max(11, Math.round(11*k))}px ui-monospace,SFMono-Regular,Menlo,monospace`;
   const w=ctx.measureText(label).width+8*k,h=14*k;ctx.fillStyle="rgba(8,9,12,.92)";ctx.strokeStyle=BOLT[side].fill;ctx.lineWidth=Math.max(1,k);
   ctx.beginPath();ctx.roundRect(x-w/2,y-h/2,w,h,h/2);ctx.fill();ctx.stroke();ctx.fillStyle=BOLT[side].fill;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(label,x,y+.2*k);ctx.restore();
 }
@@ -247,6 +319,11 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
   const visible = bolts.filter((bolt) => bolt.cursor <= cursor + 1e-9);
   const groups = groupBolts(visible);
   const scar = (frame.scarPx ?? 12) * k;
+  const reduceMotion = liveReducedMotion();
+  const heroH = Math.max(scar * 2.2, Math.min(w < 520 ? 44 : 60, Math.max(34, w * 0.072)));
+  const round = heldRound(bolts, cursor);
+  const heroIds = new Set([round.entry?.id, round.exit?.id].filter((id): id is string => Boolean(id)));
+  const heroAt = new Map<string, { x: number; y: number; side: "buy" | "sell" }>();
 
   // One strike per transaction, even when the layout stacks several labels on one candle.
   const strikes: { bolt: TapeBolt; x: number; y: number; phase: { phase: "down" | "up"; progress: number } }[] = [];
@@ -259,10 +336,11 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
       const label = stack.labels.find((row) => row.id === bolt.id);
       const unpricedIndex = stack.unpriced.findIndex((row) => row.id === bolt.id);
       const phase = strikePhase(frame.strikeAge?.(bolt) ?? null);
+      if (heroIds.has(bolt.id)) heroAt.set(bolt.id, { x, y: by, side: bolt.side });
       if (phase.phase !== "scar") strikes.push({ bolt, x, y: by, phase });
-      else if (label) drawScar(ctx, x, by, bolt.side, scar, k, frame.selectedId === bolt.id);
+      else if (!heroIds.has(bolt.id) && label) drawScar(ctx, x, by, bolt.side, scar, k, frame.selectedId === bolt.id);
       const hitY = label?.y ?? (y + 5 * k + Math.max(0, unpricedIndex) * 3 * k);
-      hits.push({ id: bolt.id, x, y: hitY, r: Math.max(12 * k, scar) });
+      hits.push({ id: bolt.id, x, y: hitY, r: heroIds.has(bolt.id) ? Math.max(22, heroH * 0.48) : Math.max(12 * k, scar) });
     }
     for (const label of stack.labels) overlays.push(() => drawNotional(ctx, label.x, label.y, label.side, label.notional, k));
     stack.unpriced.forEach((bolt, index) => overlays.push(() => drawUnpricedTick(ctx, x, y, bolt.side, index, k)));
@@ -283,7 +361,7 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
     ctx.fillStyle = "rgba(226,226,232,.46)";
     ctx.strokeStyle = "rgba(236,236,240,.14)";
     ctx.lineWidth = 1;
-    ctx.font = font(500, 10);
+    ctx.font = font(500, 11);
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     for (let i = 0; i < 4; i++) {
@@ -351,12 +429,25 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
     ctx.textBaseline = "top";
     ctx.fillText("DARK TAPE · PRICE CANDLES UNAVAILABLE", pad.left, pad.top);
     ctx.fillStyle = "rgba(226,226,232,.46)";
-    ctx.font = font(520, 10);
+    ctx.font = font(520, 11);
     ctx.fillText("Observed event timing only · no price path invented", pad.left, pad.top + 18 * k);
     ctx.restore();
     for (const group of groups) placeBolt(group, xAt(group.lead.cursor), mid + (group.side === "buy" ? 1 : -1) * scar * 0.9);
   }
   for (const strike of strikes) drawLightning(ctx, strike.bolt.id, strike.bolt.side, strike.x, pad.top, strike.y, k, strike.phase);
+  const pulse = reduceMotion ? 1 : 0.5 + 0.5 * Math.sin((typeof performance !== "undefined" ? performance.now() : 0) / 420);
+  const entryPos = round.entry ? heroAt.get(round.entry.id) : undefined;
+  const exitPos = round.exit ? heroAt.get(round.exit.id) : undefined;
+  if (entryPos && round.entry) {
+    drawHeldConnector(ctx, entryPos.x, exitPos ? exitPos.x : cursorX, entryPos.y, k, reduceMotion);
+    const entryPhase = strikes.find((row) => row.bolt.id === round.entry!.id)?.phase ?? null;
+    drawHeroBolt(ctx, entryPos.x, entryPos.y, "buy", heroH, k, frame.selectedId === round.entry.id, pulse, reduceMotion, entryPhase, "ENTRY");
+    const exitBolt = round.exit;
+    if (exitPos && exitBolt) {
+      const exitPhase = strikes.find((row) => row.bolt.id === exitBolt.id)?.phase ?? null;
+      drawHeroBolt(ctx, exitPos.x, exitPos.y, "sell", heroH, k, frame.selectedId === exitBolt.id, pulse, reduceMotion, exitPhase, "EXIT");
+    }
+  }
   for (const draw of overlays) draw();
 
   if (frame.hypothetical) {
@@ -369,7 +460,7 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
     ctx.beginPath(); ctx.moveTo(hx, top); ctx.lineTo(hx, bottom); ctx.stroke();
     ctx.setLineDash([]);
     const label = frame.hypothetical.label || "HYPOTHETICAL";
-    ctx.font = font(800, 10);
+    ctx.font = font(800, 11);
     const tw = ctx.measureText(label).width, py = pad.top + 8 * k;
     ctx.fillStyle = "rgba(9,10,14,.92)";
     ctx.fillRect(hx - tw / 2 - 7 * k, py - 7 * k, tw + 14 * k, 16 * k);
@@ -385,7 +476,7 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
   }
 
   ctx.fillStyle = "rgba(226,226,232,.4)";
-  ctx.font = font(500, 10);
+  ctx.font = font(500, 11);
   ctx.textBaseline = "top";
   const day = (ms: number) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   ctx.textAlign = "left";

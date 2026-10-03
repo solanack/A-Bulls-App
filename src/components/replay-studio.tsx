@@ -9,8 +9,8 @@ import { callUniverseTool } from "@/lib/universe-intelligence";
 import { loadResearchThread, saveResearchThread } from "@/lib/research-thread-store";
 import { requestTradeResearchMode } from "@/lib/field/trade-research-navigation";
 import { PNL_CAVEAT, PNL_HYPOTHETICAL_LABEL, PNL_REALIZED_LABEL } from "@/lib/field/honest-pnl";
-import { observedUsdNotional, reportedPositionUsd, anchorBolts, candleSource, candleSourceLabel, cohortTicks, explorerUrl, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, tapeAvgEntryMarketCap, tapeAxis, tapeCandles, tapeEvents, tapeEvidenceLine, tapeHeaderLine, tapeMarketCapAt, tapeMarketCapPoints, tapeMarkSummary, tapeMatchedRounds, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, tapeWindow, type CohortTick, type ReplaySubject, type TapeBolt, type TapeCandle, type TapeMarkSummary, type TapeMarketCapPoint, type TapeUsdSummary } from "@/lib/field/replay-tape";
-import { drawTape, hitBolt, type BoltHit } from "@/lib/field/replay-tape-render";
+import { observedUsdNotional, reportedPositionUsd, anchorBolts, candleSource, candleSourceLabel, cohortTicks, explorerUrl, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, heldRound, hopSchedule, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_MS, tapeAvgEntryMarketCap, tapeAxis, tapeCandles, tapeEvents, tapeEvidenceLine, tapeHeaderLine, tapeMarketCapAt, tapeMarketCapPoints, tapeMarkSummary, tapeMatchedRounds, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, tapeWindow, type CohortTick, type ReplaySubject, type TapeBolt, type TapeCandle, type TapeMarkSummary, type TapeMarketCapPoint, type TapeUsdSummary } from "@/lib/field/replay-tape";
+import { drawTape, hitBolt, liveReducedMotion, type BoltHit } from "@/lib/field/replay-tape-render";
 import { callsign } from "@/lib/field/trader-sheet";
 import { getAfterbellGalaxy, XSTOCK_REGISTRY } from "@/lib/universe-data/afterbell-client";
 import { isWatched, type WatchItem } from "@/lib/field/watchlist";
@@ -31,6 +31,7 @@ const ROOM_CHIP = { fomo: "FOMO", afterbell: "AFTERBELL" } as const;
 const when = (ms: number) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 const amountLabel = (value: number | null) => (value == null ? null : value >= 1000 ? value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : value >= 1 ? value.toFixed(2) : value.toPrecision(3));
 const signedUsd = (value: number | null) => value == null || !Number.isFinite(value) ? "—" : value === 0 ? "$0" : `${value > 0 ? "+" : "−"}${formatUsdNotional(Math.abs(value))}`;
+const formatHeld = (ms: number) => { const minutes = Math.max(0, Math.round(ms / 60000)); const hours = Math.floor(minutes / 60); const rest = minutes % 60; return hours <= 0 ? `${rest}m` : `${hours}h ${rest}m`; };
 
 export function replayImpactStrength(bolt: TapeBolt, bolts: readonly TapeBolt[]) {
   const value = observedUsdNotional(bolt);
@@ -64,6 +65,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
   const [socialOpen, setSocialOpen] = useState(false);
   const [whatIf, setWhatIf] = useState(false);
   const [versusOpen, setVersusOpen] = useState(false);
+  const [stripOpen, setStripOpen] = useState(false);
   const [ticksOn, setTicksOn] = useState(() => { try { return globalThis.localStorage?.getItem(TICKS_KEY) === "1"; } catch { return false; } });
   const [cohortOn, setCohortOn] = useState(() => { try { return globalThis.localStorage?.getItem(COHORT_KEY) !== "0"; } catch { return true; } });
   const [cohortItems, setCohortItems] = useState<unknown[] | null>(null);
@@ -192,7 +194,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
       const push = 1 + impact.strength * life * 0.018;
       ctx.translate(size.w / 2 + sx, size.h / 2 + sy); ctx.scale(push, push); ctx.translate(-size.w / 2, -size.h / 2);
     }
-    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 17 : 18, hypothetical: whatIf ? { cursor, side: latest?.side === "buy" ? "sell" : "buy", label: "HYPOTHETICAL" } : null, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 168 : 200, right: compact ? 58 : 72, bottom: 28, left: compact ? 8 : 20 } });
+    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 16 : 18, hypothetical: whatIf ? { cursor, side: latest?.side === "buy" ? "sell" : "buy", label: "HYPOTHETICAL" } : null, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 16 : 20, right: compact ? 50 : 66, bottom: 22, left: compact ? 4 : 8 } });
     ctx.restore();
   };
 
@@ -244,7 +246,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
     }
     const audio = audioRef.current;
     if (audible && audio && now - lastTickRef.current >= 55) { lastTickRef.current = now; playTick(audio.ctx, struck.side, strength); }
-    if (typeof navigator.vibrate === "function") navigator.vibrate(Math.round(8 + strength * 18));
+    if (!liveReducedMotion() && typeof navigator.vibrate === "function") navigator.vibrate(Math.round(8 + strength * 18));
   }, [cursor, bolts, audible]);
 
   useEffect(() => {
@@ -268,7 +270,9 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
       if (event.key === " ") { event.preventDefault(); toggle(); }
       else if (event.key === "ArrowRight") { event.preventDefault(); step(1); }
       else if (event.key === "ArrowLeft") { event.preventDefault(); step(-1); }
-      else if (event.key === "Escape") { if (selectedId) setSelectedId(null); else if (socialOpen) setSocialOpen(false); else if (cutOpen) setCutOpen(false); else onBack(); }
+      else if (event.key === "Home") { event.preventDefault(); setPlaying(false); setCursor(0); }
+      else if (event.key === "End") { event.preventDefault(); setPlaying(false); setCursor(1); }
+      else if (event.key === "Escape") { if (stripOpen) setStripOpen(false); else if (selectedId) setSelectedId(null); else if (socialOpen) setSocialOpen(false); else if (cutOpen) setCutOpen(false); else onBack(); }
     };
     globalThis.addEventListener("keydown", onKey);
     return () => globalThis.removeEventListener("keydown", onKey);
@@ -279,6 +283,24 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
     document.addEventListener("visibilitychange", pauseHidden);
     return () => document.removeEventListener("visibilitychange", pauseHidden);
   }, []);
+
+  useEffect(() => {
+    if (status !== "ready") return;
+    let raf = 0;
+    let last = 0;
+    const loop = (now: number) => {
+      if (liveReducedMotion() || document.hidden) { drawRef.current(); return; }
+      if (now - last > 32) { last = now; drawRef.current(); }
+      raf = requestAnimationFrame(loop);
+    };
+    const watch = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)");
+    const onChange = () => { cancelAnimationFrame(raf); last = 0; raf = requestAnimationFrame(loop); };
+    const onVis = () => { cancelAnimationFrame(raf); last = 0; if (!document.hidden) raf = requestAnimationFrame(loop); };
+    watch?.addEventListener?.("change", onChange);
+    document.addEventListener("visibilitychange", onVis);
+    raf = requestAnimationFrame(loop);
+    return () => { cancelAnimationFrame(raf); watch?.removeEventListener?.("change", onChange); document.removeEventListener("visibilitychange", onVis); };
+  }, [status]);
 
   function primeAudio(explicit = false) {
     if (audioRef.current) { void audioRef.current.ctx.resume().catch(() => {}); return; }
@@ -296,6 +318,12 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
     primeAudio();
     if (!playing) { const from = cursor >= 1 ? 0 : cursor; if (cursor >= 1) setCursor(0); progressRef.current = from <= 0 ? 0 : schedule.progressAt(from); }
     setPlaying((value) => !value);
+  }
+  function onScrubKey(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (status !== "ready") return;
+    if (event.key === "Home") { event.preventDefault(); setPlaying(false); setCursor(0); }
+    else if (event.key === "End") { event.preventDefault(); setPlaying(false); setCursor(1); }
+    else if (event.key === " " || event.key === "Spacebar") { event.preventDefault(); toggle(); }
   }
   function step(direction: -1 | 1) {
     setPlaying(false);
@@ -378,6 +406,12 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
   const buyCoverage = tapeUsdCoverage(visible, "buy"), sellCoverage = tapeUsdCoverage(visible, "sell");
   const roundLine = tapeMatchedRounds(visible, mark.realizedUsd).line;
   const verifyHref = subject ? replayShareUrl(typeof window === "undefined" ? INTELLIGENCE_PUBLIC_ORIGIN : window.location.origin, { ...subject, fromTs: view.start, toTs: view.end, displayName: subject.displayName ?? handle, symbol: subject.symbol ?? resolvedSymbol }) : null;
+  const round = heldRound(bolts, cursor);
+  const scrubRound = heldRound(bolts, 1);
+  const heldMs = round.entry ? (round.exit ? round.exit.timestamp : visibleTime) - round.entry.timestamp : null;
+  const heldLabel = heldMs == null || heldMs < 0 ? "—" : formatHeld(heldMs);
+  const sizeLabel = usdSummary.boughtUsd != null ? formatUsdNotional(usdSummary.boughtUsd) : "—";
+  const tapeKind = candles.length ? "CANDLE TAPE" : "EVENT TAPE";
 
   return (
     <section className="rs" data-ledger={ledgerOpen} data-room={room ?? undefined} data-status={status} aria-label="Replay">
@@ -385,38 +419,23 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
       <header className="rs-head">
         <button type="button" className="rs-icon" aria-label="Back to the Field" onClick={onBack}><ArrowLeft size={17} /></button>
         <div className="rs-title">
-          <TraderSigil wallet={subject.wallet} size={38} className="rs-title__sigil" title={`Deterministic wallet sigil for ${traderLabel}`}/>
+          <TraderSigil wallet={subject.wallet} size={28} className="rs-title__sigil" title={`Deterministic wallet sigil for ${traderLabel}`}/>
           {room ? <span className="rs-chip">{ROOM_CHIP[room]}</span> : null}
           <div className="rs-title__text">
             <h1>{title}</h1>
-            {headerLine ? <p className="rs-line" data-testid="replay-header-line">{headerLine}</p> : null}
           </div>
         </div>
-        {status === "ready" ? <div className="rs-usd-stack"><ReplayUsdTotals summary={usdSummary} buyCoverage={buyCoverage} sellCoverage={sellCoverage}/></div> : null}
-        <button type="button" className="rs-icon" aria-label={audible ? "Turn tick sound off" : "Turn tick sound on"} aria-pressed={audible} title={muted ? "Sound is muted in the Field" : undefined} onClick={toggleTicks}>{audible ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
-      </header>
-
-
-      <div className="rs-director-bar">
-        <div className="rs-view-switch" aria-label="Replay view">
-          <button type="button" aria-pressed={!ledgerOpen} onClick={() => setLedgerOpen(false)}><Clapperboard size={15}/> Cinema</button>
-          <button type="button" aria-pressed={ledgerOpen} onClick={() => setLedgerOpen(true)}><List size={15}/> Trade log</button>
+        <div className="rs-head-tools">
+          <div className="rs-view-switch" aria-label="Replay view">
+            <button type="button" aria-pressed={!ledgerOpen} onClick={() => setLedgerOpen(false)}><Clapperboard size={15} aria-hidden="true"/><span className="rs-btn-label">Cinema</span></button>
+            <button type="button" aria-pressed={ledgerOpen} onClick={() => setLedgerOpen(true)}><List size={15} aria-hidden="true"/><span className="rs-btn-label">Trade log</span></button>
+          </div>
+          {onToggleWatch ? <button type="button" className="rs-watch" aria-pressed={traderWatched} onClick={() => watch("wallet")}><Star size={15} aria-hidden="true"/><span className="rs-btn-label">{traderWatched ? "Saved trader" : "Watch trader"}</span></button> : null}
+          <button type="button" className="rs-icon" aria-label={audible ? "Turn tick sound off" : "Turn tick sound on"} aria-pressed={audible} title={muted ? "Sound is muted in the Field" : undefined} onClick={toggleTicks}>{audible ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
         </div>
-        <span className="rs-director-status">{status === "ready" ? `${historyLabel} · ${candles.length ? "CANDLE TAPE" : "EVENT TAPE"} · ${subject.chainKey.toUpperCase()}` : "READING EVIDENCE"}</span>
-        {onToggleWatch ? <button type="button" className="rs-watch" aria-pressed={traderWatched} onClick={() => watch("wallet")}><Star size={15}/>{traderWatched ? "Saved trader" : "Watch trader"}</button> : null}
-      </div>
-      {status === "ready" && !candleCoverage.usable && retainedCandles.length > 0 ? <p className="rs-coverage-warning">Cached candles cover {candleCoverage.covered} of {candleCoverage.total} events. Showing all available OHLC; uncovered events stay time-only and are never placed on an unrelated candle.</p> : null}
+      </header>
       <div className="rs-body">
-      <div className="rs-frame" ref={frameRef} data-scale={scaleMode} data-view-start={Math.round(view.start)} data-view-end={Math.round(view.end)} data-candles={candles.length} data-bolt-groups={groups.length} data-cohort={cohortOn ? ticks.length : 0}>
-        {status === "ready" ? <div className="rs-hud rs-scoreboard" aria-label="Matched results scoreboard">
-          <div className="rs-hud__mode"><b>MATCHED RESULTS</b><span data-coverage={coverageLabel.toLowerCase()}>{coverageLabel}</span></div>
-          <div className="rs-hud__metric rs-hud__metric--pnl"><span>{PNL_REALIZED_LABEL}</span><strong data-number="true" data-sign={mark.realizedUsd==null?"unknown":mark.realizedUsd>=0?"up":"down"}>{signedUsd(mark.realizedUsd)}</strong>{verifyHref?<a href={verifyHref}>VERIFY</a>:null}</div>
-          <div className="rs-hud__metric rs-hud__metric--pnl"><span>{PNL_HYPOTHETICAL_LABEL}</span><strong data-number="true" data-sign={mark.deltaUsd==null?"unknown":mark.deltaUsd>=0?"up":"down"}>{signedUsd(mark.deltaUsd)}</strong>{verifyHref?<a href={verifyHref}>VERIFY</a>:null}</div>
-          <div className="rs-hud__metric"><span>MATCHED EXITS</span><strong data-number="true">{mark.realizedUsd==null?"—":visible.filter(row=>row.side==="sell").length}</strong></div>
-          <div className="rs-hud__metric"><span>REMAINING</span><strong data-number="true">{mark.remainingTokens==null?"—":amountLabel(mark.remainingTokens)}</strong></div>
-          <small className="rs-hud__note">{roundLine} · {visible.length}/{bolts.length} prints · unknowns stay —</small>
-          <small className="rs-hud__note">{PNL_CAVEAT}</small>
-        </div> : null}
+      <div className="rs-frame" ref={frameRef} data-replay-tape data-scale={scaleMode} data-view-start={Math.round(view.start)} data-view-end={Math.round(view.end)} data-candles={candles.length} data-bolt-groups={groups.length} data-cohort={cohortOn ? ticks.length : 0}>
         {status === "ready" ? <canvas ref={canvasRef} className="rs-canvas" onPointerDown={onCanvasPointer} aria-label={`${candles.length ? "Candles" : "Event tape"} with ${bolts.length} buy and sell bolts. Tap a bolt for its evidence.`} role="img" /> : null}
         {status === "loading" || status === "building" ? <div className="rs-state rs-skeleton" aria-live="polite"><div className="rs-skeleton__chart" aria-hidden="true"><i/><i/><i/><i/><i/><i/><i/></div><p><b>Grey is reading prints</b><span>{status === "building" ? "Extending retained history without inventing missing evidence." : "Matching receipts to the tape and checking candle coverage."}</span></p></div> : null}
         {status === "empty" ? <div className="rs-state"><p>No retained buy or sell prints for this wallet and token in this window yet.</p><small>Nothing is drawn until a print is indexed.</small></div> : null}
@@ -455,11 +474,47 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
           </div>
         ) : null}
           <>
-            {!selected && !selectedTick ? <div className="rs-now">
-              {latest ? <><b data-side={latest.side}>{printLabel(latest).toUpperCase()}</b><span>{when(latest.timestamp)}</span></> : <span>{status === "ready" ? "Press play. Each marker is a retained event." : "\u00a0"}</span>}
-              <span className="rs-count">{buys} entries · {visible.length - buys} exits</span>
+            {status === "ready" ? <div className="rs-strip" data-replay-strip aria-label="Matched results scoreboard">
+              <div className="rs-strip__row">
+                <div className="rs-strip__line" onClick={() => setStripOpen((value) => !value)}>
+                  <strong data-number="true" data-sign={mark.realizedUsd==null?"unknown":mark.realizedUsd>=0?"up":"down"}>{signedUsd(mark.realizedUsd)}</strong>
+                  <span>{PNL_REALIZED_LABEL}</span>
+                  <span>GROSS</span>
+                  <span>NET —</span>
+                  <span>{historyLabel}</span>
+                  <span data-coverage={coverageLabel.toLowerCase()}>{coverageLabel}</span>
+                  <span>SIZE {sizeLabel}</span>
+                  <span>HELD {heldLabel}</span>
+                  <span>{tapeKind}</span>
+                  <span className="rs-count">{buys} entries · {visible.length - buys} exits</span>
+                </div>
+                <button type="button" className="rs-strip__expand" aria-expanded={stripOpen} aria-controls="replay-strip-panel" onClick={() => setStripOpen((value) => !value)}>{stripOpen ? "Hide" : "Details"}</button>
+              </div>
+              {stripOpen ? <div id="replay-strip-panel" className="rs-strip__panel">
+                <div className="rs-hud rs-scoreboard">
+                  <div className="rs-hud__mode"><b>MATCHED RESULTS</b><span data-coverage={coverageLabel.toLowerCase()}>{coverageLabel}</span></div>
+                  {headerLine ? <p className="rs-line" data-testid="replay-header-line">{headerLine}</p> : null}
+                  <div className="rs-hud__metric rs-hud__metric--pnl"><span>{PNL_REALIZED_LABEL}</span><strong data-number="true" data-sign={mark.realizedUsd==null?"unknown":mark.realizedUsd>=0?"up":"down"}>{signedUsd(mark.realizedUsd)}</strong>{verifyHref?<a href={verifyHref}>VERIFY</a>:null}</div>
+                  <div className="rs-hud__metric rs-hud__metric--pnl"><span>{PNL_HYPOTHETICAL_LABEL}</span><strong data-number="true" data-sign={mark.deltaUsd==null?"unknown":mark.deltaUsd>=0?"up":"down"}>{signedUsd(mark.deltaUsd)}</strong>{verifyHref?<a href={verifyHref}>VERIFY</a>:null}</div>
+                  <div className="rs-hud__metric"><span>MATCHED EXITS</span><strong data-number="true">{mark.realizedUsd==null?"—":visible.filter(row=>row.side==="sell").length}</strong></div>
+                  <div className="rs-hud__metric"><span>REMAINING</span><strong data-number="true">{mark.remainingTokens==null?"—":amountLabel(mark.remainingTokens)}</strong></div>
+                  <div className="rs-hud__metric"><span>GROSS</span><strong data-number="true">{signedUsd(mark.realizedUsd)}</strong></div>
+                  <div className="rs-hud__metric"><span>NET</span><strong data-number="true">—</strong></div>
+                  <small className="rs-hud__note">{roundLine} · {visible.length}/{bolts.length} prints · unknowns stay —</small>
+                  <small className="rs-hud__note">GROSS uses observed fill notionals. NET is unavailable because fees are not retained in this window.</small>
+                  {status === "ready" && !candleCoverage.usable && retainedCandles.length > 0 ? <small className="rs-hud__note">Cached candles cover {candleCoverage.covered} of {candleCoverage.total} events. Showing all available OHLC; uncovered events stay time-only and are never placed on an unrelated candle.</small> : null}
+                </div>
+                <ReplayUsdTotals summary={usdSummary} buyCoverage={buyCoverage} sellCoverage={sellCoverage}/>
+                <button type="button" className="rs-strip__dismiss" onClick={() => setStripOpen(false)}>Dismiss</button>
+              </div> : null}
             </div> : null}
-            <input className="rs-scrub" type="range" min={0} max={1000} value={Math.round(cursor * 1000)} aria-label="Hold and scrub Replay position" disabled={status !== "ready"} onPointerDown={()=>{scrubbingRef.current=true;setPlaying(false);}} onPointerUp={()=>{scrubbingRef.current=false;}} onPointerCancel={()=>{scrubbingRef.current=false;}} onInput={(event) => { setPlaying(false); const next=Number((event.target as HTMLInputElement).value)/1000; setCursor(next); if(scrubbingRef.current){const notch=Math.round(next*24);if(notch!==lastHapticRef.current){lastHapticRef.current=notch;if(typeof navigator.vibrate==="function")navigator.vibrate(5);}} }} />
+            <div className="rs-scrubber">
+              <div className="rs-scrub-ticks" aria-hidden="true">
+                {groups.map((group) => <i key={group.key} data-side={group.side} data-mark={group.bolts.some((bolt) => bolt.id === scrubRound.entry?.id || bolt.id === scrubRound.exit?.id) ? "hero" : undefined} style={{ left: `${group.cursor * 100}%` }} />)}
+              </div>
+              {status === "ready" ? <span className="rs-scrub-now" aria-hidden="true" style={{ left: `clamp(48px, ${cursor * 100}%, calc(100% - 48px))` }}>{when(visibleTime)}</span> : null}
+              <input className="rs-scrub" type="range" min={0} max={1000} value={Math.round(cursor * 1000)} aria-label="Hold and scrub Replay position" aria-valuetext={status === "ready" ? when(visibleTime) : undefined} disabled={status !== "ready"} onKeyDown={onScrubKey} onPointerDown={()=>{scrubbingRef.current=true;setPlaying(false);}} onPointerUp={()=>{scrubbingRef.current=false;}} onPointerCancel={()=>{scrubbingRef.current=false;}} onInput={(event) => { setPlaying(false); const next=Number((event.target as HTMLInputElement).value)/1000; setCursor(next); if(scrubbingRef.current){const notch=Math.round(next*24);if(notch!==lastHapticRef.current){lastHapticRef.current=notch;if(!liveReducedMotion()&&typeof navigator.vibrate==="function")navigator.vibrate(5);}} }} />
+            </div>
             <div className="rs-controls">
               <div className="rs-transport">
                 <button type="button" className="rs-icon" aria-label="Previous print" disabled={status !== "ready"} onClick={() => step(-1)}><SkipBack size={15} /></button>
@@ -475,6 +530,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
               </div>
             </div>
             <p className="rs-source">{candles.length ? `Candles · ${candleSourceLabel(source)}${!candleCoverage.usable ? ` · ${candleCoverage.covered}/${candleCoverage.total} events candle-covered` : ""}` : status === "ready" ? "Dark tape · price candles unavailable · event timing only" : ""}{status === "ready" ? ` · ${bolts.length} events${events.some((row) => row.verification === "provider-reported") ? " · Fomo-reported" : ""}` : ""}</p>
+            <p className="rs-disclaimer">{PNL_CAVEAT}</p>
           </>
         {shareNote ? <p className="rs-share-status" role="status">{shareNote.startsWith("http") ? <>Copy this Replay link: <a href={shareNote}>{shareNote}</a></> : shareNote}</p> : null}
       </footer>

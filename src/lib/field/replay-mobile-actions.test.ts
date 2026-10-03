@@ -56,6 +56,61 @@ describe("Void Glass 44px targets and 11px floor", () => {
   });
 });
 
+describe("Replay tape and strip bounds", () => {
+  it("keeps the strip outside the tape at 360, 390, 430, and 1280, collapsed and expanded", async (t) => {
+    const browser = await launchReplayBrowser();
+    if (!browser) {
+      t.skip("Neither system Chrome nor Playwright Chromium is installed");
+      return;
+    }
+    const css = `${tokens}\n${director}\n*{box-sizing:border-box}html,body{margin:0;background:#05060a}`;
+    const panel = `<div id="replay-strip-panel" class="rs-strip__panel"><p>Realized · A Bulls observed (FIFO)</p><p>GROSS</p><p>NET —</p><p>EXACT WINDOW</p><p>PARTIAL</p><p>historical, not a promise, not advice</p></div>`;
+    const html = (expanded: boolean) => `<!doctype html><html><head><style>${css}</style></head><body>
+      <section class="rs" aria-label="Replay">
+        <header class="rs-head"><h1>CRCLx</h1></header>
+        <div class="rs-body"><div class="rs-frame" data-replay-tape></div></div>
+        <footer class="rs-third">
+          <div class="rs-strip" data-replay-strip aria-label="Matched results scoreboard">
+            <div class="rs-strip__row">
+              <div class="rs-strip__line"><span>Realized · A Bulls observed (FIFO)</span><span>GROSS</span><span>NET —</span><span>EXACT WINDOW</span><span>PARTIAL</span></div>
+              <button type="button" class="rs-strip__expand">${expanded ? "Hide" : "Details"}</button>
+            </div>
+            ${expanded ? panel : ""}
+          </div>
+          <div class="rs-scrubber"><input class="rs-scrub" type="range" aria-label="Hold and scrub Replay position" /></div>
+          <p class="rs-disclaimer">historical, not a promise, not advice</p>
+        </footer>
+      </section>
+    </body></html>`;
+    try {
+      const page = await browser.newPage();
+      for (const width of [360, 390, 430, 1280]) {
+        await page.setViewportSize({ width, height: width >= 1000 ? 800 : 844 });
+        for (const expanded of [false, true]) {
+          await page.setContent(html(expanded), { waitUntil: "load" });
+          const box = await page.evaluate(() => {
+            const tape = document.querySelector("[data-replay-tape]")!.getBoundingClientRect();
+            const strip = document.querySelector("[data-replay-strip]")!.getBoundingClientRect();
+            const scrub = document.querySelector(".rs-scrub")!.getBoundingClientRect();
+            const note = document.querySelector(".rs-disclaimer")!.getBoundingClientRect();
+            const overlap = !(strip.bottom <= tape.top + 0.5 || strip.top >= tape.bottom - 0.5 || strip.right <= tape.left || strip.left >= tape.right);
+            return { tape: { x: tape.x, right: tape.right, top: tape.top, bottom: tape.bottom, height: tape.height }, strip: { top: strip.top, bottom: strip.bottom }, scrub: scrub.height, noteTop: note.top, overlap };
+          });
+          assert.equal(box.overlap, false, `${width}px expanded=${expanded} strip overlaps tape`);
+          assert.ok(box.strip.top >= box.tape.bottom - 1, `${width}px expanded=${expanded} strip top ${box.strip.top} tape bottom ${box.tape.bottom}`);
+          assert.ok(box.tape.x <= 1, `${width}px tape left ${box.tape.x}`);
+          assert.ok(box.tape.right >= width - 1, `${width}px tape right ${box.tape.right}`);
+          assert.ok(box.tape.height >= 180, `${width}px tape height ${box.tape.height}`);
+          assert.ok(box.scrub >= 44, `${width}px scrub height ${box.scrub}`);
+          assert.ok(box.noteTop >= box.tape.bottom - 1, `${width}px disclaimer covers tape`);
+        }
+      }
+    } finally {
+      await browser.close();
+    }
+  });
+});
+
 describe("Replay footer measured layout", () => {
   it("keeps every action inside 360, 390, and 430 and at least 44px tall", async (t) => {
     const browser = await launchReplayBrowser();
