@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { ghostOpenCountSql } from '../scripts/backfill-ghost-open-rounds.mjs';
-import { chainRoundGalaxy, deriveMatchedRounds, derivePosition, lotsFromOpenRounds, materializeResearchIndex, partitionPumpSnapshot, replaceableOpenIds, replayObjectForRound, staleOpenIds, tradesFromWalletEvidence } from './intelligence-research-materializer.mjs';
+import { chainQuoteCleanupPlan, cleanupCountSql, xstockUnmatchedCountSql } from '../scripts/print-chain-quote-round-cleanup.mjs';
+import { CHAIN_XSTOCK_MINTS, chainRoundGalaxy, chainRoundsToWrite, deriveMatchedRounds, derivePosition, isChainQuoteMint, lotsFromOpenRounds, materializeResearchIndex, partitionPumpSnapshot, replaceableOpenIds, replayObjectForRound, staleOpenIds, tradesFromWalletEvidence } from './intelligence-research-materializer.mjs';
 
 const row=(id,side,token,sol,time)=>({event_id:id,signature:`sig-${id}`,event_index:0,wallet:'wallet',mint:'mint',side,token_amount:token,sol_amount:sol,block_time:time});
 const near=(actual,expected)=>assert.ok(Math.abs(actual-expected)<1e-9,`${actual} ~= ${expected}`);
@@ -109,6 +110,147 @@ test('wallet evidence uses wSOL route legs and does not convert USD or copy pump
   assert.equal(chainRoundGalaxy(['helius-pump'],{fomoWallet:false}),null);
 });
 
+test('quote legs and xStock mints are not chain rounds, and a rerun does not add rows',async()=>{
+  const usdc='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',usdt='Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',wsol='So11111111111111111111111111111111111111112';
+  const xstock='XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1',token='TokenMint11111111111111111111111111111111';
+  const legitXs='XsRandomLegitMemeMint1111111111111111111111',xst='XSTuo1fV7HHMhs4BYiwtrWSLsMCJNrooH2AssWTYZqP';
+  const registry=[...readFileSync(new URL('../src/lib/universe-data/afterbell-client.ts',import.meta.url),'utf8').matchAll(/mintHint:"([^"]+)"/g)].map(match=>match[1]);
+  assert.deepEqual(registry,[...CHAIN_XSTOCK_MINTS]);
+  assert.equal(registry.length,8);
+  assert.equal(isChainQuoteMint(usdc),true);assert.equal(isChainQuoteMint(usdt),true);assert.equal(isChainQuoteMint(wsol),true);assert.equal(isChainQuoteMint(xstock),true);assert.equal(isChainQuoteMint(token),false);
+  assert.equal(isChainQuoteMint(legitXs),false);assert.equal(isChainQuoteMint(xst),false);
+  const event=(signature,mint,delta,sol,time)=>({id:signature,signature,wallet:'W',mint,token_delta:delta,sol_delta:sol,block_time:time,source:'helius-afterbell-pool-window'});
+  const trades=tradesFromWalletEvidence([
+    event('spend',usdc,-20,0,10),
+    event('xfer',usdc,-5,0,11),
+    event('usdt-sell',usdt,-8,0,12),
+    event('xs-buy',xstock,3,0,13),
+    event('xs-sell',xstock,-3,0,14),
+    event('legit-buy',legitXs,5,-.5,18),
+    event('legit-sell',legitXs,-5,.9,19),
+    event('xst-buy',xst,5,-.5,20),
+    event('xst-sell',xst,-5,.9,21),
+    event('buy',token,10,-1,15),
+    event('sell',token,-10,1.4,16),
+    event('orphan',token,-4,0.4,17),
+  ],[
+    {signature:'quote-buy',wallet:'W',input_mint:wsol,output_mint:usdc,input_amount:1,output_amount:20,block_time:9,hop_index:0},
+  ]);
+  assert.equal(trades.some(trade=>trade.mint===usdc||trade.mint===usdt||trade.mint===wsol||CHAIN_XSTOCK_MINTS.includes(trade.mint)),false);
+  assert.equal(trades.some(trade=>trade.mint===legitXs),true);assert.equal(trades.some(trade=>trade.mint===xst),true);
+  const rounds=deriveMatchedRounds(trades);
+  const closed=rounds.filter(round=>round.status==='closed');
+  assert.deepEqual(closed.map(round=>round.mint).sort(),[legitXs,token,xst].sort());
+  assert.equal(closed.find(round=>round.mint===token).entrySignature,'buy');
+  assert.equal(chainRoundsToWrite(rounds).some(round=>round.status==='unmatched'),false);
+  const sellOnly=deriveMatchedRounds([{event_id:'only',signature:'only',wallet:'W',mint:token,side:'sell',token_amount:4,sol_amount:.4,block_time:17}]);
+  assert.equal(sellOnly[0].status,'unmatched');assert.equal(sellOnly[0].entrySignature,null);assert.equal(chainRoundsToWrite(sellOnly).length,0);
+  const oldestFirst=Array.from({length:30},(_,index)=>({id:`c${index}`,status:'closed'}));
+  assert.deepEqual(chainRoundsToWrite(oldestFirst).map(round=>round.id),oldestFirst.slice(-25).map(round=>round.id));
+  const withOpen=chainRoundsToWrite([...oldestFirst,{id:'open',status:'open'}]);
+  assert.equal(withOpen.length,25);
+  assert.equal(withOpen.at(-1).id,'open');
+  assert.deepEqual(withOpen.slice(0,-1).map(round=>round.id),oldestFirst.slice(-24).map(round=>round.id));
+  const again=deriveMatchedRounds(trades);
+  assert.deepEqual(again.map(round=>round.id),rounds.map(round=>round.id));
+  assert.equal(again[0].id.includes('179'),false);
+  const sql=new DatabaseSync(':memory:');
+  const migrationDir=new URL('./migrations/',import.meta.url);
+  for(const file of readdirSync(migrationDir).filter(name=>name.endsWith('.sql')).sort())sql.exec(readFileSync(new URL(file,migrationDir),'utf8'));
+  const norm=values=>values.map(value=>value===undefined?null:value);
+  const db={prepare:query=>{const statement=(args=[])=>({bind(...bound){return statement(bound);},async all(){return {results:sql.prepare(query).all(...norm(args))};},async first(){return (await this.all()).results[0]??null;},async run(){return {meta:{changes:Number(sql.prepare(query).run(...norm(args)).changes)}};}});return statement();},async batch(statements){sql.exec('BEGIN');try{for(const statement of statements)sql.prepare(statement.q).run(...norm(statement.args));sql.exec('COMMIT');}catch(error){sql.exec('ROLLBACK');throw error;}}};
+  const wrap=db.prepare;db.prepare=query=>{const statement=wrap(query);statement.q=query;const bind=statement.bind.bind(statement);statement.bind=(...args)=>{const bound=bind(...args);bound.q=query;bound.args=args;return bound;};return statement;};
+  const insert=(signature,mint,delta,sol,time)=>sql.prepare(`INSERT INTO bull_wallet_events(signature,slot,block_time,wallet,mint,event_class,sol_delta,token_delta,fee_lamports,source,confidence) VALUES(?,1,?,?,?,'swap-like',?,?,0,'helius-afterbell-pool-window',1)`).run(signature,time,'W',mint,sol,delta);
+  insert('spend',usdc,-20,0,10);insert('xfer',usdc,-5,0,11);insert('xs-buy',xstock,3,0,13);insert('xs-sell',xstock,-3,0,14);insert('legit-buy',legitXs,5,-.5,18);insert('legit-sell',legitXs,-5,.9,19);insert('xst-buy',xst,5,-.5,20);insert('xst-sell',xst,-5,.9,21);insert('buy',token,10,-1,15);insert('sell',token,-10,1.4,16);insert('orphan','OtherMint1111111111111111111111111111111',-4,.4,17);
+  const snapshot=()=>({rounds:sql.prepare(`SELECT id,mint,status,entry_signature FROM matched_trade_rounds ORDER BY id`).all(),objects:sql.prepare(`SELECT COUNT(*) c FROM research_index_objects`).get().c,edges:sql.prepare(`SELECT COUNT(*) c FROM research_graph_edges`).get().c});
+  const gatedOff=await materializeResearchIndex({INTELLIGENCE_DB:db},1790000000000);
+  assert.deepEqual(gatedOff.chain,{wallets:0,rounds:0});
+  assert.equal(snapshot().rounds.length,0);
+  await materializeResearchIndex({INTELLIGENCE_DB:db,RESEARCH_CHAIN_ROUNDS_ENABLED:'1'},1790000000000);
+  const first=snapshot();
+  assert.equal(first.rounds.some(round=>round.mint===usdc||round.mint===xstock),false);
+  assert.equal(first.rounds.some(round=>round.status==='unmatched'),false);
+  assert.equal(first.rounds.filter(round=>round.mint===token&&round.status==='closed').length,1);
+  assert.equal(first.rounds.filter(round=>round.mint===legitXs&&round.status==='closed').length,1);
+  assert.equal(first.rounds.filter(round=>round.mint===xst&&round.status==='closed').length,1);
+  await materializeResearchIndex({INTELLIGENCE_DB:db,RESEARCH_CHAIN_ROUNDS_ENABLED:'1'},1790000900000);
+  const second=snapshot();
+  assert.deepEqual(second.rounds,first.rounds);
+  assert.equal(second.objects,first.objects);
+  assert.equal(second.edges,first.edges);
+  const plan=chainQuoteCleanupPlan();
+  assert.deepEqual(plan.map(step=>step.alias),[
+    'unmatched_quote_edges','usdc_position_edges','xstock_unmatched_edges','xstock_position_edges','other_unmatched_edges',
+    'unmatched_quote_objects','usdc_position_objects','xstock_unmatched_objects','xstock_position_objects','other_unmatched_objects','usdc_fomo_planet',
+    'unmatched_quote_rounds','usdc_position_rounds','xstock_unmatched_rounds','xstock_position_rounds','other_unmatched_rounds',
+  ]);
+  for(const step of plan){const count=cleanupCountSql(step.sql,step.alias);assert.match(count,/^SELECT COUNT\(\*\)/);assert.match(count,/1791000000000/);assert.doesNotMatch(step.sql,/^DELETE FROM matched_trade_rounds[\s\S]*DELETE/);}
+  const printed=readFileSync(new URL('../scripts/print-chain-quote-round-cleanup.mjs',import.meta.url),'utf8');
+  const materializer=readFileSync(new URL('./intelligence-research-materializer.mjs',import.meta.url),'utf8');
+  assert.match(printed,/does not connect to D1/);
+  assert.doesNotMatch(printed,/wrangler|INTELLIGENCE_DB|fetch\(/);
+  assert.doesNotMatch(printed,/LIKE 'Xs%'/);
+  assert.match(xstockUnmatchedCountSql(),/mint GLOB 'Xs\*'/);
+  assert.match(plan.find(step=>step.alias==='xstock_position_rounds').sql,/mint GLOB 'Xs\*'/);
+  assert.match(plan.find(step=>step.alias==='other_unmatched_rounds').sql,/mint NOT GLOB 'Xs\*'/);
+  assert.match(plan.find(step=>step.alias==='usdc_fomo_planet').sql,/planet:fomo:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/);
+  assert.match(plan.find(step=>step.alias==='usdc_fomo_planet').sql,/r\.mint <> 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'/);
+  assert.match(plan.find(step=>step.alias==='usdc_fomo_planet').sql,/created_at < 1791000000000/);
+  assert.doesNotMatch(materializer,/LIKE 'Xs%'|startsWith\('Xs'\)/);
+  assert.match(materializer,/if\(env\.RESEARCH_CHAIN_ROUNDS_ENABLED==='1'\)\{try\{result\.chain=await materializeChainRounds\(db,env,now\);\}/);
+  sql.close();
+});
+
+test('chain cap keeps the newest closed rounds and replaces a covered open',async()=>{
+  const wallet='FomoCap2',mint='TokCap2';
+  const {sql,db}=researchMaterializerDb();
+  sql.prepare(`INSERT INTO fomo_traders(handle,current_rank,solana_wallet,captured_at,updated_at) VALUES('h',1,?,1,1)`).run(wallet);
+  const insert=sql.prepare(`INSERT INTO bull_wallet_events(signature,block_time,wallet,mint,event_class,sol_delta,token_delta,source) VALUES(?,?,?,?,'swap',?,?,'helius-fomo')`);
+  let time=1700000000;
+  const ev=(delta,sol,signature)=>insert.run(signature,time+=10,wallet,mint,sol,delta);
+  const run=()=>materializeResearchIndex({INTELLIGENCE_DB:db,RESEARCH_CHAIN_ROUNDS_ENABLED:'1'},1790000000000);
+  const opens=()=>sql.prepare(`SELECT id,observed_inventory AS inv FROM matched_trade_rounds WHERE wallet=? AND status='open'`).all(wallet);
+  for(let i=0;i<24;i++){ev(10,-1,`b${i}`);ev(-10,1.1,`x${i}`);}
+  ev(5,-.5,'bopen');
+  await run();
+  assert.equal(opens().length,1);
+  assert.equal(opens()[0].inv,5);
+  const staleId=opens()[0].id;
+  ev(10,-1,'b24');
+  ev(-5,1.1,'x24');
+  await run();
+  const after=opens();
+  assert.equal(after.length,1);
+  assert.equal(after[0].inv,10);
+  assert.notEqual(after[0].id,staleId);
+  assert.equal(sql.prepare(`SELECT COUNT(*) AS c FROM matched_trade_rounds WHERE id=?`).get(staleId).c,0);
+  assert.deepEqual(sql.prepare(`SELECT status,COUNT(*) AS c FROM matched_trade_rounds WHERE wallet=? GROUP BY status ORDER BY status`).all(wallet).map(row=>({status:row.status,c:row.c})),[{status:'closed',c:25},{status:'open',c:1}]);
+  sql.close();
+});
+
+test('chain cap drops the oldest closed rounds and does not delete an unreplaced open',async()=>{
+  const wallet='FomoCap',mint='TokCap';
+  const {sql,db}=researchMaterializerDb();
+  sql.prepare(`INSERT INTO fomo_traders(handle,current_rank,solana_wallet,captured_at,updated_at) VALUES('h',1,?,1,1)`).run(wallet);
+  sql.prepare(`INSERT INTO matched_trade_rounds(id,wallet,mint,status,entry_signature,exit_signature,entry_ts,exit_ts,buy_sol,sell_sol,matched_realized_sol,observed_inventory,method,evidence_ids_json,coverage,created_at,updated_at) VALUES(?,?,'TokCap','open','ghost-entry',NULL,1000,NULL,1,0,NULL,5,'bounded-fifo-observed-swaps-v1','["ghost-entry"]','partial',1000,1000)`).run('round:FomoCap:TokCap:ghost-entry:open',wallet);
+  const insert=sql.prepare(`INSERT INTO bull_wallet_events(signature,block_time,wallet,mint,event_class,sol_delta,token_delta,source) VALUES(?,?,?,?,'swap',?,?,'helius-fomo')`);
+  let time=1700000000;
+  for(let i=0;i<30;i++){insert.run(`b${i}`,time+=10,wallet,mint,-1,10);insert.run(`x${i}`,time+=10,wallet,mint,1.1,-10);}
+  insert.run('bopen',time+=10,wallet,mint,-.5,5);
+  await materializeResearchIndex({INTELLIGENCE_DB:db,RESEARCH_CHAIN_ROUNDS_ENABLED:'1'},1790000000000);
+  const closed=sql.prepare(`SELECT entry_signature FROM matched_trade_rounds WHERE wallet=? AND mint=? AND status='closed' ORDER BY entry_ts,entry_signature`).all(wallet,mint).map(row=>row.entry_signature);
+  assert.equal(closed.length,24);
+  assert.equal(closed[0],'b6');
+  assert.equal(closed.at(-1),'b29');
+  assert.equal(closed.includes('b0'),false);
+  const live=sql.prepare(`SELECT id,observed_inventory AS inv FROM matched_trade_rounds WHERE wallet=? AND status='open' ORDER BY id`).all(wallet).map(row=>({id:row.id,inv:row.inv}));
+  assert.deepEqual(live,[
+    {id:'round:FomoCap:TokCap:bopen:open',inv:5},
+    {id:'round:FomoCap:TokCap:ghost-entry:open',inv:5},
+  ]);
+  sql.close();
+});
+
 test('pump basis is paged into lots and ghost cleanup stays idempotent',()=>{
   const source=readFileSync(new URL('./intelligence-research-materializer.mjs',import.meta.url),'utf8');
   const migration=readFileSync(new URL('./migrations/0041_matched_round_ghost_backfill.sql',import.meta.url),'utf8');
@@ -153,6 +295,10 @@ test('an open row with no retained buy is seeded and is not deleted unless a new
   assert.deepEqual(replaceableOpenIds([kept],replaced.rounds,{openingLots:seeded,trades:sellOnly}),['round:wallet:mint:legacy:open']);
   const unrelatedBuy=[row('b2','buy',5,.5,300)];
   assert.deepEqual(replaceableOpenIds([kept],derivePosition(unrelatedBuy).rounds,{openingLots:[],trades:unrelatedBuy}),[]);
+  const proof={id:'round:wallet:mint:sig-old:sell',status:'closed',entrySignature:'sig-old',evidenceIds:['old-buy','sell']};
+  const truncatedAway=[{id:'round:wallet:mint:newer:sell',status:'closed',entrySignature:'newer',evidenceIds:['newer','sell']}];
+  assert.deepEqual(replaceableOpenIds([kept],truncatedAway,{openingLots:[],trades:unrelatedBuy}),[]);
+  assert.deepEqual(replaceableOpenIds([kept],[...truncatedAway,proof],{openingLots:[],trades:unrelatedBuy}),['round:wallet:mint:legacy:open']);
   assert.equal(lotsFromOpenRounds([kept],{trades:[{...row('old-buy','buy',10,1,100),signature:'sig-old'}],storedLots:[]}).length,0);
   const alreadyNetted={...kept,updated_at:500_000};
   const nettedSell={...row('s1','sell',4,.5,200),event_id:'sell-kept:0'};
@@ -377,16 +523,13 @@ test('chain rounds stay unwritten unless RESEARCH_CHAIN_ROUNDS_ENABLED is exactl
   const on=await run('1');
   assert.equal(on.result.ok,true);
   assert.equal(on.result.chain.wallets,2);
-  assert.equal(on.result.chain.rounds,3);
+  assert.equal(on.result.chain.rounds,1);
   assert.ok(on.chainQueries.length>0);
   const rounds=on.sql.prepare(`SELECT wallet,mint,status,buy_sol,sell_sol,matched_realized_sol FROM matched_trade_rounds ORDER BY wallet,mint,status`).all();
-  assert.equal(rounds.length,3);
+  assert.equal(rounds.length,1);
   const closed=rounds.find(row=>row.wallet===FOMO&&row.mint===TOKEN&&row.status==='closed');
-  const usdc=rounds.find(row=>row.wallet===FOMO&&row.mint===USDC&&row.status==='unmatched');
-  const crclx=rounds.find(row=>row.wallet===AFTER&&row.mint===CRCLx&&row.status==='unmatched');
   assert.ok(closed);near(closed.buy_sol,1);near(closed.sell_sol,1.4);near(closed.matched_realized_sol,.4);
-  assert.ok(usdc);assert.equal(usdc.buy_sol,null);assert.equal(usdc.sell_sol,null);assert.equal(usdc.matched_realized_sol,null);
-  assert.ok(crclx);assert.equal(crclx.buy_sol,null);assert.equal(crclx.sell_sol,null);assert.equal(crclx.matched_realized_sol,null);
+  assert.equal(rounds.some(row=>row.mint===USDC||row.mint===CRCLx),false);
   assert.equal(on.sql.prepare(`SELECT COUNT(*) AS c FROM index_coverage_checkpoints WHERE source='research_index_chain_cursor'`).get().c,1);
   assert.ok(chainObjects(on.sql)>0);
   assert.ok(on.sql.prepare(`SELECT COUNT(*) AS c FROM research_graph_edges`).get().c>0);
