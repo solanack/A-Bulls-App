@@ -149,12 +149,15 @@ test('quote legs and xStock mints are not chain rounds, and a rerun does not add
   const insert=(signature,mint,delta,sol,time)=>sql.prepare(`INSERT INTO bull_wallet_events(signature,slot,block_time,wallet,mint,event_class,sol_delta,token_delta,fee_lamports,source,confidence) VALUES(?,1,?,?,?,'swap-like',?,?,0,'helius-afterbell-pool-window',1)`).run(signature,time,'W',mint,sol,delta);
   insert('spend',usdc,-20,0,10);insert('xfer',usdc,-5,0,11);insert('xs-buy',xstock,3,0,13);insert('xs-sell',xstock,-3,0,14);insert('buy',token,10,-1,15);insert('sell',token,-10,1.4,16);insert('orphan','OtherMint1111111111111111111111111111111',-4,.4,17);
   const snapshot=()=>({rounds:sql.prepare(`SELECT id,mint,status,entry_signature FROM matched_trade_rounds ORDER BY id`).all(),objects:sql.prepare(`SELECT COUNT(*) c FROM research_index_objects`).get().c,edges:sql.prepare(`SELECT COUNT(*) c FROM research_graph_edges`).get().c});
-  await materializeResearchIndex({INTELLIGENCE_DB:db},1790000000000);
+  const gatedOff=await materializeResearchIndex({INTELLIGENCE_DB:db},1790000000000);
+  assert.deepEqual(gatedOff.chain,{wallets:0,rounds:0});
+  assert.equal(snapshot().rounds.length,0);
+  await materializeResearchIndex({INTELLIGENCE_DB:db,RESEARCH_CHAIN_ROUNDS_ENABLED:'1'},1790000000000);
   const first=snapshot();
   assert.equal(first.rounds.some(round=>round.mint===usdc||round.mint===xstock),false);
   assert.equal(first.rounds.some(round=>round.status==='unmatched'),false);
   assert.equal(first.rounds.filter(round=>round.mint===token&&round.status==='closed').length,1);
-  await materializeResearchIndex({INTELLIGENCE_DB:db},1790000900000);
+  await materializeResearchIndex({INTELLIGENCE_DB:db,RESEARCH_CHAIN_ROUNDS_ENABLED:'1'},1790000900000);
   const second=snapshot();
   assert.deepEqual(second.rounds,first.rounds);
   assert.equal(second.objects,first.objects);
@@ -166,7 +169,7 @@ test('quote legs and xStock mints are not chain rounds, and a rerun does not add
   assert.match(printed,/does not connect to D1/);
   assert.doesNotMatch(printed,/wrangler|INTELLIGENCE_DB|fetch\(/);
   assert.match(xstockUnmatchedCountSql(),/mint LIKE 'Xs%'/);
-  assert.match(readFileSync(new URL('./intelligence-research-materializer.mjs',import.meta.url),'utf8'),/result\.chain=await materializeChainRounds/);
+  assert.match(readFileSync(new URL('./intelligence-research-materializer.mjs',import.meta.url),'utf8'),/if\(env\.RESEARCH_CHAIN_ROUNDS_ENABLED==='1'\)\{try\{result\.chain=await materializeChainRounds\(db,env,now\);\}/);
   sql.close();
 });
 
@@ -438,16 +441,13 @@ test('chain rounds stay unwritten unless RESEARCH_CHAIN_ROUNDS_ENABLED is exactl
   const on=await run('1');
   assert.equal(on.result.ok,true);
   assert.equal(on.result.chain.wallets,2);
-  assert.equal(on.result.chain.rounds,3);
+  assert.equal(on.result.chain.rounds,1);
   assert.ok(on.chainQueries.length>0);
   const rounds=on.sql.prepare(`SELECT wallet,mint,status,buy_sol,sell_sol,matched_realized_sol FROM matched_trade_rounds ORDER BY wallet,mint,status`).all();
-  assert.equal(rounds.length,3);
+  assert.equal(rounds.length,1);
   const closed=rounds.find(row=>row.wallet===FOMO&&row.mint===TOKEN&&row.status==='closed');
-  const usdc=rounds.find(row=>row.wallet===FOMO&&row.mint===USDC&&row.status==='unmatched');
-  const crclx=rounds.find(row=>row.wallet===AFTER&&row.mint===CRCLx&&row.status==='unmatched');
   assert.ok(closed);near(closed.buy_sol,1);near(closed.sell_sol,1.4);near(closed.matched_realized_sol,.4);
-  assert.ok(usdc);assert.equal(usdc.buy_sol,null);assert.equal(usdc.sell_sol,null);assert.equal(usdc.matched_realized_sol,null);
-  assert.ok(crclx);assert.equal(crclx.buy_sol,null);assert.equal(crclx.sell_sol,null);assert.equal(crclx.matched_realized_sol,null);
+  assert.equal(rounds.some(row=>row.mint===USDC||row.mint===CRCLx),false);
   assert.equal(on.sql.prepare(`SELECT COUNT(*) AS c FROM index_coverage_checkpoints WHERE source='research_index_chain_cursor'`).get().c,1);
   assert.ok(chainObjects(on.sql)>0);
   assert.ok(on.sql.prepare(`SELECT COUNT(*) AS c FROM research_graph_edges`).get().c>0);
