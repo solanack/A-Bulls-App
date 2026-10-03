@@ -66,6 +66,7 @@ export function TraderSheet({
       </div>
       <p className="fs-fact">{detail.factLine}</p>
       {detail.pnlText ? <p className="fs-fact">{detail.factLine.includes(`Realized ${detail.pnlText}`) ? null : <><span data-number="true">{detail.pnlText}</span> · </>}{detail.pnlSourceLabel}{detail.pnlCoverage ? ` · ${detail.pnlCoverage}` : ""}{detail.pnlVerifyHref ? <> · <a href={detail.pnlVerifyHref}>VERIFY</a></> : null}</p> : null}
+      {detail.metricsLine ? <p className="fs-fact" data-completeness={detail.completenessState ?? undefined}>{detail.metricsLine}</p> : null}
       {latest ? <p className="fs-latest">Latest: {latest.side.toUpperCase()} {latest.symbol ?? "token"} · {timeLabel(latest.at)}</p> : null}
       <div className="fs-actions fs-actions--thumb" aria-label="Trader actions">
         <button type="button" aria-label="REPLAY" disabled={!researchable} onClick={() => onResearch("replay")}><b>REPLAY</b><small aria-hidden="true">Play the tape</small></button>

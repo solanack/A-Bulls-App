@@ -3,6 +3,7 @@
  * separately flagged and never used to imply skill, ownership, or a recommendation.
  */
 import { intelligenceDb } from './intelligence-indexer.mjs';
+import { distributionForHandle, loadFomoCohortDistributions } from './intelligence-distribution-metrics.mjs';
 import { canonicalChainAddress,normalizeChainKey,resolveChain } from './intelligence-chain-registry.mjs';
 
 export const FOMO_RESULTS_PATH='/api/intelligence/fomo/results';
@@ -105,17 +106,20 @@ export async function handleFomoResultsRequest(request,env={}){
   await markEvidence(db,rows,[...first.winners,...first.losers],nowMs);
   const ranked=rankClosedFomoTrades(rows,{limit,nowMs});
   const total=ranked.winners.length+ranked.losers.length,displayed=[...ranked.winners,...ranked.losers],ready=displayed.filter(item=>item.observedIndexed&&item.chartIndexed).length,receiptReady=displayed.filter(item=>item.observedIndexed).length,chartReady=displayed.filter(item=>item.chartIndexed).length;
+  const cohort=await loadFomoCohortDistributions(db,nowMs);
+  const stamp=item=>{const metrics=distributionForHandle(cohort,item.handle);return {...item,distribution:metrics.distribution,completeness:metrics.completeness};};
   return json({
     ok:true,
     coverage:total?'partial':'empty',
-    winners:ranked.winners,
-    losers:ranked.losers,
+    winners:ranked.winners.map(stamp),
+    losers:ranked.losers.map(stamp),
+    minimumSample:{matchedTrades:5,distinctTokens:2,ranksWallets:false},
     replayReadyCount:ready,
     receiptReadyCount:receiptReady,
     chartReadyCount:chartReady,
     source:'fomoapi.io cached closed trades + a-bulls retained public-chain evidence + source-labeled market cache',
     disclosure:total
-      ?`Higher and lower reported results are ordered by provider-reported realized USD PnL across the current chain-qualified Fomo trader cohort, including supported Solana and EVM chains. PnL remains provider-reported context, not an independently verified A Bulls performance claim. ${ready} displayed rows have both retained wallet-token evidence and market context inside that trade's Replay window; ${receiptReady} have retained chain evidence and ${chartReady} have time-bounded indexed market candles. A candle elsewhere in the asset's history no longer marks this trade ready; missing market context is hydrated from source-labeled public data when available. Past results are not financial advice, not a recommendation, and not a promise of future results.`
+      ?`Higher and lower reported results are ordered by provider-reported realized USD PnL, not by win rate. Each row carries that wallet's retained closed-trade sample, median, top-1 and top-3 profit share, and completeness flag. A sufficient sample is at least 5 closed trades across 2 tokens; thinner rows stay visible and are marked insufficient. Provider fees are not in the feed, so net of fees stays unknown. PnL remains provider-reported context, not an independently verified A Bulls performance claim. ${ready} displayed rows have both retained wallet-token evidence and market context inside that trade's Replay window; ${receiptReady} have retained chain evidence and ${chartReady} have time-bounded indexed market candles. A candle elsewhere in the asset's history no longer marks this trade ready; missing market context is hydrated from source-labeled public data when available. Past results are not financial advice, not a recommendation, and not a promise of future results.`
       :'No qualifying cached closed Fomo trades with finite realized PnL and valid Solana wallet/token addresses are available yet. Missing coverage is not zero activity.',
   },200,'public, max-age=60, stale-while-revalidate=180');
 }
