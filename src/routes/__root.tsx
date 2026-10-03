@@ -1,17 +1,21 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { baselineSecurityHeaders } from "@/lib/security-headers";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "A Bulls App";
 
 export const Route = createRootRoute({
-  // Document responses on Cloudflare Workers must set cache headers here.
+  // Document responses on Cloudflare Workers must set headers here.
+  // public/_headers does not apply to Worker-rendered HTML, and
   // server/middleware/grok-pwa.ts is Nitro-oriented and is not scanned by the
   // @cloudflare/vite-plugin + @tanstack/react-start/server-entry path.
+  // src/start.ts repeats the security set on every Worker response, including /api.
   headers: () => ({
     "Cache-Control": "no-store, no-cache, must-revalidate",
     "Pragma": "no-cache",
+    ...baselineSecurityHeaders(),
   }),
   head: () => ({
     meta: [

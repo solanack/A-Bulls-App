@@ -1,15 +1,25 @@
-# Cloudflare static assets. Module scripts are rejected unless this is a JS MIME.
+# Static assets only. Worker HTML and /api responses get the same baseline
+# from src/start.ts and src/routes/__root.tsx. Overlapping rules append a
+# repeated header, so nosniff is declared once here and the script rules below
+# keep their MIME types without a second nosniff.
+# Framing stays open for Grok via CSP frame-ancestors. Do not add a frame deny header.
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), interest-cohort=()
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Cross-Origin-Resource-Policy: same-site
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob: data:; connect-src 'self' https://api.dexscreener.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self' https://grok.com https://*.grok.com https://*.grok-sandbox.com
+
 /*.js
   Content-Type: text/javascript; charset=utf-8
-  X-Content-Type-Options: nosniff
 
 /*.mjs
   Content-Type: text/javascript; charset=utf-8
-  X-Content-Type-Options: nosniff
 
 /assets/*.js
   Content-Type: text/javascript; charset=utf-8
-  X-Content-Type-Options: nosniff
 
 /*.css
   Content-Type: text/css; charset=utf-8
