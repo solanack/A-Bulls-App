@@ -1,4 +1,5 @@
 import type { FieldRoom } from "./galaxies.ts";
+import { evidenceVerifyHref, finitePnl, formatCompactUsd, formatSolPnl, PNL_CAVEAT, PNL_FOMO_LABEL, PNL_MISSING, PNL_REALIZED_LABEL, roundsMatchedLine } from "./honest-pnl.ts";
 import type { FieldParticle, JsonValue } from "./types.ts";
 
 export type TraderPrint = { side: string; at: number; mint: string; symbol: string | null; signature: string | null };
@@ -19,6 +20,12 @@ export type TraderSheetDetail = {
   latestPrint: TraderPrint | null;
   windowLabel: string | null;
   sourceLabel: string;
+  /** One source only. A second unit is never added into this text. */
+  pnlText: string | null;
+  pnlSourceLabel: string | null;
+  pnlCoverage: string | null;
+  pnlVerifyHref: string | null;
+  pnlCaveat: string;
 };
 
 type Row = Record<string, JsonValue>;
@@ -44,16 +51,37 @@ function marketSymbol(row: Row) {
   return str(row.symbol) ?? str(row.cashSymbol);
 }
 
-/** One fact per Afterbell STAR: holdings first, then the most-traded xStock by unique after-close prints. */
+/** USD and SOL stay separate. The sky label shows one unit, or an em dash when that unit is missing. */
+export function afterbellPnlText(metadata: Record<string, JsonValue> | undefined): string {
+  const unit = metadata?.pnlDisplayUnit;
+  if (unit === "usd") return formatCompactUsd(finitePnl(metadata?.realizedPnlUsd)).text;
+  if (unit === "sol") return formatSolPnl(finitePnl(metadata?.realizedPnlSol)).text;
+  const usd = finitePnl(metadata?.realizedPnlUsd);
+  const sol = finitePnl(metadata?.realizedPnlSol);
+  if (usd != null) return formatCompactUsd(usd).text;
+  if (sol != null) return formatSolPnl(sol).text;
+  return PNL_MISSING;
+}
+
+export function afterbellPnlCoverage(metadata: Record<string, JsonValue> | undefined): string | null {
+  const matched = count(metadata?.pnlMatchedRounds);
+  const total = count(metadata?.pnlRoundCount);
+  if (matched == null || total == null) return null;
+  return roundsMatchedLine(matched, total);
+}
+
+/** One fact per Afterbell STAR. The signed figure and the realized source travel with the disclaimer. */
 export function afterbellFactLine(metadata: Record<string, JsonValue> | undefined) {
+  const figure = afterbellPnlText(metadata);
+  const lead = `Not financial advice · Realized ${figure}`;
   const held = rows(metadata?.holdings).find((row) => Number(row.observedNetAmount) > 0 && marketSymbol(row));
-  if (held) return `Holds ${marketSymbol(held)}`;
+  if (held) return `${lead} · Holds ${marketSymbol(held)}`;
   const traded = rows(metadata?.mostTraded)[0];
   const unique = count(metadata?.uniqueAfterCloseTxCount) ?? count(metadata?.transactionCount) ?? 0;
   const tradedSymbol = traded ? marketSymbol(traded) : null;
-  if (tradedSymbol) return `${tradedSymbol} · ${printsLabel(count(traded?.uniqueAfterCloseTxCount) ?? unique)}`;
-  if (unique > 0) return printsLabel(unique);
-  return "Coverage thin";
+  if (tradedSymbol) return `${lead} · ${tradedSymbol} · ${printsLabel(count(traded?.uniqueAfterCloseTxCount) ?? unique)}`;
+  if (unique > 0) return `${lead} · ${printsLabel(unique)}`;
+  return `${lead} · Coverage thin`;
 }
 
 /** One fact per FOMO STAR in the room view. Provider counts are labeled as Fomo-reported. */
@@ -104,20 +132,36 @@ export function afterbellTraderDetail(star: FieldParticle, planetCount: number, 
     latestPrint: afterbellLatestPrint(metadata),
     windowLabel: str(metadata?.windowLabel),
     sourceLabel: "Afterbell-observed",
+    pnlText: afterbellPnlText(metadata),
+    pnlSourceLabel: PNL_REALIZED_LABEL,
+    pnlCoverage: afterbellPnlCoverage(metadata),
+    pnlVerifyHref: evidenceVerifyHref({
+      wallet,
+      mint: str(rows(metadata?.holdings)[0]?.mint) ?? str(rows(metadata?.mostTraded)[0]?.mint) ?? str(rows(metadata?.mints)[0]),
+      chain: "solana",
+    }),
+    pnlCaveat: PNL_CAVEAT,
   };
 }
 
 export function fomoTraderDetail(input: {
   wallet: string | null;
+  solanaWallet?: string | null;
+  evmWallet?: string | null;
   handle: string;
   displayName: string | null;
   rank: number | null;
-  positions: readonly { mint: string; symbol: string | null; tradeCount: number | null; sourceKind: string }[];
+  reportedPnlUsd?: number | null;
+  positions: readonly { mint: string; symbol: string | null; tradeCount: number | null; sourceKind: string; chain?: string | null }[];
   latestTrades: readonly { side: string; observedAt: number; mint: string; signature: string | null }[];
 }): TraderSheetDetail {
   const symbols = new Map(input.positions.filter((row) => row.symbol).map((row) => [row.mint.toLowerCase(), row.symbol as string] as const));
   const latest = [...input.latestTrades].sort((a, b) => b.observedAt - a.observedAt)[0];
   const observedPrints = input.positions.reduce((sum, row) => sum + Math.max(0, row.tradeCount ?? 0), 0);
+  const position = input.positions[0];
+  const chain = String(position?.chain ?? "").trim() || null;
+  const evmChain = Boolean(chain && chain !== "solana");
+  const verifyWallet = evmChain ? input.evmWallet || input.wallet : chain === "solana" ? input.solanaWallet || input.wallet : input.wallet;
   return {
     room: "fomo",
     wallet: input.wallet,
@@ -132,6 +176,11 @@ export function fomoTraderDetail(input: {
     cometCount: Math.min(3, input.latestTrades.length),
     latestPrint: latest ? { side: latest.side, at: latest.observedAt, mint: latest.mint, symbol: symbols.get(latest.mint.toLowerCase()) ?? null, signature: latest.signature } : null,
     windowLabel: null,
-    sourceLabel: "Fomo-reported",
+    sourceLabel: PNL_FOMO_LABEL,
+    pnlText: formatCompactUsd(finitePnl(input.reportedPnlUsd)).text,
+    pnlSourceLabel: PNL_FOMO_LABEL,
+    pnlCoverage: null,
+    pnlVerifyHref: evidenceVerifyHref({ wallet: verifyWallet, mint: position?.mint ?? null, chain }),
+    pnlCaveat: PNL_CAVEAT,
   };
 }

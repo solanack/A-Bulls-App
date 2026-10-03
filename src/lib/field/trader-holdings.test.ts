@@ -4,6 +4,7 @@ import {
   cutSubjectFromHolding,
   focusedTraderWallet,
   formatIndexedPnl,
+  holdingRoundsMatchedLine,
   holdingMintLabel,
   holdingsHighlightMint,
   holdingsOverlayRows,
@@ -90,10 +91,13 @@ describe("holdings overlay entry", () => {
 
 describe("indexed holdings labels", () => {
   it("never invents PnL and never uses a mint as the token name", () => {
-    assert.deepEqual(formatIndexedPnl(null), { text: "PnL unavailable", known: false });
-    assert.deepEqual(formatIndexedPnl(undefined), { text: "PnL unavailable", known: false });
+    assert.deepEqual(formatIndexedPnl(null), { text: "—", known: false });
+    assert.deepEqual(formatIndexedPnl(undefined), { text: "—", known: false });
     assert.equal(formatIndexedPnl(0).text, "+0.0000 SOL");
+    assert.equal(formatIndexedPnl(0).known, true);
+    assert.doesNotMatch(formatIndexedPnl(null).text, /0/);
     assert.equal(formatIndexedPnl(-1.25).text, "-1.2500 SOL");
+    assert.equal(holdingRoundsMatchedLine({ closedMatchedCount: 2, closedCount: 3, openCount: 1 }), "2 of 4 rounds matched");
     assert.equal(holdingTokenLabel({ name: "Pons", symbol: "PONS" }), "Pons · PONS");
     assert.equal(holdingTokenLabel({ name: MINT, symbol: MINT }), "Token name unavailable");
   });
@@ -119,7 +123,7 @@ describe("indexed holdings labels", () => {
     assert.equal(rows[0]?.mint, MINT);
     assert.equal(rows[0]?.matchedRealizedSol, null);
     assert.equal(rows[0]?.openCount, 1);
-    assert.deepEqual(formatIndexedPnl(rows[0]?.matchedRealizedSol), { text: "PnL unavailable", known: false });
+    assert.deepEqual(formatIndexedPnl(rows[0]?.matchedRealizedSol), { text: "—", known: false });
     assert.equal(holdingMintLabel(MINT), "97jCC4…pump");
     assert.deepEqual(holdingsOverlayRows([]), []);
     assert.deepEqual(holdingsOverlayRows(null), []);

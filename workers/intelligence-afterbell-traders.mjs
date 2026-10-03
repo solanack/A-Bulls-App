@@ -79,25 +79,26 @@ export function normalizeAfterbellEvents(rows=[]){
 }
 
 function realizedForUnit(events,from,to,unit){
-  const lots=[],unitKey=unit==='usd'?'priceUsd':'priceSol';let realized=0,closedQty=0,hasSell=false,complete=true;
+  const lots=[],unitKey=unit==='usd'?'priceUsd':'priceSol';let realized=0,closedQty=0,hasSell=false,complete=true,matchedSells=0,sellCount=0;
   for(const event of events){
     if(event.blockTime>to)break;
     if(event.side==='buy'){lots.push({qty:event.amount,cost:event[unitKey]});continue;}
     const inWindow=event.blockTime>=from&&event.blockTime<=to;
-    if(inWindow)hasSell=true;
-    let remaining=event.amount;const sellPrice=event[unitKey];
-    if(inWindow&&sellPrice==null)complete=false;
+    if(inWindow){hasSell=true;sellCount+=1;}
+    let remaining=event.amount,sellMatchedQty=0,sellComplete=true;const sellPrice=event[unitKey];
+    if(inWindow&&sellPrice==null){complete=false;sellComplete=false;}
     while(remaining>1e-12&&lots.length){
       const lot=lots[0],matched=Math.min(remaining,lot.qty);
       if(inWindow){
-        if(sellPrice==null||lot.cost==null)complete=false;
-        else{realized+=(sellPrice-lot.cost)*matched;closedQty+=matched;}
+        if(sellPrice==null||lot.cost==null){complete=false;sellComplete=false;}
+        else{realized+=(sellPrice-lot.cost)*matched;closedQty+=matched;sellMatchedQty+=matched;}
       }
       lot.qty-=matched;remaining-=matched;if(lot.qty<=1e-12)lots.shift();
     }
-    if(inWindow&&remaining>1e-12)complete=false;
+    if(inWindow&&remaining>1e-12){complete=false;sellComplete=false;}
+    if(inWindow&&sellComplete&&sellMatchedQty>0)matchedSells+=1;
   }
-  return hasSell&&complete&&closedQty>0?realized:null;
+  return {value:hasSell&&complete&&closedQty>0?realized:null,matchedSells,sellCount};
 }
 
 export function rankAfterbellTraders(events=[],{from,to,limit=AFTERBELL_MAX_TRADERS}={}){
@@ -111,11 +112,12 @@ export function rankAfterbellTraders(events=[],{from,to,limit=AFTERBELL_MAX_TRAD
   for(const row of byWallet.values()){
     const walletEvents=normalized.filter(event=>event.wallet===row.wallet&&event.blockTime<=end),windowTrades=row.trades.filter(event=>event.blockTime>=start&&event.blockTime<=end);
     const perMint=[...row.mints].map(mint=>walletEvents.filter(event=>event.mint===mint));
-    const pnlFor=unit=>{let total=0,has=false;for(const mintEvents of perMint){const value=realizedForUnit(mintEvents,start,end,unit),hasSell=mintEvents.some(event=>event.side==='sell'&&event.blockTime>=start&&event.blockTime<=end);if(hasSell&&value==null)return null;if(value!=null){total+=value;has=true;}}return has?total:null;};
+    const pnlFor=unit=>{let total=0,has=false,matched=0,rounds=0,blocked=false;for(const mintEvents of perMint){const result=realizedForUnit(mintEvents,start,end,unit);matched+=result.matchedSells;rounds+=result.sellCount;if(result.sellCount&&result.value==null)blocked=true;else if(result.value!=null){total+=result.value;has=true;}}return {value:blocked||!has?null:total,matched,rounds};};
+    const usd=pnlFor('usd'),sol=pnlFor('sol'),displayUnit=usd.rounds?'usd':sol.rounds?'sol':null,display=displayUnit==='usd'?usd:displayUnit==='sol'?sol:{value:null,matched:0,rounds:0};
     const latestTrades=windowTrades.slice().sort((a,b)=>b.blockTime-a.blockTime||String(a.txId??'').localeCompare(String(b.txId??''))).slice(0,3).map(event=>Object.freeze({mint:event.mint,txId:event.txId,side:event.side,amount:event.amount,blockTime:event.blockTime,priceUsd:event.priceUsd,priceSol:event.priceSol,source:event.source,sourceKind:event.sourceKind}));
     const mostTraded=[...row.mints].map(mint=>{const trades=windowTrades.filter(event=>event.mint===mint),txIds=new Set(trades.map(event=>event.txId||eventKey(event)));return Object.freeze({mint,uniqueAfterCloseTxCount:txIds.size,eventCount:trades.length,lastObservedAt:trades.reduce((max,event)=>Math.max(max,event.blockTime),0)*1000});}).sort((a,b)=>b.uniqueAfterCloseTxCount-a.uniqueAfterCloseTxCount||b.eventCount-a.eventCount||a.mint.localeCompare(b.mint));
     const holdings=[...new Set(walletEvents.map(event=>event.mint))].map(mint=>{const retained=walletEvents.filter(event=>event.mint===mint),observedNetAmount=retained.reduce((sum,event)=>sum+(event.side==='buy'?event.amount:-event.amount),0),lastObservedAt=retained.reduce((max,event)=>Math.max(max,event.blockTime),0)*1000;return Object.freeze({mint,observedNetAmount,lastObservedAt,sourceKind:'retained-observed-flow'});}).filter(item=>item.observedNetAmount>1e-12).sort((a,b)=>b.observedNetAmount-a.observedNetAmount||b.lastObservedAt-a.lastObservedAt||a.mint.localeCompare(b.mint)).slice(0,10);
-    result.push(Object.freeze({wallet:row.wallet,transactionCount:row.txIds.size,uniqueAfterCloseTxCount:row.txIds.size,eventCount:row.eventCount,buyCount:row.buyCount,sellCount:row.sellCount,assetCount:row.mints.size,mints:Object.freeze([...row.mints]),holdings:Object.freeze(holdings),topHeld:Object.freeze(holdings),mostTraded:Object.freeze(mostTraded.slice(0,10)),topTraded:Object.freeze(mostTraded.slice(0,10)),latestTrades:Object.freeze(latestTrades),realizedPnlUsd:pnlFor('usd'),realizedPnlSol:pnlFor('sol'),lastObservedAt:row.lastObservedAt*1000,sourceKind:row.sourceKinds.has('observed-fact')?'observed':'provider-reported',sources:Object.freeze([...row.sources])}));
+    result.push(Object.freeze({wallet:row.wallet,transactionCount:row.txIds.size,uniqueAfterCloseTxCount:row.txIds.size,eventCount:row.eventCount,buyCount:row.buyCount,sellCount:row.sellCount,assetCount:row.mints.size,mints:Object.freeze([...row.mints]),holdings:Object.freeze(holdings),topHeld:Object.freeze(holdings),mostTraded:Object.freeze(mostTraded.slice(0,10)),topTraded:Object.freeze(mostTraded.slice(0,10)),latestTrades:Object.freeze(latestTrades),realizedPnlUsd:usd.value,realizedPnlSol:sol.value,pnlDisplayUnit:displayUnit,pnlMatchedRounds:display.matched,pnlRoundCount:display.rounds,pnlSource:'realized-fifo',lastObservedAt:row.lastObservedAt*1000,sourceKind:row.sourceKinds.has('observed-fact')?'observed':'provider-reported',sources:Object.freeze([...row.sources])}));
   }
   result.sort((a,b)=>b.uniqueAfterCloseTxCount-a.uniqueAfterCloseTxCount||a.wallet.localeCompare(b.wallet));
   return Object.freeze(result.slice(0,cap).map((row,index)=>Object.freeze({rank:index+1,...row})));
