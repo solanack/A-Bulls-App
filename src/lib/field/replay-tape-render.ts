@@ -174,8 +174,12 @@ function drawHeldConnector(ctx: CanvasRenderingContext2D, x1: number, x2: number
 /** Big entry/exit bolt. Tip sits on the print. Reduced motion is a static glow with no pulse or moving streaks. */
 function drawHeroBolt(ctx: CanvasRenderingContext2D, x: number, y: number, side: "buy" | "sell", height: number, k: number, selected: boolean, pulse: number, reduce: boolean, phase: { phase: "down" | "up"; progress: number } | null, label: string) {
   const grow = !reduce && phase?.phase === "down" ? 0.18 + 0.82 * phase.progress : 1;
-  const h = Math.max(8, height * grow);
+  // The body and ENTRY/EXIT label sit above the tip. Shrink so a print near the top of the tape is not clipped.
+  const ceiling = 6 * k;
+  const maxH = Math.max(22, (y - ceiling - 13 * k) / 0.9);
+  const h = Math.max(8, Math.min(height * grow, maxH));
   const cy = y - h * 0.32;
+  const mirror = side === "sell" ? -1 : 1;
   const palette = BOLT[side];
   const glow = reduce ? 0.92 : 0.55 + 0.45 * pulse;
   ctx.save();
@@ -198,7 +202,7 @@ function drawHeroBolt(ctx: CanvasRenderingContext2D, x: number, y: number, side:
   ctx.globalAlpha = 1;
   ctx.beginPath();
   BOLT_SHAPE.forEach(([px, py], i) => {
-    const bx = x + px * h, by = cy + py * h;
+    const bx = x + px * h * mirror, by = cy + py * h;
     if (i) ctx.lineTo(bx, by); else ctx.moveTo(bx, by);
   });
   ctx.closePath();

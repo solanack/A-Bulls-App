@@ -194,7 +194,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
       const push = 1 + impact.strength * life * 0.018;
       ctx.translate(size.w / 2 + sx, size.h / 2 + sy); ctx.scale(push, push); ctx.translate(-size.w / 2, -size.h / 2);
     }
-    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 16 : 18, hypothetical: whatIf ? { cursor, side: latest?.side === "buy" ? "sell" : "buy", label: "HYPOTHETICAL" } : null, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 16 : 20, right: compact ? 50 : 66, bottom: 22, left: compact ? 4 : 8 } });
+    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 16 : 18, hypothetical: whatIf ? { cursor, side: latest?.side === "buy" ? "sell" : "buy", label: "HYPOTHETICAL" } : null, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 64 : 78, right: compact ? 50 : 66, bottom: 22, left: compact ? 4 : 8 } });
     ctx.restore();
   };
 
