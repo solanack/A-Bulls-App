@@ -6,8 +6,8 @@ const USDT='Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const QUOTE_MINTS=new Set([WSOL,USDC,USDT]);
 /**
  * Pinned xStock mint hints from XSTOCK_REGISTRY in src/lib/universe-data/afterbell-client.ts.
- * Membership is exact and case-sensitive. A prefix is not used: SQLite LIKE is case-insensitive,
- * and production has Xs-prefixed mints that are not xStock.
+ * Membership is exact and case-sensitive. Every other case-sensitive Xs-prefixed mint is also
+ * excluded. SQLite uses GLOB 'Xs*', which is case-sensitive, so XSTuo… is not in this set.
  */
 export const CHAIN_XSTOCK_MINTS=Object.freeze([
   'XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp',
@@ -22,8 +22,6 @@ export const CHAIN_XSTOCK_MINTS=Object.freeze([
 const XSTOCK_MINTS=new Set(CHAIN_XSTOCK_MINTS);
 const CHAIN_EXCLUDED_MINTS=Object.freeze([WSOL,USDC,USDT,...CHAIN_XSTOCK_MINTS]);
 const CHAIN_ROUND_CAP=25;
-/** Non-registry Xs mints below this absolute SOL size are dust, not a tracked position. */
-export const CHAIN_XS_MIN_SOL=0.001;
 const s=value=>String(value??'').trim();
 const finite=value=>value==null||value===''?null:Number.isFinite(Number(value))?Number(value):null;
 const nowMs=()=>Date.now();
@@ -73,10 +71,10 @@ export function chainRoundGalaxy(sources=[],{fomoWallet=false}={}){
   return null;
 }
 
-/** Quote legs and registry xStock mints are not SOL positions. USDC-quoted xStock basis is not converted. */
+/** Quote legs, registry xStock mints, and every other case-sensitive Xs-prefixed mint are not SOL positions. USDC-quoted xStock basis is not converted. */
 export function isChainQuoteMint(mint){
   const value=s(mint);
-  return !value||QUOTE_MINTS.has(value)||XSTOCK_MINTS.has(value);
+  return !value||QUOTE_MINTS.has(value)||XSTOCK_MINTS.has(value)||value.startsWith('Xs');
 }
 /**
  * Closed and open rounds only. An unmatched-only pair writes nothing.
@@ -91,23 +89,10 @@ export function chainRoundsToWrite(rounds=[],cap=CHAIN_ROUND_CAP){
   const newestClosed=closedLimit>0?closed.slice(-closedLimit):[];
   return Object.freeze([...newestClosed,...open]);
 }
-/** Case-sensitive Xs prefix outside the pinned registry. XSTuo… is not in this set. */
-function nonRegistryXsMint(mint){
-  const value=s(mint);
-  return value.startsWith('Xs')&&!XSTOCK_MINTS.has(value);
-}
-/**
- * Resolved SOL is the wSOL route amount when one exists, otherwise |sol_delta|.
- * A route-only rule would drop a real sol_delta that has no stored route row.
- * The floor drops the dust QA measured and keeps a trade at or above 0.001 SOL.
- */
-function belowXsSolFloor(mint,sol){
-  return nonRegistryXsMint(mint)&&!(Number(sol)>=CHAIN_XS_MIN_SOL);
-}
 /**
  * Build FIFO trades from retained wallet events and wSOL route legs.
  * Provider USD PnL is ignored. Non-wSOL quotes are not converted into SOL.
- * USDC, USDT, wSOL, and the pinned xStock registry mints are not tracked positions.
+ * USDC, USDT, wSOL, the pinned xStock registry, and every other case-sensitive Xs-prefixed mint are not tracked positions.
  * Signatures still present in pump_trades are left to the pump materializer.
  */
 export function tradesFromWalletEvidence(events=[],routes=[],{pumpSignatures}={}){
@@ -146,7 +131,6 @@ export function tradesFromWalletEvidence(events=[],routes=[],{pumpSignatures}={}
       const wsolAmount=s(hop.input_mint)===WSOL?Number(hop.input_amount):Number(hop.output_amount);
       if(Number.isFinite(wsolAmount)&&wsolAmount>0)sol=wsolAmount;
     }
-    if(belowXsSolFloor(event.mint,sol))continue;
     push({event_id:sig||`event:${s(event.id)}`,signature:sig||null,event_index:0,wallet:s(event.wallet),mint:s(event.mint),side,token_amount:token,sol_amount:sol,block_time:event.block_time});
   }
   for(const route of Array.isArray(routes)?routes:[]){
@@ -160,7 +144,6 @@ export function tradesFromWalletEvidence(events=[],routes=[],{pumpSignatures}={}
     const sol=input===WSOL?Number(route.input_amount):Number(route.output_amount);
     if(!(token>0))continue;
     const solAmount=Number.isFinite(sol)&&sol>0?sol:null;
-    if(belowXsSolFloor(mint,solAmount))continue;
     push({event_id:sig||`route:${mint}:${s(route.hop_index)}`,signature:sig||null,event_index:Number(route.hop_index)||0,wallet:s(route.wallet),mint,side,token_amount:token,sol_amount:solAmount,block_time:route.block_time});
   }
   return trades;
@@ -414,8 +397,8 @@ async function pumpSignatureSet(db,wallet,mint){
 }
 
 async function materializeChainWallet(db,wallet,{fomoWallet,now}){
-  const mintResult=await db.prepare(`SELECT mint,MAX(block_time) latest FROM bull_wallet_events WHERE wallet=? AND mint<>'' AND token_delta<>0 AND ifnull(source,'') NOT LIKE '%pump%' AND mint NOT IN (${CHAIN_EXCLUDED_MINTS.map(()=>'?').join(',')}) GROUP BY mint ORDER BY latest DESC LIMIT ?`).bind(wallet,...CHAIN_EXCLUDED_MINTS,CHAIN_MINT_LIMIT).all().catch(()=>({results:[]}));
-  const routeMints=await db.prepare(`SELECT CASE WHEN input_mint=? THEN output_mint ELSE input_mint END mint,MAX(block_time) latest FROM intelligence_trade_routes WHERE wallet=? AND (input_mint=? OR output_mint=?) GROUP BY mint ORDER BY latest DESC LIMIT ?`).bind(WSOL,wallet,WSOL,WSOL,CHAIN_MINT_LIMIT*4).all().catch(()=>({results:[]}));
+  const mintResult=await db.prepare(`SELECT mint,MAX(block_time) latest FROM bull_wallet_events WHERE wallet=? AND mint<>'' AND token_delta<>0 AND ifnull(source,'') NOT LIKE '%pump%' AND mint NOT IN (${CHAIN_EXCLUDED_MINTS.map(()=>'?').join(',')}) AND mint NOT GLOB 'Xs*' GROUP BY mint ORDER BY latest DESC LIMIT ?`).bind(wallet,...CHAIN_EXCLUDED_MINTS,CHAIN_MINT_LIMIT).all().catch(()=>({results:[]}));
+  const routeMints=await db.prepare(`SELECT CASE WHEN input_mint=? THEN output_mint ELSE input_mint END mint,MAX(block_time) latest FROM intelligence_trade_routes WHERE wallet=? AND (input_mint=? OR output_mint=?) AND CASE WHEN input_mint=? THEN output_mint ELSE input_mint END NOT GLOB 'Xs*' GROUP BY mint ORDER BY latest DESC LIMIT ?`).bind(WSOL,wallet,WSOL,WSOL,WSOL,CHAIN_MINT_LIMIT*4).all().catch(()=>({results:[]}));
   const mints=[...new Set([...(mintResult?.results||[]).map(row=>s(row.mint)),...(routeMints?.results||[]).map(row=>s(row.mint))].filter(mint=>!isChainQuoteMint(mint)))].slice(0,CHAIN_MINT_LIMIT);
   let roundsWritten=0;
   for(const mint of mints){
