@@ -24,6 +24,9 @@ test("Field visual polish stays inside the known-good WebGL renderer",()=>{
   assert.match(field,/targetGalaxy === "afterbell"/);
   assert.match(field,/#flightUntil/);
   assert.match(field,/cinematicFlight/);
+  assert.match(field,/WARP_STREAK_LENGTH/);
+  assert.match(field,/uStreak/);
+  assert.match(field,/sampleWarp/);
   assert.match(field,/this\.cameraState = \{ yaw: 0\.4, pitch: 0\.18, distance: snapshot\.galaxyId === "galaxy-zero" \? GALAXY_ZERO_CAMERA_DISTANCE : 125, target: \[0, 0, 0\] \};/);
   assert.doesNotMatch(field,/if \(galaxyChanged\) \{[^}]*#placeCamera\(\)/s);
   assert.match(field,/new THREE\.WebGLRenderer/);

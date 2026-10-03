@@ -21,13 +21,34 @@ export function createGalaxySnapshot(galaxy:GalaxyDefinition,count=2800,seed=gal
 
 export const GALAXY_ZERO_CENTERS:readonly [number,number,number][]=[[-24,0,0],[24,0,0]];
 export const GALAXY_ZERO_CAMERA_DISTANCE=205;
+const FIELD_HOME_HALO=7;
+const FIELD_HOME_DEPTH=36;
+
+function fieldHomeNode(target:GalaxyDefinition,index:number,role:"core"|"halo"|"fabric"|"depth",position:[number,number,number],magnitude:number):FieldParticle{
+  return{id:`galaxy-map:${target.id}:${index}`,kind:"galaxy-node",cosmicKind:"galaxy",originGalaxyId:"galaxy-zero",verificationState:"directory",observedAt:1_000_000,category:"swap",magnitudeBand:magnitude,position,source:"a-bulls-galaxy-directory",metadata:{targetGalaxyId:target.id,name:target.name,description:target.description,galaxyRole:role,interactive:true}};
+}
+
+/** Two portal galaxies on the Field: a bright core, spiral-arm knots, a soft halo, and a faint depth shell. */
 export function createUniverseMapSnapshot(count=2800,seed=861):UniverseSnapshot{
-  const random=mulberry(seed),bounded=Math.max(600,Math.min(6000,Math.trunc(count))),definitions=[getGalaxy("fomo"),getGalaxy("afterbell")],centers=GALAXY_ZERO_CENTERS,particles:FieldParticle[]=[],perGalaxy=Math.floor(bounded*.78/definitions.length);
+  const random=mulberry(seed),bounded=Math.max(600,Math.min(6000,Math.trunc(count))),definitions=[getGalaxy("fomo"),getGalaxy("afterbell")],particles:FieldParticle[]=[],perGalaxy=Math.floor(bounded*.78/definitions.length);
   for(const [galaxyIndex,target] of definitions.entries()){
-    const center=centers[galaxyIndex];if(!center)throw new Error(`Field center missing for ${target.id}`);
+    const center=GALAXY_ZERO_CENTERS[galaxyIndex];if(!center)throw new Error(`Field center missing for ${target.id}`);
     for(let index=0;index<perGalaxy;index+=1){
-      const arm=index%3,radius=index===0?0:2.5+Math.pow(random(),.62)*17,angle=radius*.31+arm*Math.PI*2/3+(random()-.5)*.7,isCore=index===0;
-      particles.push({id:`galaxy-map:${target.id}:${index}`,kind:"galaxy-node",cosmicKind:"galaxy",originGalaxyId:"galaxy-zero",verificationState:"directory",observedAt:1_000_000,category:"swap",magnitudeBand:isCore?1:.22+random()*.62,position:[center[0]+Math.cos(angle)*radius,center[1]+(isCore?0:(random()-.5)*4),center[2]+Math.sin(angle)*radius],source:"a-bulls-galaxy-directory",metadata:{targetGalaxyId:target.id,name:target.name,description:target.description,galaxyRole:isCore?"core":"fabric",interactive:true}});
+      if(index===0){particles.push(fieldHomeNode(target,index,"core",[...center],1));continue;}
+      if(index<=FIELD_HOME_HALO){
+        const angle=random()*Math.PI*2,radius=5+random()*8;
+        particles.push(fieldHomeNode(target,index,"halo",[center[0]+Math.cos(angle)*radius,center[1]+(random()-.5)*2.2,center[2]+Math.sin(angle)*radius+(random()-.5)*1.6],.55+random()*.4));
+        continue;
+      }
+      if(index<=FIELD_HOME_HALO+FIELD_HOME_DEPTH){
+        const angle=random()*Math.PI*2,radius=7+random()*12,lift=(random()-.5)*18,shelf=(random()<.5?-1:1)*(7+random()*12);
+        particles.push(fieldHomeNode(target,index,"depth",[center[0]+Math.cos(angle)*radius,center[1]+lift,center[2]+Math.sin(angle)*radius+shelf],.2+random()*.55));
+        continue;
+      }
+      const arm=index%2,radius=1.6+Math.pow(random(),.58)*14.2,angle=radius*.46+arm*Math.PI+(random()-.5)*.38;
+      const disk=(random()-.5)*(0.55+ (1-radius/16)*2.4),zJitter=(random()-.5)*(1.1+(1-radius/16)*2.6);
+      const knot=random();
+      particles.push(fieldHomeNode(target,index,"fabric",[center[0]+Math.cos(angle)*radius,center[1]+disk,center[2]+Math.sin(angle)*radius+zJitter],knot>.84?.92:.28+knot*.42));
     }
   }
   while(particles.length<bounded){const radius=105+random()*135,angle=random()*Math.PI*2;particles.push({id:`galaxy-zero:expanse:${particles.length}`,kind:"expanse",cosmicKind:"dust",originGalaxyId:"galaxy-zero",verificationState:"decorative",observedAt:1_000_000,category:"unknown",magnitudeBand:.08+random()*.22,position:[Math.cos(angle)*radius,(random()-.5)*130,Math.sin(angle)*radius],source:"a-bulls-galaxy-directory",metadata:{galaxyRole:"expanse",interactive:false}});}
