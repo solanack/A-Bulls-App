@@ -4,10 +4,15 @@ name: That day social reach
 # GitHub OIDC is the default ingest authentication, so the scheduled collector does not require a
 # duplicated long-lived shared secret. SOCIAL_INGEST_TOKEN remains an optional compatibility fallback.
 # TWITTER_AUTH_TOKEN / TWITTER_CT0 are optional and must belong to a dedicated account, never the owner's main X account.
+#
+# Supply chain: actions are pinned to commit SHAs, Agent-Reach to commit
+# a19a171fa980a0785849596492e0af4db800c82f, twitter-cli==0.8.5, and mcporter@0.14.2.
+# The OIDC token is minted only after those installs. The three ingest/X secrets are set on the
+# steps that read them, not on the job, so install scripts do not receive them through the environment.
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
   workflow_run:
     workflows: ["Deploy Cloudflare"]
@@ -27,32 +32,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      SOCIAL_INGEST_TOKEN: ${{ secrets.SOCIAL_INGEST_TOKEN }}
-      TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
-      TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
       INTELLIGENCE_ORIGIN: https://www.abullsapp.com
       SOCIAL_FORCE_EMPTY_RETRY: ${{ github.event_name == 'workflow_run' && '1' || '0' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "22"
+          # mcporter@0.14.2 declares engines.node >= 24.
+          node-version: "24"
+      - name: Install Agent-Reach fork and backends
+        env:
+          TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
+          TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
+        run: |
+          pip install --quiet "git+https://github.com/solanack/Agent-Reach.git@a19a171fa980a0785849596492e0af4db800c82f"
+          if [ -n "$TWITTER_AUTH_TOKEN" ] && [ -n "$TWITTER_CT0" ]; then pip install --quiet "twitter-cli==0.8.5"; fi
+          npm install -g --silent mcporter@0.14.2
+          mcporter config add exa https://mcp.exa.ai/mcp --scope home || true
       - name: Request short-lived GitHub OIDC ingest token
         shell: bash
         run: |
           set -euo pipefail
-          response="$(curl --fail --silent --show-error             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=abullsapp-social-ingest")"
+          response="$(curl --fail --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=abullsapp-social-ingest")"
           token="$(node -e 'const fs=require("fs");const body=JSON.parse(fs.readFileSync(0,"utf8"));if(!body.value)process.exit(2);process.stdout.write(body.value)' <<<"$response")"
           echo "::add-mask::$token"
           echo "GITHUB_OIDC_TOKEN=$token" >> "$GITHUB_ENV"
-      - name: Install Agent-Reach fork and backends
-        run: |
-          pip install --quiet "git+https://github.com/solanack/Agent-Reach"
-          if [ -n "$TWITTER_AUTH_TOKEN" ] && [ -n "$TWITTER_CT0" ]; then pip install --quiet twitter-cli; fi
-          npm install -g --silent mcporter
-          mcporter config add exa https://mcp.exa.ai/mcp --scope home || true
       - name: Drain That day requests
+        env:
+          SOCIAL_INGEST_TOKEN: ${{ secrets.SOCIAL_INGEST_TOKEN }}
+          TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
+          TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
         run: python scripts/social-reach/runner.py
