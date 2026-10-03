@@ -242,7 +242,17 @@ describe("trader-select holdings → Make a Cut climax", () => {
     assert.match(overlay, /holdingMintLabel/);
     assert.match(overlay, /No PnL was invented/);
     assert.match(overlay, /Empty coverage stays empty/);
-    assert.match(overlay, /missing PnL stays unavailable/);
+    assert.match(overlay, /missing PnL stays —/);
+    assert.match(overlay, /PNL_REALIZED_LABEL/);
+    assert.match(overlay, /PNL_CAVEAT/);
+    assert.match(overlay, /holdingRoundsMatchedLine/);
+    assert.match(overlay, />VERIFY</);
+    assert.doesNotMatch(overlay, /winner|alpha|smart money/i);
+    const honest = readFileSync(new URL("./honest-pnl.ts", import.meta.url), "utf8");
+    assert.match(honest, /Realized · A Bulls observed \(FIFO\)/);
+    assert.match(honest, /Fomo-reported/);
+    assert.match(honest, /Hypothetical/);
+    assert.match(honest, /historical, not a promise, not advice/);
     assert.doesNotMatch(overlay, /reportedPnlUsd/);
     assert.doesNotMatch(overlay, /helius/i);
     assert.match(holdings, /research\/holdings/);

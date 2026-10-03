@@ -1,7 +1,8 @@
 import { CUT_TITLE_SECONDS, cutDuration, cutTapeSeconds, cutTiming, type CutSoundtrack } from "@/lib/field/replay-director";
 import { synthesizeCutNarration } from "@/lib/alien-voice";
 import { BOLT, drawTape, TAPE_BG } from "@/lib/field/replay-tape-render";
-import { CUT_SIZE, formatUsdNotional, formatUsdPrice, tapeAvgEntryMarketCap, tapeAxis, tapeMarketCapAt, tapeMarkSummary, tapeUsdSummary, type CohortTick, type CutFormat, type TapeBolt, type TapeCandle, type TapeMarketCapPoint, type TapeMarkSummary, type TapeUsdSummary } from "@/lib/field/replay-tape";
+import { PNL_CAVEAT, PNL_HYPOTHETICAL_LABEL, PNL_REALIZED_LABEL } from "@/lib/field/honest-pnl";
+import { CUT_SIZE, formatUsdNotional, formatUsdPrice, tapeAvgEntryMarketCap, tapeAxis, tapeMarketCapAt, tapeMarkSummary, tapeMatchedRounds, tapeUsdSummary, type CohortTick, type CutFormat, type TapeBolt, type TapeCandle, type TapeMarketCapPoint, type TapeMarkSummary, type TapeUsdSummary } from "@/lib/field/replay-tape";
 import { drawTraderSigil } from "@/lib/field/trader-sigil";
 import { drawVerifyQr } from "@/lib/verify-qr";
 
@@ -102,8 +103,8 @@ function drawPositionCard(ctx:CanvasRenderingContext2D,x:number,y:number,w:numbe
     {label:"Bought · retained fills",value:summary.boughtUsd!=null?formatUsdNotional(summary.boughtUsd):"—",tone:"buy"},
     {label:"Marked · current tape",value:cutMarkUsd(mark.markedUsd)},
   ];
-  if(mark.realizedUsd!=null)rows.push({label:"Realized PnL",value:cutSignedUsd(mark.realizedUsd),tone:mark.realizedUsd>=0?"buy":"sell"});
-  const unrealizedPct=cutPct(mark.deltaPct);if(mark.deltaUsd!=null)rows.push({label:"Unrealized PnL",value:`${cutSignedUsd(mark.deltaUsd)}${unrealizedPct?` · ${unrealizedPct}`:""}`,tone:mark.deltaUsd>=0?"buy":"sell"});
+  rows.push({label:PNL_REALIZED_LABEL,value:cutSignedUsd(mark.realizedUsd),tone:mark.realizedUsd!=null&&mark.realizedUsd>=0?"buy":mark.realizedUsd!=null?"sell":undefined});
+  const unrealizedPct=cutPct(mark.deltaPct);rows.push({label:PNL_HYPOTHETICAL_LABEL,value:`${cutSignedUsd(mark.deltaUsd)}${unrealizedPct?` · ${unrealizedPct}`:""}`,tone:mark.deltaUsd!=null&&mark.deltaUsd>=0?"buy":mark.deltaUsd!=null?"sell":undefined});
   rows.push({label:"Avg buy",value:formatUsdPrice(summary.avgBuyUsd)});
   if(avgEntryMc!=null)rows.push({label:"Avg entry MC",value:formatUsdNotional(avgEntryMc)});
   if(summary.sellTotal>0){rows.push({label:"Sold",value:summary.soldUsd!=null?formatUsdNotional(summary.soldUsd):"—",tone:"sell"});rows.push({label:"Avg sell",value:formatUsdPrice(summary.avgSellUsd)});}
@@ -125,7 +126,7 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   const cursor = timing.schedule.cursorAt(Math.min(1, Math.max(0, tapeT / tapeSeconds)));
   const visible = input.bolts.filter((bolt) => bolt.cursor <= cursor);
   const tapeTime=tapeAxis(input.candles,input.start,input.end).timeAt(cursor),visibleCandles=input.candles.filter((candle)=>candle.timestamp<=tapeTime);
-  const mark=tapeMarkSummary(visible,visibleCandles),summary=tapeUsdSummary(visible),marketCap=tapeMarketCapAt(input.marketCapPoints??[],tapeTime,cursor>=.999),avgEntryMc=tapeAvgEntryMarketCap(visible,input.marketCapPoints??[]);
+  const mark=tapeMarkSummary(visible,visibleCandles),summary=tapeUsdSummary(visible),marketCap=tapeMarketCapAt(input.marketCapPoints??[],tapeTime,cursor>=.999),avgEntryMc=tapeAvgEntryMarketCap(visible,input.marketCapPoints??[]),roundLine=tapeMatchedRounds(visible,mark.realizedUsd).line;
   const strikeAge = (bolt: TapeBolt) => { const at = timing.arrivalAt.get(bolt.id); return at == null || tapeT < at ? null : (tapeT - at) * 1000; };
   const chartTop = portrait ? 330 * k : 170 * k, chartBottom = portrait ? h - 560 * k : h - 300 * k;
   ctx.save();
@@ -150,6 +151,7 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   const lowerTop = portrait ? h - 500 * k : h - 274 * k;
   const cardW=w-left*2,cardH=drawPositionCard(ctx,left,lowerTop,cardW,k,summary,mark,avgEntryMc);
   let next=lowerTop+cardH+26*k;
+  ctx.fillStyle="rgba(236,236,240,.62)";ctx.font=`560 ${Math.round(20*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.textAlign="left";ctx.fillText(`${roundLine} · ${PNL_CAVEAT}`,left,next);next+=28*k;
   if(input.evidenceLine){ctx.fillStyle="rgba(236,236,240,.52)";ctx.font=`520 ${Math.round(22*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.textAlign="left";ctx.fillText(input.evidenceLine,left,next);next+=34*k;}
   ctx.fillStyle="rgba(236,236,240,.44)";
   ctx.font = `520 ${Math.round(20 * k)}px ui-sans-serif, system-ui, sans-serif`;

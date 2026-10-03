@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anchorBolts, cohortTicks, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, notionalScale, observedPricedPrintCount, observedUsdNotional, priceAxisLabel, reportedPositionUsd, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeMarkSummary, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
+import { anchorBolts, cohortTicks, formatUsdNotional, formatUsdPrice, fullTape, groupBolts, hopSchedule, notionalScale, observedPricedPrintCount, observedUsdNotional, priceAxisLabel, reportedPositionUsd, replayShareUrl, replaySubjectFrom, replayToolInput, STRIKE_DOWN_MS, STRIKE_MS, STRIKE_UP_MS, strikePhase, tapeAxis, tapeCandles, tapeHeaderLine, tapeEvents, tapeMarkSummary, tapeMatchedRounds, tapeScaleFor, tapeUsdCoverage, tapeUsdSummary, toMs, WSOL_MINT, type TapeCandle, type TapeEvent } from "./replay-tape.ts";
 import { drawTape, tapePrintLabelLayouts } from "./replay-tape-render.ts";
 
 const AB_WALLET = "G39wywquKbHK8F2wZZZFX3fcsyG91VCCbbr6WEVp5axy";
@@ -408,6 +408,14 @@ test("mark separates realized FIFO PnL from remaining-basis unrealized PnL",()=>
   assert.ok(Math.abs((mark.realizedUsd??0)-5)<1e-9);
   assert.equal(mark.deltaUsd,37.5);
   assert.equal(mark.deltaPct,.5);
+});
+
+test("a tape with no sell leaves realized PnL missing instead of zero",()=>{
+  const candles=[candleAt(0)],bolts=anchorBolts([
+    eventAt("buy",candles[0].timestamp+1,"buy",{amount:10,priceUsd:2,notionalUsd:20}),
+  ],candles,candles[0].timestamp,candles[0].timestamp+H),mark=tapeMarkSummary(bolts,candles);
+  assert.equal(mark.realizedUsd,null);
+  assert.equal(tapeMatchedRounds(bolts,mark.realizedUsd).line,"0 of 0 rounds matched");
 });
 
 test("profitable full exit never becomes minus one hundred percent versus historical buys",()=>{

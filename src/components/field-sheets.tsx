@@ -1,4 +1,5 @@
 import type { FieldSection } from "@/lib/field/types";
+import { PNL_CAVEAT } from "@/lib/field/honest-pnl";
 import type { TraderSheetDetail } from "@/lib/field/trader-sheet";
 import { callsign } from "@/lib/field/trader-sheet";
 import { watchShelves, type WatchItem } from "@/lib/field/watchlist";
@@ -64,6 +65,7 @@ export function TraderSheet({
         </div>
       </div>
       <p className="fs-fact">{detail.factLine}</p>
+      {detail.pnlText ? <p className="fs-fact"><span data-number="true">{detail.pnlText}</span> · {detail.pnlSourceLabel}{detail.pnlCoverage ? ` · ${detail.pnlCoverage}` : ""}{detail.pnlVerifyHref ? <> · <a href={detail.pnlVerifyHref}>VERIFY</a></> : null}</p> : null}
       {latest ? <p className="fs-latest">Latest: {latest.side.toUpperCase()} {latest.symbol ?? "token"} · {timeLabel(latest.at)}</p> : null}
       <div className="fs-actions fs-actions--thumb" aria-label="Trader actions">
         <button type="button" aria-label="REPLAY" disabled={!researchable} onClick={() => onResearch("replay")}><b>REPLAY</b><small aria-hidden="true">Play the tape</small></button>
@@ -77,6 +79,7 @@ export function TraderSheet({
       </div>
       {!researchable ? <p className="fs-fine">No retained prints for this wallet yet. Replay opens when one is indexed.</p> : null}
       <p className="fs-fine">{detail.sourceLabel} · {detail.cometCount} COMETS · Research only.</p>
+      <p className="fs-fine">{detail.pnlCaveat || PNL_CAVEAT}</p>
     </aside>
   );
 }

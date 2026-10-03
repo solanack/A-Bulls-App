@@ -77,13 +77,9 @@ export function aggregateTraderHoldings(rounds = [], tokens = [], { limit = HOLD
   }).sort((a, b) => {
     const openDelta = (b.openCount > 0 ? 1 : 0) - (a.openCount > 0 ? 1 : 0);
     if (openDelta) return openDelta;
-    const aKnown = a.matchedRealizedSol != null;
-    const bKnown = b.matchedRealizedSol != null;
-    if (aKnown && bKnown && Math.abs(b.matchedRealizedSol) !== Math.abs(a.matchedRealizedSol)) {
-      return Math.abs(b.matchedRealizedSol) - Math.abs(a.matchedRealizedSol);
-    }
-    if (aKnown !== bKnown) return aKnown ? -1 : 1;
-    return (b.lastObservedAt || 0) - (a.lastObservedAt || 0);
+    const timeDelta = (b.lastObservedAt || 0) - (a.lastObservedAt || 0);
+    if (timeDelta) return timeDelta;
+    return a.mint.localeCompare(b.mint);
   }).slice(0, cap));
 }
 
