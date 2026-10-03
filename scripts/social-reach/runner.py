@@ -30,6 +30,17 @@ import urllib.request
 ORIGIN = os.environ.get("INTELLIGENCE_ORIGIN", "https://www.abullsapp.com").rstrip("/")
 TOKEN = os.environ.get("SOCIAL_INGEST_TOKEN") or os.environ.get("GITHUB_OIDC_TOKEN", "")
 STATUS_URL = re.compile(r"https?://(?:www\.)?(?:x|twitter)\.com/([A-Za-z0-9_]{1,15})/status/(\d{6,25})")
+SECRET_ENV_KEYS = ("TWITTER_AUTH_TOKEN", "TWITTER_CT0", "SOCIAL_INGEST_TOKEN", "GITHUB_OIDC_TOKEN")
+
+
+def redact(text):
+    """Drop credential values before anything is printed. Missing values are left alone."""
+    redacted = text or ""
+    for key in SECRET_ENV_KEYS:
+        value = os.environ.get(key) or ""
+        if len(value) >= 6:
+            redacted = redacted.replace(value, "[redacted]")
+    return redacted
 
 
 def api(path, body=None):
@@ -63,7 +74,7 @@ def twitter_search(terms, since, until, env):
     )
     if out.returncode != 0:
         detail = (out.stderr or out.stdout or "").strip().splitlines()
-        raise RuntimeError(f"twitter-cli exit {out.returncode}: {(detail[-1] if detail else 'no detail')[:180]}")
+        raise RuntimeError(f"twitter-cli exit {out.returncode}: {redact(detail[-1] if detail else 'no detail')[:180]}")
     payload = json.loads(out.stdout or "{}")
     return [
         {"id": str(t.get("id", "")), "handle": (t.get("author") or {}).get("screenName", ""), "text": t.get("text", ""), "postedAt": t.get("createdAtISO") or t.get("createdAt"), "url": f"https://x.com/{(t.get('author') or {}).get('screenName', 'i')}/status/{t.get('id', '')}"}
@@ -91,7 +102,7 @@ def exa_search(item, since, until):
     )
     if out.returncode != 0:
         detail = (out.stderr or out.stdout or "").strip().splitlines()
-        raise RuntimeError(f"exa exit {out.returncode}: {(detail[-1] if detail else 'no detail')[:180]}")
+        raise RuntimeError(f"exa exit {out.returncode}: {redact(detail[-1] if detail else 'no detail')[:180]}")
     posts = []
     for block in re.split(r"\n\s*-{3,}\s*\n", out.stdout):
         match = STATUS_URL.search(block)
@@ -144,7 +155,7 @@ def main():
 
         # Never convert total transport failure into "no social posts existed".
         if not used:
-            print(f"  {item['request_key']}: all search backends failed; leaving queued for retry ({'; '.join(failures)[:500]})")
+            print(f"  {item['request_key']}: all search backends failed; leaving queued for retry ({redact('; '.join(failures))[:500]})")
             continue
 
         unique = {}
