@@ -85,6 +85,13 @@ export function SocialFiWorkspace() {
   );
 }
 
+function signalMark(item: SocialFeedItem) {
+  // This card does not resolve evidenceId to a receipt. Indexed membership
+  // observations stay labeled as observations; user posts stay opinions.
+  if (item.kind === "observation" || item.kind === "alert") return "INDEXED OBSERVATION";
+  return "OPINION";
+}
+
 function SignalCard({ item }: { item: SocialFeedItem }) {
   return (
     <article className="signal-card">
@@ -98,7 +105,7 @@ function SignalCard({ item }: { item: SocialFeedItem }) {
       <p>{item.body}</p>
       <footer>
         <span>{item.galaxyId ?? "FIELD"}</span>
-        {item.evidenceId ? <span>EVIDENCE ATTACHED</span> : <span>OPINION</span>}
+        <span>{signalMark(item)}</span>
         <span>{item.reactions} SIGNALS</span>
       </footer>
     </article>
