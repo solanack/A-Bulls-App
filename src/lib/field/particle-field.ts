@@ -7,6 +7,7 @@ import { CameraGestures } from "./gestures";
 import { createStarfield, GALAXY_ZERO_CAMERA_DISTANCE } from "./synthetic-universe";
 import { ALIEN_BOUNDS, parentColorForCategory } from "./anatomy";
 import { isLiveSkyParticle, particleMint } from "./volume-sky";
+import { skyFactText } from "./honest-pnl.ts";
 import { mintKey } from "./watchlist";
 import {
   COSMIC_KIND_INDEX,
@@ -365,7 +366,7 @@ function liveLabel(particle: FieldParticle): LiveLabel | null {
   if (kind === "star") {
     const wallet = labelText(particle.metadata?.wallet, 64);
     const title = labelText(particle.metadata?.displayName, 18) ?? labelText(particle.metadata?.name, 18) ?? (wallet ? `${wallet.slice(0, 4)}…${wallet.slice(-4)}` : "Public wallet");
-    return { title, fact: labelText(particle.metadata?.factLine, 28), tone };
+    return { title, fact: skyFactText(particle.metadata?.factLine, 64), tone };
   }
   if (kind === "comet") {
     const side = labelText(particle.metadata?.side, 8)?.toUpperCase() ?? "PRINT";
@@ -386,13 +387,35 @@ const LABEL_RIM: Record<LiveLabel["tone"], string> = {
   neutral: "rgba(226,232,244,.42)",
 };
 
+function wrapLabel(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && context.measureText(next).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+    if (lines.length === 3) break;
+  }
+  if (line && lines.length < 3) lines.push(line);
+  return lines;
+}
+
 function createLabelSprite(label: LiveLabel, compact: boolean) {
-  const fact = compact ? null : label.fact;
+  const fact = label.fact;
   const canvas = document.createElement("canvas");
   canvas.width = 448;
-  canvas.height = fact ? 96 : 72;
   const context = canvas.getContext("2d");
   if (!context) return null;
+  const factFont = compact ? "500 14px system-ui, -apple-system, sans-serif" : "500 16px system-ui, -apple-system, sans-serif";
+  const factMax = 352;
+  context.font = factFont;
+  const factLines = fact ? wrapLabel(context, fact, factMax) : [];
+  const lineH = compact ? 18 : 20;
+  const boxHeight = factLines.length ? 36 + factLines.length * lineH + 12 : 48;
+  canvas.height = boxHeight + 20;
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.textAlign = "center";
   context.textBaseline = "middle";
@@ -401,9 +424,9 @@ function createLabelSprite(label: LiveLabel, compact: boolean) {
     return context.measureText(text).width;
   };
   const titleWidth = measure(label.title, "650 26px system-ui, -apple-system, sans-serif");
-  const factWidth = fact ? measure(fact, "500 19px system-ui, -apple-system, sans-serif") : 0;
+  context.font = factFont;
+  const factWidth = factLines.reduce((widest, line) => Math.max(widest, context.measureText(line).width), 0);
   const boxWidth = Math.min(400, Math.max(132, Math.ceil(Math.max(titleWidth, factWidth)) + 44));
-  const boxHeight = fact ? 76 : 48;
   const boxLeft = (canvas.width - boxWidth) / 2;
   context.fillStyle = "rgba(11,12,16,.74)";
   context.strokeStyle = LABEL_RIM[label.tone];
@@ -414,11 +437,11 @@ function createLabelSprite(label: LiveLabel, compact: boolean) {
   context.stroke();
   context.font = "650 26px system-ui, -apple-system, sans-serif";
   context.fillStyle = "rgba(246,244,238,.97)";
-  context.fillText(label.title, canvas.width / 2, fact ? 34 : 34);
-  if (fact) {
-    context.font = "500 19px system-ui, -apple-system, sans-serif";
+  context.fillText(label.title, canvas.width / 2, factLines.length ? 28 : 34);
+  if (factLines.length) {
+    context.font = factFont;
     context.fillStyle = "rgba(214,212,206,.78)";
-    context.fillText(fact, canvas.width / 2, 64);
+    factLines.forEach((line, index) => context.fillText(line, canvas.width / 2, 50 + index * lineH));
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -431,7 +454,7 @@ function createLabelSprite(label: LiveLabel, compact: boolean) {
       toneMapped: false,
     }),
   );
-  sprite.scale.set(25, fact ? 5.36 : 4.1, 1);
+  sprite.scale.set(25, 25 * (canvas.height / canvas.width), 1);
   sprite.renderOrder = 6;
   return sprite;
 }
@@ -1015,7 +1038,7 @@ export class ParticleFieldRenderer {
       const key = target ? `galaxy:${target}` : mint ? `mint:${mintKey(mint)}` : `id:${particle.id}`;
       if (seen.has(key)) continue;
       const [x, y, z] = particle.position;
-      if (candidates.some((other) => Math.abs(other.position[0] - x) < 22 && Math.abs(other.position[1] - y) < 7 && Math.abs(other.position[2] - z) < 30)) continue;
+      if (candidates.some((other) => Math.abs(other.position[0] - x) < 22 && Math.abs(other.position[1] - y) < 12 && Math.abs(other.position[2] - z) < 30)) continue;
       seen.add(key);
       candidates.push(particle);
       if (candidates.length >= 6) break;

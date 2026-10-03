@@ -1,4 +1,5 @@
 import type { FieldSection, FocusedParticle } from "./types.ts";
+import { formatSolPnl, roundsMatchedLine } from "./honest-pnl.ts";
 import { heroSubjectLabel, looksLikeMint } from "./ux-simplify.ts";
 import { particleMint } from "./volume-sky.ts";
 
@@ -82,9 +83,14 @@ export function holdingTokenLabel(holding: Pick<TraderHolding, "name" | "symbol"
   return heroSubjectLabel({ name: holding.name, symbol: holding.symbol }) || "Token name unavailable";
 }
 
+/** Indexed FIFO SOL. Missing stays an em dash. A matched zero stays a matched zero. */
 export function formatIndexedPnl(value: number | null | undefined): { text: string; known: boolean } {
-  if (value == null || !Number.isFinite(value)) return { text: "PnL unavailable", known: false };
-  return { text: `${value >= 0 ? "+" : ""}${value.toFixed(4)} SOL`, known: true };
+  return formatSolPnl(value);
+}
+
+/** Closed matched rounds over closed plus still-open rounds. Unmatched sells are not in these counts. */
+export function holdingRoundsMatchedLine(holding: Pick<TraderHolding, "closedMatchedCount" | "closedCount" | "openCount">): string {
+  return roundsMatchedLine(holding.closedMatchedCount, holding.closedCount + holding.openCount);
 }
 
 export function holdingMintLabel(mint: string): string {

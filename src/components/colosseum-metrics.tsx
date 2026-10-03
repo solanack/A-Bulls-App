@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { evidenceVerifyHref, PNL_CAVEAT, roundsMatchedLine } from "../lib/field/honest-pnl.ts";
 import {
   duelBarRatio,
   extractDivergeSeries,
@@ -153,8 +154,8 @@ export function CompareDuel({
   };
   const sample=(summary:Data)=>{
     const eligible=Number(summary.eligible_cycles),closed=Number(summary.closed_cycles),excluded=Number(summary.excluded_cycles);
-    if(!Number.isFinite(closed)||closed<=0)return"No eligible closed cycles";
-    return `${Number.isFinite(eligible)?eligible:0} eligible / ${closed} closed${Number.isFinite(excluded)&&excluded>0?` · ${excluded} excluded`:""}`;
+    if(!Number.isFinite(eligible)||!Number.isFinite(closed))return roundsMatchedLine(0,0);
+    return `${roundsMatchedLine(eligible,closed)}${Number.isFinite(excluded)&&excluded>0?` · ${excluded} excluded`:""}`;
   };
 
   return (
@@ -164,11 +165,13 @@ export function CompareDuel({
           <span>WALLET A · OBSERVED</span>
           <b>{short(walletA)}</b>
           <small>{sample(summaryA)}</small>
+          {evidenceVerifyHref({ wallet: walletA }) ? <a href={evidenceVerifyHref({ wallet: walletA }) ?? undefined}>VERIFY</a> : null}
         </article>
         <article className="colosseum-duel__card">
           <span>WALLET B · OBSERVED</span>
           <b>{short(walletB)}</b>
           <small>{sample(summaryB)}</small>
+          {evidenceVerifyHref({ wallet: walletB }) ? <a href={evidenceVerifyHref({ wallet: walletB }) ?? undefined}>VERIFY</a> : null}
         </article>
       </div>
       {fields.length ? (
@@ -184,7 +187,7 @@ export function CompareDuel({
                       ? "gap · value not retained on one side"
                       : ratio.leading === "tie"
                         ? "observed tie"
-                        : `higher observed · ${ratio.leading === "a" ? "A" : "B"}`}
+                        : "observed values · not a rank"}
                   </span>
                 </div>
                 <div className="colosseum-duel__track" aria-hidden={ratio.leading === "gap"}>
@@ -211,6 +214,7 @@ export function CompareDuel({
       {Object.keys(comparison).length ? (
         <p className="colosseum-duel__diff-note">Same-period matched-round signals only — not a skill, ownership, copy-trading, or future-return rank.</p>
       ) : null}
+      <p className="colosseum-duel__diff-note">{PNL_CAVEAT}</p>
       {disclaimer ? <p className="universe-disclosure">{disclaimer}</p> : null}
     </section>
   );
