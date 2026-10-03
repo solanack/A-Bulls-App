@@ -306,3 +306,89 @@ test('0041 ghost delete is idempotent on 26 seeded rounds and keeps live open re
   assert.deepEqual(db.prepare('SELECT id FROM matched_trade_rounds ORDER BY id').all().map(item=>item.id),survivors);
   db.close();
 });
+
+function researchMaterializerDb(){
+  const sql=new DatabaseSync(':memory:');
+  const migrationDir=new URL('./migrations/',import.meta.url);
+  for(const file of readdirSync(migrationDir).filter(name=>name.endsWith('.sql')).sort())sql.exec(readFileSync(new URL(file,migrationDir),'utf8'));
+  const norm=values=>values.map(value=>value===undefined?null:value);
+  const seen=[];
+  const db={prepare:query=>{
+    seen.push(query);
+    const statement=(args=[])=>({
+      bind(...bound){return statement(bound);},
+      async all(){return {results:sql.prepare(query).all(...norm(args))};},
+      async first(){return (await this.all()).results[0]??null;},
+      async run(){return {meta:{changes:Number(sql.prepare(query).run(...norm(args)).changes)}};}
+    });
+    return statement();
+  },async batch(statements){sql.exec('BEGIN');try{for(const statement of statements)sql.prepare(statement.q).run(...norm(statement.args));sql.exec('COMMIT');}catch(error){sql.exec('ROLLBACK');throw error;}}};
+  const wrap=db.prepare;
+  db.prepare=query=>{const statement=wrap(query);statement.q=query;const bind=statement.bind.bind(statement);statement.bind=(...args)=>{const bound=bind(...args);bound.q=query;bound.args=args;return bound;};return statement;};
+  return {sql,db,seen};
+}
+
+test('chain rounds stay unwritten unless RESEARCH_CHAIN_ROUNDS_ENABLED is exactly 1',async()=>{
+  const source=readFileSync(new URL('./intelligence-research-materializer.mjs',import.meta.url),'utf8');
+  const hooks=readFileSync(new URL('./intelligence-worker-hooks.mjs',import.meta.url),'utf8');
+  assert.match(source,/if\(env\.RESEARCH_CHAIN_ROUNDS_ENABLED==='1'\)\{try\{result\.chain=await materializeChainRounds\(db,env,now\);\}/);
+  assert.equal((source.match(/await materializeChainRounds\(/g)||[]).length,1);
+  assert.match(hooks,/materializeResearchIndex\(env\)/);
+  assert.equal(hooks.includes('RESEARCH_CHAIN_ROUNDS_ENABLED'),false);
+  for(const name of ['wrangler.toml','wrangler.production.toml','wrangler.production.example.toml','wrangler.z500-preview.toml'])assert.equal(readFileSync(new URL(`./${name}`,import.meta.url),'utf8').includes('RESEARCH_CHAIN_ROUNDS_ENABLED'),false);
+  const USDC='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+  const CRCLx='XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1';
+  const TOKEN='TestTokenMint1111111111111111111111111111';
+  const FOMO='FomoChainWallet11111111111111111111111111';
+  const AFTER='AfterbellChainWallet1111111111111111111111';
+  const now=1790000000000;
+  const chainSql=query=>query.includes('research_index_chain_cursor')||query.includes('solana_wallet wallet FROM fomo_traders')||query.includes('helius-afterbell-%');
+  const chainObjects=sql=>sql.prepare(`SELECT COUNT(*) AS c FROM research_index_objects WHERE id LIKE 'planet:fomo:%' OR id LIKE 'planet:afterbell:%' OR id LIKE 'matched:%' OR id LIKE 'trade:observed:%' OR id LIKE 'replay:round:%' OR id LIKE 'star:solana:%'`).get().c;
+  const seed=sql=>{
+    sql.prepare(`INSERT INTO fomo_traders(handle,current_rank,solana_wallet,captured_at,updated_at) VALUES('chainflag',1,?,1700000000,1700000000)`).run(FOMO);
+    const event=sql.prepare(`INSERT INTO bull_wallet_events(signature,block_time,wallet,mint,event_class,sol_delta,token_delta,source) VALUES(?,?,?,?,'swap',?,?,?)`);
+    event.run('sig-buy',1700000200,FOMO,TOKEN,-1,10,'helius-fomo');
+    event.run('sig-sell',1700000300,FOMO,TOKEN,1.4,-10,'helius-fomo');
+    event.run('sig-usdc',1700000400,FOMO,USDC,0,-250,'helius-fomo');
+    event.run('sig-crclx',1700000500,AFTER,CRCLx,0,-3,'helius-afterbell-pool-window');
+    sql.prepare(`INSERT INTO intelligence_trade_routes(signature,wallet,hop_index,input_mint,output_mint,input_amount,output_amount,block_time,source,confidence) VALUES(?,?,0,?,?,?,?,?,?,1)`).run('sig-usdc',FOMO,USDC,TOKEN,250,10,1700000400,'helius-fomo');
+  };
+  const run=async flag=>{
+    const {sql,db,seen}=researchMaterializerDb();
+    seed(sql);
+    const env={INTELLIGENCE_DB:db};
+    if(flag!==undefined)env.RESEARCH_CHAIN_ROUNDS_ENABLED=flag;
+    const before=seen.length;
+    const result=await materializeResearchIndex(env,now);
+    return {sql,result,chainQueries:seen.slice(before).filter(chainSql)};
+  };
+  for(const flag of [undefined,'','0','true']){
+    const off=await run(flag);
+    assert.equal(off.result.ok,true);
+    assert.deepEqual(off.result.chain,{wallets:0,rounds:0});
+    assert.equal(off.result.fomo.stars,1);
+    assert.equal(off.chainQueries.length,0);
+    assert.equal(off.sql.prepare(`SELECT COUNT(*) AS c FROM matched_trade_rounds`).get().c,0);
+    assert.equal(off.sql.prepare(`SELECT COUNT(*) AS c FROM research_graph_edges`).get().c,0);
+    assert.equal(off.sql.prepare(`SELECT COUNT(*) AS c FROM index_coverage_checkpoints WHERE source='research_index_chain_cursor'`).get().c,0);
+    assert.equal(chainObjects(off.sql),0);
+    off.sql.close();
+  }
+  const on=await run('1');
+  assert.equal(on.result.ok,true);
+  assert.equal(on.result.chain.wallets,2);
+  assert.equal(on.result.chain.rounds,3);
+  assert.ok(on.chainQueries.length>0);
+  const rounds=on.sql.prepare(`SELECT wallet,mint,status,buy_sol,sell_sol,matched_realized_sol FROM matched_trade_rounds ORDER BY wallet,mint,status`).all();
+  assert.equal(rounds.length,3);
+  const closed=rounds.find(row=>row.wallet===FOMO&&row.mint===TOKEN&&row.status==='closed');
+  const usdc=rounds.find(row=>row.wallet===FOMO&&row.mint===USDC&&row.status==='unmatched');
+  const crclx=rounds.find(row=>row.wallet===AFTER&&row.mint===CRCLx&&row.status==='unmatched');
+  assert.ok(closed);near(closed.buy_sol,1);near(closed.sell_sol,1.4);near(closed.matched_realized_sol,.4);
+  assert.ok(usdc);assert.equal(usdc.buy_sol,null);assert.equal(usdc.sell_sol,null);assert.equal(usdc.matched_realized_sol,null);
+  assert.ok(crclx);assert.equal(crclx.buy_sol,null);assert.equal(crclx.sell_sol,null);assert.equal(crclx.matched_realized_sol,null);
+  assert.equal(on.sql.prepare(`SELECT COUNT(*) AS c FROM index_coverage_checkpoints WHERE source='research_index_chain_cursor'`).get().c,1);
+  assert.ok(chainObjects(on.sql)>0);
+  assert.ok(on.sql.prepare(`SELECT COUNT(*) AS c FROM research_graph_edges`).get().c>0);
+  on.sql.close();
+});
