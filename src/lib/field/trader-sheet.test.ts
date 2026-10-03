@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { afterbellFactLine, afterbellPnlCoverage, afterbellPnlText, fomoTraderDetail } from "./trader-sheet.ts";
+import { afterbellFactLine, afterbellPnlCoverage, afterbellPnlText, fomoRoomFactLine, fomoTraderDetail } from "./trader-sheet.ts";
 import type { JsonValue } from "./types.ts";
 
 const meta = (value: Record<string, JsonValue>) => value;
@@ -47,4 +47,33 @@ test("Fomo VERIFY includes the position chain and the matching EVM wallet", () =
   assert.match(detail.pnlVerifyHref ?? "", /mode=replay/);
   assert.doesNotMatch(detail.factLine, /Realized|\$/);
   assert.equal(detail.pnlText, "+$10.00");
+  assert.equal(detail.metricsLine, null);
+});
+
+test("Fomo sheet shows sample, median, concentration, net of fees, and completeness", () => {
+  const detail = fomoTraderDetail({
+    wallet: null,
+    handle: "ada",
+    displayName: "Ada",
+    rank: 4,
+    reportedPnlUsd: 100,
+    distribution: {
+      sampleSize: 6,
+      tokenCount: 2,
+      medianTradePnl: 12.5,
+      grossPnl: 40,
+      netOfFeesPnl: null,
+      observedFees: null,
+      feeTreatment: "provider-reported-fees-not-in-feed",
+      profitConcentrationTop1: 0.5,
+      profitConcentrationTop3: 0.8,
+      unit: "usd",
+    },
+    completeness: { state: "partial", costBasisMatched: false, sampleSufficient: true, fresh: true, reasons: ["provider-reported-basis-not-verified"] },
+    positions: [],
+    latestTrades: [],
+  });
+  assert.equal(detail.metricsLine, "sample 6 · median +$12.50 · top 1–3 50%/80% · net — · PARTIAL");
+  assert.equal(detail.completenessState, "partial");
+  assert.equal(fomoRoomFactLine({ closedTradeSampleSize: 1, completenessState: "insufficient" }), "sample 1 · INSUFFICIENT · Fomo-reported");
 });

@@ -47,7 +47,8 @@ test('page read scans closed trades once and probes evidence only for displayed 
   };
   const response=await handleFomoResultsRequest(new Request('https://intel.test/api/intelligence/fomo/results?limit=3'),{FOMO_GALAXY_ENABLED:'true',INTELLIGENCE_DB:db});
   const body=await response.json();
-  assert.equal(queries.length,1);
+  assert.equal(queries.length,2);
+  assert.match(queries[1],/ROW_NUMBER/);
   assert.doesNotMatch(queries[0],/EXISTS/);
   assert.equal(batches.length,1);
   assert.ok(batches[0].every(stmt=>!/LOWER\(/i.test(stmt.sql)));

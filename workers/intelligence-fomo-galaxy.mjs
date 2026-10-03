@@ -3,6 +3,7 @@
  * Fomo-reported PnL is provider-reported context, never A Bulls App on-chain proof or a copy-trading signal.
  */
 import { intelligenceDb } from './intelligence-indexer.mjs';
+import { distributionForHandle, loadFomoCohortDistributions } from './intelligence-distribution-metrics.mjs';
 import { providerFetch } from './intelligence-fetch.mjs';
 import { reserveProviderCredits } from './intelligence-provider-budget.mjs';
 
@@ -108,8 +109,9 @@ async function galaxyPayload(db){
     const marks=evm.map(()=>'?').join(','),events=await all(db.prepare(`SELECT wallet_address,MAX(block_time) latest_print_at FROM intelligence_chain_events_v2 WHERE wallet_address IN (${marks}) GROUP BY wallet_address`).bind(...evm));
     for(const event of events)if(n(event.latest_print_at)>0)latest.set(s(event.wallet_address).toLowerCase(),n(event.latest_print_at)*1000);
   }
-  const enriched=items.map(item=>({...item,latestPrintAt:latest.get(item.solanaWallet)||latest.get(s(item.evmWallet).toLowerCase())||null}));
-  return {ok:true,coverage:enriched.length?'fresh':'empty',items:enriched,source:'fomoapi.io',capturedAt,disclosure:enriched.length?'Fomo Galaxy shows the independent fomoapi.io all-time leaderboard as reported at the capture time. PnL, rank, profile, and top-token fields are provider-reported context, not independently verified A Bulls App performance claims. Star flicker uses only the latest retained public-chain print timestamp when one is indexed; missing print recency stays visually quiet. Wallet activity shown after entering a trader is separately sourced from retained public-chain evidence. No trade can be executed here.':'The cached Fomo all-time leaderboard is empty. No logged-in fomo.family session or public mirror was scraped as a fallback.'};
+  const cohort=await loadFomoCohortDistributions(db);
+  const enriched=items.map(item=>{const metrics=distributionForHandle(cohort,item.handle);return {...item,latestPrintAt:latest.get(item.solanaWallet)||latest.get(s(item.evmWallet).toLowerCase())||null,distribution:metrics.distribution,completeness:metrics.completeness};});
+  return {ok:true,coverage:enriched.length?'fresh':'empty',items:enriched,source:'fomoapi.io',capturedAt,minimumSample:{matchedTrades:5,distinctTokens:2,appliesTo:'observatory-rank-and-completeness-flag',providerRankUnfiltered:true},disclosure:enriched.length?'Fomo Galaxy shows the independent fomoapi.io all-time leaderboard as reported at the capture time. PnL, rank, profile, and top-token fields are provider-reported context, not independently verified A Bulls App performance claims. Each star also carries the retained closed-trade sample size, median trade PnL, top-1 and top-3 profit share, and a completeness flag. Provider fees are not in the feed, so net of fees stays unknown rather than zero. The provider rank is not a win-rate rank and is not filtered by the 5-trade / 2-token sample; that filter applies to the Weekly Observatory. A thin sample is marked insufficient. Star flicker uses only the latest retained public-chain print timestamp when one is indexed; missing print recency stays visually quiet. Wallet activity shown after entering a trader is separately sourced from retained public-chain evidence. No trade can be executed here.':'The cached Fomo all-time leaderboard is empty. No logged-in fomo.family session or public mirror was scraped as a fallback.'};
 }
 
 async function observedWalletPositions(db,wallet){
@@ -137,7 +139,8 @@ export async function handleFomoGalaxyRequest(request,env={}){
   if(url.pathname===GALAXY_PATH)return json(await galaxyPayload(db),200,'public, max-age=60, stale-while-revalidate=300');
   const handle=s(url.searchParams.get('handle')).replace(/^@/,'');if(!handle)return json({ok:false,error:'handle_required'},400);
   const row=await db.prepare('SELECT * FROM fomo_traders WHERE lower(handle)=lower(?) AND captured_at=(SELECT MAX(captured_at) FROM fomo_traders) LIMIT 1').bind(handle).first();if(!row)return json({ok:false,error:'trader_not_found',coverage:'empty',positions:[],latestTrades:[],disclosure:'This trader is not present in the current cached Fomo top 50.'},404);
-  const trader=rowToTrader(row),wallet=trader.solanaWallet;
+  const trader=rowToTrader(row),wallet=trader.solanaWallet,metrics=distributionForHandle(await loadFomoCohortDistributions(db),trader.handle);
+  trader.distribution=metrics.distribution;trader.completeness=metrics.completeness;
   const [observed,trades]=wallet?await Promise.all([observedWalletPositions(db,wallet),latestWalletTrades(db,wallet)]):[[],[]];
   const positions=mergePositions(providerPositions(trader),observed);
   return json({ok:true,coverage:positions.length||trades.length?'partial':'empty',trader,positions,latestTrades:trades,source:'fomoapi.io + a-bulls-indexed-public-chain',disclosure:`${trader.displayName} is a Fomo-reported trader identity linked to the public wallet fields supplied by the cached provider record; A Bulls App does not claim who controls those addresses. Top-position planets are limited to public token addresses that can be mapped. Fomo-reported top tokens stay labeled provider-reported; event counts and the three latest comets come only from currently retained A Bulls App public-chain evidence and may be incomplete. No copy-trade or execution action exists.`},200,'public, max-age=30, stale-while-revalidate=120');

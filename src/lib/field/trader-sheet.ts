@@ -1,4 +1,6 @@
 import type { FieldRoom } from "./galaxies.ts";
+import type { DataCompleteness, TradeDistribution } from "@/lib/universe-data/contracts";
+import { formatDistribution } from "./distribution-readout.ts";
 import { evidenceVerifyHref, finitePnl, formatCompactUsd, formatSolPnl, PNL_CAVEAT, PNL_FOMO_LABEL, PNL_MISSING, PNL_REALIZED_LABEL, roundsMatchedLine } from "./honest-pnl.ts";
 import type { FieldParticle, JsonValue } from "./types.ts";
 
@@ -26,6 +28,8 @@ export type TraderSheetDetail = {
   pnlCoverage: string | null;
   pnlVerifyHref: string | null;
   pnlCaveat: string;
+  metricsLine?: string | null;
+  completenessState?: string | null;
 };
 
 type Row = Record<string, JsonValue>;
@@ -84,8 +88,12 @@ export function afterbellFactLine(metadata: Record<string, JsonValue> | undefine
   return `${lead} · Coverage thin`;
 }
 
-/** One fact per FOMO STAR in the room view. Provider counts are labeled as Fomo-reported. */
+/** One fact per FOMO STAR in the room view. Sample and completeness sit in front of the provider label. */
 export function fomoRoomFactLine(metadata: Record<string, JsonValue> | undefined) {
+  const sample = count(metadata?.closedTradeSampleSize);
+  const state = str(metadata?.completenessState);
+  const badge = state === "complete" ? "COMPLETE" : state === "partial" ? "PARTIAL" : state === "insufficient" ? "INSUFFICIENT" : null;
+  if (sample != null && badge) return `sample ${Math.trunc(sample)} · ${badge} · Fomo-reported`;
   const trades = count(metadata?.reportedTradeCount);
   return trades && trades > 0 ? `${compactCount(trades)} trades · Fomo-reported` : "Coverage thin";
 }
@@ -152,6 +160,8 @@ export function fomoTraderDetail(input: {
   displayName: string | null;
   rank: number | null;
   reportedPnlUsd?: number | null;
+  distribution?: TradeDistribution | null;
+  completeness?: DataCompleteness | null;
   positions: readonly { mint: string; symbol: string | null; tradeCount: number | null; sourceKind: string; chain?: string | null }[];
   latestTrades: readonly { side: string; observedAt: number; mint: string; signature: string | null }[];
 }): TraderSheetDetail {
@@ -182,5 +192,7 @@ export function fomoTraderDetail(input: {
     pnlCoverage: null,
     pnlVerifyHref: evidenceVerifyHref({ wallet: verifyWallet, mint: position?.mint ?? null, chain }),
     pnlCaveat: PNL_CAVEAT,
+    metricsLine: formatDistribution(input.distribution, input.completeness?.state),
+    completenessState: input.completeness?.state ?? null,
   };
 }

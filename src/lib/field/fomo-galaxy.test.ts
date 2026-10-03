@@ -12,4 +12,5 @@ test("Fomo trader star labels put rank and provider-reported PnL first",()=>{
   assert.doesNotMatch(fomoStarLabel({...trader,reportedPnlUsd:null}),/PNL N\/A|\$0|\b0\b/);
   assert.match(fomoStarLabel({...trader,reportedPnlUsd:-1250.5}),/^#1 -\$1\.3K/);
   assert.doesNotMatch(fomoStarLabel(trader),/FIFO|Hypothetical|winner|alpha|smart money/i);
+  assert.match(fomoStarLabel({...trader,closedTradeSampleSize:1,completenessState:"insufficient"}),/sample 1 · INSUFFICIENT · Fomo-reported$/);
 });

@@ -65,17 +65,49 @@ export type TokenSystemResponse = {
   error?: string;
 };
 
+export type DataCompletenessState = "complete" | "partial" | "insufficient";
+
+export type DataCompleteness = {
+  state: DataCompletenessState;
+  costBasisMatched: boolean;
+  sampleSufficient: boolean;
+  fresh: boolean;
+  reasons: string[];
+};
+
+export type TradeDistribution = {
+  sampleSize: number;
+  tokenCount: number;
+  medianTradePnl: number | null;
+  grossPnl: number | null;
+  netOfFeesPnl: number | null;
+  observedFees: number | null;
+  feeTreatment: string;
+  profitConcentrationTop1: number | null;
+  profitConcentrationTop3: number | null;
+  truncated?: boolean;
+  unit: "usd" | "sol";
+};
+
 export type TraderObservatoryItem = {
   rank: number;
   wallet: string;
   realizedSol: number;
+  netOfFeesSol?: number | null;
+  observedFeesSol?: number | null;
+  feeTreatment?: string;
   matchedSellCount: number;
+  sampleSize?: number;
+  medianTradePnlSol?: number | null;
+  profitConcentrationTop1?: number | null;
+  profitConcentrationTop3?: number | null;
   winRate: number | null;
   tradeCount: number;
   tokenCount: number;
-  buySolObserved: number;
-  sellSolObserved: number;
+  buySolObserved: number | null;
+  sellSolObserved: number | null;
   lastObservedAt: number;
+  completeness?: DataCompleteness;
 };
 
 export type TraderObservatorySample = {
@@ -90,6 +122,15 @@ export type TraderObservatoryResponse = {
   coverage: "fresh" | "partial" | "stale" | "empty" | "degraded";
   window?: { from: number; to: number; label: "7D" };
   method?: string;
+  generatedAt?: number | null;
+  withheld?: boolean;
+  ranking?: {
+    key: "matched-realized-sol";
+    winRateUsedForRank: false;
+    minimumMatchedSells: number;
+    minimumDistinctTokens: number;
+    excludedBelowSample: number;
+  };
   items: readonly TraderObservatoryItem[];
   source?: string;
   sample?: TraderObservatorySample | null;
