@@ -901,16 +901,23 @@ export class ParticleFieldRenderer {
 
     // Keep the known-good production context/lifecycle. Visual differentiation
     // happens inside the existing instanced draw path, not by adding canvases.
-    this.renderer = new THREE.WebGLRenderer({
-      canvas,
-      alpha: false,
-      antialias: false,
-      depth: true,
-      stencil: false,
-      powerPreference: "high-performance",
-      premultipliedAlpha: true,
-      preserveDrawingBuffer: false,
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        canvas,
+        alpha: false,
+        antialias: false,
+        depth: true,
+        stencil: false,
+        powerPreference: "high-performance",
+        premultipliedAlpha: true,
+        preserveDrawingBuffer: false,
+      });
+    } catch (error) {
+      canvas.remove();
+      throw error;
+    }
+    this.renderer = renderer;
     this.renderer.setClearColor(0x03050b, 1);
     this.#baseDpr = Math.min(globalThis.devicePixelRatio || 1, budget.dpr);
     this.renderer.setPixelRatio(this.#baseDpr);
