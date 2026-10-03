@@ -73,6 +73,14 @@ test("closed Fomo outcomes preserve the selected blockchain into Replay",()=>{
   assert.match(closedTrades,/LOWER REPORTED/);
   assert.match(closedTrades,/Fomo-reported/);
   assert.match(closedTrades,/Not financial advice, not a recommendation, and not a promise of future results/);
+  assert.match(closedTrades,/className="fomo-results__toggle"[\s\S]*<span className="fomo-results__cue">Not financial advice<\/span>[\s\S]*className="fomo-results__panel"/);
+  assert.match(closedTrades,/\.fomo-results__head span\.fomo-results__cue\{[^}]*font:500 11px\/1\.2/);
+  assert.match(closedTrades,/\.fomo-results__head span\.fomo-results__cue\{[^}]*white-space:nowrap/);
+  assert.match(closedTrades,/className="fomo-results__disclaimer">Provider-reported past results for the current cohort\. Not a ranking to copy\. Not financial advice, not a recommendation, and not a promise of future results\.<\/p>[\s\S]*className="fomo-results__list"/);
+  const workerDisclosure=closedTrades.slice(closedTrades.indexOf('className="fomo-results__disclosure"'));
+  assert.match(workerDisclosure,/data\?\.disclosure/);
+  assert.doesNotMatch(workerDisclosure,/Not a ranking to copy/);
+  assert.doesNotMatch(closedTrades,/smart money|winning trader|\balpha\b/i);
   assert.match(closedTrades,/const\[open,setOpen\]=useState\(false\)/);
   assert.match(closedTrades,/\[noteOpen,setNoteOpen\]=useState\(true\)/);
   assert.match(closedTrades,/aria-expanded=\{open\}/);
