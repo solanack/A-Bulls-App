@@ -9,7 +9,7 @@ function tests(dir, suffix) {
   });
 }
 for (const args of [
-  ['--test', ...tests('scripts', '.test.mjs'), ...tests('workers', '.test.mjs'), ...tests('js', '.test.mjs')],
+  ['--experimental-strip-types', '--test', ...tests('scripts', '.test.mjs'), ...tests('workers', '.test.mjs'), ...tests('js', '.test.mjs')],
   ['--experimental-strip-types', '--test', ...tests('src', '.test.ts')],
 ]) {
   const result = spawnSync(process.execPath, args, { stdio: 'inherit' });

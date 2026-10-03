@@ -15,6 +15,19 @@ import {
   cosmicWorldSize,
   renderCosmicKind,
 } from "./cosmic-visuals";
+import {
+  WARP_APPROACH_DISTANCE,
+  WARP_STREAK_LENGTH,
+  sampleWarp,
+  warpClock,
+  warpDuration,
+  warpPortal,
+  warpReducedDuration,
+  warpScale,
+  warpTint,
+  type WarpSample,
+} from "./galaxy-warp";
+import type { GalaxyId } from "./types";
 
 function hostSize(host: HTMLElement) {
   const p = host.parentElement;
@@ -38,6 +51,7 @@ attribute float aCosmic;
 attribute float aPhase;
 attribute float aRoom;
 attribute float aSigil;
+attribute float aLayer;
 attribute vec3 aColor;
 uniform float uIntensity;
 uniform float uPull;
@@ -48,6 +62,11 @@ uniform float uReplayActive;
 uniform float uReplayCursor;
 uniform float uTime;
 uniform float uMotion;
+uniform float uWarp;
+uniform float uWarpArmed;
+uniform vec3 uWarpFocus;
+uniform float uSettle;
+uniform vec2 uParallax;
 varying vec3 vColor;
 varying float vReplayVisible;
 varying vec2 vLocal;
@@ -56,6 +75,8 @@ varying float vPhase;
 varying float vRoom;
 varying float vSigil;
 varying float vObserved;
+varying float vWarpFade;
+varying float vLayer;
 void main() {
   float replayVisible = 1.0 - step(uReplayCursor + 0.0005, aObserved);
   vReplayVisible = mix(1.0, replayVisible, uReplayActive);
@@ -80,6 +101,15 @@ void main() {
   vRoom = aRoom;
   vSigil = aSigil;
   vObserved = aObserved;
+  vLayer = aLayer;
+  float depthShift = center.z * 0.22 + center.y * 0.04;
+  p.x += uParallax.x * depthShift;
+  p.y += uParallax.y * depthShift * 0.72;
+  float portal = (1.0 - smoothstep(8.0, 30.0, length(center.xz - uWarpFocus.xz))) * uWarpArmed;
+  float body = step(abs(aLayer - 1.0), 0.45) + step(abs(aLayer - 2.0), 0.45) * 0.7;
+  float halo = step(abs(aLayer - 3.0), 0.45);
+  float grow = 1.0 + uWarp * 5.6 * portal * max(body, halo * 0.28);
+  vWarpFade = mix(1.0, max(portal, 0.05), clamp(uWarp * uWarpArmed, 0.0, 1.0));
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   float pulse = 1.0;
   if (abs(aCosmic - 1.0) < 0.45) {
@@ -91,6 +121,7 @@ void main() {
   if (abs(aCosmic - 9.0) < 0.45) pulse += sin(uTime * 0.9 + aPhase * 6.28318) * 0.045 * uMotion;
   if (aCosmic > 9.5) pulse += sin(uTime * (2.4 + aPhase * 2.2) + aPhase * 31.0) * 0.12 * uMotion;
   float size = pSize * pulse * mix(1.0, 0.28, ease) * (1.0 + focusVisual * 1.6) * max(vReplayVisible, 0.04);
+  size *= grow * mix(1.0, 1.34, uSettle);
   vec2 displayLocal = position.xy;
   if (abs(aCosmic - 5.0) < 0.45) displayLocal.x *= 2.25;
   mv.xy += displayLocal * size;
@@ -107,6 +138,8 @@ varying float vPhase;
 varying float vRoom;
 varying float vSigil;
 varying float vObserved;
+varying float vWarpFade;
+varying float vLayer;
 uniform float uTime;
 uniform float uMotion;
 
@@ -137,20 +170,36 @@ void main() {
   if (vCosmic < 0.5) {
     // GALAXY — layered spiral body: luminous core, rotating arms, dust lanes and a faint halo.
     if (d > 1.0) discard;
-    float core = 1.0 - smoothstep(0.035, 0.30, d);
-    float spin = a * 3.0 - d * 12.5 - uTime * 0.10 * uMotion + vPhase * 2.2;
-    float armsA = 1.0 - smoothstep(0.10, 0.64, abs(sin(spin)));
-    float armsB = 1.0 - smoothstep(0.12, 0.72, abs(sin(a * 2.0 - d * 8.2 + uTime * 0.055 * uMotion)));
-    float falloff = 1.0 - smoothstep(0.18, 1.0, d);
-    float halo = (1.0 - smoothstep(0.22, 1.0, d)) * 0.14;
-    float dustLane = smoothstep(0.18, 0.62, abs(sin(spin + 0.52)));
-    float arms = max(armsA * 0.76, armsB * 0.38) * falloff * mix(0.66, 1.0, dustLane);
-    float knots = pow(max(0.0, sin(a * 9.0 + d * 24.0 + vPhase * 6.28318)), 18.0) * arms;
-    alpha = max(core, max(arms * 0.66, halo));
-    light = 0.76 + core * 1.05 + arms * 0.42 + knots * 0.58;
-    vec3 coolArms = vColor * vec3(0.70, 0.92, 1.24);
-    vec3 warmCore = vec3(1.0, 0.74, 0.46);
-    surfaceColor = mix(coolArms, warmCore, core * 0.62);
+    if (vLayer > 3.5) {
+      float star = pow(1.0 - smoothstep(0.0, 0.62, d), 1.7);
+      alpha = star * 0.85;
+      light = 0.62 + star * 1.15;
+      surfaceColor = mix(vColor, vec3(0.9, 0.94, 1.0), 0.35);
+    } else if (vLayer > 2.5) {
+      float glow = pow(1.0 - smoothstep(0.0, 1.0, d), 1.65);
+      alpha = glow * 0.42;
+      light = 0.8 + glow * 0.9;
+      surfaceColor = vColor;
+    } else if (vLayer > 1.5) {
+      float knot = pow(1.0 - smoothstep(0.0, 0.46, d), 1.35);
+      float soft = (1.0 - smoothstep(0.18, 1.0, d)) * 0.28;
+      alpha = max(knot, soft);
+      light = 0.85 + knot * 1.45;
+      surfaceColor = mix(vColor, vec3(1.0), knot * 0.62);
+    } else {
+      float core = pow(1.0 - smoothstep(0.0, 0.2, d), 1.05);
+      float spin = a * 2.0 - log(max(d, 0.045)) * 3.15 - uTime * 0.08 * uMotion + vPhase * 2.4;
+      float armA = pow(1.0 - smoothstep(0.04, 0.58, abs(sin(spin))), 1.2);
+      float armB = pow(1.0 - smoothstep(0.08, 0.7, abs(sin(spin + 1.15 - d * 1.6))), 1.25);
+      float disk = 1.0 - smoothstep(0.1, 0.98, d);
+      float glow = pow(1.0 - smoothstep(0.02, 1.0, d), 1.25) * 0.5;
+      float knots = pow(max(0.0, sin(a * 8.0 + d * 20.0 + vPhase * 6.28318)), 12.0) * armA * disk;
+      float arms = max(armA, armB * 0.66) * disk;
+      alpha = max(core, max(arms * 0.92, glow));
+      light = 1.15 + core * 1.55 + arms * 0.62 + knots * 0.85;
+      vec3 hot = mix(vec3(1.0), vColor, 0.28);
+      surfaceColor = mix(vColor, hot, core * 0.88 + knots * 0.45);
+    }
   } else if (vCosmic < 1.5) {
     // STAR — bright token body with short rays.
     if (d > 1.0) discard;
@@ -238,6 +287,7 @@ void main() {
     surfaceColor = mix(vColor, vec3(1.0), sparkle * 0.30);
   }
 
+  alpha *= vWarpFade;
   if (alpha < 0.012) discard;
   gl_FragColor = vec4(surfaceColor * light, alpha);
 }
@@ -330,7 +380,7 @@ function particleHasWallet(particle: FieldParticle) {
   return Boolean(wallet || solana);
 }
 
-type LiveLabel = { title: string; fact: string | null; tone: "fomo" | "afterbell" | "neutral" };
+type LiveLabel = { title: string; fact: string | null; tone: "fomo" | "afterbell" | "neutral"; prominence: "galaxy" | "body" };
 
 function labelText(value: unknown, max: number) {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
@@ -361,30 +411,35 @@ function liveLabel(particle: FieldParticle): LiveLabel | null {
   if (kind === "galaxy") {
     const name = labelText(particle.metadata?.name, 18);
     const target = particle.metadata?.targetGalaxyId;
-    return { title: (name ?? cosmicLabel(kind)).toUpperCase(), fact: target === "fomo" ? "Memecoin traders" : target === "afterbell" ? "After-close xStocks" : null, tone };
+    return { title: (name ?? cosmicLabel(kind)).toUpperCase(), fact: target === "fomo" ? "Memecoin traders" : target === "afterbell" ? "After-close xStocks" : null, tone, prominence: "galaxy" };
   }
   if (kind === "star") {
     const wallet = labelText(particle.metadata?.wallet, 64);
     const title = labelText(particle.metadata?.displayName, 18) ?? labelText(particle.metadata?.name, 18) ?? (wallet ? `${wallet.slice(0, 4)}…${wallet.slice(-4)}` : "Public wallet");
-    return { title, fact: skyFactText(particle.metadata?.factLine, 64), tone };
+    return { title, fact: skyFactText(particle.metadata?.factLine, 64), tone, prominence: "body" };
   }
   if (kind === "comet") {
     const side = labelText(particle.metadata?.side, 8)?.toUpperCase() ?? "PRINT";
     const at = new Date(particle.observedAt);
     const when = Number.isFinite(at.getTime()) ? at.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
-    return { title: side, fact: when, tone };
+    return { title: side, fact: when, tone, prominence: "body" };
   }
   const symbol = labelText(particle.metadata?.symbol, 12);
   const name = labelText(particle.metadata?.name, 16);
   const address = particle.metadata?.mint ?? particle.metadata?.wallet;
   const title = symbol ?? name ?? (typeof address === "string" ? `${address.slice(0, 4)}…${address.slice(-4)}` : cosmicLabel(kind));
-  return { title, fact: kind === "planet" ? planetFact(particle) : null, tone };
+  return { title, fact: kind === "planet" ? planetFact(particle) : null, tone, prominence: "body" };
 }
 
 const LABEL_RIM: Record<LiveLabel["tone"], string> = {
-  fomo: "rgba(190,160,255,.62)",
-  afterbell: "rgba(236,218,170,.62)",
+  fomo: "rgba(173,119,255,.72)",
+  afterbell: "rgba(226,232,255,.62)",
   neutral: "rgba(226,232,244,.42)",
+};
+const LABEL_INK: Record<LiveLabel["tone"], string> = {
+  fomo: "#e6d4ff",
+  afterbell: "#f4f7ff",
+  neutral: "rgba(246,244,238,.97)",
 };
 
 function wrapLabel(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
@@ -404,44 +459,78 @@ function wrapLabel(context: CanvasRenderingContext2D, text: string, maxWidth: nu
 }
 
 function createLabelSprite(label: LiveLabel, compact: boolean) {
-  const fact = label.fact;
+  const galaxy = label.prominence === "galaxy";
+  const fact = galaxy ? label.fact : compact ? null : label.fact;
   const canvas = document.createElement("canvas");
-  canvas.width = 448;
+  canvas.width = galaxy ? 640 : 448;
   const context = canvas.getContext("2d");
   if (!context) return null;
-  const factFont = compact ? "500 14px system-ui, -apple-system, sans-serif" : "500 16px system-ui, -apple-system, sans-serif";
-  const factMax = 352;
-  context.font = factFont;
-  const factLines = fact ? wrapLabel(context, fact, factMax) : [];
-  const lineH = compact ? 18 : 20;
-  const boxHeight = factLines.length ? 36 + factLines.length * lineH + 12 : 48;
-  canvas.height = boxHeight + 20;
-  context.clearRect(0, 0, canvas.width, canvas.height);
   context.textAlign = "center";
   context.textBaseline = "middle";
   const measure = (text: string, font: string) => {
     context.font = font;
     return context.measureText(text).width;
   };
-  const titleWidth = measure(label.title, "650 26px system-ui, -apple-system, sans-serif");
-  context.font = factFont;
-  const factWidth = factLines.reduce((widest, line) => Math.max(widest, context.measureText(line).width), 0);
-  const boxWidth = Math.min(400, Math.max(132, Math.ceil(Math.max(titleWidth, factWidth)) + 44));
-  const boxLeft = (canvas.width - boxWidth) / 2;
-  context.fillStyle = "rgba(11,12,16,.74)";
-  context.strokeStyle = LABEL_RIM[label.tone];
-  context.lineWidth = 1.5;
-  context.beginPath();
-  context.roundRect(boxLeft, 10, boxWidth, boxHeight, 14);
-  context.fill();
-  context.stroke();
-  context.font = "650 26px system-ui, -apple-system, sans-serif";
-  context.fillStyle = "rgba(246,244,238,.97)";
-  context.fillText(label.title, canvas.width / 2, factLines.length ? 28 : 34);
-  if (factLines.length) {
+  const lettered = context as CanvasRenderingContext2D & { letterSpacing?: string };
+  if (galaxy) {
+    canvas.height = fact ? 168 : 120;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    const titleFont = "700 46px system-ui, -apple-system, sans-serif";
+    const factFont = "500 20px system-ui, -apple-system, sans-serif";
+    lettered.letterSpacing = "0.16em";
+    const titleWidth = measure(label.title, titleFont);
+    const factWidth = fact ? measure(fact, factFont) : 0;
+    const boxWidth = Math.min(400, Math.max(132, Math.ceil(Math.max(titleWidth, factWidth)) + 44));
+    const boxHeight = fact ? 108 : 72;
+    const boxTop = 18;
+    const boxLeft = (canvas.width - boxWidth) / 2;
+    context.fillStyle = "rgba(10,12,20,.72)";
+    context.strokeStyle = LABEL_RIM[label.tone];
+    context.lineWidth = 2;
+    context.beginPath();
+    context.roundRect(boxLeft, boxTop, boxWidth, boxHeight, 18);
+    context.fill();
+    context.stroke();
+    context.font = titleFont;
+    context.fillStyle = LABEL_INK[label.tone];
+    context.fillText(label.title, canvas.width / 2, boxTop + (fact ? 40 : boxHeight / 2));
+    if (fact) {
+      lettered.letterSpacing = "0.08em";
+      context.font = factFont;
+      context.fillStyle = "rgba(214,212,206,.78)";
+      context.fillText(fact, canvas.width / 2, boxTop + 78);
+    }
+  } else {
+    const factFont = compact ? "500 14px system-ui, -apple-system, sans-serif" : "500 16px system-ui, -apple-system, sans-serif";
+    const factMax = 352;
     context.font = factFont;
-    context.fillStyle = "rgba(214,212,206,.78)";
-    factLines.forEach((line, index) => context.fillText(line, canvas.width / 2, 50 + index * lineH));
+    const factLines = fact ? wrapLabel(context, fact, factMax) : [];
+    const lineH = compact ? 18 : 20;
+    const boxHeight = factLines.length ? 36 + factLines.length * lineH + 12 : 48;
+    canvas.height = boxHeight + 20;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    const titleWidth = measure(label.title, "650 26px system-ui, -apple-system, sans-serif");
+    context.font = factFont;
+    const factWidth = factLines.reduce((widest, line) => Math.max(widest, context.measureText(line).width), 0);
+    const boxWidth = Math.min(400, Math.max(132, Math.ceil(Math.max(titleWidth, factWidth)) + 44));
+    const boxLeft = (canvas.width - boxWidth) / 2;
+    context.fillStyle = "rgba(11,12,16,.74)";
+    context.strokeStyle = LABEL_RIM[label.tone];
+    context.lineWidth = 1.5;
+    context.beginPath();
+    context.roundRect(boxLeft, 10, boxWidth, boxHeight, 14);
+    context.fill();
+    context.stroke();
+    context.font = "650 26px system-ui, -apple-system, sans-serif";
+    context.fillStyle = "rgba(246,244,238,.97)";
+    context.fillText(label.title, canvas.width / 2, factLines.length ? 28 : 34);
+    if (factLines.length) {
+      context.font = factFont;
+      context.fillStyle = "rgba(214,212,206,.78)";
+      factLines.forEach((line, index) => context.fillText(line, canvas.width / 2, 50 + index * lineH));
+    }
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -454,7 +543,7 @@ function createLabelSprite(label: LiveLabel, compact: boolean) {
       toneMapped: false,
     }),
   );
-  sprite.scale.set(25, 25 * (canvas.height / canvas.width), 1);
+  sprite.scale.set(galaxy ? 34 : 25, galaxy ? (fact ? 9.4 : 7.2) : 25 * (canvas.height / canvas.width), 1);
   sprite.renderOrder = 6;
   return sprite;
 }
@@ -467,6 +556,8 @@ function disposeLabelSprite(sprite: THREE.Sprite) {
 
 const FOMO_AMETHYST: [number, number, number] = [0.78, 0.24, 1.0];
 const AFTERBELL_CHAMPAGNE: [number, number, number] = [0.93, 0.82, 0.58];
+const HOME_FOMO: [number, number, number] = [0.7, 0.24, 1.0];
+const HOME_AFTERBELL: [number, number, number] = [0.88, 0.91, 1.0];
 const COMET_VIOLET: [number, number, number] = [0.72, 0.26, 1.0];
 const PLANET_GOLD: [number, number, number] = [0.95, 0.66, 0.18];
 const PLANET_RUST: [number, number, number] = [0.82, 0.20, 0.07];
@@ -521,6 +612,14 @@ function planetAlbedo(particle:FieldParticle):[number,number,number]{
   if(namedCharacterToken(particle))return PLANET_MAGENTA;
   return particle.magnitudeBand<.68?PLANET_CYAN:PLANET_DEEP_BLUE;
 }
+function fieldLayer(particle: FieldParticle) {
+  const role = particle.metadata?.galaxyRole;
+  if (role === "core") return 1;
+  if (role === "fabric") return 2;
+  if (role === "halo") return 3;
+  if (role === "depth") return 4;
+  return 0;
+}
 function focusedTraderLight(snapshot:UniverseSnapshot):[number,number,number]{
   const star=snapshot.particles.find(item=>["focused-trader-star","focused-afterbell-trader-star"].includes(String(item.metadata?.systemRole??"")));
   return star?.position??[0,6,0];
@@ -536,6 +635,7 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
   const phases = new Float32Array(visible.length);
   const rooms = new Float32Array(visible.length);
   const sigils = new Float32Array(visible.length);
+  const layers = new Float32Array(visible.length);
   const observed = new Float32Array(visible.length);
   const duration = Math.max(1, snapshot.windowEnd - snapshot.windowStart);
   visible.forEach((entity, i) => {
@@ -553,9 +653,9 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
             : kind === "comet"
               ? COMET_VIOLET
             : targetGalaxy === "fomo" || entity.metadata?.fomoTrader === true
-              ? FOMO_AMETHYST
+              ? (targetGalaxy === "fomo" && renderCosmicKind(entity) === "galaxy" ? HOME_FOMO : FOMO_AMETHYST)
               : targetGalaxy === "afterbell" || entity.metadata?.afterbellTrader === true
-                ? AFTERBELL_CHAMPAGNE
+                ? (targetGalaxy === "afterbell" && renderCosmicKind(entity) === "galaxy" ? HOME_AFTERBELL : AFTERBELL_CHAMPAGNE)
                 : snapshot.galaxyId === "pons"
             ? ([
                 base[0] * 0.58 + 0.38,
@@ -570,6 +670,7 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
     rooms[i] = entity.originGalaxyId === "afterbell" || entity.metadata?.afterbellTrader === true ? 2 : entity.originGalaxyId === "fomo" || entity.metadata?.fomoTrader === true ? 1 : 0;
     const wallet = typeof entity.metadata?.wallet === "string" ? entity.metadata.wallet : typeof entity.metadata?.solanaWallet === "string" ? entity.metadata.solanaWallet : "";
     sigils[i] = wallet ? traderSigilPacked(wallet) : 0;
+    layers[i] = fieldLayer(entity);
     observed[i] = clamp((entity.observedAt - snapshot.windowStart) / duration, 0, 1);
   });
   const geometry = new THREE.CircleGeometry(1, 16);
@@ -579,6 +680,7 @@ function buildFieldMesh(snapshot: UniverseSnapshot, material: THREE.ShaderMateri
   geometry.setAttribute("aPhase", new THREE.InstancedBufferAttribute(phases, 1));
   geometry.setAttribute("aRoom", new THREE.InstancedBufferAttribute(rooms, 1));
   geometry.setAttribute("aSigil", new THREE.InstancedBufferAttribute(sigils, 1));
+  geometry.setAttribute("aLayer", new THREE.InstancedBufferAttribute(layers, 1));
   geometry.setAttribute("aColor", new THREE.InstancedBufferAttribute(colors, 3));
   geometry.userData.entities = visible;
   const mesh = new THREE.InstancedMesh(geometry, material, count);
@@ -677,14 +779,67 @@ function buildConstellations(snapshot: UniverseSnapshot) {
   return lines;
 }
 
-function buildStarMesh(material: THREE.MeshBasicMaterial) {
+const STAR_VERT = /* glsl */ `
+attribute vec3 aStarColor;
+uniform float uStreak;
+uniform float uStreakLength;
+uniform vec3 uTint;
+uniform vec2 uParallax;
+varying vec3 vColor;
+varying vec2 vLocal;
+varying float vAlong;
+void main() {
+  vec3 center = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+  float pSize = length(vec3(instanceMatrix[0][0], instanceMatrix[1][0], instanceMatrix[2][0]));
+  center.x += uParallax.x * center.z * 0.045;
+  center.y += uParallax.y * center.z * 0.03;
+  vec4 mv = modelViewMatrix * vec4(center, 1.0);
+  vec2 radial = mv.xy;
+  float radLen = length(radial);
+  vec2 dir = radLen > 0.0001 ? radial / radLen : vec2(0.0, 1.0);
+  vec2 side = vec2(-dir.y, dir.x);
+  float stretch = 1.0 + uStreak * uStreakLength * (0.45 + min(radLen, 80.0) * 0.035);
+  vec2 local = position.xy;
+  mv.xy += dir * uStreak * min(radLen, 90.0) * 0.22;
+  mv.xy += (dir * local.x * stretch + side * local.y * mix(1.0, 0.28, uStreak)) * pSize;
+  gl_Position = projectionMatrix * mv;
+  vColor = mix(aStarColor, uTint, uStreak * 0.78);
+  vLocal = local;
+  vAlong = local.x;
+}
+`;
+
+const STAR_FRAG = /* glsl */ `
+uniform float uOpacity;
+uniform float uStreak;
+varying vec3 vColor;
+varying vec2 vLocal;
+varying float vAlong;
+void main() {
+  float point = 1.0 - smoothstep(0.12, 0.92, length(vLocal));
+  float line = (1.0 - smoothstep(0.08, 0.7, abs(vLocal.y))) * (1.0 - smoothstep(0.12, 1.0, abs(vLocal.x)));
+  float head = mix(1.0, smoothstep(-0.85, 0.35, vAlong), uStreak);
+  float alpha = mix(point, max(point * 0.3, line), uStreak) * uOpacity * (0.55 + head * 0.75);
+  if (alpha < 0.02) discard;
+  gl_FragColor = vec4(vColor * (0.75 + head * 0.9), alpha);
+}
+`;
+
+function buildStarMesh(material: THREE.ShaderMaterial) {
   const starfield = createStarfield();
   const count = starfield.count;
   const geometry = new THREE.CircleGeometry(1, 6);
+  const colors = new Float32Array(count * 3);
+  const spectral: readonly [number, number, number][] = [
+    [0.68, 0.8, 1],
+    [0.84, 0.9, 1],
+    [1, 1, 1],
+    [1, 0.89, 0.72],
+    [1, 0.73, 0.48],
+  ];
   const mesh = new THREE.InstancedMesh(geometry, material, count);
   mesh.frustumCulled = false;
   mesh.renderOrder = 0;
-  const spectral = [0xaecbff,0xd5e6ff,0xffffff,0xffe4b8,0xffbb7a].map(value=>new THREE.Color(value));
   for (let i = 0; i < count; i++) {
     _dummy.position.set(
       starfield.positions[i * 3],
@@ -695,12 +850,27 @@ function buildStarMesh(material: THREE.MeshBasicMaterial) {
     _dummy.rotation.set(0, 0, 0);
     _dummy.updateMatrix();
     mesh.setMatrixAt(i, _dummy.matrix);
-    mesh.setColorAt(i,spectral[(i*7+i%3)%spectral.length]);
+    const color = spectral[(i * 7 + (i % 3)) % spectral.length] ?? spectral[2];
+    colors[i * 3] = color[0];
+    colors[i * 3 + 1] = color[1];
+    colors[i * 3 + 2] = color[2];
   }
+  geometry.setAttribute("aStarColor", new THREE.InstancedBufferAttribute(colors, 3));
   mesh.instanceMatrix.needsUpdate = true;
-  if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
   return mesh;
 }
+
+type GalaxyWarpFlight = {
+  targetId: GalaxyId;
+  focus: THREE.Vector3;
+  tint: THREE.Color;
+  started: number;
+  duration: number;
+  committed: boolean;
+  reduced: boolean;
+  armed: boolean;
+  onCommit: () => void;
+};
 
 export class ParticleFieldRenderer {
   host: HTMLElement;
@@ -715,7 +885,8 @@ export class ParticleFieldRenderer {
   liveLabels: THREE.Sprite[] = [];
   material: THREE.ShaderMaterial;
   planetMaterial: THREE.ShaderMaterial;
-  starMaterial: THREE.MeshBasicMaterial;
+  starMaterial: THREE.ShaderMaterial;
+  veil: THREE.Mesh;
   basePositions: Float32Array;
   colors: Float32Array;
   cameraState: CameraState = { yaw: 0.4, pitch: 0.18, distance: 125, target: [0, 0, 0] };
@@ -754,6 +925,15 @@ export class ParticleFieldRenderer {
   #fpsTime = 0;
   #fieldMax = 0;
   #starMax = 0;
+  #warp: GalaxyWarpFlight | null = null;
+  #warpLanding = false;
+  #parallax = new THREE.Vector2();
+  #parallaxTarget = new THREE.Vector2();
+  #tiltFromDevice = false;
+  #reducedMedia: MediaQueryList | null = null;
+  #onReducedMotion = (event: MediaQueryListEvent) => {
+    this.#applyReducedMotion(event.matches);
+  };
 
   constructor(host: HTMLElement, snapshot: UniverseSnapshot) {
     this.host = host;
@@ -777,16 +957,24 @@ export class ParticleFieldRenderer {
 
     // Keep the known-good production context/lifecycle. Visual differentiation
     // happens inside the existing instanced draw path, not by adding canvases.
-    this.renderer = new THREE.WebGLRenderer({
-      canvas,
-      alpha: false,
-      antialias: false,
-      depth: true,
-      stencil: false,
-      powerPreference: "high-performance",
-      premultipliedAlpha: true,
-      preserveDrawingBuffer: false,
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        canvas,
+        alpha: false,
+        antialias: false,
+        depth: true,
+        stencil: false,
+        powerPreference: "high-performance",
+        premultipliedAlpha: true,
+        preserveDrawingBuffer: false,
+      });
+    } catch (error) {
+      canvas.remove();
+      delete host.dataset.fieldWarp;
+      throw error;
+    }
+    this.renderer = renderer;
     this.renderer.setClearColor(0x03050b, 1);
     this.#baseDpr = Math.min(globalThis.devicePixelRatio || 1, budget.dpr);
     this.renderer.setPixelRatio(this.#baseDpr);
@@ -815,10 +1003,18 @@ export class ParticleFieldRenderer {
         uReplayCursor: { value: 1 },
         uTime: { value: 0 },
         uMotion: { value: this.reducedMotion ? 0 : 1 },
+        uWarp: { value: 0 },
+        uWarpArmed: { value: 0 },
+        uWarpFocus: { value: new THREE.Vector3() },
+        uSettle: { value: 0 },
+        uParallax: { value: new THREE.Vector2() },
       },
       vertexShader: FIELD_VERT,
       fragmentShader: FIELD_FRAG,
     });
+    this.#reducedMedia = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)") ?? null;
+    this.#applyReducedMotion(this.#reducedMedia?.matches ?? this.reducedMotion);
+    this.#reducedMedia?.addEventListener("change", this.#onReducedMotion);
 
     this.planetMaterial = new THREE.ShaderMaterial({
       transparent: true,
@@ -850,19 +1046,46 @@ export class ParticleFieldRenderer {
     this.scene.add(this.planets);
     this.#rebuildLiveLabels();
 
-    this.starMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      vertexColors: true,
+    this.starMaterial = new THREE.ShaderMaterial({
       transparent: true,
-      opacity: 0.78,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       toneMapped: false,
-      side: THREE.DoubleSide,
+      uniforms: {
+        uStreak: { value: 0 },
+        uStreakLength: { value: WARP_STREAK_LENGTH },
+        uTint: { value: new THREE.Color(1, 1, 1) },
+        uOpacity: { value: 0.78 },
+        uParallax: { value: new THREE.Vector2() },
+      },
+      vertexShader: STAR_VERT,
+      fragmentShader: STAR_FRAG,
     });
     this.stars = buildStarMesh(this.starMaterial);
     this.#starMax = this.stars.count;
     this.scene.add(this.stars);
+    this.veil = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+        uniforms: {
+          uFlash: { value: 0 },
+          uTint: { value: new THREE.Color(1, 1, 1) },
+        },
+        vertexShader: /* glsl */ `void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+        fragmentShader: /* glsl */ `uniform float uFlash; uniform vec3 uTint; void main(){ gl_FragColor = vec4(uTint * uFlash, uFlash); }`,
+      }),
+    );
+    this.veil.frustumCulled = false;
+    this.veil.renderOrder = 20;
+    this.veil.visible = false;
+    this.scene.add(this.veil);
+    this.renderer.domElement.addEventListener("pointermove", this.#onPointerParallax);
+    globalThis.addEventListener("deviceorientation", this.#onDeviceTilt);
 
     this.#gestures = new CameraGestures(canvas, {
       min: 70,
@@ -910,8 +1133,47 @@ export class ParticleFieldRenderer {
     event.preventDefault();
     this.#contextLost = true;
     this.host.dataset.fieldReady = "context-lost";
+    this.#settleInterruptedWarp();
     console.warn("[field-renderer] WebGL context lost; waiting for browser restoration");
   };
+
+  /** Reduced motion is read live. An in-flight warp fades out instead of growing. */
+  #applyReducedMotion(reduced: boolean) {
+    this.reducedMotion = reduced;
+    if (this.material?.uniforms?.uMotion) this.material.uniforms.uMotion.value = reduced ? 0 : 1;
+    const warp = this.#warp;
+    if (!warp) return;
+    warp.reduced = reduced;
+    if (reduced) warp.duration = warpReducedDuration(warp.started, warp.duration, performance.now());
+  }
+
+  /**
+   * Context loss skips the frame loop, so a mid-warp commit would never fire and the
+   * sky would stay held. Finish the swap, then park the camera on the rest pose.
+   */
+  #settleInterruptedWarp() {
+    const warp = this.#warp;
+    if (!warp) return;
+    if (!warp.committed) {
+      warp.committed = true;
+      this.#warpLanding = true;
+      try {
+        warp.onCommit();
+      } catch (error) {
+        console.error("[field-renderer] warp commit failed", error);
+      }
+    }
+    const rest = this.snapshot.galaxyId === "galaxy-zero" ? GALAXY_ZERO_CAMERA_DISTANCE : 125;
+    this.cameraState = { yaw: 0.4, pitch: 0.18, distance: rest, target: [0, 0, 0] };
+    this.#warp = null;
+    this.#warpLanding = false;
+    try {
+      this.#clearWarpVisuals();
+    } catch {
+      delete this.host.dataset.fieldWarp;
+    }
+    this.#placeCamera();
+  }
 
   #onContextRestored = () => {
     this.#contextLost = false;
@@ -956,7 +1218,18 @@ export class ParticleFieldRenderer {
     const previousPlanets = this.planets;
     const previousConstellations = this.constellations;
     this.snapshot = snapshot;
-    if (galaxyChanged) {
+    if (galaxyChanged && this.#warpLanding) {
+      const reduced = this.#warp?.reduced ?? this.reducedMotion;
+      this.#warpLanding = false;
+      this.cameraState = {
+        yaw: 0.4,
+        pitch: reduced ? 0.18 : 0.16,
+        distance: reduced
+          ? snapshot.galaxyId === "galaxy-zero" ? GALAXY_ZERO_CAMERA_DISTANCE : 125
+          : snapshot.galaxyId === "galaxy-zero" ? 168 : 86,
+        target: [0, 0, 0],
+      };
+    } else if (galaxyChanged) {
       this.cameraState = { yaw: 0.4, pitch: 0.18, distance: snapshot.galaxyId === "galaxy-zero" ? GALAXY_ZERO_CAMERA_DISTANCE : 125, target: [0, 0, 0] };
       const now = performance.now();
       this.#flightUntil = now + (this.reducedMotion ? 0 : 1150);
@@ -1049,7 +1322,7 @@ export class ParticleFieldRenderer {
       if (!label) continue;
       const sprite = createLabelSprite(label, compact);
       if (!sprite) continue;
-      const yOffset = Math.min(14, cosmicWorldSize(particle) + 2.4);
+      const yOffset = label.prominence === "galaxy" ? 22 : Math.min(14, cosmicWorldSize(particle) + 2.4);
       sprite.position.set(particle.position[0], particle.position[1] + yOffset, particle.position[2]);
       this.points.add(sprite);
       this.liveLabels.push(sprite);
@@ -1118,6 +1391,43 @@ export class ParticleFieldRenderer {
       distance: clamp(Math.max(verticalDistance, horizontalDistance) * 1.04, 104, 205),
       target: [0, 3.5, 0],
     };
+  }
+
+  /** Fly into a Field galaxy. The scene swap happens under the streak flash. */
+  beginGalaxyWarp(input: { fromId: GalaxyId; targetId: GalaxyId; onCommit: () => void }) {
+    if (this.destroyed || this.#contextLost) return false;
+    const portal = warpPortal(input.fromId, input.targetId);
+    const tint = warpTint(input.targetId);
+    const focus = new THREE.Vector3(...(portal ?? [0, 0, 0]));
+    if (this.#warp && !this.#warp.committed) {
+      this.#warp.targetId = input.targetId;
+      this.#warp.onCommit = input.onCommit;
+      this.#warp.focus.copy(focus);
+      this.#warp.tint.setRGB(tint[0], tint[1], tint[2]);
+      this.#warp.armed = Boolean(portal);
+      this.#warp.started = warpClock(this.#warp.started, performance.now());
+      this.host.dataset.fieldWarp = input.targetId;
+      return true;
+    }
+    this.#warp = {
+      targetId: input.targetId,
+      focus,
+      tint: new THREE.Color(tint[0], tint[1], tint[2]),
+      started: performance.now(),
+      duration: warpDuration(this.reducedMotion),
+      committed: false,
+      reduced: this.reducedMotion,
+      armed: Boolean(portal),
+      onCommit: input.onCommit,
+    };
+    this.host.dataset.fieldWarp = input.targetId;
+    return true;
+  }
+
+  cancelGalaxyWarp() {
+    this.#warp = null;
+    this.#warpLanding = false;
+    this.#clearWarpVisuals();
   }
 
   /** Ease the camera toward the current cameraState instead of cutting to it. */
@@ -1190,7 +1500,7 @@ export class ParticleFieldRenderer {
   }
 
   #handleTap(clientX: number, clientY: number) {
-    if (this.queryBlend > 0.04) return;
+    if (this.#warp?.committed || this.queryBlend > 0.04) return;
     const hit = this.#pickParticle(clientX, clientY);
     if (!hit) {
       this.clearFocus();
@@ -1218,7 +1528,7 @@ export class ParticleFieldRenderer {
     let bestHolder = -1;
     let bestHolderD = 84;
     let bestAny = -1;
-    let bestAnyD = 72;
+    let bestAnyD = 120;
     const pos = this.basePositions;
     for (let i = 0; i < entities.length; i++) {
       const metadata = entities[i].metadata;
@@ -1245,7 +1555,8 @@ export class ParticleFieldRenderer {
       const sx = (this.#pick.x * 0.5 + 0.5) * w;
       const sy = (-this.#pick.y * 0.5 + 0.5) * h;
       const d = Math.hypot(sx - mx, sy - my);
-      if (d < bestAnyD) {
+      const pickLimit = targetGalaxy ? 120 : 72;
+      if (d < pickLimit && d < bestAnyD) {
         bestAnyD = d;
         bestAny = i;
       }
@@ -1263,9 +1574,107 @@ export class ParticleFieldRenderer {
     return bestAny >= 0 ? entities[bestAny] : null;
   }
 
+  #onPointerParallax = (event: PointerEvent) => {
+    if (this.destroyed || this.#gestures.interacting || this.#tiltFromDevice || this.reducedMotion) return;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+    const nx = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    const ny = ((event.clientY - rect.top) / rect.height) * 2 - 1;
+    this.#parallaxTarget.set(clamp(nx, -1, 1) * 0.85, clamp(ny, -1, 1) * 0.85);
+  };
+
+  #onDeviceTilt = (event: Event) => {
+    const tilt = event as DeviceOrientationEvent;
+    if (this.reducedMotion || tilt.gamma == null || tilt.beta == null) return;
+    this.#tiltFromDevice = true;
+    this.#parallaxTarget.set(clamp(tilt.gamma / 28, -1, 1) * 0.8, clamp((tilt.beta - 45) / 32, -1, 1) * 0.65);
+  };
+
+  #clearWarpVisuals() {
+    this.material.uniforms.uWarp.value = 0;
+    this.material.uniforms.uSettle.value = 0;
+    this.material.uniforms.uWarpArmed.value = 0;
+    this.starMaterial.uniforms.uStreak.value = 0;
+    const veilMaterial = this.veil.material as THREE.ShaderMaterial;
+    veilMaterial.uniforms.uFlash.value = 0;
+    this.veil.visible = false;
+    for (const sprite of this.liveLabels) sprite.material.opacity = 1;
+    delete this.host.dataset.fieldWarp;
+  }
+
+  #applyWarpSample(warp: GalaxyWarpFlight, sample: WarpSample) {
+    const scale = warpScale(warp.reduced, sample.approach, sample.settle);
+    this.material.uniforms.uWarp.value = scale.warp;
+    this.material.uniforms.uSettle.value = scale.settle;
+    this.material.uniforms.uWarpArmed.value = warp.armed && !warp.committed ? 1 : 0;
+    (this.material.uniforms.uWarpFocus.value as THREE.Vector3).copy(warp.focus);
+    this.starMaterial.uniforms.uStreak.value = sample.streak;
+    (this.starMaterial.uniforms.uTint.value as THREE.Color).copy(warp.tint);
+    const veilMaterial = this.veil.material as THREE.ShaderMaterial;
+    veilMaterial.uniforms.uFlash.value = sample.flash;
+    (veilMaterial.uniforms.uTint.value as THREE.Color).copy(warp.tint);
+    this.veil.visible = sample.flash > 0.02;
+    const labelOpacity = this.snapshot.galaxyId === "galaxy-zero" ? Math.max(0, 1 - sample.approach * 1.2) : 1;
+    for (const sprite of this.liveLabels) sprite.material.opacity = labelOpacity;
+  }
+
+  #updateWarp(now: number, elapsed: number) {
+    const warp = this.#warp;
+    if (!warp) return;
+    const t = clamp((now - warp.started) / Math.max(1, warp.duration), 0, 1);
+    const sample = sampleWarp(t, warp.reduced);
+    if (!warp.committed && sample.committed) {
+      warp.committed = true;
+      this.#warpLanding = true;
+      warp.armed = false;
+      try {
+        warp.onCommit();
+      } catch (error) {
+        console.error("[field-renderer] warp commit failed", error);
+      }
+    }
+    this.#applyWarpSample(warp, sample);
+    if (!this.#gestures.interacting && !warp.reduced) {
+      if (!warp.committed && warp.armed) {
+        const accel = 1.15 + sample.approach * sample.approach * 8.5;
+        const k = 1 - Math.exp(-elapsed * accel);
+        this.cameraState.target[0] += (warp.focus.x - this.cameraState.target[0]) * k;
+        this.cameraState.target[1] += (warp.focus.y - this.cameraState.target[1]) * k;
+        this.cameraState.target[2] += (warp.focus.z - this.cameraState.target[2]) * k;
+        this.cameraState.distance += (WARP_APPROACH_DISTANCE - this.cameraState.distance) * k;
+      } else if (!warp.committed) {
+        const k = 1 - Math.exp(-elapsed * 2.4);
+        const pull = this.cameraState.distance * 0.78;
+        this.cameraState.distance += (pull - this.cameraState.distance) * k;
+      } else {
+        const rest = this.snapshot.galaxyId === "galaxy-zero" ? GALAXY_ZERO_CAMERA_DISTANCE : 125;
+        const k = 1 - Math.exp(-elapsed * 3.3);
+        this.cameraState.distance += (rest - this.cameraState.distance) * k;
+        for (let axis = 0; axis < 3; axis++) this.cameraState.target[axis] += (0 - this.cameraState.target[axis]) * k;
+        this.cameraState.yaw += (0.4 - this.cameraState.yaw) * k;
+        this.cameraState.pitch += (0.18 - this.cameraState.pitch) * k;
+      }
+    }
+    if (t >= 1) {
+      const rest = this.snapshot.galaxyId === "galaxy-zero" ? GALAXY_ZERO_CAMERA_DISTANCE : 125;
+      this.cameraState = { yaw: 0.4, pitch: 0.18, distance: rest, target: [0, 0, 0] };
+      this.#warp = null;
+      this.#clearWarpVisuals();
+      this.#placeCamera();
+    }
+  }
+
+  #updateParallax(elapsed: number) {
+    const home = this.snapshot.galaxyId === "galaxy-zero" && !this.#warp && !this.reducedMotion && !this.#gestures.interacting;
+    const k = 1 - Math.exp(-elapsed * (home ? 3.2 : 6));
+    this.#parallax.x += ((home ? this.#parallaxTarget.x : 0) - this.#parallax.x) * k;
+    this.#parallax.y += ((home ? this.#parallaxTarget.y : 0) - this.#parallax.y) * k;
+  }
+
   #frame = (now: number) => {
     if (this.destroyed) return;
     if (!this.#pageVisible || this.#contextLost || this.#suspended) {
+      if (this.#contextLost) this.#settleInterruptedWarp();
       this.#last = now;
       this.#raf = requestAnimationFrame(this.#frame);
       return;
@@ -1301,7 +1710,10 @@ export class ParticleFieldRenderer {
       };
     }
 
-    if (!this.reducedMotion && !this.#gestures.interacting && this.queryBlend < 0.02) {
+    this.#updateWarp(now, elapsed);
+    this.#updateParallax(elapsed);
+
+    if (!this.reducedMotion && !this.#gestures.interacting && this.queryBlend < 0.02 && !this.#warp) {
       this.cameraState.yaw += elapsed * this.autoSpin * 60;
       this.points.rotation.y += elapsed * 0.09;
       this.planets.rotation.y = this.points.rotation.y;
@@ -1324,14 +1736,17 @@ export class ParticleFieldRenderer {
     this.points.visible = this.queryBlend < 0.97;
     this.planets.visible = this.queryBlend < 0.97;
     this.constellations.visible = this.queryBlend < 0.97 && this.constellations.geometry.getAttribute("position").count > 0;
-    this.starMaterial.opacity = 0.54 + this.queryBlend * 0.32 + bloom * 0.16;
+    this.starMaterial.uniforms.uOpacity.value = 0.54 + this.queryBlend * 0.32 + bloom * 0.16;
+    (this.starMaterial.uniforms.uParallax.value as THREE.Vector2).copy(this.#parallax);
+    (this.material.uniforms.uParallax.value as THREE.Vector2).copy(this.#parallax);
 
     const c = this.cameraState;
     const [tx, ty, tz] = c.target;
     const desiredX = tx + Math.sin(c.yaw) * Math.cos(c.pitch) * c.distance;
     const desiredY = ty + Math.sin(c.pitch) * c.distance;
     const desiredZ = tz + Math.cos(c.yaw) * Math.cos(c.pitch) * c.distance;
-    const cinematicFlight = now < this.#flightUntil && !this.reducedMotion && !this.#gestures.interacting;
+    const warping = Boolean(this.#warp);
+    const cinematicFlight = !warping && now < this.#flightUntil && !this.reducedMotion && !this.#gestures.interacting;
     const follow = this.#gestures.pinching
       ? 0.5
       : this.#gestures.orbiting
@@ -1341,10 +1756,16 @@ export class ParticleFieldRenderer {
           : this.queryBlend > 0.02 && this.queryBlend < 0.9
             ? 0.18
             : 0.16;
-    this.camera.position.x += (desiredX - this.camera.position.x) * follow;
-    this.camera.position.y += (desiredY - this.camera.position.y) * follow;
-    this.camera.position.z += (desiredZ - this.camera.position.z) * follow;
-    this.camera.lookAt(tx, ty, tz);
+    if (warping) {
+      this.#placeCamera();
+      this.camera.position.x += this.#parallax.x * 3.4;
+      this.camera.position.y -= this.#parallax.y * 2.6;
+    } else {
+      this.camera.position.x += (desiredX + this.#parallax.x * 3.4 - this.camera.position.x) * follow;
+      this.camera.position.y += (desiredY - this.#parallax.y * 2.6 - this.camera.position.y) * follow;
+      this.camera.position.z += (desiredZ - this.camera.position.z) * follow;
+      this.camera.lookAt(tx, ty, tz);
+    }
     this.onAfterUpdate?.(elapsed, now);
     if (!this.#contextLost) {
       this.renderer.render(this.scene, this.camera);
@@ -1365,6 +1786,12 @@ export class ParticleFieldRenderer {
     globalThis.removeEventListener("resize", this.#onResize);
     globalThis.visualViewport?.removeEventListener("resize", this.#onResize);
     document.removeEventListener("visibilitychange", this.#onVisibilityChange);
+    this.renderer.domElement.removeEventListener("pointermove", this.#onPointerParallax);
+    globalThis.removeEventListener("deviceorientation", this.#onDeviceTilt);
+    this.#reducedMedia?.removeEventListener("change", this.#onReducedMotion);
+    this.#reducedMedia = null;
+    this.#warp = null;
+    delete this.host.dataset.fieldWarp;
     this.points.geometry.dispose();
     this.planets.geometry.dispose();
     this.constellations.geometry.dispose();
@@ -1372,6 +1799,8 @@ export class ParticleFieldRenderer {
     for (const sprite of this.liveLabels) disposeLabelSprite(sprite);
     this.liveLabels = [];
     this.stars.geometry.dispose();
+    this.veil.geometry.dispose();
+    (this.veil.material as THREE.Material).dispose();
     this.material.dispose();
     this.planetMaterial.dispose();
     this.starMaterial.dispose();

@@ -45,8 +45,12 @@ export function cosmicWorldSize(particle: FieldParticle): number {
   const kind = renderCosmicKind(particle);
   const profile = COSMIC_VISUALS[kind];
   if (kind === "galaxy") {
-    if (particle.metadata?.galaxyRole === "fabric") return 0.72 + clamp01(particle.magnitudeBand) * 0.9;
-    if (particle.metadata?.galaxyRole === "core") return 9.5 + clamp01(particle.magnitudeBand) * 3;
+    const unit = clamp01(particle.magnitudeBand);
+    const role = particle.metadata?.galaxyRole;
+    if (role === "fabric") return 0.95 + unit * 2.15;
+    if (role === "halo") return 7.4 + unit * 2.2;
+    if (role === "depth") return 0.42 + unit * 0.9;
+    if (role === "core") return 16.5 + unit * 1.5;
   }
   if (kind === "dust") return profile.minWorldSize + clamp01(particle.magnitudeBand) * (profile.maxWorldSize - profile.minWorldSize);
 
