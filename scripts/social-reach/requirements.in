@@ -1,0 +1,15 @@
+# Runtime pins for the That day host runner.
+# twitter-cli 0.8.5 and the Agent-Reach commit a19a171 constraints.txt runtime set.
+# hatchling builds that pinned git checkout with --no-build-isolation.
+# sgmllib3k has no PyPI wheel; requirements.txt vendors wheels/sgmllib3k-1.0.0-py3-none-any.whl.
+# Regenerating this file with pip-compile will restore the sgmllib3k sdist line. Put the vendored wheel back.
+twitter-cli==0.8.5
+requests==2.32.5
+feedparser==6.0.12
+python-dotenv==1.2.1
+loguru==0.7.3
+PyYAML==6.0.3
+rich==14.3.2
+yt-dlp[default]==2026.7.4
+yt-dlp-ejs==0.8.0
+hatchling==1.32.4
