@@ -66,13 +66,13 @@ export function TraderSheet({
       <p className="fs-fact">{detail.factLine}</p>
       {latest ? <p className="fs-latest">Latest: {latest.side.toUpperCase()} {latest.symbol ?? "token"} · {timeLabel(latest.at)}</p> : null}
       <div className="fs-actions fs-actions--thumb" aria-label="Trader actions">
-        <button type="button" disabled={!researchable} onClick={() => onResearch("replay")}><b>REPLAY</b><small>Play the tape</small></button>
-        <button type="button" disabled={!researchable} onClick={() => onResearch("evidence")}><b>EVIDENCE</b><small>Open receipts</small></button>
-        <button type="button" disabled={!researchable || !detail.wallet} onClick={onCompare}><b>COMPARE</b><small>Versus another trader</small></button>
+        <button type="button" aria-label="REPLAY" disabled={!researchable} onClick={() => onResearch("replay")}><b>REPLAY</b><small aria-hidden="true">Play the tape</small></button>
+        <button type="button" aria-label="EVIDENCE" disabled={!researchable} onClick={() => onResearch("evidence")}><b>EVIDENCE</b><small aria-hidden="true">Open receipts</small></button>
+        <button type="button" aria-label="COMPARE" disabled={!researchable || !detail.wallet} onClick={onCompare}><b>COMPARE</b><small aria-hidden="true">Versus another trader</small></button>
         {selected ? (
-          <button type="button" aria-pressed={tokenWatched} onClick={onWatchToken}><b>{tokenWatched ? "WATCHING" : "WATCH"}</b><small>{selected.symbol ?? "Selected token"}</small></button>
+          <button type="button" aria-label={tokenWatched ? "WATCHING" : "WATCH"} aria-pressed={tokenWatched} onClick={onWatchToken}><b>{tokenWatched ? "WATCHING" : "WATCH"}</b><small aria-hidden="true">{selected.symbol ?? "Selected token"}</small></button>
         ) : (
-          <button type="button" aria-pressed={traderWatched} disabled={!detail.wallet} onClick={onWatchTrader}><b>{traderWatched ? "WATCHING" : "WATCH"}</b><small>Save this trader</small></button>
+          <button type="button" aria-label={traderWatched ? "WATCHING" : "WATCH"} aria-pressed={traderWatched} disabled={!detail.wallet} onClick={onWatchTrader}><b>{traderWatched ? "WATCHING" : "WATCH"}</b><small aria-hidden="true">Save this trader</small></button>
         )}
       </div>
       {!researchable ? <p className="fs-fine">No retained prints for this wallet yet. Replay opens when one is indexed.</p> : null}
