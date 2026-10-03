@@ -5,6 +5,7 @@ import {
   applySecurityHeaders,
   baselineSecurityHeaders,
   CONTENT_SECURITY_POLICY_REPORT_ONLY,
+  FRAME_ANCESTORS,
 } from "./security-headers.ts";
 
 const headersFile = readFileSync(new URL("../../public/_headers", import.meta.url), "utf8");
@@ -71,6 +72,8 @@ describe("baseline security headers", () => {
     assert.equal(baselineSecurityHeaders()["Strict-Transport-Security"], "max-age=31536000; includeSubDomains");
     assert.equal(baselineSecurityHeaders()["Cross-Origin-Opener-Policy"], "same-origin-allow-popups");
     assert.equal(baselineSecurityHeaders()["Cross-Origin-Resource-Policy"], "same-site");
+    assert.equal(baselineSecurityHeaders()["Content-Security-Policy"], FRAME_ANCESTORS);
+    assert.match(CONTENT_SECURITY_POLICY_REPORT_ONLY, new RegExp(FRAME_ANCESTORS.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.equal(Object.keys(baselineSecurityHeaders()).includes("X-Frame-Options"), false);
   });
 
@@ -78,6 +81,7 @@ describe("baseline security headers", () => {
     const response = applySecurityHeaders(new Response("ok", { headers: { "cache-control": "no-store" } }));
     assert.equal(response.headers.get("cache-control"), "no-store");
     assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(response.headers.get("content-security-policy"), FRAME_ANCESTORS);
     assert.equal(response.headers.get("content-security-policy-report-only"), CONTENT_SECURITY_POLICY_REPORT_ONLY);
     assert.equal(response.headers.get("x-frame-options"), null);
     assert.equal(await response.text(), "ok");

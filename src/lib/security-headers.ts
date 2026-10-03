@@ -7,10 +7,14 @@
  * `src/start.ts` attaches this set to every Worker response. `src/routes/__root.tsx`
  * repeats it on the document so the HTML contract stays next to the cache headers.
  *
- * Content-Security-Policy is Report-Only. It does not block loads or framing.
- * There is no X-Frame-Options: the Field is embeddable, and framing is expressed
- * only as CSP `frame-ancestors` (self, grok.com, and the Grok sandbox).
+ * The full Content-Security-Policy stays Report-Only so it does not block loads.
+ * Framing is enforced by a second policy that contains only `frame-ancestors`:
+ * this origin, grok.com, and the Grok sandbox. There is no X-Frame-Options,
+ * because that header cannot express the Grok allow-list.
  */
+
+export const FRAME_ANCESTORS =
+  "frame-ancestors 'self' https://grok.com https://*.grok.com https://*.grok-sandbox.com";
 
 export const CONTENT_SECURITY_POLICY_REPORT_ONLY = [
   "default-src 'self'",
@@ -32,7 +36,7 @@ export const CONTENT_SECURITY_POLICY_REPORT_ONLY = [
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
-  "frame-ancestors 'self' https://grok.com https://*.grok.com https://*.grok-sandbox.com",
+  FRAME_ANCESTORS,
 ].join("; ");
 
 export function baselineSecurityHeaders(): Record<string, string> {
@@ -44,6 +48,8 @@ export function baselineSecurityHeaders(): Record<string, string> {
       "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), interest-cohort=()",
     "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
     "Cross-Origin-Resource-Policy": "same-site",
+    // Enforced. Report-Only frame-ancestors does not stop embedding.
+    "Content-Security-Policy": FRAME_ANCESTORS,
     "Content-Security-Policy-Report-Only": CONTENT_SECURITY_POLICY_REPORT_ONLY,
   };
 }
