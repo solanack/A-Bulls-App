@@ -4,6 +4,23 @@ const WSOL='So11111111111111111111111111111111111111112';
 const USDC='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const USDT='Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const QUOTE_MINTS=new Set([WSOL,USDC,USDT]);
+/**
+ * Pinned xStock mint hints from XSTOCK_REGISTRY in src/lib/universe-data/afterbell-client.ts.
+ * Membership is exact and case-sensitive. A prefix is not used: SQLite LIKE is case-insensitive,
+ * and production has Xs-prefixed mints that are not xStock.
+ */
+export const CHAIN_XSTOCK_MINTS=Object.freeze([
+  'XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp',
+  'Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh',
+  'XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB',
+  'XspzcW1PRtgf6Wj92HCiZdjzKCyFekVD8P5Ueh3dRMX',
+  'Xs3eBt7uRfJX8QUs4suhyU8p2M6DoUDrJyWBa8LLZsg',
+  'XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W',
+  'Xs8S1uUs1zvS2p7iwtsG3b6fkhpvmwz4GYU3gWAmWHZ',
+  'XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1',
+]);
+const XSTOCK_MINTS=new Set(CHAIN_XSTOCK_MINTS);
+const CHAIN_EXCLUDED_MINTS=Object.freeze([WSOL,USDC,USDT,...CHAIN_XSTOCK_MINTS]);
 const CHAIN_ROUND_CAP=25;
 const s=value=>String(value??'').trim();
 const finite=value=>value==null||value===''?null:Number.isFinite(Number(value))?Number(value):null;
@@ -54,21 +71,27 @@ export function chainRoundGalaxy(sources=[],{fomoWallet=false}={}){
   return null;
 }
 
-/** Quote legs and xStock mints are not SOL positions. USDC-quoted xStock basis is not converted. */
+/** Quote legs and registry xStock mints are not SOL positions. USDC-quoted xStock basis is not converted. */
 export function isChainQuoteMint(mint){
   const value=s(mint);
-  return !value||QUOTE_MINTS.has(value)||value.startsWith('Xs');
+  return !value||QUOTE_MINTS.has(value)||XSTOCK_MINTS.has(value);
 }
-/** Closed and open rounds only, oldest first, capped. An unmatched-only pair writes nothing. */
+/**
+ * Closed and open rounds only. An unmatched-only pair writes nothing.
+ * The cap keeps the newest closed rounds. An open row always takes a slot, so it is not dropped to make room for an older close.
+ */
 export function chainRoundsToWrite(rounds=[],cap=CHAIN_ROUND_CAP){
   const list=(Array.isArray(rounds)?rounds:[]).filter(round=>round?.status==='closed'||round?.status==='open');
   const limit=Math.max(1,Math.trunc(Number(cap)||CHAIN_ROUND_CAP));
-  return Object.freeze([...list.filter(round=>round.status==='closed'),...list.filter(round=>round.status==='open')].slice(0,limit));
+  const open=list.filter(round=>round.status==='open');
+  const closed=list.filter(round=>round.status==='closed');
+  const closedLimit=Math.max(0,limit-Math.min(open.length,limit));
+  return Object.freeze([...closed.slice(-closedLimit),...open]);
 }
 /**
  * Build FIFO trades from retained wallet events and wSOL route legs.
  * Provider USD PnL is ignored. Non-wSOL quotes are not converted into SOL.
- * USDC, USDT, wSOL, and xStock mints are not tracked positions.
+ * USDC, USDT, wSOL, and the pinned xStock registry mints are not tracked positions.
  * Signatures still present in pump_trades are left to the pump materializer.
  */
 export function tradesFromWalletEvidence(events=[],routes=[],{pumpSignatures}={}){
@@ -372,7 +395,7 @@ async function pumpSignatureSet(db,wallet,mint){
 }
 
 async function materializeChainWallet(db,wallet,{fomoWallet,now}){
-  const mintResult=await db.prepare(`SELECT mint,MAX(block_time) latest FROM bull_wallet_events WHERE wallet=? AND mint<>'' AND token_delta<>0 AND ifnull(source,'') NOT LIKE '%pump%' AND mint NOT IN (?,?,?) AND mint NOT LIKE 'Xs%' GROUP BY mint ORDER BY latest DESC LIMIT ?`).bind(wallet,WSOL,USDC,USDT,CHAIN_MINT_LIMIT).all().catch(()=>({results:[]}));
+  const mintResult=await db.prepare(`SELECT mint,MAX(block_time) latest FROM bull_wallet_events WHERE wallet=? AND mint<>'' AND token_delta<>0 AND ifnull(source,'') NOT LIKE '%pump%' AND mint NOT IN (${CHAIN_EXCLUDED_MINTS.map(()=>'?').join(',')}) GROUP BY mint ORDER BY latest DESC LIMIT ?`).bind(wallet,...CHAIN_EXCLUDED_MINTS,CHAIN_MINT_LIMIT).all().catch(()=>({results:[]}));
   const routeMints=await db.prepare(`SELECT CASE WHEN input_mint=? THEN output_mint ELSE input_mint END mint,MAX(block_time) latest FROM intelligence_trade_routes WHERE wallet=? AND (input_mint=? OR output_mint=?) GROUP BY mint ORDER BY latest DESC LIMIT ?`).bind(WSOL,wallet,WSOL,WSOL,CHAIN_MINT_LIMIT*4).all().catch(()=>({results:[]}));
   const mints=[...new Set([...(mintResult?.results||[]).map(row=>s(row.mint)),...(routeMints?.results||[]).map(row=>s(row.mint))].filter(mint=>!isChainQuoteMint(mint)))].slice(0,CHAIN_MINT_LIMIT);
   let roundsWritten=0;
@@ -390,11 +413,10 @@ async function materializeChainWallet(db,wallet,{fomoWallet,now}){
     const position=derivePosition(trades);
     const writable=chainRoundsToWrite(position.rounds);
     if(!writable.length)continue;
-    const keptOpen=position.rounds.filter(round=>round.status==='closed'||round.status==='open').length<=writable.length;
     const pumpOwns=pumpSigs.sigs.size>0;
-    const existing=pumpOwns||!keptOpen?[]:((await db.prepare(`SELECT id,status,entry_signature,evidence_ids_json FROM matched_trade_rounds WHERE wallet=? AND mint=? AND status='open'`).bind(wallet,mint).all())?.results||[]);
+    const existing=pumpOwns?[]:((await db.prepare(`SELECT id,status,entry_signature,evidence_ids_json FROM matched_trade_rounds WHERE wallet=? AND mint=? AND status='open'`).bind(wallet,mint).all())?.results||[]);
     const statements=[],lastTs=secToMs(trades.at(-1)?.block_time)??roundNow(now),symbol=short(mint);
-    if(!pumpOwns&&keptOpen)for(const id of replaceableOpenIds(existing,writable,{openingLots:[],trades}))statements.push(db.prepare(`DELETE FROM matched_trade_rounds WHERE id=? AND wallet=? AND mint=? AND status='open'`).bind(id,wallet,mint));
+    if(!pumpOwns)for(const id of replaceableOpenIds(existing,writable,{openingLots:[],trades}))statements.push(db.prepare(`DELETE FROM matched_trade_rounds WHERE id=? AND wallet=? AND mint=? AND status='open'`).bind(id,wallet,mint));
     statements.push(indexStatement(db,{id:`planet:${galaxyId}:${mint}`,kind:'planet',mint,galaxyId,title:symbol,summary:galaxyId==='afterbell'?'Observed Afterbell token planet from retained wallet evidence':'Observed Fomo wallet token planet from retained chain evidence',sourceKind:'observed',sourceRef:galaxyId,observedTs:lastTs,coverage:'retained',payload:{launchOrigin:galaxyId}}));
     statements.push(indexStatement(db,{id:`star:solana:${wallet}`,kind:'star',wallet,galaxyId,title:`Wallet ${short(wallet)}`,summary:galaxyId==='afterbell'?'Observed public wallet from retained Afterbell evidence':'Observed public wallet from retained Fomo chain evidence',sourceKind:'observed',sourceRef:'bull_wallet_events',observedTs:lastTs,coverage:'retained',payload:{publicWallet:wallet}}));
     appendRoundStatements(statements,db,{rounds:writable,wallet,mint,galaxyId,symbol,now:roundNow(now),lastTs,tradePrefix:'trade:observed:'});
