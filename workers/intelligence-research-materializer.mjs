@@ -411,7 +411,7 @@ export async function materializeResearchIndex(env={},now=nowMs()){
   const retentionHours=clamp(env.PUMP_RAW_RETENTION_HOURS,72,1,720);
   try{result.basis=await foldExpiringPumpBasis(db,Math.floor(now/1000)-retentionHours*3600,Math.floor(now/1000));}catch(error){console.error('[research-index-basis]',s(error?.message||error));}
   try{result.pump=await materializePump(db,env,now);}catch(error){console.error('[research-index-pump]',s(error?.message||error));}
-  try{result.chain=await materializeChainRounds(db,env,now);}catch(error){console.error('[research-index-chain]',s(error?.message||error));}
+  if(env.RESEARCH_CHAIN_ROUNDS_ENABLED==='1'){try{result.chain=await materializeChainRounds(db,env,now);}catch(error){console.error('[research-index-chain]',s(error?.message||error));}}
   try{result.fomo=await materializeFomo(db,now);}catch(error){console.error('[research-index-fomo]',s(error?.message||error));}
   try{result.research=await materializeResearchObjects(db,now);}catch(error){console.error('[research-index-objects]',s(error?.message||error));}
   try{await db.prepare(`INSERT INTO index_coverage_checkpoints(source,status,detail,updated_at) VALUES('research_index','materialized',?,?) ON CONFLICT(source) DO UPDATE SET status=excluded.status,detail=excluded.detail,updated_at=excluded.updated_at`).bind(`Materialized ${result.pump.trades} observed pump trades, ${result.pump.rounds} deterministic rounds, ${result.pump.replays} deterministic Replays, ${result.chain.rounds} chain rounds, ${result.basis.applied} folded basis trades, ${result.fomo.trades} provider-reported Fomo trades, ${result.research.cuts} Cuts, and ${result.research.theses} theses.`,now).run();}catch{}
