@@ -22,6 +22,8 @@ export const CHAIN_XSTOCK_MINTS=Object.freeze([
 const XSTOCK_MINTS=new Set(CHAIN_XSTOCK_MINTS);
 const CHAIN_EXCLUDED_MINTS=Object.freeze([WSOL,USDC,USDT,...CHAIN_XSTOCK_MINTS]);
 const CHAIN_ROUND_CAP=25;
+/** Non-registry Xs mints below this absolute SOL size are dust, not a tracked position. */
+export const CHAIN_XS_MIN_SOL=0.001;
 const s=value=>String(value??'').trim();
 const finite=value=>value==null||value===''?null:Number.isFinite(Number(value))?Number(value):null;
 const nowMs=()=>Date.now();
@@ -86,7 +88,21 @@ export function chainRoundsToWrite(rounds=[],cap=CHAIN_ROUND_CAP){
   const open=list.filter(round=>round.status==='open');
   const closed=list.filter(round=>round.status==='closed');
   const closedLimit=Math.max(0,limit-Math.min(open.length,limit));
-  return Object.freeze([...closed.slice(-closedLimit),...open]);
+  const newestClosed=closedLimit>0?closed.slice(-closedLimit):[];
+  return Object.freeze([...newestClosed,...open]);
+}
+/** Case-sensitive Xs prefix outside the pinned registry. XSTuo… is not in this set. */
+function nonRegistryXsMint(mint){
+  const value=s(mint);
+  return value.startsWith('Xs')&&!XSTOCK_MINTS.has(value);
+}
+/**
+ * Resolved SOL is the wSOL route amount when one exists, otherwise |sol_delta|.
+ * A route-only rule would drop a real sol_delta that has no stored route row.
+ * The floor drops the dust QA measured and keeps a trade at or above 0.001 SOL.
+ */
+function belowXsSolFloor(mint,sol){
+  return nonRegistryXsMint(mint)&&!(Number(sol)>=CHAIN_XS_MIN_SOL);
 }
 /**
  * Build FIFO trades from retained wallet events and wSOL route legs.
@@ -130,6 +146,7 @@ export function tradesFromWalletEvidence(events=[],routes=[],{pumpSignatures}={}
       const wsolAmount=s(hop.input_mint)===WSOL?Number(hop.input_amount):Number(hop.output_amount);
       if(Number.isFinite(wsolAmount)&&wsolAmount>0)sol=wsolAmount;
     }
+    if(belowXsSolFloor(event.mint,sol))continue;
     push({event_id:sig||`event:${s(event.id)}`,signature:sig||null,event_index:0,wallet:s(event.wallet),mint:s(event.mint),side,token_amount:token,sol_amount:sol,block_time:event.block_time});
   }
   for(const route of Array.isArray(routes)?routes:[]){
@@ -142,7 +159,9 @@ export function tradesFromWalletEvidence(events=[],routes=[],{pumpSignatures}={}
     const token=input===WSOL?Number(route.output_amount):Number(route.input_amount);
     const sol=input===WSOL?Number(route.input_amount):Number(route.output_amount);
     if(!(token>0))continue;
-    push({event_id:sig||`route:${mint}:${s(route.hop_index)}`,signature:sig||null,event_index:Number(route.hop_index)||0,wallet:s(route.wallet),mint,side,token_amount:token,sol_amount:Number.isFinite(sol)&&sol>0?sol:null,block_time:route.block_time});
+    const solAmount=Number.isFinite(sol)&&sol>0?sol:null;
+    if(belowXsSolFloor(mint,solAmount))continue;
+    push({event_id:sig||`route:${mint}:${s(route.hop_index)}`,signature:sig||null,event_index:Number(route.hop_index)||0,wallet:s(route.wallet),mint,side,token_amount:token,sol_amount:solAmount,block_time:route.block_time});
   }
   return trades;
 }

@@ -7,13 +7,14 @@ const METHOD = 'bounded-fifo-observed-swaps-v1';
 const USDC_PLANET = `planet:fomo:${USDC}`;
 
 /**
- * Flood rows only. Pre-deploy rounds stay because both created_at and updated_at are older than AFTER.
+ * Flood rows only. created_at must be in the window. updated_at alone is not enough:
+ * a pre-deploy row can be touched later and would otherwise match.
  * Xs matching is case-sensitive GLOB, not LIKE: LIKE would also select XSTuo…, which is not an xStock mint.
- * The live writer skips only the eight XSTOCK_REGISTRY mints. This cleanup is wider on purpose: it removes
- * the Xs-prefixed rounds the uncapped chain phase already wrote. After the flag is enabled, a non-registry
- * Xs mint with retained SOL evidence can be written again. Registry xStock mints are not rewritten.
+ * The live writer skips the eight XSTOCK_REGISTRY mints, and non-registry Xs dust below 0.001 SOL.
+ * This cleanup is wider on purpose: it removes the Xs-prefixed rounds the uncapped chain phase already wrote.
+ * Registry xStock mints are not rewritten.
  */
-const floodTime = `(created_at >= ${AFTER} OR updated_at >= ${AFTER})`;
+const floodTime = `created_at >= ${AFTER}`;
 
 const unmatchedQuoteWhere = `status = 'unmatched'
   AND entry_signature IS NULL
@@ -39,7 +40,8 @@ const xstockPositionWhere = `mint GLOB 'Xs*'
 const otherUnmatchedWhere = `status = 'unmatched'
   AND entry_signature IS NULL
   AND method = '${METHOD}'
-  AND ${floodTime}
+  AND created_at >= ${AFTER}
+  AND evidence_ids_json NOT LIKE '%:%'
   AND mint NOT IN ('${USDC}', '${USDT}')
   AND mint NOT GLOB 'Xs*'`;
 
@@ -126,11 +128,20 @@ if (invokedDirectly) {
   console.log('-- It is not a migration. Leave it un-run until the fixed Worker is deployed and CK approves.');
   console.log('-- RESEARCH_CHAIN_ROUNDS_ENABLED stays off until QA has verified the fix on production-shaped data and CK approves re-enabling.');
   console.log('-- Order of operations: deploy the fix, delete edges, then objects, then rounds, then enable the flag.');
-  console.log('-- Pre-deploy rows stay out of scope: created_at and updated_at must be at least 1791000000000.');
-  console.log('-- Xs predicates use case-sensitive GLOB \'Xs*\'. LIKE \'Xs%\' is not used.');
-  console.log(`-- ${USDC_PLANET} is removed only when no non-USDC round references it and no pre-deploy USDC round remains.`);
-  for (const step of plan) console.log(`\n${cleanupCountSql(step.sql, step.alias)}`);
+  console.log('-- Pre-deploy rows stay out of scope: created_at must be at least 1791000000000. updated_at alone does not qualify.');
+  console.log('-- other_unmatched also requires evidence_ids_json without a colon, so pump event ids stay.');
+  console.log('-- Xs predicates use case-sensitive GLOB \'Xs*\'. A case-insensitive prefix match is not used.');
+  console.log(`-- ${USDC_PLANET} delete is only safe after the edges are deleted. Its COUNT times out on D1 if run first.`);
+  const planet = plan.find(step => step.alias === 'usdc_fomo_planet');
+  for (const step of plan) if (step !== planet) console.log(`\n${cleanupCountSql(step.sql, step.alias)}`);
   console.log('\n-- Deletes. Not a migration. Do not run until the counts above have been reviewed,');
   console.log('-- the fixed Worker is deployed, and CK approves. Order is edges, objects, then rounds.');
-  for (const step of plan) console.log(`\n${step.sql.trim()}`);
+  for (const step of plan) {
+    if (step === planet) {
+      console.log(`\n-- ${USDC_PLANET} delete is only safe after the edges are deleted.`);
+      console.log('-- Its COUNT times out on D1 if run first. Run this count only after those edge deletes.');
+      console.log(cleanupCountSql(step.sql, step.alias));
+    }
+    console.log(`\n${step.sql.trim()}`);
+  }
 }

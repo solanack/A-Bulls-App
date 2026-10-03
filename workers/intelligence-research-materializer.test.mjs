@@ -193,12 +193,59 @@ test('quote legs and xStock mints are not chain rounds, and a rerun does not add
   assert.match(xstockUnmatchedCountSql(),/mint GLOB 'Xs\*'/);
   assert.match(plan.find(step=>step.alias==='xstock_position_rounds').sql,/mint GLOB 'Xs\*'/);
   assert.match(plan.find(step=>step.alias==='other_unmatched_rounds').sql,/mint NOT GLOB 'Xs\*'/);
+  assert.match(plan.find(step=>step.alias==='other_unmatched_rounds').sql,/created_at >= 1791000000000/);
+  assert.match(plan.find(step=>step.alias==='other_unmatched_rounds').sql,/evidence_ids_json NOT LIKE '%:%'/);
+  assert.doesNotMatch(plan.find(step=>step.alias==='other_unmatched_rounds').sql,/updated_at/);
+  for(const alias of ['unmatched_quote_rounds','usdc_position_rounds','xstock_unmatched_rounds','xstock_position_rounds','other_unmatched_rounds']){
+    assert.match(plan.find(step=>step.alias===alias).sql,/created_at >= 1791000000000/);
+    assert.doesNotMatch(plan.find(step=>step.alias===alias).sql,/OR updated_at/);
+  }
   assert.match(plan.find(step=>step.alias==='usdc_fomo_planet').sql,/planet:fomo:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/);
   assert.match(plan.find(step=>step.alias==='usdc_fomo_planet').sql,/r\.mint <> 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'/);
   assert.match(plan.find(step=>step.alias==='usdc_fomo_planet').sql,/created_at < 1791000000000/);
-  assert.doesNotMatch(materializer,/LIKE 'Xs%'|startsWith\('Xs'\)/);
+  assert.match(printed,/delete is only safe after the edges are deleted/);
+  assert.match(printed,/COUNT times out on D1 if run first/);
+  assert.doesNotMatch(materializer,/LIKE 'Xs%'/);
+  const quoteFn=materializer.slice(materializer.indexOf('export function isChainQuoteMint'),materializer.indexOf('export function chainRoundsToWrite'));
+  assert.doesNotMatch(quoteFn,/startsWith\('Xs'\)/);
   assert.match(materializer,/if\(env\.RESEARCH_CHAIN_ROUNDS_ENABLED==='1'\)\{try\{result\.chain=await materializeChainRounds\(db,env,now\);\}/);
   sql.close();
+});
+
+test('non-registry Xs dust below 0.001 SOL is not a chain round',()=>{
+  const wsol='So11111111111111111111111111111111111111112';
+  const dustMint='XsDustMint111111111111111111111111111111111';
+  const floorMint='XsFloorMint11111111111111111111111111111111';
+  const token='TokenMint11111111111111111111111111111111';
+  const event=(signature,mint,delta,sol,time)=>({id:signature,signature,wallet:'W',mint,token_delta:delta,sol_delta:sol,block_time:time});
+  const dust=tradesFromWalletEvidence([event('d-buy',dustMint,5,-0.0004,1),event('d-sell',dustMint,-5,0.0004,2)]);
+  assert.equal(dust.length,0);
+  const atFloor=tradesFromWalletEvidence([event('f-buy',floorMint,5,-0.001,1),event('f-sell',floorMint,-5,0.001,2)]);
+  assert.equal(atFloor.length,2);
+  assert.equal(deriveMatchedRounds(atFloor).filter(round=>round.status==='closed').length,1);
+  const viaRoute=tradesFromWalletEvidence([
+    event('r-buy',dustMint,5,-0.0001,3),
+    event('r-sell',dustMint,-5,0.0001,4),
+  ],[
+    {signature:'r-buy',wallet:'W',input_mint:wsol,output_mint:dustMint,input_amount:0.001,output_amount:5,block_time:3,hop_index:0},
+    {signature:'r-sell',wallet:'W',input_mint:dustMint,output_mint:wsol,input_amount:5,output_amount:0.002,block_time:4,hop_index:0},
+  ]);
+  assert.equal(viaRoute.length,2);
+  assert.equal(viaRoute[0].sol_amount,0.001);
+  assert.equal(viaRoute[1].sol_amount,0.002);
+  const tinyToken=tradesFromWalletEvidence([event('t-buy',token,1,-0.0001,1),event('t-sell',token,-1,0.0002,2)]);
+  assert.equal(tinyToken.length,2);
+  const dustRoute=tradesFromWalletEvidence([],[
+    {signature:'hop',wallet:'W',input_mint:wsol,output_mint:dustMint,input_amount:0.0004,output_amount:5,block_time:5,hop_index:0},
+  ]);
+  assert.equal(dustRoute.length,0);
+});
+
+test('a full open slot does not keep every closed round',()=>{
+  const closed=[{id:'c0',status:'closed'},{id:'c1',status:'closed'},{id:'c2',status:'closed'}];
+  assert.deepEqual(chainRoundsToWrite([...closed,{id:'open',status:'open'}],1).map(round=>round.id),['open']);
+  assert.deepEqual(chainRoundsToWrite(closed,1).map(round=>round.id),['c2']);
+  assert.deepEqual(chainRoundsToWrite([...closed,{id:'o1',status:'open'},{id:'o2',status:'open'}],1).map(round=>round.id),['o1','o2']);
 });
 
 test('chain cap keeps the newest closed rounds and replaces a covered open',async()=>{
