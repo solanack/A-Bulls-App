@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { ghostOpenCountSql } from '../scripts/backfill-ghost-open-rounds.mjs';
-import { chainRoundGalaxy, deriveMatchedRounds, derivePosition, lotsFromOpenRounds, replaceableOpenIds, replayObjectForRound, staleOpenIds, tradesFromWalletEvidence } from './intelligence-research-materializer.mjs';
+import { chainRoundGalaxy, deriveMatchedRounds, derivePosition, lotsFromOpenRounds, materializeResearchIndex, partitionPumpSnapshot, replaceableOpenIds, replayObjectForRound, staleOpenIds, tradesFromWalletEvidence } from './intelligence-research-materializer.mjs';
 
 const row=(id,side,token,sol,time)=>({event_id:id,signature:`sig-${id}`,event_index:0,wallet:'wallet',mint:'mint',side,token_amount:token,sol_amount:sol,block_time:time});
 const near=(actual,expected)=>assert.ok(Math.abs(actual-expected)<1e-9,`${actual} ~= ${expected}`);
@@ -119,6 +119,8 @@ test('pump basis is paged into lots and ghost cleanup stays idempotent',()=>{
   assert.match(source,/replaceableOpenIds/);
   assert.match(source,/\[research-index-pump-pair\]/);
   assert.match(source,/\[research-index-basis-pair\]/);
+  assert.match(source,/\[research-index-chain-wallet\]/);
+  assert.match(source,/partitionPumpSnapshot/);
   assert.doesNotMatch(source,/async function loadOpeningLots\(db,wallet,mint\)\{\s*try\{/);
   assert.doesNotMatch(source,/LIMIT 300/);
   assert.match(migration,/status = 'open'/);
@@ -152,6 +154,85 @@ test('an open row with no retained buy is seeded and is not deleted unless a new
   const unrelatedBuy=[row('b2','buy',5,.5,300)];
   assert.deepEqual(replaceableOpenIds([kept],derivePosition(unrelatedBuy).rounds,{openingLots:[],trades:unrelatedBuy}),[]);
   assert.equal(lotsFromOpenRounds([kept],{trades:[{...row('old-buy','buy',10,1,100),signature:'sig-old'}],storedLots:[]}).length,0);
+  const alreadyNetted={...kept,updated_at:500_000};
+  const nettedSell={...row('s1','sell',4,.5,200),event_id:'sell-kept:0'};
+  const netted=partitionPumpSnapshot([alreadyNetted],[nettedSell]);
+  assert.equal(netted.fresh.length,0);
+  assert.equal(derivePosition(netted.fresh,{openingLots:netted.seeded}).rounds.find(round=>round.status==='open').observedInventory,10);
+});
+
+test('a seeded open row is not replayed against trades it already includes',()=>{
+  const open=(inventory,evidence,updatedAt,entry)=>({id:`round:wallet:mint:${entry}:open`,status:'open',entry_signature:entry,entry_ts:1000,buy_sol:inventory/1000,observed_inventory:inventory,evidence_ids_json:JSON.stringify(evidence),updated_at:updatedAt,wallet:'wallet',mint:'mint'});
+  const trade=(id,side,token,sol,time)=>({event_id:id,signature:id.split(':')[0],event_index:0,wallet:'wallet',mint:'mint',side,token_amount:token,sol_amount:sol,block_time:time});
+  const positionFor=(opens,trades)=>{
+    const snapshot=partitionPumpSnapshot(opens,trades);
+    const position=derivePosition(snapshot.fresh,{openingLots:snapshot.seeded});
+    const again=partitionPumpSnapshot(position.rounds.filter(round=>round.status==='open').map(round=>({...round,updated_at:900_000})),snapshot.fresh);
+    return {snapshot,position,again};
+  };
+  const nettedSell=positionFor([open(700,['sigA0:0'],400_000,'sigA0')],[trade('sellA:0','sell',300,.2,100)]);
+  assert.equal(nettedSell.snapshot.fresh.length,0);
+  assert.equal(nettedSell.position.rounds.some(round=>round.status==='closed'),false);
+  assert.equal(nettedSell.position.rounds.find(round=>round.status==='open').observedInventory,700);
+  assert.equal(nettedSell.again.fresh.length,0);
+  assert.equal(derivePosition(nettedSell.again.fresh,{openingLots:nettedSell.again.seeded}).rounds.find(round=>round.status==='open').observedInventory,700);
+  const oversell=positionFor([open(200,['sigB0:0'],400_000,'sigB0')],[trade('sellB:0','sell',300,.2,100)]);
+  assert.equal(oversell.position.rounds.some(round=>round.status!=='open'),false);
+  assert.equal(oversell.position.rounds.find(round=>round.status==='open').observedInventory,200);
+  const retainedBuy=positionFor([open(500,['b1:0','b2:0'],400_000,'b1')],[trade('b2:0','buy',200,.2,100)]);
+  assert.equal(retainedBuy.snapshot.fresh.length,0);
+  assert.equal(retainedBuy.position.openLots.length,1);
+  assert.equal(retainedBuy.position.rounds.find(round=>round.status==='open').observedInventory,500);
+  assert.equal(retainedBuy.again.fresh.length,0);
+  const listedSell=trade('sellC:0','sell',300,.2,900);
+  const listed=partitionPumpSnapshot([open(700,['sigC:0','sellC:0'],100_000,'sigC')],[listedSell]);
+  assert.equal(listed.fresh.length,0);
+  assert.equal(derivePosition(listed.fresh,{openingLots:listed.seeded}).rounds.find(round=>round.status==='open').observedInventory,700);
+  const newer=open(10,['old-buy'],50_000,'sig-old');
+  const freshSell=partitionPumpSnapshot([newer],[row('s-new','sell',4,.5,200)]);
+  assert.equal(freshSell.fresh.length,1);
+  assert.equal(derivePosition(freshSell.fresh,{openingLots:freshSell.seeded}).rounds.find(round=>round.status==='open').observedInventory,6);
+});
+
+test('materialized open inventory stays put when retained trades are already in the row',async()=>{
+  const sql=new DatabaseSync(':memory:');
+  const migrationDir=new URL('./migrations/',import.meta.url);
+  for(const file of readdirSync(migrationDir).filter(name=>name.endsWith('.sql')).sort())sql.exec(readFileSync(new URL(file,migrationDir),'utf8'));
+  const norm=values=>values.map(value=>value===undefined?null:value);
+  const db={prepare:query=>{
+    const statement=(args=[])=>({
+      bind(...bound){return statement(bound);},
+      async all(){return {results:sql.prepare(query).all(...norm(args))};},
+      async first(){return (await this.all()).results[0]??null;},
+      async run(){return {meta:{changes:Number(sql.prepare(query).run(...norm(args)).changes)}};}
+    });
+    return statement();
+  },async batch(statements){sql.exec('BEGIN');try{for(const statement of statements)sql.prepare(statement.q).run(...norm(statement.args));sql.exec('COMMIT');}catch(error){sql.exec('ROLLBACK');throw error;}}};
+  const wrap=db.prepare;
+  db.prepare=query=>{const statement=wrap(query);statement.q=query;const bind=statement.bind.bind(statement);statement.bind=(...args)=>{const bound=bind(...args);bound.q=query;bound.args=args;return bound;};return statement;};
+  const now=1790000000000,block=Math.floor(now/1000)-10*86400,updated=(block+3600)*1000;
+  const insertTrade=(wallet,signature,side,token,sol,time)=>sql.prepare(`INSERT INTO pump_trades(event_id,signature,event_index,mint,wallet,side,token_amount,sol_amount,price_sol,slot,block_time,program_id,source,commitment,inserted_at) VALUES(?,?,0,'M',?,?,?,?,NULL,1,?,'p','t','confirmed',1)`).run(`${signature}:0`,signature,wallet,side,token,sol,time);
+  const insertOpen=(wallet,entry,inventory,buy,evidence)=>sql.prepare(`INSERT INTO matched_trade_rounds(id,wallet,mint,status,entry_signature,exit_signature,entry_ts,exit_ts,buy_sol,sell_sol,matched_realized_sol,observed_inventory,method,evidence_ids_json,coverage,created_at,updated_at) VALUES(?,?,'M','open',?,NULL,1000,NULL,?,0,NULL,?,'m',?,'partial',?,?)`).run(`round:${wallet}:M:${entry}:0:open`,wallet,entry,buy,inventory,JSON.stringify(evidence),updated,updated);
+  insertOpen('Wa','sigA0',700,.35,['sigA0:0']);
+  insertTrade('Wa','sellA','sell',300,.2,block);
+  insertOpen('Wa2','sigB0',200,.1,['sigB0:0']);
+  insertTrade('Wa2','sellB','sell',300,.2,block);
+  insertOpen('Wh','b1',500,.5,['b1:0','b2:0']);
+  insertTrade('Wh','b2','buy',200,.2,block);
+  insertOpen('Wb','buyB',700,.35,['buyB:0','sellWb:0']);
+  insertTrade('Wb','buyB','buy',1000,.5,block-100);
+  insertTrade('Wb','sellWb','sell',300,.2,block);
+  const openInventory=wallet=>sql.prepare(`SELECT COALESCE(SUM(observed_inventory),0) inventory,SUM(status='open') opens,SUM(status='closed') closed FROM matched_trade_rounds WHERE wallet=?`).get(wallet);
+  await materializeResearchIndex({INTELLIGENCE_DB:db},now);
+  const first={a:openInventory('Wa'),over:openInventory('Wa2'),buy:openInventory('Wh'),both:openInventory('Wb')};
+  assert.equal(first.a.inventory,700);assert.equal(first.a.opens,1);assert.equal(first.a.closed,0);
+  assert.equal(first.over.inventory,200);assert.equal(first.over.opens,1);assert.equal(first.over.closed,0);
+  assert.equal(first.buy.inventory,500);assert.equal(first.buy.opens,1);assert.equal(Number(first.buy.closed)||0,0);
+  assert.equal(first.both.inventory,700);assert.equal(first.both.opens,1);
+  await materializeResearchIndex({INTELLIGENCE_DB:db},now+900000);
+  const second={a:openInventory('Wa'),over:openInventory('Wa2'),buy:openInventory('Wh'),both:openInventory('Wb')};
+  assert.deepEqual(second,first);
+  sql.close();
 });
 
 test('0041 ghost delete is idempotent on 26 seeded rounds and keeps live open remainders',()=>{
