@@ -7,12 +7,14 @@ import {
   WARP_REDUCED_MS,
   WARP_STREAK_LENGTH,
   WARP_TINT,
+  WARP_BURST_CAP_MS,
   isFieldWarpRoute,
+  planWarpFollowUp,
   sampleWarp,
   warpClock,
   warpDuration,
   warpPortal,
-  warpReducedDuration,
+  warpReducedRestart,
   warpScale,
   warpTint,
 } from "./galaxy-warp.ts";
@@ -62,9 +64,52 @@ test("retargeting keeps the original warp clock so the flight stays inside 1.8s"
   assert.equal(clock, start);
   for (let tap = 0; tap < 5; tap++) clock = warpClock(clock, start + (tap + 1) * 180);
   assert.equal(clock, start);
-  assert.ok(clock + WARP_DURATION_MS - start <= 1800);
-  assert.equal(warpReducedDuration(start, WARP_DURATION_MS, start + 400), 400 + WARP_REDUCED_MS);
-  assert.equal(warpReducedDuration(start, 300, start + 100), 300);
+  assert.ok(clock + WARP_DURATION_MS - start <= WARP_BURST_CAP_MS);
+  const first = planWarpFollowUp({
+    now: start,
+    reduced: false,
+    inFlight: false,
+    committed: false,
+    started: null,
+    endsAt: null,
+    anchor: null,
+  });
+  const during = planWarpFollowUp({
+    now: start + 400,
+    reduced: false,
+    inFlight: true,
+    committed: false,
+    started: first.started,
+    endsAt: first.endsAt,
+    anchor: first.anchor,
+  });
+  assert.equal(during.action, "retarget");
+  assert.equal(during.reopenCommit, false);
+  assert.equal(during.endsAt, first.endsAt);
+  const afterCommit = planWarpFollowUp({
+    now: start + 1336,
+    reduced: false,
+    inFlight: true,
+    committed: true,
+    started: first.started,
+    endsAt: first.endsAt,
+    anchor: first.anchor,
+  });
+  assert.equal(afterCommit.reopenCommit, true);
+  assert.equal(afterCommit.endsAt, start + WARP_DURATION_MS);
+  assert.ok(afterCommit.endsAt < start + 1336 + WARP_DURATION_MS);
+  assert.ok(afterCommit.endsAt - first.anchor <= WARP_BURST_CAP_MS);
+});
+
+test("reduced motion toggled mid-warp ends within 420ms of the toggle", () => {
+  const toggle = 700;
+  const restart = warpReducedRestart(toggle, WARP_DURATION_MS);
+  assert.equal(restart.started, toggle);
+  assert.equal(restart.endsAt - toggle, WARP_REDUCED_MS);
+  assert.ok(restart.endsAt < WARP_DURATION_MS);
+  const late = warpReducedRestart(1400, WARP_DURATION_MS);
+  assert.ok(late.endsAt - 1400 < WARP_REDUCED_MS);
+  assert.equal(late.endsAt, WARP_DURATION_MS);
 });
 
 test("reduced motion keeps warp and settle scales at zero", () => {
