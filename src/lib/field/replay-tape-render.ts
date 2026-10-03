@@ -41,6 +41,8 @@ export type TapeFrame = {
   heroGlyph?: string | null;
   /** Milliseconds since this individual fill was struck, or null for its static scar. */
   strikeAge?: (bolt: TapeBolt) => number | null;
+  /** Explicitly hypothetical marker. It never participates in totals or evidence. */
+  hypothetical?: { cursor: number; side: "buy" | "sell"; label?: string } | null;
   pad?: { top: number; right: number; bottom: number; left: number };
 };
 
@@ -331,19 +333,50 @@ export function drawTape(ctx: CanvasRenderingContext2D, frame: TapeFrame): BoltH
     // No mark/market-cap/evidence overlays on the cinematic plot. The tape shows trade sizes only.
   } else {
     const mid = pad.top + plotH / 2;
-    ctx.strokeStyle = "rgba(236,236,240,.16)";
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(pad.left, mid); ctx.lineTo(pad.left + plotW, mid); ctx.stroke();
-    ctx.fillStyle = "rgba(226,226,232,.56)";
-    ctx.font = font(650, 11);
+    // Dark tape: an honest missing-price state with a dotted rail, not an empty chart.
+    ctx.save();
+    ctx.fillStyle = "rgba(12,13,18,.96)";
+    ctx.fillRect(pad.left, pad.top, plotW, plotH);
+    ctx.setLineDash([2 * k, 7 * k]);
+    for (let lane = -1; lane <= 1; lane++) {
+      const y = mid + lane * 20 * k;
+      ctx.strokeStyle = lane === 0 ? "rgba(236,218,170,.30)" : "rgba(236,236,240,.08)";
+      ctx.lineWidth = lane === 0 ? 1.2 * k : 1;
+      ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + plotW, y); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(236,218,170,.72)";
+    ctx.font = font(740, 11);
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
-    ctx.fillText("CANDLES UNAVAILABLE · EVENT TAPE", pad.left, pad.top);
-    // No cohort overlay on the event-only tape.
+    ctx.fillText("DARK TAPE · PRICE CANDLES UNAVAILABLE", pad.left, pad.top);
+    ctx.fillStyle = "rgba(226,226,232,.46)";
+    ctx.font = font(520, 10);
+    ctx.fillText("Observed event timing only · no price path invented", pad.left, pad.top + 18 * k);
+    ctx.restore();
     for (const group of groups) placeBolt(group, xAt(group.lead.cursor), mid + (group.side === "buy" ? 1 : -1) * scar * 0.9);
   }
   for (const strike of strikes) drawLightning(ctx, strike.bolt.id, strike.bolt.side, strike.x, pad.top, strike.y, k, strike.phase);
   for (const draw of overlays) draw();
+
+  if (frame.hypothetical) {
+    const hx = xAt(frame.hypothetical.cursor);
+    const top = pad.top + 18 * k, bottom = pad.top + plotH - 8 * k;
+    ctx.save();
+    ctx.setLineDash([7 * k, 6 * k]);
+    ctx.strokeStyle = frame.hypothetical.side === "buy" ? "rgba(184,255,60,.72)" : "rgba(255,45,85,.72)";
+    ctx.lineWidth = Math.max(1, 1.6 * k);
+    ctx.beginPath(); ctx.moveTo(hx, top); ctx.lineTo(hx, bottom); ctx.stroke();
+    ctx.setLineDash([]);
+    const label = frame.hypothetical.label || "HYPOTHETICAL";
+    ctx.font = font(800, 10);
+    const tw = ctx.measureText(label).width, py = pad.top + 8 * k;
+    ctx.fillStyle = "rgba(9,10,14,.92)";
+    ctx.fillRect(hx - tw / 2 - 7 * k, py - 7 * k, tw + 14 * k, 16 * k);
+    ctx.fillStyle = frame.hypothetical.side === "buy" ? "#B8FF3C" : "#FF2D55";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(label, hx, py + k);
+    ctx.restore();
+  }
 
   if (cursor > 0 && cursor < 1) {
     ctx.strokeStyle = CHAMPAGNE;

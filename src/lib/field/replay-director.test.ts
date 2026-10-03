@@ -51,8 +51,8 @@ test("Cut pacing stretches per-fill strikes and reserves the verify ending", () 
     assert.equal(measured.arrivalAt.get(bolt.id), quick.arrivalAt.get(bolt.id)! * 2);
     assert.ok(Math.abs(deep.arrivalAt.get(bolt.id)! - quick.arrivalAt.get(bolt.id)! * 3) < 1e-9);
   }
-  assert.equal(cutDuration(24), 27.8);
-  assert.equal(cutDuration(Infinity), 15.8);
+  assert.equal(cutDuration(24), 29.2);
+  assert.equal(cutDuration(Infinity), 17.2);
 });
 
 test("export manifest preserves lifecycle scope, individual USD, and chosen direction", () => {
@@ -62,5 +62,5 @@ test("export manifest preserves lifecycle scope, individual USD, and chosen dire
   assert.equal(manifest.prints[0].eventScope, "position-summary");
   assert.equal(manifest.prints[0].notionalUsd, null);
   assert.equal(manifest.prints[0].verification, "provider-reported");
-  assert.deepEqual(manifest.director, { tapeSeconds: 36, durationSeconds: 39.8, soundtrack: "silent" });
+  assert.deepEqual(manifest.director, { tapeSeconds: 36, titleSeconds: 1.4, durationSeconds: 41.2, soundtrack: "silent" });
 });

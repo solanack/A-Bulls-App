@@ -16,6 +16,8 @@ import { isWatched, type WatchItem } from "@/lib/field/watchlist";
 import { socialDay0 } from "@/lib/field/social-window";
 import { prefetchThatDay, ReplaySocialStrip } from "@/components/replay-social-strip";
 import { getReplayCohort } from "@/lib/universe-data/replay-cohort-client";
+import { TraderSigil } from "@/components/trader-sigil";
+import { ReplayVersusPanel } from "@/components/replay-versus-panel";
 
 type Data = Record<string, unknown>;
 type Status = "loading" | "building" | "ready" | "empty" | "error";
@@ -28,6 +30,15 @@ const ROOM_CHIP = { fomo: "FOMO", afterbell: "AFTERBELL" } as const;
 const when = (ms: number) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 const amountLabel = (value: number | null) => (value == null ? null : value >= 1000 ? value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : value >= 1 ? value.toFixed(2) : value.toPrecision(3));
 const signedUsd = (value: number | null) => value == null || !Number.isFinite(value) ? "—" : value === 0 ? "$0" : `${value > 0 ? "+" : "−"}${formatUsdNotional(Math.abs(value))}`;
+
+export function replayImpactStrength(bolt: TapeBolt, bolts: readonly TapeBolt[]) {
+  const value = observedUsdNotional(bolt);
+  if (value == null || value <= 0) return 0.36;
+  const known = bolts.flatMap((row) => { const v = observedUsdNotional(row); return v != null && v > 0 ? [Math.log10(v)] : []; });
+  if (!known.length) return 0.5;
+  const lo = Math.min(...known), hi = Math.max(...known), unit = hi > lo ? (Math.log10(value) - lo) / (hi - lo) : 0.5;
+  return Math.max(0.32, Math.min(1, 0.38 + unit * 0.62));
+}
 
 function initialSubject() {
   if (typeof window === "undefined") return null;
@@ -50,10 +61,12 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [cutOpen, setCutOpen] = useState(false);
   const [socialOpen, setSocialOpen] = useState(false);
+  const [whatIf, setWhatIf] = useState(false);
+  const [versusOpen, setVersusOpen] = useState(false);
   const [ticksOn, setTicksOn] = useState(() => { try { return globalThis.localStorage?.getItem(TICKS_KEY) === "1"; } catch { return false; } });
   const [cohortOn, setCohortOn] = useState(() => { try { return globalThis.localStorage?.getItem(COHORT_KEY) !== "0"; } catch { return true; } });
   const [cohortItems, setCohortItems] = useState<unknown[] | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null), frameRef = useRef<HTMLDivElement | null>(null), hitsRef = useRef<BoltHit[]>([]), audioRef = useRef<{ ctx: AudioContext; tone: GainNode } | null>(null), lastTickRef = useRef(0), cursorRef = useRef(cursor), progressRef = useRef(0), strikesRef = useRef(new Map<string, number>()), visitedRef = useRef(new Set<string>()), drawRef = useRef<() => void>(() => {});
+  const canvasRef = useRef<HTMLCanvasElement | null>(null), frameRef = useRef<HTMLDivElement | null>(null), hitsRef = useRef<BoltHit[]>([]), audioRef = useRef<{ ctx: AudioContext; tone: GainNode } | null>(null), lastTickRef = useRef(0), cursorRef = useRef(cursor), progressRef = useRef(0), strikesRef = useRef(new Map<string, number>()), visitedRef = useRef(new Set<string>()), drawRef = useRef<() => void>(() => {}), hitStopUntilRef = useRef(0), impactRef = useRef({ started: 0, until: 0, strength: 0 }), scrubbingRef = useRef(false), lastHapticRef = useRef(-1);
   const audible = ticksOn && !muted;
   const [size, setSize] = useState({ w: 0, h: 0, dpr: 1 });
 
@@ -159,17 +172,28 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
     const px = Math.round(size.w * size.dpr), py = Math.round(size.h * size.dpr);
     if (canvas.width !== px || canvas.height !== py) { canvas.width = px; canvas.height = py; }
     ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
-    const compact = size.w < 560, now = performance.now();
-    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 17 : 18, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 68 : 72, right: compact ? 58 : 72, bottom: 28, left: compact ? 8 : 20 } });
+    const compact = size.w < 560, now = performance.now(), impact = impactRef.current;
+    const activeImpact = !globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches && now < impact.until;
+    ctx.save();
+    if (activeImpact) {
+      const life = Math.max(0, Math.min(1, (impact.until - now) / Math.max(1, impact.until - impact.started)));
+      const shake = impact.strength * life * 7;
+      const sx = Math.sin(now * 0.19) * shake, sy = Math.cos(now * 0.23) * shake * 0.55;
+      const push = 1 + impact.strength * life * 0.018;
+      ctx.translate(size.w / 2 + sx, size.h / 2 + sy); ctx.scale(push, push); ctx.translate(-size.w / 2, -size.h / 2);
+    }
+    hitsRef.current = (globalThis as typeof globalThis & { __ABULLS_BOLTS?: BoltHit[] }).__ABULLS_BOLTS = drawTape(ctx, { width: size.w, height: size.h, candles, bolts, start: view.start, end: view.end, cursor, selectedId, scaleMode, scarPx: compact ? 17 : 18, hypothetical: whatIf ? { cursor, side: latest?.side === "buy" ? "sell" : "buy", label: "HYPOTHETICAL" } : null, strikeAge: (bolt) => { const at = strikesRef.current.get(bolt.id); return at == null ? null : now - at; }, pad: { top: compact ? 68 : 72, right: compact ? 58 : 72, bottom: 28, left: compact ? 8 : 20 } });
+    ctx.restore();
   };
 
-  useEffect(() => { drawRef.current(); }, [size, candles, bolts, ticks, cohortOn, view, cursor, selectedId, scaleMode,marketCapUsd,mark,subject,handle]);
+  useEffect(() => { drawRef.current(); }, [size, candles, bolts, ticks, cohortOn, view, cursor, selectedId, scaleMode,marketCapUsd,mark,subject,handle,whatIf,latest]);
 
   useEffect(() => {
     if (!playing) return;
     let raf = 0, last = performance.now();
     const tick = (now: number) => {
       const dt = now - last; last = now;
+      if (now < hitStopUntilRef.current) { raf = requestAnimationFrame(tick); return; }
       progressRef.current = Math.min(1, progressRef.current + (dt * speed) / playMs);
       setCursor(schedule.cursorAt(progressRef.current));
       if (progressRef.current >= 1) { setPlaying(false); return; }
@@ -193,8 +217,11 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
     const fresh = crossed.filter((bolt) => !visitedRef.current.has(bolt.id));
     crossed.forEach((bolt) => visitedRef.current.add(bolt.id));
     if (!fresh.length) return;
-    const struck = fresh[fresh.length - 1], now = performance.now();
+    const struck = fresh[fresh.length - 1], now = performance.now(), strength = replayImpactStrength(struck, bolts);
     if (!globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      const freezeMs = 24 + Math.round(strength * 56);
+      hitStopUntilRef.current = Math.max(hitStopUntilRef.current, now + freezeMs);
+      impactRef.current = { started: now, until: now + 150 + strength * 150, strength };
       for (const bolt of fresh) strikesRef.current.set(bolt.id, now);
       let raf = 0;
       const animate = (t: number) => {
@@ -206,7 +233,8 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
       window.setTimeout(() => cancelAnimationFrame(raf), STRIKE_MS + 400);
     }
     const audio = audioRef.current;
-    if (audible && audio && now - lastTickRef.current >= 55) { lastTickRef.current = now; playTick(audio.ctx, struck.side); }
+    if (audible && audio && now - lastTickRef.current >= 55) { lastTickRef.current = now; playTick(audio.ctx, struck.side, strength); }
+    if (typeof navigator.vibrate === "function") navigator.vibrate(Math.round(8 + strength * 18));
   }, [cursor, bolts, audible]);
 
   useEffect(() => {
@@ -287,7 +315,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
     const rect = event.currentTarget.getBoundingClientRect();
     const id = hitBolt(hitsRef.current, event.clientX - rect.left, event.clientY - rect.top);
     if (id?.startsWith("cohort:")) { setPlaying(false); setSelectedId(id); setSocialOpen(false); }
-    else if (id) { primeAudio(); setPlaying(false); setSelectedId(id); setSocialOpen(false); const bolt = bolts.find((row) => row.id === id); if (bolt && audioRef.current && audible) playTick(audioRef.current.ctx, bolt.side); }
+    else if (id) { primeAudio(); setPlaying(false); setSelectedId(id); setSocialOpen(false); const bolt = bolts.find((row) => row.id === id); if (bolt && audioRef.current && audible) playTick(audioRef.current.ctx, bolt.side, replayImpactStrength(bolt, bolts)); }
     else setSelectedId(null);
   }
   function selectPrint(bolt: TapeBolt) {
@@ -345,6 +373,7 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
       <header className="rs-head">
         <button type="button" className="rs-icon" aria-label="Back to the Field" onClick={onBack}><ArrowLeft size={17} /></button>
         <div className="rs-title">
+          <TraderSigil wallet={subject.wallet} size={38} className="rs-title__sigil" title={`Deterministic wallet sigil for ${traderLabel}`}/>
           {room ? <span className="rs-chip">{ROOM_CHIP[room]}</span> : null}
           <div className="rs-title__text">
             <h1>{title}</h1>
@@ -367,15 +396,15 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
       {status === "ready" && !candleCoverage.usable && retainedCandles.length > 0 ? <p className="rs-coverage-warning">Cached candles cover {candleCoverage.covered} of {candleCoverage.total} events. Showing all available OHLC; uncovered events stay time-only and are never placed on an unrelated candle.</p> : null}
       <div className="rs-body">
       <div className="rs-frame" ref={frameRef} data-scale={scaleMode} data-view-start={Math.round(view.start)} data-view-end={Math.round(view.end)} data-candles={candles.length} data-bolt-groups={groups.length} data-cohort={cohortOn ? ticks.length : 0}>
-        {status === "ready" ? <div className="rs-hud" aria-label="Replay performance">
-          <div className="rs-hud__mode"><b>{historyLabel}</b><span data-coverage={coverageLabel.toLowerCase()}>{coverageLabel}</span></div>
-          <div className="rs-hud__metric"><span>REALIZED</span><strong data-sign={mark.realizedUsd==null?"unknown":mark.realizedUsd>=0?"win":"loss"}>{signedUsd(mark.realizedUsd)}</strong></div>
-          <div className="rs-hud__metric"><span>UNREALIZED</span><strong data-sign={mark.deltaUsd==null?"unknown":mark.deltaUsd>=0?"win":"loss"}>{signedUsd(mark.deltaUsd)}</strong></div>
-          <div className="rs-hud__metric"><span>INVENTORY</span><strong>{amountLabel(mark.remainingTokens)}</strong></div>
-          <small>{visible.length}/{bolts.length} prints · {when(visibleTime)}</small>
+        {status === "ready" ? <div className="rs-hud rs-scoreboard" aria-label="Matched results scoreboard">
+          <div className="rs-hud__mode"><b>MATCHED RESULTS</b><span data-coverage={coverageLabel.toLowerCase()}>{coverageLabel}</span></div>
+          <div className="rs-hud__metric"><span>REALIZED</span><strong data-number="true" data-sign={mark.realizedUsd==null?"unknown":mark.realizedUsd>=0?"win":"loss"}>{signedUsd(mark.realizedUsd)}</strong></div>
+          <div className="rs-hud__metric"><span>MATCHED EXITS</span><strong data-number="true">{mark.realizedUsd==null?"—":visible.filter(row=>row.side==="sell").length}</strong></div>
+          <div className="rs-hud__metric"><span>REMAINING</span><strong data-number="true">{mark.remainingTokens==null?"—":amountLabel(mark.remainingTokens)}</strong></div>
+          <small>{visible.length}/{bolts.length} prints · matched values only · unknowns stay —</small>
         </div> : null}
         {status === "ready" ? <canvas ref={canvasRef} className="rs-canvas" onPointerDown={onCanvasPointer} aria-label={`${candles.length ? "Candles" : "Event tape"} with ${bolts.length} buy and sell bolts. Tap a bolt for its evidence.`} role="img" /> : null}
-        {status === "loading" || status === "building" ? <div className="rs-state"><span className="rs-pulse" aria-hidden="true" /><p>{status === "building" ? "Extending this wallet's retained history. Already indexed prints remain evidence-backed." : "Reading the tape…"}</p></div> : null}
+        {status === "loading" || status === "building" ? <div className="rs-state rs-skeleton" aria-live="polite"><div className="rs-skeleton__chart" aria-hidden="true"><i/><i/><i/><i/><i/><i/><i/></div><p><b>Grey is reading prints</b><span>{status === "building" ? "Extending retained history without inventing missing evidence." : "Matching receipts to the tape and checking candle coverage."}</span></p></div> : null}
         {status === "empty" ? <div className="rs-state"><p>No retained buy or sell prints for this wallet and token in this window yet.</p><small>Nothing is drawn until a print is indexed.</small></div> : null}
         {status === "error" ? <div className="rs-state"><p>{error}</p><button type="button" onClick={() => { setStatus("loading"); setAttempts((value) => value + 1); }}>TRY AGAIN</button></div> : null}
       </div>
@@ -416,35 +445,38 @@ export function ReplayStudio({ muted, onToggleMute, onBack, onOpenRoom, watchlis
               {latest ? <><b data-side={latest.side}>{printLabel(latest).toUpperCase()}</b><span>{when(latest.timestamp)}</span></> : <span>{status === "ready" ? "Press play. Each marker is a retained event." : "\u00a0"}</span>}
               <span className="rs-count">{buys} entries · {visible.length - buys} exits</span>
             </div> : null}
-            <input className="rs-scrub" type="range" min={0} max={1000} value={Math.round(cursor * 1000)} aria-label="Replay position" disabled={status !== "ready"} onChange={(event) => { setPlaying(false); setCursor(Number(event.target.value) / 1000); }} />
+            <input className="rs-scrub" type="range" min={0} max={1000} value={Math.round(cursor * 1000)} aria-label="Hold and scrub Replay position" disabled={status !== "ready"} onPointerDown={()=>{scrubbingRef.current=true;setPlaying(false);}} onPointerUp={()=>{scrubbingRef.current=false;}} onPointerCancel={()=>{scrubbingRef.current=false;}} onInput={(event) => { setPlaying(false); const next=Number((event.target as HTMLInputElement).value)/1000; setCursor(next); if(scrubbingRef.current){const notch=Math.round(next*24);if(notch!==lastHapticRef.current){lastHapticRef.current=notch;if(typeof navigator.vibrate==="function")navigator.vibrate(5);}} }} />
             <div className="rs-controls">
               <button type="button" className="rs-icon" aria-label="Previous print" disabled={status !== "ready"} onClick={() => step(-1)}><SkipBack size={15} /></button>
               <button type="button" className="rs-play" aria-label={playing ? "Pause" : "Play"} disabled={status !== "ready"} onClick={toggle}>{playing ? <Pause size={18} /> : <Play size={18} />}</button>
               <button type="button" className="rs-icon" aria-label="Next print" disabled={status !== "ready"} onClick={() => step(1)}><SkipForward size={15} /></button>
               <button type="button" className="rs-speed" aria-label="Playback speed" onClick={() => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length])}>{speed}×</button>
               <span className="rs-spacer" />
+              <button type="button" className="rs-pill" aria-pressed={whatIf} onClick={()=>setWhatIf(value=>!value)}>WHAT-IF</button>
+              <button type="button" className="rs-pill rs-pill--versus" onClick={()=>{setPlaying(false);setVersusOpen(true);}}>VERSUS</button>
               <button type="button" className="rs-pill" onClick={() => void share()} aria-label="Copy a link to this Replay"><Share2 size={13} /> {shareNote && shareNote.length < 20 ? shareNote : "SHARE"}</button>
               <button type="button" className="rs-pill rs-pill--cut" disabled={status !== "ready"} onClick={() => { setPlaying(false); setCutOpen(true); }}>CUT</button>
             </div>
-            <p className="rs-source">{candles.length ? `Candles · ${candleSourceLabel(source)}${!candleCoverage.usable ? ` · ${candleCoverage.covered}/${candleCoverage.total} events candle-covered` : ""}` : status === "ready" ? "Candles unavailable · event tape only · no price path drawn" : ""}{status === "ready" ? ` · ${bolts.length} events${events.some((row) => row.verification === "provider-reported") ? " · Fomo-reported" : ""}` : ""}</p>
+            <p className="rs-source">{candles.length ? `Candles · ${candleSourceLabel(source)}${!candleCoverage.usable ? ` · ${candleCoverage.covered}/${candleCoverage.total} events candle-covered` : ""}` : status === "ready" ? "Dark tape · price candles unavailable · event timing only" : ""}{status === "ready" ? ` · ${bolts.length} events${events.some((row) => row.verification === "provider-reported") ? " · Fomo-reported" : ""}` : ""}</p>
           </>
         {shareNote ? <p className="rs-share-status" role="status">{shareNote.startsWith("http") ? <>Copy this Replay link: <a href={shareNote}>{shareNote}</a></> : shareNote}</p> : null}
       </footer>
+      {versusOpen?<ReplayVersusPanel subject={{...subject,displayName:subject.displayName??handle,symbol:subject.symbol??resolvedSymbol}} traderLabel={traderLabel} candles={candles} heroBolts={bolts} start={view.start} end={view.end} cursor={cursor} scaleMode={scaleMode} onClose={()=>setVersusOpen(false)}/>:null}
       {cutOpen && subject ? <CutPanel subject={{ ...subject, displayName: subject.displayName ?? handle, symbol: subject.symbol ?? resolvedSymbol }} title={title} trader={traderLabel} room={room} bolts={bolts} cohort={cohortOn && ticks.length ? ticks : []} candles={candles} marketCapPoints={marketCapPoints} candleCount={candles.length} start={view.start} end={view.end} scaleMode={scaleMode} source={source} evidenceLine={evidenceLine} onClose={() => setCutOpen(false)} /> : null}
       {socialOpen && day0 ? <ReplaySocialStrip mint={subject.mint} symbol={subject.symbol ?? resolvedSymbol} name={null} wallet={subject.wallet} chain={subject.chainKey} room={room} day0={day0} onClose={() => setSocialOpen(false)} /> : null}
     </section>
   );
 }
 
-function playTick(ctx: AudioContext, side: "buy" | "sell") {
+function playTick(ctx: AudioContext, side: "buy" | "sell", strength = 0.5) {
   try {
     if (ctx.state === "suspended") void ctx.resume();
-    const now = ctx.currentTime, osc = ctx.createOscillator(), gain = ctx.createGain();
+    const now = ctx.currentTime, osc = ctx.createOscillator(), gain = ctx.createGain(), pitch = 0.86 + Math.max(0, Math.min(1, strength)) * 0.46;
     osc.type = "sine";
-    osc.frequency.setValueAtTime(side === "buy" ? 1480 : 980, now);
-    osc.frequency.exponentialRampToValueAtTime(side === "buy" ? 1180 : 760, now + 0.045);
+    osc.frequency.setValueAtTime((side === "buy" ? 1480 : 980) * pitch, now);
+    osc.frequency.exponentialRampToValueAtTime((side === "buy" ? 1180 : 760) * pitch, now + 0.045);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.04, now + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.025 + strength * 0.035, now + 0.004);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
     osc.connect(gain).connect(ctx.destination);
     osc.start(now); osc.stop(now + 0.06);
@@ -453,6 +485,4 @@ function playTick(ctx: AudioContext, side: "buy" | "sell") {
 
 function ReplayUsdTotals({summary,buyCoverage,sellCoverage}:{summary:TapeUsdSummary;buyCoverage:string|null;sellCoverage:string|null}){return <div className="rs-usd" aria-label="Retained fill USD sizes"><div><span>Bought</span><b data-tone="buy">{summary.boughtUsd!=null?formatUsdNotional(summary.boughtUsd):"—"}</b></div><div><span>Sold</span><b data-tone="sell">{summary.soldUsd!=null?formatUsdNotional(summary.soldUsd):"—"}</b></div><div><span>Avg buy</span><b>{formatUsdPrice(summary.avgBuyUsd)}</b></div><div><span>Avg sell</span><b>{formatUsdPrice(summary.avgSellUsd)}</b></div>{buyCoverage?<small>{buyCoverage}</small>:null}{sellCoverage?<small>{sellCoverage}</small>:null}</div>}
 
-function ReplayStudioStyles() {
-  return <style>{`.rs{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;background:#0b0c10;color:#f4f2ec;--rs-rim:rgba(236,236,240,.12);--rs-ink:#eadcb4}.rs[data-room=fomo]{--rs-ink:#cdb8ff}.rs-head{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:max(12px,env(safe-area-inset-top)) 16px 6px}.rs-title{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:10px}.rs-title__text{min-width:0;display:grid;gap:3px}.rs-line{margin:0;font:520 11px/1.3 var(--font-mono);color:rgba(236,236,240,.62);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rs-cohort-chip{color:rgba(214,220,200,.9)}.rs-src{display:inline-block;padding:2px 7px;border:1px solid var(--rs-rim);border-radius:999px;font:500 10px/1.3 var(--font-mono)}.rs-usd-stack{flex:0 0 auto;display:grid;gap:4px}.rs-usd{display:grid;grid-template-columns:auto auto;gap:5px 14px;padding:9px 11px;border:1px solid rgba(236,236,240,.16);border-radius:12px;background:rgba(9,10,14,.72);backdrop-filter:blur(14px);box-shadow:0 12px 34px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.035);font:650 10px/1.2 var(--font-mono)}.rs-usd div{display:contents}.rs-usd span,.rs-usd small{color:rgba(236,236,240,.58)}.rs-usd b{text-align:right;color:#eadcaa;font-size:11px}.rs-usd b[data-tone=buy]{color:#B8FF3C}.rs-usd b[data-tone=sell]{color:#FF2D55}.rs-usd small{grid-column:1/-1;font-size:8px;line-height:1.25}.rs-evidence-line{font:500 11px/1.2 var(--font-mono);color:rgba(236,236,240,.48);text-align:right}.rs-title h1{margin:0;font:680 17px/1.2 var(--font-sans);letter-spacing:.005em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rs-chip{flex:0 0 auto;padding:4px 8px;border:1px solid color-mix(in oklab,var(--rs-ink) 45%,transparent);border-radius:999px;color:var(--rs-ink);font:700 8.5px/1 var(--font-display);letter-spacing:.14em}.rs-icon{flex:0 0 auto;width:40px;height:40px;display:grid;place-items:center;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.03);color:#f4f2ec;transition:border-color .15s,background .15s}.rs-icon:hover:not(:disabled),.rs-icon:focus-visible{border-color:rgba(236,236,240,.34);outline:none}.rs-icon:disabled{opacity:.35}.rs-icon--small{width:28px;height:28px}.rs-frame{position:relative;flex:1 1 auto;min-height:0;margin:0}.rs-canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:manipulation;cursor:crosshair}.rs-hud{position:absolute;z-index:3;top:14px;left:18px;min-width:210px;display:grid;grid-template-columns:repeat(3,minmax(62px,1fr));gap:7px 12px;padding:10px 12px;border:1px solid rgba(236,236,240,.16);border-radius:14px;background:rgba(4,7,13,.78);box-shadow:0 18px 48px rgba(0,0,0,.3);backdrop-filter:blur(16px) saturate(150%);pointer-events:none}.rs-hud__mode{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px}.rs-hud__mode b{color:#f7fbff;font:800 9px/1 var(--font-display);letter-spacing:.14em}.rs-hud__mode span{color:#7ee7ff;font:700 8px/1 var(--font-mono)}.rs-hud__mode span[data-coverage=complete]{color:#B8FF3C}.rs-hud__mode span[data-coverage=partial]{color:#ffd27a}.rs-hud__metric{display:grid;gap:3px}.rs-hud__metric span{color:rgba(236,236,240,.5);font:650 7.5px/1 var(--font-display);letter-spacing:.1em}.rs-hud__metric strong{color:#f7fbff;font:760 12px/1.1 var(--font-mono)}.rs-hud__metric strong[data-sign=win]{color:#B8FF3C}.rs-hud__metric strong[data-sign=loss]{color:#FF2D55}.rs-hud__metric strong[data-sign=unknown]{color:rgba(236,236,240,.55)}.rs-hud small{grid-column:1/-1;color:rgba(236,236,240,.46);font:520 8px/1.2 var(--font-mono)}.rs-state{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:10px;padding:24px;text-align:center}.rs-state p{margin:0;max-width:440px;font:540 14px/1.5 var(--font-sans);color:rgba(236,236,240,.82)}.rs-state small{color:rgba(236,236,240,.5)}.rs-state button,.rs-empty__actions button,.rs-actions button,.rs-actions a{min-height:38px;padding:0 16px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.04);color:#f4f2ec;font:700 9px/1 var(--font-display);letter-spacing:.14em;text-decoration:none}.rs-pulse{width:44px;height:2px;border-radius:2px;background:linear-gradient(90deg,transparent,var(--rs-ink),transparent);animation:rs-sweep 1.4s ease-in-out infinite}@keyframes rs-sweep{0%{transform:translateX(-30px);opacity:.2}50%{opacity:1}100%{transform:translateX(30px);opacity:.2}}.rs-third{flex:0 0 auto;min-height:clamp(132px,20vh,190px);display:flex;flex-direction:column;justify-content:flex-end;gap:8px;padding:10px 18px max(14px,env(safe-area-inset-bottom));border-top:1px solid rgba(236,236,240,.06);background:linear-gradient(180deg,rgba(11,12,16,0),rgba(16,17,22,.9))}.rs-now{display:flex;align-items:baseline;gap:10px;font:560 13px/1.3 var(--font-sans);color:rgba(236,236,240,.8)}.rs-now b,.rs-evidence__row b{font:750 12px/1 var(--font-display);letter-spacing:.14em}[data-side=buy]{color:#B8FF3C}[data-side=sell]{color:#FF2D55}.rs-acts{position:relative;flex:0 0 auto;display:flex;justify-content:flex-end;gap:6px;padding:2px 16px 6px 68px}.rs-act--cohort{margin-right:auto}.rs-overflow{position:relative}.rs-overflow summary{list-style:none;width:34px;height:30px;display:grid;place-items:center;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.03);color:rgba(236,236,240,.82);font:800 14px/1 var(--font-mono);cursor:pointer}.rs-overflow summary::-webkit-details-marker{display:none}.rs-overflow__menu{position:absolute;right:0;top:36px;z-index:5;display:flex;gap:6px;padding:7px;border:1px solid var(--rs-rim);border-radius:12px;background:rgba(10,11,15,.96);box-shadow:0 16px 40px rgba(0,0,0,.4);backdrop-filter:blur(14px)}.rs-act{height:30px;padding:0 11px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.03);color:rgba(236,236,240,.82);font:700 8.5px/1 var(--font-display);letter-spacing:.13em}.rs-act[aria-pressed=true]{border-color:color-mix(in oklab,var(--rs-ink) 60%,transparent);color:var(--rs-ink)}.rs-act:disabled{opacity:.35}.rs-count{margin-left:auto;font:500 11px/1 var(--font-mono);color:rgba(236,236,240,.5)}.rs-scrub{width:100%;accent-color:#eadcb4;height:22px}.rs-controls{display:flex;align-items:center;gap:8px}.rs-play{width:48px;height:48px;display:grid;place-items:center;border:1px solid color-mix(in oklab,var(--rs-ink) 50%,transparent);border-radius:999px;background:color-mix(in oklab,var(--rs-ink) 12%,transparent);color:#fff}.rs-play:disabled,.rs-pill:disabled{opacity:.35}.rs-speed{min-width:44px;height:34px;border:1px solid var(--rs-rim);border-radius:999px;background:transparent;color:rgba(236,236,240,.8);font:600 11px/1 var(--font-mono)}.rs-spacer{flex:1 1 auto}.rs-pill{height:36px;padding:0 14px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rs-rim);border-radius:999px;background:rgba(255,255,255,.035);color:#f4f2ec;font:700 9px/1 var(--font-display);letter-spacing:.14em}.rs-pill--cut{border-color:color-mix(in oklab,var(--rs-ink) 55%,transparent);color:var(--rs-ink)}.rs-source{margin:0;font:500 10px/1.3 var(--font-mono);color:rgba(236,236,240,.42);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rs-evidence{display:grid;gap:6px}.rs-evidence__row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font:560 13px/1.3 var(--font-sans)}.rs-evidence__row .rs-icon{margin-left:auto}.rs-evidence__meta{margin:0;font:500 11px/1.4 var(--font-sans);color:rgba(236,236,240,.6)}.rs-evidence__sig{margin:0;font:500 10.5px/1.4 var(--font-mono);word-break:break-all;color:rgba(236,236,240,.72)}.rs-evidence__sig a{color:inherit;text-decoration:underline;text-decoration-color:rgba(236,236,240,.3)}.rs-actions{display:flex;gap:8px;flex-wrap:wrap}.rs-empty{margin:auto;display:grid;gap:16px;justify-items:center;padding:24px;text-align:center}.rs-empty__title{margin:0;font:600 16px/1.45 var(--font-sans);max-width:380px}.rs-empty__actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}.rs-cut{position:absolute;inset:0;z-index:2;display:grid;place-items:center;padding:16px;background:rgba(5,6,9,.66);backdrop-filter:blur(10px)}.rs-cut__card{width:min(440px,100%);max-height:calc(100vh - 32px);overflow:auto;display:grid;gap:12px;padding:18px;border:1px solid var(--rs-rim);border-radius:20px;background:#111217;box-shadow:0 30px 90px rgba(0,0,0,.5)}.rs-cut__card header{display:flex;align-items:center;justify-content:space-between}.rs-cut__card header b{font:700 15px/1 var(--font-sans)}.rs-cut__lede,.rs-cut__fine,.rs-cut__grey{margin:0;font:500 12px/1.45 var(--font-sans);color:rgba(236,236,240,.7)}.rs-cut__fine{font-size:10.5px;color:rgba(236,236,240,.45)}.rs-cut__grey{font-style:italic}.rs-cut__error{margin:0;font:500 12px/1.4 var(--font-sans);color:#ffb3b3}.rs-seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}.rs-seg button{height:38px;border:1px solid var(--rs-rim);border-radius:12px;background:transparent;color:rgba(236,236,240,.75);font:600 11px/1 var(--font-mono)}.rs-seg button[aria-checked=true]{border-color:var(--rs-ink);color:#fff;background:color-mix(in oklab,var(--rs-ink) 10%,transparent)}.rs-toggle{display:flex;align-items:center;gap:8px;font:560 12.5px/1.2 var(--font-sans)}.rs-toggle small{color:rgba(236,236,240,.45)}.rs-progress{position:relative;height:30px;border-radius:10px;overflow:hidden;background:rgba(255,255,255,.04)}.rs-progress i{position:absolute;inset:0 auto 0 0;background:color-mix(in oklab,var(--rs-ink) 22%,transparent)}.rs-progress span{position:relative;display:block;padding:9px 10px;font:500 10.5px/1 var(--font-mono);color:rgba(236,236,240,.8)}.rs-cut__done{display:grid;gap:10px}.rs-cut__done video{width:100%;max-height:320px;border-radius:12px;background:#000}.rs-cut__done video.is-portrait{width:auto;justify-self:center}@media(max-width:560px){.rs-hud{top:8px;left:8px;min-width:0;right:62px;grid-template-columns:repeat(3,1fr);padding:8px 9px}.rs-hud__metric strong{font-size:10px}.rs-hud small{display:none}.rs-head{flex-wrap:wrap}.rs-usd-stack{order:3;width:100%}.rs-usd{width:100%;grid-template-columns:1fr auto}.rs-evidence-line{text-align:left}.rs-line{font-size:10px;white-space:normal}.rs-head{padding-left:10px;padding-right:10px}.rs-acts{padding-left:10px;padding-right:10px}.rs-title h1{font-size:15px}.rs-third{padding-left:12px;padding-right:12px}.rs-pill{padding:0 11px}}@media(prefers-reduced-motion:reduce){.rs-pulse{animation:none}}`}</style>;
-}
+function ReplayStudioStyles(){return null;}

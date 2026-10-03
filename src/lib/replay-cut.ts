@@ -1,7 +1,9 @@
-import { cutDuration, cutTapeSeconds, cutTiming, type CutSoundtrack } from "@/lib/field/replay-director";
+import { CUT_TITLE_SECONDS, cutDuration, cutTapeSeconds, cutTiming, type CutSoundtrack } from "@/lib/field/replay-director";
 import { synthesizeCutNarration } from "@/lib/alien-voice";
 import { BOLT, drawTape, TAPE_BG } from "@/lib/field/replay-tape-render";
 import { CUT_SIZE, formatUsdNotional, formatUsdPrice, tapeAvgEntryMarketCap, tapeAxis, tapeMarketCapAt, tapeMarkSummary, tapeUsdSummary, type CohortTick, type CutFormat, type TapeBolt, type TapeCandle, type TapeMarketCapPoint, type TapeMarkSummary, type TapeUsdSummary } from "@/lib/field/replay-tape";
+import { drawTraderSigil } from "@/lib/field/trader-sigil";
+import { drawVerifyQr } from "@/lib/verify-qr";
 
 export { cutTiming } from "@/lib/field/replay-director";
 
@@ -13,6 +15,7 @@ export type ReplayCutInput = {
   roomLabel: string;
   /** Hero trader label for the footer. */
   trader?: string;
+  wallet?: string;
   candles: readonly TapeCandle[];
   bolts: readonly TapeBolt[];
   /** Cohort ticks, only when the COHORT toggle was on. */
@@ -34,7 +37,7 @@ const FPS = 30;
 const TAPE_SECONDS = 12;
 const HOLD_SECONDS = 0.8;
 const VERIFY_SECONDS = 3;
-export const CUT_SECONDS = TAPE_SECONDS + HOLD_SECONDS + VERIFY_SECONDS;
+export const CUT_SECONDS = TAPE_SECONDS + CUT_TITLE_SECONDS + HOLD_SECONDS + VERIFY_SECONDS;
 
 const when = (ms: number) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
@@ -50,27 +53,14 @@ function wrap(ctx: CanvasRenderingContext2D, value: string, maxWidth: number) {
 }
 
 function drawVerify(ctx: CanvasRenderingContext2D, w: number, h: number, input: ReplayCutInput, alpha: number) {
-  const k = Math.min(w, h) / 1080;
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = TAPE_BG;
-  ctx.fillRect(0, 0, w, h);
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = "rgba(236,218,170,.95)";
-  ctx.font = `700 ${Math.round(132 * k)}px ui-sans-serif, system-ui, sans-serif`;
-  ctx.fillText("VERIFY", w / 2, h * 0.36);
-  ctx.fillStyle = "rgba(244,242,236,.82)";
-  ctx.font = `500 ${Math.round(34 * k)}px ui-sans-serif, system-ui, sans-serif`;
-  ctx.fillText("Sources, timestamps, and receipts. Open the Replay.", w / 2, h * 0.36 + 120 * k);
-  ctx.fillStyle = "rgba(236,236,240,.9)";
-  ctx.font = `500 ${Math.round(26 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  const lines = wrap(ctx, input.replayUrl, w * 0.84);
-  lines.slice(0, 6).forEach((line, i) => ctx.fillText(line, w / 2, h * 0.36 + 220 * k + i * 40 * k));
-  ctx.fillStyle = "rgba(236,236,240,.46)";
-  ctx.font = `600 ${Math.round(22 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  ctx.fillText("A BULLS APP · RESEARCH ONLY · NOT A BROKER", w / 2, h - 90 * k);
-  ctx.restore();
+  const k = Math.min(w, h) / 1080, qrSize = Math.min(w * .48, 460 * k), qrX = (w - qrSize) / 2, qrY = h * .42;
+  ctx.save();ctx.globalAlpha = alpha;ctx.fillStyle = TAPE_BG;ctx.fillRect(0, 0, w, h);
+  if(input.wallet)drawTraderSigil(ctx,input.wallet,w/2-58*k,h*.16,116*k,{foreground:"rgba(236,218,170,.96)",background:"rgba(255,255,255,.035)"});
+  ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillStyle="rgba(236,218,170,.97)";ctx.font=`800 ${Math.round(116*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillText("VERIFY",w/2,h*.31);
+  ctx.fillStyle="rgba(244,242,236,.78)";ctx.font=`540 ${Math.round(30*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillText("Scan to reopen the evidence-backed Replay.",w/2,h*.36);
+  drawVerifyQr(ctx,input.replayUrl,qrX,qrY,qrSize);
+  ctx.fillStyle="rgba(236,236,240,.7)";ctx.font=`520 ${Math.round(24*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillText(shortUrl(input.replayUrl).slice(0,72),w/2,qrY+qrSize+48*k);
+  ctx.fillStyle="rgba(236,236,240,.46)";ctx.font=`700 ${Math.round(22*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillText("A BULLS APP · RESEARCH ONLY · NOT A BROKER",w/2,h-90*k);ctx.restore();
 }
 
 const timingCache = new WeakMap<readonly TapeBolt[], Map<number, ReturnType<typeof cutTiming>>>();
@@ -84,6 +74,24 @@ function timingFor(bolts: readonly TapeBolt[], tapeSeconds = TAPE_SECONDS) {
 }
 function shortUrl(url: string) {
   return url.replace(/^https?:\/\/(www\.)?/, "");
+}
+
+function drawTitleCard(ctx:CanvasRenderingContext2D,w:number,h:number,input:ReplayCutInput,t:number){
+  const k=Math.min(w,h)/1080,progress=Math.min(1,Math.max(0,t/CUT_TITLE_SECONDS)),ease=1-Math.pow(1-progress,3);
+  ctx.save();ctx.fillStyle=TAPE_BG;ctx.fillRect(0,0,w,h);
+  ctx.globalAlpha=.12+.18*ease;ctx.fillStyle=input.roomLabel==="FOMO"?"#7d33d9":"#ead9a8";ctx.beginPath();ctx.arc(w*.5,h*.44,(140+360*ease)*k,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=1;if(input.wallet)drawTraderSigil(ctx,input.wallet,w/2-78*k,h*.23,156*k,{foreground:input.roomLabel==="FOMO"?"#d7b5ff":"#fff0bf",background:"rgba(255,255,255,.025)"});
+  ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillStyle=input.roomLabel==="FOMO"?"#d7b5ff":"#ead9a8";ctx.font=`800 ${Math.round(24*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillText(input.roomLabel,w/2,h*.43);
+  ctx.fillStyle="#f4f2ec";ctx.font=`760 ${Math.round(64*k)}px ui-sans-serif,system-ui,sans-serif`;const lines=wrap(ctx,input.title,w*.82);lines.slice(0,2).forEach((line,i)=>ctx.fillText(line,w/2,h*.50+i*74*k));
+  ctx.fillStyle="rgba(236,236,240,.48)";ctx.font=`620 ${Math.round(20*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillText("STUDY THE TRADER · REPLAY THE TRADE · VERIFY THE STORY",w/2,h*.68);ctx.restore();
+}
+
+function drawGreyCaption(ctx:CanvasRenderingContext2D,w:number,h:number,line:string|null,k:number,alpha:number){
+  if(!line||alpha<=0)return;ctx.save();ctx.globalAlpha=Math.min(1,alpha);ctx.font=`620 ${Math.round(28*k)}px ui-sans-serif,system-ui,sans-serif`;const lines=wrap(ctx,line,w*.78).slice(0,3),lineH=38*k,boxH=lines.length*lineH+34*k,y=h*.72-boxH/2;
+  ctx.fillStyle="rgba(5,6,10,.82)";ctx.beginPath();ctx.roundRect(w*.1,y,w*.8,boxH,16*k);ctx.fill();ctx.strokeStyle="rgba(236,218,170,.22)";ctx.stroke();ctx.fillStyle="#f4f2ec";ctx.textAlign="center";ctx.textBaseline="middle";lines.forEach((text,i)=>ctx.fillText(text,w/2,y+22*k+i*lineH));ctx.restore();
+}
+function drawReceiptStamp(ctx:CanvasRenderingContext2D,w:number,h:number,k:number,progress:number){
+  if(progress<=0)return;const pop=1+Math.sin(Math.min(1,progress)*Math.PI)*.18;ctx.save();ctx.translate(w*.73,h*.72);ctx.rotate(-.11);ctx.scale(pop,pop);ctx.globalAlpha=Math.min(1,progress*2);ctx.strokeStyle="rgba(212,57,65,.92)";ctx.fillStyle="rgba(212,57,65,.92)";ctx.lineWidth=6*k;ctx.strokeRect(-155*k,-44*k,310*k,88*k);ctx.font=`900 ${Math.round(36*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("RECEIPT VERIFIED",0,0);ctx.restore();
 }
 
 function cutMarkUsd(value:number|null){return value==null?"—":value===0?"$0":formatUsdNotional(value);}
@@ -101,7 +109,7 @@ function drawPositionCard(ctx:CanvasRenderingContext2D,x:number,y:number,w:numbe
   if(summary.sellTotal>0){rows.push({label:"Sold",value:summary.soldUsd!=null?formatUsdNotional(summary.soldUsd):"—",tone:"sell"});rows.push({label:"Avg sell",value:formatUsdPrice(summary.avgSellUsd)});}
   const columns = w > 1200 * k ? 2 : 1, perColumn = Math.ceil(rows.length / columns), columnW = w / columns;
   const rowH=34*k,h=perColumn*rowH+28*k;ctx.save();ctx.fillStyle="rgba(9,10,14,.82)";ctx.strokeStyle="rgba(236,236,240,.16)";ctx.lineWidth=1.2*k;ctx.beginPath();ctx.roundRect(x,y,w,h,16*k);ctx.fill();ctx.stroke();
-  rows.forEach((row,i)=>{const yy=y+22*k+(i % perColumn)*rowH, xx=x+Math.floor(i / perColumn)*columnW;ctx.textAlign="left";ctx.textBaseline="middle";ctx.font=`560 ${Math.round(22*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillStyle="rgba(236,236,240,.58)";ctx.fillText(row.label,xx+18*k,yy);ctx.textAlign="right";ctx.font=`760 ${Math.round(24*k)}px ui-monospace,SFMono-Regular,Menlo,monospace`;ctx.fillStyle=row.tone==="buy"?BOLT.buy.fill:row.tone==="sell"?BOLT.sell.fill:"#eadcaa";ctx.fillText(row.value,xx+columnW-18*k,yy);});
+  rows.forEach((row,i)=>{const yy=y+22*k+(i % perColumn)*rowH, xx=x+Math.floor(i / perColumn)*columnW;ctx.textAlign="left";ctx.textBaseline="middle";ctx.font=`560 ${Math.round(22*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillStyle="rgba(236,236,240,.58)";ctx.fillText(row.label,xx+18*k,yy);ctx.textAlign="right";ctx.font=`780 ${Math.round(24*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.fillStyle=row.tone==="buy"?BOLT.buy.fill:row.tone==="sell"?BOLT.sell.fill:"#eadcaa";ctx.fillText(row.value,xx+columnW-18*k,yy);});
   ctx.restore();return h;
 }
 
@@ -112,12 +120,13 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   const portrait = input.format === "portrait";
   const k = Math.min(w, h) / 1080;
   const tapeSeconds = cutTapeSeconds(input.tapeSeconds);
-  const timing = timingFor(input.bolts, tapeSeconds);
-  const cursor = timing.schedule.cursorAt(Math.min(1, Math.max(0, t / tapeSeconds)));
+  if(t<CUT_TITLE_SECONDS){drawTitleCard(ctx,w,h,input,t);return;}
+  const tapeT=Math.max(0,t-CUT_TITLE_SECONDS),timing = timingFor(input.bolts, tapeSeconds);
+  const cursor = timing.schedule.cursorAt(Math.min(1, Math.max(0, tapeT / tapeSeconds)));
   const visible = input.bolts.filter((bolt) => bolt.cursor <= cursor);
   const tapeTime=tapeAxis(input.candles,input.start,input.end).timeAt(cursor),visibleCandles=input.candles.filter((candle)=>candle.timestamp<=tapeTime);
   const mark=tapeMarkSummary(visible,visibleCandles),summary=tapeUsdSummary(visible),marketCap=tapeMarketCapAt(input.marketCapPoints??[],tapeTime,cursor>=.999),avgEntryMc=tapeAvgEntryMarketCap(visible,input.marketCapPoints??[]);
-  const strikeAge = (bolt: TapeBolt) => { const at = timing.arrivalAt.get(bolt.id); return at == null || t < at ? null : (t - at) * 1000; };
+  const strikeAge = (bolt: TapeBolt) => { const at = timing.arrivalAt.get(bolt.id); return at == null || tapeT < at ? null : (tapeT - at) * 1000; };
   const chartTop = portrait ? 330 * k : 170 * k, chartBottom = portrait ? h - 560 * k : h - 300 * k;
   ctx.save();
   ctx.fillStyle = TAPE_BG;
@@ -130,7 +139,7 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = "rgba(236,218,170,.9)";
-  ctx.font = `700 ${Math.round(24 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.font = `800 ${Math.round(24 * k)}px ui-sans-serif, system-ui, sans-serif`;
   ctx.fillText(input.roomLabel, left, (portrait ? 190 : 78) * k);
   ctx.fillStyle = "#f4f2ec";
   ctx.font = `680 ${Math.round((portrait ? 70 : 60) * k)}px ui-sans-serif, system-ui, sans-serif`;
@@ -141,16 +150,20 @@ export function drawCutFrame(ctx: CanvasRenderingContext2D, input: ReplayCutInpu
   const lowerTop = portrait ? h - 500 * k : h - 274 * k;
   const cardW=w-left*2,cardH=drawPositionCard(ctx,left,lowerTop,cardW,k,summary,mark,avgEntryMc);
   let next=lowerTop+cardH+26*k;
-  if(input.evidenceLine){ctx.fillStyle="rgba(236,236,240,.52)";ctx.font=`500 ${Math.round(22*k)}px ui-monospace,SFMono-Regular,Menlo,monospace`;ctx.textAlign="left";ctx.fillText(input.evidenceLine,left,next);next+=34*k;}
+  if(input.evidenceLine){ctx.fillStyle="rgba(236,236,240,.52)";ctx.font=`520 ${Math.round(22*k)}px ui-sans-serif,system-ui,sans-serif`;ctx.textAlign="left";ctx.fillText(input.evidenceLine,left,next);next+=34*k;}
   ctx.fillStyle="rgba(236,236,240,.44)";
-  ctx.font = `500 ${Math.round(20 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.font = `520 ${Math.round(20 * k)}px ui-sans-serif, system-ui, sans-serif`;
   wrap(ctx, input.sourceLine, w - left * 2).slice(0, 2).forEach((line, i) => ctx.fillText(line, left, next + i * 28 * k));
 
   ctx.fillStyle = "rgba(236,218,170,.62)";
-  ctx.font = `600 ${Math.round(20 * k)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.font = `650 ${Math.round(20 * k)}px ui-sans-serif, system-ui, sans-serif`;
   ctx.fillText(`VERIFY · ${wrap(ctx, shortUrl(input.replayUrl), w - left * 2 - 150 * k)[0] ?? ""}`, left, h - (portrait ? 56 : 30) * k);
 
-  const verifyStart = tapeSeconds + HOLD_SECONDS;
+  const captionAlpha=tapeT<Math.min(7,tapeSeconds)?Math.min(1,tapeT/0.45)*Math.min(1,(Math.min(7,tapeSeconds)-tapeT)/.5):0;
+  drawGreyCaption(ctx,w,h,input.greyLine,k,captionAlpha);
+  const stampProgress=Math.max(0,Math.min(1,(tapeT-tapeSeconds)/Math.max(.01,HOLD_SECONDS)));
+  drawReceiptStamp(ctx,w,h,k,stampProgress);
+  const verifyStart = CUT_TITLE_SECONDS + tapeSeconds + HOLD_SECONDS;
   if (t >= verifyStart) drawVerify(ctx, w, h, input, Math.min(1, (t - verifyStart) / 0.35));
 }
 
@@ -223,7 +236,7 @@ async function renderCutAudio(input: ReplayCutInput) {
     const source = context.createBufferSource(), gain = context.createGain();
     source.buffer = grey; gain.gain.value = 0.9;
     source.connect(gain).connect(context.destination);
-    source.start(0.5, 0, Math.min(grey.duration, tapeSeconds));
+    source.start(0.7, 0, Math.min(grey.duration, tapeSeconds));
   }
   return { buffer: await context.startRendering(), greyIncluded: Boolean(grey) };
 }

@@ -6,7 +6,8 @@ export const CUT_PACES: readonly CutPace[] = [12, 24, 36];
 export function cutTapeSeconds(value?: number): CutPace {
   return value === 24 || value === 36 ? value : 12;
 }
-export function cutDuration(value?: number) { return cutTapeSeconds(value) + 3.8; }
+export const CUT_TITLE_SECONDS = 1.4;
+export function cutDuration(value?: number) { return cutTapeSeconds(value) + CUT_TITLE_SECONDS + 3.8; }
 
 /** Never pin an out-of-coverage event to an unrelated first/last candle. */
 export function replayCandleCoverage(candles: readonly TapeCandle[], events: readonly TapeEvent[]) {
