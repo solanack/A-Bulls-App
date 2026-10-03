@@ -64,9 +64,9 @@ test("live Afterbell client exposes the eight registry mintHint values the Field
 
 test("comparison mints follow the page traders request, not a shorter audit window", () => {
   const auditMints = REGISTRY.slice(0, 7);
-  const auditUrl = `https://abullsapp.com/api/intelligence/afterbell/audit`;
-  const shortTradersUrl = `https://abullsapp.com${afterbellTradersPath(auditMints)}`;
-  const serverFnUrl = `https://abullsapp.com/_serverFn/getAfterbellTraders?payload=${encodeURIComponent(JSON.stringify({ data: { mints: REGISTRY, limit: 50 } }))}`;
+  const auditUrl = `https://example.test/api/intelligence/afterbell/audit`;
+  const shortTradersUrl = `https://example.test${afterbellTradersPath(auditMints)}`;
+  const serverFnUrl = `https://example.test/_serverFn/getAfterbellTraders?payload=${encodeURIComponent(JSON.stringify({ data: { mints: REGISTRY, limit: 50 } }))}`;
   assert.equal(isAfterbellTradersRequest(auditUrl), false);
   assert.equal(isAfterbellTradersRequest(shortTradersUrl), true);
   assert.deepEqual(
@@ -85,7 +85,7 @@ test("comparison mints follow the page traders request, not a shorter audit wind
   ]);
   assert.deepEqual(
     mintsForTraderComparison({
-      requestUrls: [`https://abullsapp.com${afterbellTradersPath(REGISTRY)}`],
+      requestUrls: [`https://example.test${afterbellTradersPath(REGISTRY)}`],
       registryMints: REGISTRY,
     }),
     [...REGISTRY],
@@ -99,12 +99,12 @@ test("a direct traders response for the page mint set beats a later count from a
   const selected = pageTraderPayload(
     [
       {
-        url: `https://abullsapp.com${afterbellTradersPath(REGISTRY.slice(0, 7))}`,
+        url: `https://example.test${afterbellTradersPath(REGISTRY.slice(0, 7))}`,
         payload: auditPayload,
       },
-      { url: `https://abullsapp.com${afterbellTradersPath(REGISTRY)}`, payload: laterPayload },
+      { url: `https://example.test${afterbellTradersPath(REGISTRY)}`, payload: laterPayload },
       {
-        url: "https://abullsapp.com/_serverFn/getAfterbellTraders",
+        url: "https://example.test/_serverFn/getAfterbellTraders",
         payload: { result: pagePayload },
       },
     ],
@@ -119,7 +119,7 @@ test("registry refetch retries once when the first payload length disagrees with
   const first = traderPayload(REGISTRY, 4);
   const retry = traderPayload(REGISTRY, 5);
   const missed = selectRegistryFetch(
-    [{ ok: true, payload: first, traderUrl: "https://abullsapp.com/first" }],
+    [{ ok: true, payload: first, traderUrl: "https://example.test/first" }],
     5,
   );
   assert.equal(missed.matched, false);
@@ -127,8 +127,8 @@ test("registry refetch retries once when the first payload length disagrees with
   assert.equal(missed.traderPayload.items.length, 4);
   const recovered = selectRegistryFetch(
     [
-      { ok: true, payload: first, traderUrl: "https://abullsapp.com/first" },
-      { ok: true, payload: retry, traderUrl: "https://abullsapp.com/retry" },
+      { ok: true, payload: first, traderUrl: "https://example.test/first" },
+      { ok: true, payload: retry, traderUrl: "https://example.test/retry" },
     ],
     5,
   );
@@ -137,8 +137,8 @@ test("registry refetch retries once when the first payload length disagrees with
   assert.equal(recovered.traderPayload, retry);
   const stillOff = selectRegistryFetch(
     [
-      { ok: true, payload: first, traderUrl: "https://abullsapp.com/first" },
-      { ok: true, payload: first, traderUrl: "https://abullsapp.com/retry" },
+      { ok: true, payload: first, traderUrl: "https://example.test/first" },
+      { ok: true, payload: first, traderUrl: "https://example.test/retry" },
     ],
     5,
   );

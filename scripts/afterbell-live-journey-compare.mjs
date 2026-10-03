@@ -39,14 +39,14 @@ export function afterbellTradersPath(mints, limit = 50) {
 
 export function isAfterbellTradersRequest(url) {
   try {
-    return new URL(url, "https://abullsapp.com").pathname === TRADERS_PATHNAME;
+    return new URL(url, "https://example.test").pathname === TRADERS_PATHNAME;
   } catch {
     return false;
   }
 }
 
 export function mintsFromTradersUrl(url) {
-  const parsed = new URL(url, "https://abullsapp.com");
+  const parsed = new URL(url, "https://example.test");
   const raw = parsed.searchParams.get("mints") || parsed.searchParams.get("mint") || "";
   return [
     ...new Set(
