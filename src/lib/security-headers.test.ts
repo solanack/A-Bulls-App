@@ -50,6 +50,7 @@ describe("baseline security headers", () => {
 
   it("matches the loads the browser actually makes", () => {
     assert.match(directive("script-src"), /'unsafe-inline'/);
+    assert.match(directive("script-src"), /https:\/\/grok\.com\/grok-app-builder\/extensions\.js/);
     assert.match(directive("style-src"), /'unsafe-inline'/);
     assert.match(directive("style-src"), /https:\/\/fonts\.googleapis\.com/);
     assert.match(directive("font-src"), /https:\/\/fonts\.gstatic\.com/);
@@ -64,13 +65,17 @@ describe("baseline security headers", () => {
     assert.match(directive("frame-ancestors"), /https:\/\/grok\.com/);
     assert.match(directive("frame-ancestors"), /https:\/\/\*\.grok\.com/);
     assert.match(directive("frame-ancestors"), /https:\/\/\*\.grok-sandbox\.com/);
+    assert.match(directive("frame-ancestors"), /https:\/\/grok\.me/);
+    assert.match(directive("frame-ancestors"), /https:\/\/\*\.grok\.me/);
     const permissions = baselineSecurityHeaders()["Permissions-Policy"];
     for (const feature of ["camera", "microphone", "geolocation", "payment", "usb", "serial", "bluetooth", "interest-cohort"]) {
       assert.match(permissions, new RegExp(`${feature}=\\(\\)`));
     }
-    assert.equal(baselineSecurityHeaders()["Strict-Transport-Security"], "max-age=31536000; includeSubDomains");
-    assert.equal(baselineSecurityHeaders()["Cross-Origin-Opener-Policy"], "same-origin-allow-popups");
-    assert.equal(baselineSecurityHeaders()["Cross-Origin-Resource-Policy"], "same-site");
+    assert.equal(baselineSecurityHeaders()["Strict-Transport-Security"], "max-age=31536000");
+    assert.doesNotMatch(baselineSecurityHeaders()["Strict-Transport-Security"], /includeSubDomains/);
+    assert.equal(baselineSecurityHeaders()["Cross-Origin-Opener-Policy"], "unsafe-none");
+    assert.equal(baselineSecurityHeaders()["Cross-Origin-Resource-Policy"], "cross-origin");
+    assert.doesNotMatch(CONTENT_SECURITY_POLICY_REPORT_ONLY, /report-uri|report-to/);
     assert.equal(Object.keys(baselineSecurityHeaders()).includes("X-Frame-Options"), false);
   });
 

@@ -8,14 +8,17 @@
  * repeats it on the document so the HTML contract stays next to the cache headers.
  *
  * Content-Security-Policy is Report-Only. It does not block loads or framing.
+ * There is no report-uri or report-to; violations show up in the browser console.
  * There is no X-Frame-Options: the Field is embeddable, and framing is expressed
- * only as CSP `frame-ancestors` (self, grok.com, and the Grok sandbox).
+ * only as CSP `frame-ancestors`.
  */
 
 export const CONTENT_SECURITY_POLICY_REPORT_ONLY = [
   "default-src 'self'",
   // `$tsr-stream-barrier` is an inline script with no nonce (router ssr.nonce is unset).
-  "script-src 'self' 'unsafe-inline'",
+  // grok-pwa injects https://grok.com/grok-app-builder/extensions.js into HTML
+  // (dev, vite preview, and the Nitro middleware). Allow that exact script.
+  "script-src 'self' 'unsafe-inline' https://grok.com/grok-app-builder/extensions.js",
   // Component <style> blocks and React style attributes, plus the Google Fonts stylesheet.
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
@@ -32,18 +35,24 @@ export const CONTENT_SECURITY_POLICY_REPORT_ONLY = [
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
-  "frame-ancestors 'self' https://grok.com https://*.grok.com https://*.grok-sandbox.com",
+  // grok.me covers auth.grok.me, gate.grok.me, connectors.grok.me, og.grok.me, and published app hosts.
+  "frame-ancestors 'self' https://grok.com https://*.grok.com https://*.grok-sandbox.com https://grok.me https://*.grok.me",
 ].join("; ");
 
 export function baselineSecurityHeaders(): Record<string, string> {
   return {
-    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    // No includeSubDomains: that flag sticks for every subdomain and is hard to undo.
+    "Strict-Transport-Security": "max-age=31536000",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy":
       "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), interest-cohort=()",
-    "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
-    "Cross-Origin-Resource-Policy": "same-site",
+    // unsafe-none: the sandbox sign-in popup polls popup.closed and the completion
+    // page posts the bearer to window.opener. same-origin-allow-popups severs that
+    // once the popup navigates to the OAuth broker.
+    "Cross-Origin-Opener-Policy": "unsafe-none",
+    // cross-origin: grok.com and x.com fetch og.jpg, icons, and the manifest.
+    "Cross-Origin-Resource-Policy": "cross-origin",
     "Content-Security-Policy-Report-Only": CONTENT_SECURITY_POLICY_REPORT_ONLY,
   };
 }
