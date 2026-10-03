@@ -9,10 +9,9 @@ const USDC_PLANET = `planet:fomo:${USDC}`;
 /**
  * Flood rows only. created_at must be in the window. updated_at alone is not enough:
  * a pre-deploy row can be touched later and would otherwise match.
- * Xs matching is case-sensitive GLOB, not LIKE: LIKE would also select XSTuo…, which is not an xStock mint.
- * The live writer skips the eight XSTOCK_REGISTRY mints, and non-registry Xs dust below 0.001 SOL.
- * This cleanup is wider on purpose: it removes the Xs-prefixed rounds the uncapped chain phase already wrote.
- * Registry xStock mints are not rewritten.
+ * Xs matching is case-sensitive GLOB, not LIKE: LIKE would also select XSTuo…, which is not an Xs-prefixed mint.
+ * The live writer skips every case-sensitive Xs-prefixed mint, including the eight XSTOCK_REGISTRY mints.
+ * This cleanup removes the Xs-prefixed rounds the earlier chain phase already wrote. Those mints are not rewritten.
  */
 const floodTime = `created_at >= ${AFTER}`;
 
@@ -131,6 +130,7 @@ if (invokedDirectly) {
   console.log('-- Pre-deploy rows stay out of scope: created_at must be at least 1791000000000. updated_at alone does not qualify.');
   console.log('-- other_unmatched also requires evidence_ids_json without a colon, so pump event ids stay.');
   console.log('-- Xs predicates use case-sensitive GLOB \'Xs*\'. A case-insensitive prefix match is not used.');
+  console.log('-- The chain writer skips every case-sensitive Xs-prefixed mint. Those rounds are not rewritten.');
   console.log(`-- ${USDC_PLANET} delete is only safe after the edges are deleted. Its COUNT times out on D1 if run first.`);
   const planet = plan.find(step => step.alias === 'usdc_fomo_planet');
   for (const step of plan) if (step !== planet) console.log(`\n${cleanupCountSql(step.sql, step.alias)}`);

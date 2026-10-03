@@ -118,7 +118,7 @@ test('quote legs and xStock mints are not chain rounds, and a rerun does not add
   assert.deepEqual(registry,[...CHAIN_XSTOCK_MINTS]);
   assert.equal(registry.length,8);
   assert.equal(isChainQuoteMint(usdc),true);assert.equal(isChainQuoteMint(usdt),true);assert.equal(isChainQuoteMint(wsol),true);assert.equal(isChainQuoteMint(xstock),true);assert.equal(isChainQuoteMint(token),false);
-  assert.equal(isChainQuoteMint(legitXs),false);assert.equal(isChainQuoteMint(xst),false);
+  assert.equal(isChainQuoteMint(legitXs),true);assert.equal(isChainQuoteMint(xst),false);
   const event=(signature,mint,delta,sol,time)=>({id:signature,signature,wallet:'W',mint,token_delta:delta,sol_delta:sol,block_time:time,source:'helius-afterbell-pool-window'});
   const trades=tradesFromWalletEvidence([
     event('spend',usdc,-20,0,10),
@@ -136,11 +136,11 @@ test('quote legs and xStock mints are not chain rounds, and a rerun does not add
   ],[
     {signature:'quote-buy',wallet:'W',input_mint:wsol,output_mint:usdc,input_amount:1,output_amount:20,block_time:9,hop_index:0},
   ]);
-  assert.equal(trades.some(trade=>trade.mint===usdc||trade.mint===usdt||trade.mint===wsol||CHAIN_XSTOCK_MINTS.includes(trade.mint)),false);
-  assert.equal(trades.some(trade=>trade.mint===legitXs),true);assert.equal(trades.some(trade=>trade.mint===xst),true);
+  assert.equal(trades.some(trade=>trade.mint===usdc||trade.mint===usdt||trade.mint===wsol||CHAIN_XSTOCK_MINTS.includes(trade.mint)||trade.mint===legitXs),false);
+  assert.equal(trades.some(trade=>trade.mint===xst),true);
   const rounds=deriveMatchedRounds(trades);
   const closed=rounds.filter(round=>round.status==='closed');
-  assert.deepEqual(closed.map(round=>round.mint).sort(),[legitXs,token,xst].sort());
+  assert.deepEqual(closed.map(round=>round.mint).sort(),[token,xst].sort());
   assert.equal(closed.find(round=>round.mint===token).entrySignature,'buy');
   assert.equal(chainRoundsToWrite(rounds).some(round=>round.status==='unmatched'),false);
   const sellOnly=deriveMatchedRounds([{event_id:'only',signature:'only',wallet:'W',mint:token,side:'sell',token_amount:4,sol_amount:.4,block_time:17}]);
@@ -171,7 +171,7 @@ test('quote legs and xStock mints are not chain rounds, and a rerun does not add
   assert.equal(first.rounds.some(round=>round.mint===usdc||round.mint===xstock),false);
   assert.equal(first.rounds.some(round=>round.status==='unmatched'),false);
   assert.equal(first.rounds.filter(round=>round.mint===token&&round.status==='closed').length,1);
-  assert.equal(first.rounds.filter(round=>round.mint===legitXs&&round.status==='closed').length,1);
+  assert.equal(first.rounds.filter(round=>round.mint===legitXs).length,0);
   assert.equal(first.rounds.filter(round=>round.mint===xst&&round.status==='closed').length,1);
   await materializeResearchIndex({INTELLIGENCE_DB:db,RESEARCH_CHAIN_ROUNDS_ENABLED:'1'},1790000900000);
   const second=snapshot();
@@ -206,39 +206,37 @@ test('quote legs and xStock mints are not chain rounds, and a rerun does not add
   assert.match(printed,/delete is only safe after the edges are deleted/);
   assert.match(printed,/COUNT times out on D1 if run first/);
   assert.doesNotMatch(materializer,/LIKE 'Xs%'/);
+  assert.doesNotMatch(materializer,/CHAIN_XS_MIN_SOL|belowXsSolFloor/);
+  assert.match(materializer,/mint NOT GLOB 'Xs\*'/);
   const quoteFn=materializer.slice(materializer.indexOf('export function isChainQuoteMint'),materializer.indexOf('export function chainRoundsToWrite'));
-  assert.doesNotMatch(quoteFn,/startsWith\('Xs'\)/);
+  assert.match(quoteFn,/startsWith\('Xs'\)/);
+  assert.match(quoteFn,/XSTOCK_MINTS\.has\(value\)/);
   assert.match(materializer,/if\(env\.RESEARCH_CHAIN_ROUNDS_ENABLED==='1'\)\{try\{result\.chain=await materializeChainRounds\(db,env,now\);\}/);
   sql.close();
 });
 
-test('non-registry Xs dust below 0.001 SOL is not a chain round',()=>{
+test('every case-sensitive Xs-prefixed mint is excluded from chain rounds',()=>{
   const wsol='So11111111111111111111111111111111111111112';
-  const dustMint='XsDustMint111111111111111111111111111111111';
-  const floorMint='XsFloorMint11111111111111111111111111111111';
+  const legitXs='XsRandomLegitMemeMint1111111111111111111111';
   const token='TokenMint11111111111111111111111111111111';
   const event=(signature,mint,delta,sol,time)=>({id:signature,signature,wallet:'W',mint,token_delta:delta,sol_delta:sol,block_time:time});
-  const dust=tradesFromWalletEvidence([event('d-buy',dustMint,5,-0.0004,1),event('d-sell',dustMint,-5,0.0004,2)]);
-  assert.equal(dust.length,0);
-  const atFloor=tradesFromWalletEvidence([event('f-buy',floorMint,5,-0.001,1),event('f-sell',floorMint,-5,0.001,2)]);
-  assert.equal(atFloor.length,2);
-  assert.equal(deriveMatchedRounds(atFloor).filter(round=>round.status==='closed').length,1);
-  const viaRoute=tradesFromWalletEvidence([
-    event('r-buy',dustMint,5,-0.0001,3),
-    event('r-sell',dustMint,-5,0.0001,4),
+  const roundsFor=(events,routes=[])=>chainRoundsToWrite(deriveMatchedRounds(tradesFromWalletEvidence(events,routes)));
+  assert.equal(isChainQuoteMint(legitXs),true);
+  assert.equal(roundsFor([event('legit-buy',legitXs,5,-0.5,1),event('legit-sell',legitXs,-5,0.9,2)]).length,0);
+  const partialHop=roundsFor([
+    event('hop-buy',legitXs,5,-0.5,3),
+    event('hop-sell',legitXs,-5,0.9,4),
   ],[
-    {signature:'r-buy',wallet:'W',input_mint:wsol,output_mint:dustMint,input_amount:0.001,output_amount:5,block_time:3,hop_index:0},
-    {signature:'r-sell',wallet:'W',input_mint:dustMint,output_mint:wsol,input_amount:5,output_amount:0.002,block_time:4,hop_index:0},
+    {signature:'hop-buy',wallet:'W',input_mint:wsol,output_mint:legitXs,input_amount:0.0004,output_amount:5,block_time:3,hop_index:0},
+    {signature:'hop-sell',wallet:'W',input_mint:legitXs,output_mint:wsol,input_amount:5,output_amount:0.0009,block_time:4,hop_index:0},
   ]);
-  assert.equal(viaRoute.length,2);
-  assert.equal(viaRoute[0].sol_amount,0.001);
-  assert.equal(viaRoute[1].sol_amount,0.002);
-  const tinyToken=tradesFromWalletEvidence([event('t-buy',token,1,-0.0001,1),event('t-sell',token,-1,0.0002,2)]);
-  assert.equal(tinyToken.length,2);
-  const dustRoute=tradesFromWalletEvidence([],[
-    {signature:'hop',wallet:'W',input_mint:wsol,output_mint:dustMint,input_amount:0.0004,output_amount:5,block_time:5,hop_index:0},
-  ]);
-  assert.equal(dustRoute.length,0);
+  assert.equal(partialHop.length,0);
+  assert.equal(roundsFor([event('sign-buy',legitXs,10,0.00525,5),event('sign-sell',legitXs,-10,-0.00528,6)]).length,0);
+  assert.equal(roundsFor([event('open-buy',legitXs,10,-0.0011,7),event('open-sell',legitXs,-10,0.0005,8)]).length,0);
+  const tokenRounds=roundsFor([event('t-buy',token,10,-0.0001,1),event('t-sell',token,-10,0.0002,2)]);
+  assert.equal(tokenRounds.length,1);
+  assert.equal(tokenRounds[0].status,'closed');
+  assert.equal(tokenRounds[0].mint,token);
 });
 
 test('a full open slot does not keep every closed round',()=>{
