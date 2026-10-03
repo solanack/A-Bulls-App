@@ -169,8 +169,8 @@ export function pageTraderPayload(captured, registryMints, pageCount) {
  */
 export function selectRegistryFetch(fetches, pageCount) {
   const usable = (fetches || [])
-    .filter((hit) => hit && hit.ok && isAfterbellTraderPayload(hit.payload))
-    .map((hit) => ({ ...hit, payload: unwrapTraderPayload(hit.payload) }));
+    .filter((hit) => hit && hit.ok && isAfterbellTraderPayload(hit.traderPayload ?? hit.payload))
+    .map((hit) => ({ ...hit, payload: unwrapTraderPayload(hit.traderPayload ?? hit.payload) }));
   if (!usable.length) return null;
   const agreed = usable.find((hit) => hit.payload.items.length === pageCount);
   const chosen = agreed ?? usable[usable.length - 1];

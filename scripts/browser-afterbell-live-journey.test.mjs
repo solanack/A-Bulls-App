@@ -115,6 +115,13 @@ test("a direct traders response for the page mint set beats a later count from a
   assert.equal(selected.traderPayload, pagePayload);
 });
 
+test("registry refetch reads the traderPayload field returned by the page fetch", () => {
+  const body = traderPayload(REGISTRY, 5);
+  const selected = selectRegistryFetch([{ ok: true, traderPayload: body, traderUrl: "https://example.test/traders" }], 5);
+  assert.equal(selected.matched, true);
+  assert.equal(selected.traderPayload, body);
+});
+
 test("registry refetch retries once when the first payload length disagrees with the rendered STAR count", () => {
   const first = traderPayload(REGISTRY, 4);
   const retry = traderPayload(REGISTRY, 5);
