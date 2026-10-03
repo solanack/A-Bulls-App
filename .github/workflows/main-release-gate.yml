@@ -15,13 +15,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gate:
-    name: verify + typecheck + test
+  # Pull requests run this job only. It must not reference Cloudflare secrets:
+  # the steps execute the PR's install, tests, and build.
+  verify:
+    name: secret-free release checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,16 +34,6 @@ jobs:
       - name: Install dependencies
         run: npm install --ignore-scripts --no-fund --no-audit
 
-      - name: Require Cloudflare release credentials
-        run: |
-          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is unavailable to the release gate"; exit 1; }
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is unavailable to the release gate"; exit 1; }
-
-      - name: Verify production provider secret coverage
-        run: |
-          npx wrangler secret list --config workers/wrangler.production.toml --format json > configured-provider-secrets.json
-          node scripts/check-provider-secrets.mjs --configured-file configured-provider-secrets.json
-
       - name: Verify release baseline
         run: npm run verify:release
 
@@ -53,19 +42,6 @@ jobs:
 
       - name: All repository tests
         run: npm test
-
-      - name: Audit every production Fomo trader-token Replay
-        run: node scripts/audit-fomo-replay-coverage.mjs
-
-      - name: Upload Fomo Replay coverage audit
-        uses: actions/upload-artifact@v4
-        with:
-          name: fomo-replay-audit-${{ github.sha }}
-          path: |
-            fomo-replay-audit.json
-            fomo-replay-audit-summary.json
-          if-no-files-found: error
-          retention-days: 14
 
       - name: Production frontend build
         env:
@@ -102,3 +78,85 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
+
+  # Push to main and workflow_dispatch only. GitHub does not start this job
+  # for pull_request, so the production deploy token is never sent to a PR runner.
+  production-evidence:
+    name: production provider secrets and replay audit
+    needs: verify
+    if: ${{ github.event_name != 'pull_request' && needs.verify.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts --no-fund --no-audit
+
+      - name: Require Cloudflare release credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is unavailable to the release gate"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is unavailable to the release gate"; exit 1; }
+
+      - name: Verify production provider secret coverage
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler secret list --config workers/wrangler.production.toml --format json > configured-provider-secrets.json
+          node scripts/check-provider-secrets.mjs --configured-file configured-provider-secrets.json
+
+      - name: Audit every production Fomo trader-token Replay
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/audit-fomo-replay-coverage.mjs
+
+      - name: Upload Fomo Replay coverage audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: fomo-replay-audit-${{ github.sha }}
+          path: |
+            fomo-replay-audit.json
+            fomo-replay-audit-summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+  # Same check name as the previous single job, so existing required checks
+  # still fail the release when either the secret-free lane or the
+  # production lane fails. This job does not check out PR code or receive secrets.
+  gate:
+    name: verify + typecheck + test
+    needs: [verify, production-evidence]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the release gate
+        env:
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          PRODUCTION_RESULT: ${{ needs.production-evidence.result }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$VERIFY_RESULT" != "success" ]; then
+            echo "::error::Secret-free release checks ${VERIFY_RESULT}"
+            exit 1
+          fi
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if [ "$PRODUCTION_RESULT" != "skipped" ]; then
+              echo "::error::Pull requests must not run production Cloudflare checks (result: ${PRODUCTION_RESULT})"
+              exit 1
+            fi
+          elif [ "$PRODUCTION_RESULT" != "success" ]; then
+            echo "::error::Production Cloudflare release checks ${PRODUCTION_RESULT}"
+            exit 1
+          fi

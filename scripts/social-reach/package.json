@@ -1,0 +1,8 @@
+{
+  "name": "social-reach-host",
+  "private": true,
+  "description": "Pinned mcporter CLI for the That day host runner. Not part of the browser bundle.",
+  "dependencies": {
+    "mcporter": "0.14.2"
+  }
+}

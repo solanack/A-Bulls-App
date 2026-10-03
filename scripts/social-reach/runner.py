@@ -17,6 +17,9 @@ Authentication:
   * SOCIAL_INGEST_TOKEN remains an optional compatibility fallback.
 
 Env: INTELLIGENCE_ORIGIN (default https://www.abullsapp.com), plus one auth token above.
+Search subprocesses do not inherit that token. twitter-cli receives only its two dedicated-account
+cookies plus the runtime path, home, locale, and CA variables. mcporter receives the runtime
+variables and no credentials.
 """
 
 import json
@@ -30,6 +33,41 @@ import urllib.request
 ORIGIN = os.environ.get("INTELLIGENCE_ORIGIN", "https://www.abullsapp.com").rstrip("/")
 TOKEN = os.environ.get("SOCIAL_INGEST_TOKEN") or os.environ.get("GITHUB_OIDC_TOKEN", "")
 STATUS_URL = re.compile(r"https?://(?:www\.)?(?:x|twitter)\.com/([A-Za-z0-9_]{1,15})/status/(\d{6,25})")
+# Enough for a CLI to find its binary, read a home-scoped config, and open HTTPS. Not a secret.
+CHILD_RUNTIME = (
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "TZ",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "NODE_EXTRA_CA_CERTS",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+)
+
+
+def child_env(extra=None):
+    """Environment for one search child. Callers pass only the credentials that child needs."""
+    env = {}
+    for key in CHILD_RUNTIME:
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    for key, value in (extra or {}).items():
+        if value:
+            env[key] = value
+    return env
 
 
 def api(path, body=None):
@@ -44,16 +82,19 @@ def api(path, body=None):
 
 
 def twitter_env():
-    """Credentials for one child process only, from env or Agent-Reach's saved config."""
+    """Dedicated-account cookies for twitter-cli, from env or Agent-Reach's saved config."""
     try:
         from agent_reach.channels.twitter import twitter_cli_child_env
         from agent_reach.config import Config
 
-        extra = twitter_cli_child_env(Config())
+        saved = twitter_cli_child_env(Config())
     except Exception:
-        extra = {}
-    env = {**os.environ, **extra}
-    return env if env.get("TWITTER_AUTH_TOKEN") and env.get("TWITTER_CT0") else None
+        saved = {}
+    auth = os.environ.get("TWITTER_AUTH_TOKEN") or saved.get("TWITTER_AUTH_TOKEN")
+    ct0 = os.environ.get("TWITTER_CT0") or saved.get("TWITTER_CT0")
+    if not auth or not ct0:
+        return None
+    return child_env({"TWITTER_AUTH_TOKEN": auth, "TWITTER_CT0": ct0})
 
 
 def twitter_search(terms, since, until, env):
@@ -87,7 +128,7 @@ def exa_search(item, since, until):
     query = f"X.com status posts about the token {aliases} published between {since} and {until} site:x.com"
     out = subprocess.run(
         ["mcporter", "call", "exa.web_search_exa", f"query={query}", "numResults=15", "--output", "text"],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, timeout=120, env=child_env(),
     )
     if out.returncode != 0:
         detail = (out.stderr or out.stdout or "").strip().splitlines()

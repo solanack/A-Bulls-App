@@ -17,6 +17,35 @@ const json = (body, status = 200, cache = "no-store") =>
 const s = (value) => String(value ?? "").trim();
 const n = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
 const LIMIT = 50;
+// Public default is Galaxy Zero. pump-fun and pons are retired public galaxies.
+// Fomo and Afterbell are public research galaxies, but this feed only reads
+// intelligence_universe_membership_events. Fomo lives in the provider cache
+// (fomo_traders / fomo_trader_trades), not that membership table, so it is not
+// a discover source yet.
+const GALAXIES = new Set(["galaxy-zero"]);
+const GALAXY_TO_UNIVERSE = Object.freeze({
+  "galaxy-zero": "solana",
+});
+const DEFAULT_GALAXY = "galaxy-zero";
+const MEMBERSHIP_SOURCES = Object.freeze([
+  "intelligence-mesh",
+  "indexed Solana field",
+  "universe-membership",
+]);
+
+const INDEXER_ACTORS = Object.freeze({
+  "galaxy-zero": Object.freeze({
+    id: "indexer:galaxy-zero",
+    handle: "galaxyzero",
+    displayName: "Indexed Solana field",
+    avatarUrl: null,
+    reputation: 0,
+    evidenceAccuracy: null,
+  }),
+});
+
+const DISCLOSURE =
+  "Observations are indexed Solana universe-membership events. They are not resolved evidence receipts, endorsements, or investment advice.";
 
 async function principal(request, env = {}) {
   const verifier = env.SOCIAL_AUTH;
@@ -50,15 +79,134 @@ async function readBody(request) {
   }
 }
 
-async function feed(request, env = {}) {
-  const db = intelligenceDb(env);
-  if (!db) return json({ ok: false, error: "database_unavailable" }, 503);
-  const url = new URL(request.url);
-  const allowedScopes = new Set(["discover", "following", "watchlist", "creators"]);
-  const scope = allowedScopes.has(url.searchParams.get("scope"))
-    ? url.searchParams.get("scope")
-    : "discover";
-  const limit = Math.max(1, Math.min(LIMIT, Math.trunc(n(url.searchParams.get("limit")) || 30)));
+function shortMint(mint) {
+  const id = s(mint);
+  if (id.length <= 10) return id || "unknown mint";
+  return `${id.slice(0, 4)}…${id.slice(-4)}`;
+}
+
+function coverageFromAge(observedAtSec, hasItems) {
+  if (!hasItems) return "empty";
+  const age = Math.max(0, Math.floor(Date.now() / 1000) - Math.trunc(n(observedAtSec)));
+  if (age > 900) return "stale";
+  return "fresh";
+}
+
+function mapMembershipEvent(galaxyId, row) {
+  const eventKind = s(row.event_kind);
+  const mint = s(row.entity_id);
+  const citation = s(row.source_snapshot_id)
+    ? `membership:${s(row.source_snapshot_id)}:${eventKind}:${mint}`
+    : `membership:${n(row.id)}:${eventKind}:${mint}`;
+  if (!mint || !citation) return null;
+  // Membership rows are indexed observations. No evidence-id resolver looks
+  // these citations up, so evidenceId stays empty.
+  const shared = {
+    id: `obs:${galaxyId}:${citation}`,
+    createdAt: n(row.observed_at) * 1000,
+    galaxyId,
+    tokenId: mint,
+    evidenceId: null,
+    coverage: null,
+    actor: INDEXER_ACTORS[galaxyId],
+    reactions: 0,
+    replies: 0,
+  };
+  if (eventKind === "entered") {
+    return {
+      ...shared,
+      kind: "observation",
+      body: `New mint entered indexed Solana membership · ${shortMint(mint)}`,
+    };
+  }
+  if (eventKind === "exited") {
+    return {
+      ...shared,
+      kind: "alert",
+      body: `Mint exited indexed Solana membership · ${shortMint(mint)}`,
+    };
+  }
+  // rank-changed intentionally omitted in step 1 — too noisy for discover.
+  return null;
+}
+
+function filterKinds(items, kindsParam) {
+  const raw = s(kindsParam);
+  if (!raw) return items;
+  const allowed = new Set(
+    raw
+      .split(",")
+      .map((part) => part.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (!allowed.size) return items;
+  return items.filter((item) => allowed.has(s(item.kind)));
+}
+
+async function discoverFeed(db, { galaxyId, limit, kinds }) {
+  const universeId = GALAXY_TO_UNIVERSE[galaxyId];
+  const actor = INDEXER_ACTORS[galaxyId];
+  const sources = MEMBERSHIP_SOURCES;
+
+  const items = [];
+  let latest = 0;
+  let membershipOk = false;
+
+  try {
+    // idx_universe_membership_events_window is (universe_id, observed_at DESC).
+    // Do not scan pump_trades: block_time has no standalone index, and pump-fun
+    // is a retired public galaxy.
+    const membership = await db
+      .prepare(
+        `
+      SELECT id, entity_id, event_kind, observed_at, source_snapshot_id
+      FROM intelligence_universe_membership_events
+      WHERE universe_id = ?
+        AND event_kind IN ('entered', 'exited')
+      ORDER BY observed_at DESC, id DESC
+      LIMIT ?
+    `,
+      )
+      .bind(universeId, limit)
+      .all();
+    membershipOk = true;
+    for (const row of membership?.results || []) {
+      const item = mapMembershipEvent(galaxyId, row);
+      if (!item) continue;
+      items.push(item);
+      latest = Math.max(latest, Math.floor(n(item.createdAt) / 1000));
+    }
+  } catch {
+    membershipOk = false;
+  }
+
+  items.sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id));
+  const deduped = [];
+  const seen = new Set();
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    deduped.push(item);
+    if (deduped.length >= limit) break;
+  }
+
+  const filtered = filterKinds(deduped, kinds);
+  const coverage = membershipOk ? coverageFromAge(latest, filtered.length > 0) : "degraded";
+
+  return {
+    ok: true,
+    scope: "discover",
+    items: filtered,
+    nextCursor: null,
+    disclosure: DISCLOSURE,
+    coverage,
+    galaxyId,
+    sources,
+    actorHint: actor.id,
+  };
+}
+
+async function accountFeed(request, env, db, { scope, limit }) {
   const viewer =
     scope === "discover" || scope === "creators" ? null : await principal(request, env);
   if (!viewer) {
@@ -133,11 +281,40 @@ async function feed(request, env = {}) {
       items,
       nextCursor: null,
       disclosure:
-        "Social posts are user expression. Evidence badges indicate an attached indexed receipt, not endorsement or investment advice.",
+        "Social posts are user expression. An evidence id on a post is not a resolved receipt, endorsement, or investment advice.",
     },
     200,
     cache,
   );
+}
+
+async function feed(request, env = {}) {
+  const db = intelligenceDb(env);
+  if (!db) return json({ ok: false, error: "database_unavailable" }, 503);
+  const url = new URL(request.url);
+  const allowedScopes = new Set(["discover", "following", "watchlist", "creators"]);
+  const scope = allowedScopes.has(url.searchParams.get("scope"))
+    ? url.searchParams.get("scope")
+    : "discover";
+  const limit = Math.max(1, Math.min(LIMIT, Math.trunc(n(url.searchParams.get("limit")) || 30)));
+
+  // Step 1: discover is evidence-linked lifecycle, not social_posts.
+  if (scope === "discover") {
+    const galaxyParam = s(url.searchParams.get("galaxyId")) || DEFAULT_GALAXY;
+    if (!GALAXIES.has(galaxyParam)) return json({ ok: false, error: "unknown_galaxy" }, 400);
+    const body = await discoverFeed(db, {
+      galaxyId: galaxyParam,
+      limit,
+      kinds: url.searchParams.get("kinds"),
+    });
+    return json(body, 200, "public, max-age=5, stale-while-revalidate=15");
+  }
+
+  // Account scopes remain behind identity; creators stay closed until step 2 writes.
+  if (scope === "creators") {
+    return json({ ok: false, error: "scope_not_in_step_1" }, 400);
+  }
+  return accountFeed(request, env, db, { scope, limit });
 }
 
 async function createPost(request, env = {}) {
