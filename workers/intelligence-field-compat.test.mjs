@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { __fieldCompatibilityContract,handleFieldCompatibilityRequest,toFieldSnapshot } from './intelligence-field-compat.mjs';
+import { __fieldCompatibilityContract,handleFieldCompatibilityRequest,readFieldProviderBudget,toFieldSnapshot } from './intelligence-field-compat.mjs';
 
 test('compatibility layer reuses the rich Intelligence database',()=>{
   assert.equal(__fieldCompatibilityContract.usesExistingIntelligenceDb,true);
@@ -37,4 +37,11 @@ test('unknown galaxies fail closed',async()=>{
   const response=await handleFieldCompatibilityRequest(new Request('https://example.test/api/intelligence/field/snapshot?galaxy=made-up'),{UNIVERSE_ENABLED:'true'});
   assert.equal(response.status,400);
   assert.equal((await response.json()).error,'unknown_galaxy');
+});
+
+test('field provider budget fails closed without a Helius limit',async()=>{
+  const budget=await readFieldProviderBudget({});
+  assert.equal(budget.blocked,true);
+  assert.equal(budget.reason,'budget_unconfigured');
+  assert.equal(budget.monthlyLimit,0);
 });

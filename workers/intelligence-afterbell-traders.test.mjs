@@ -56,6 +56,24 @@ test('Afterbell ranks unique transactions and computes only defensible FIFO PnL'
   assert.equal(ranked[0].realizedPnlSol,null);
 });
 
+test('Afterbell keeps a priced mint when another mint in the wallet has no basis',()=>{
+  const priced='Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh';
+  const missing='XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB';
+  const rows=[
+    {wallet:A,mint:priced,txId:'basis-buy',side:'buy',amount:10,priceUsd:1,priceSol:0.1,blockTime:100,source:'chain',sourceKind:'observed-fact'},
+    {wallet:A,mint:priced,txId:'basis-sell',side:'sell',amount:10,priceUsd:2,priceSol:0.2,blockTime:220,source:'chain',sourceKind:'observed-fact'},
+    {wallet:A,mint:missing,txId:'unpriced-sell',side:'sell',amount:4,priceUsd:null,priceSol:null,blockTime:230,source:'chain',sourceKind:'observed-fact'},
+  ];
+  const [ranked]=rankAfterbellTraders(rows,{from:200,to:400,limit:50});
+  assert.equal(ranked.realizedPnlUsd,10);
+  assert.ok(Math.abs(ranked.realizedPnlSol-1)<1e-9);
+  assert.equal(ranked.assetCount,2);
+  assert.equal(ranked.pnlDisplayUnit,'usd');
+  assert.equal(ranked.pnlMatchedRounds,1);
+  assert.equal(ranked.pnlRoundCount,2);
+  assert.equal(ranked.pnlSource,'realized-fifo');
+});
+
 test('Afterbell consumes already-sold pre-window inventory before in-window FIFO PnL',()=>{
   const mint='Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh';
   const rows=[

@@ -54,10 +54,17 @@ async function listHoldings(request,env={}){
   const url=new URL(request.url),wallet=s(url.searchParams.get('wallet')),limit=Math.max(1,Math.min(HOLDINGS_LIMIT,Math.trunc(Number(url.searchParams.get('limit'))||HOLDINGS_LIMIT)));
   if(!WALLET_RE.test(wallet))return json({ok:false,coverage:'empty',wallet,items:[],error:'invalid_public_wallet',disclosure:'A valid public wallet is required. No holdings or PnL were invented.'},400,'no-store');
   try{
-    const result=await db.prepare(`SELECT id,wallet,mint,status,entry_signature,exit_signature,entry_ts,exit_ts,buy_sol,sell_sol,matched_realized_sol,observed_inventory,method,evidence_ids_json,coverage,created_at,updated_at FROM matched_trade_rounds WHERE wallet=? AND status IN ('closed','open') ORDER BY COALESCE(exit_ts,entry_ts,updated_at) DESC,id DESC LIMIT 250`).bind(wallet).all();
-    const rounds=(result?.results||[]).map(mapMatchedRoundRow);
+    const rounds=[];
+    const pageSize=200,ceiling=10000;let truncated=false;
+    for(let offset=0;rounds.length<ceiling;offset+=pageSize){
+      const result=await db.prepare(`SELECT id,wallet,mint,status,entry_signature,exit_signature,entry_ts,exit_ts,buy_sol,sell_sol,matched_realized_sol,observed_inventory,method,evidence_ids_json,coverage,created_at,updated_at FROM matched_trade_rounds WHERE wallet=? AND status IN ('closed','open') ORDER BY COALESCE(exit_ts,entry_ts,updated_at) DESC,id DESC LIMIT ? OFFSET ?`).bind(wallet,pageSize,offset).all();
+      const batch=(result?.results||[]).map(mapMatchedRoundRow);
+      rounds.push(...batch);
+      if(batch.length<pageSize)break;
+      if(rounds.length>=ceiling)truncated=true;
+    }
     const items=aggregateTraderHoldings(rounds,await tokenNames(db,rounds.map(row=>row.mint)),{limit});
-    return json({ok:true,coverage:items.length?'fresh':'empty',wallet,items,method:HOLDINGS_METHOD,disclosure:holdingsDisclosure(items.length)});
+    return json({ok:true,coverage:truncated?'partial':items.length?'fresh':'empty',wallet,items,method:HOLDINGS_METHOD,disclosure:holdingsDisclosure(items.length)});
   }catch{
     return json({ok:false,coverage:'degraded',wallet,items:[],error:'holdings_store_unavailable',disclosure:'Indexed holdings could not be read. No PnL was invented.'},503,'no-store');
   }

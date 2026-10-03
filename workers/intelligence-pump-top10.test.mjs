@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { normalizePumpEvent, shouldPersistDetailedTrade, __pumpTop10Contract } from './intelligence-pump-top10.mjs';
 
 const signature='5'.repeat(88);
@@ -27,6 +28,30 @@ test('derives buy direction from enhanced webhook transfers conservatively',()=>
   assert.equal(event.side,'buy');
   assert.equal(event.wallet,wallet);
   assert.equal(event.solAmount,1);
+});
+
+test('uses the swap SOL leg and leaves a quote without native SOL unpriced',()=>{
+  const pool='9'.repeat(44);
+  const event=normalizePumpEvent({
+    signature,blockTime:1_800_000_000,
+    tokenTransfers:[{mint,tokenAmount:10,toUserAccount:wallet,fromUserAccount:pool}],
+    nativeTransfers:[
+      {amount:5_000_000_000,fromUserAccount:'B'.repeat(44),toUserAccount:'C'.repeat(44)},
+      {amount:2_000_000_000,fromUserAccount:wallet,toUserAccount:pool}
+    ]
+  });
+  assert.equal(event.side,'buy');
+  assert.equal(event.wallet,wallet);
+  assert.equal(event.solAmount,2);
+  const stable=normalizePumpEvent({signature,mint,wallet,side:'buy',tokenAmount:10,blockTime:1_800_000_000});
+  assert.equal(stable.solAmount,null);
+  assert.equal(stable.priceSol,null);
+});
+
+test('pump retention folds basis and does not delete raw trades unconditionally',()=>{
+  const source=readFileSync(new URL('./intelligence-pump-top10.mjs',import.meta.url),'utf8');
+  assert.match(source,/foldExpiringPumpBasis/);
+  assert.doesNotMatch(source,/DELETE FROM pump_trades WHERE block_time</);
 });
 
 test('rejects malformed evidence identifiers',()=>{
