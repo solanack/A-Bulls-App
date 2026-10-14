@@ -97,3 +97,10 @@ Before adding a feature, ask:
 > **Does this make it easier to discover a real subject, understand what happened, replay it, verify it, preserve it in the Index, or turn it into a truthful story?**
 
 If not, it is probably not the next thing A Bulls App needs.
+
+## Cursor Cloud specific instructions
+
+- Node 22 is already on the image. Install with `npm install --ignore-scripts --no-fund --no-audit`. `npm ci` does not match this lockfile on npm 10; the release workflow uses the same install command.
+- Local development is two processes, both required. `npx wrangler dev --config workers/wrangler.toml --port 8787 --ip 127.0.0.1 --persist-to .wrangler/state` serves the Intelligence Worker. `npm run dev` serves the Field at `http://127.0.0.1:8080` and proxies `/api/health` to that worker. A missing worker must fail closed.
+- Secret-free checks are `npm run verify:release`, `npm run typecheck`, and `npm test`. `npm run lint` currently reports existing repository issues and is not the release gate.
+- A first visit with no `abulls:onboarded:v2` localStorage value opens the CRCLx golden Replay after a few seconds. Local D1 has no retained candles, so that Replay says candles are unavailable. FOMO and AFTERBELL stay empty until local D1 has retained traders.
